@@ -6,18 +6,22 @@
 # (UpdateChecker fires immediately when enabled; the next trigger is a 24 h
 # timer, honestly out of scope for a test).
 #
-# Assertions, strongest available first:
-#   REAL  - packaging/ci/no-egress.sh default: the hub runs in a network
-#           namespace under strace with a DNS/TCP sink, and the attestation
-#           asserts ZERO egress of any kind. Run when the environment can
-#           (unprivileged user namespaces + strace); its verdict is binding.
+# Assertions:
+#   CONTAINMENT - packaging/ci/netns-containment.sh: the real Hub stays alive
+#           in a fresh network namespace with no external interface or route.
+#           This is the authoritative local proof that the process cannot
+#           egress. It requires unprivileged user namespaces, but not strace.
+#   ATTEMPTS - packaging/ci/no-egress.sh default: when strace is installed,
+#           the stronger CI-style attestation additionally observes DNS, TCP,
+#           raw-IP, and failed connection attempts. This is useful extra
+#           evidence, but missing local strace does not block release.
 #   PROXY - always run: after a real save round-trip, the persisted
 #           appearance carries no enabled updateCheck key, and the hub log
 #           shows no update-check activity (no releases URL, no check
 #           failure). This is the honest local proxy - this scenario cannot
 #           observe sockets without the namespace, and says so.
 #
-# The script prints which of the two actually ran.
+# The script prints which levels actually ran.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -66,17 +70,53 @@ else
     echo "  [idle] PASS: no update-check activity in the hub log"
 fi
 
-# ── REAL: the no-egress attestation, when this environment can run it ────────
+# ── CONTAINMENT: authoritative local no-egress proof ────────────────────────
+CONTAINMENT="$RT_PROJECT_DIR/packaging/ci/netns-containment.sh"
+containment_ran=no
+if [ -x "$CONTAINMENT" ] || [ -f "$CONTAINMENT" ]; then
+    if unshare --net --mount --map-root-user true 2>/dev/null; then
+        echo "Containment assertion - real Hub in an empty network namespace"
+        if XENEON_HUB="$HUB" XENEON_EGRESS_SECS="${XENEON_EGRESS_SECS:-10}" \
+                bash "$CONTAINMENT" > "$RT_WORK/netns-containment.out" 2>&1; then
+            if grep -qx 'NETNS CONTAINMENT PASS' "$RT_WORK/netns-containment.out" && \
+               grep -q '^PASS: namespace contains only loopback' "$RT_WORK/netns-containment.out" && \
+               grep -q '^PASS: Hub remained alive' "$RT_WORK/netns-containment.out"; then
+                containment_ran=yes
+                grep -E "^PASS:|CONTAINMENT" "$RT_WORK/netns-containment.out" \
+                    | sed 's/^/  /'
+            else
+                echo "  FAIL: containment runner exited zero without complete evidence:"
+                tail -25 "$RT_WORK/netns-containment.out" | sed 's/^/    /'
+                fail=1
+            fi
+        else
+            rc=$?
+            if [ "$rc" -eq 77 ]; then
+                echo "  containment runner skipped (77)"
+            else
+                echo "  FAIL: network namespace containment failed (rc=$rc):"
+                tail -25 "$RT_WORK/netns-containment.out" | sed 's/^/    /'
+                fail=1
+            fi
+        fi
+    else
+        echo "Containment assertion unavailable (no unprivileged network namespace)"
+    fi
+else
+    echo "Containment assertion unavailable (netns-containment.sh not found)"
+fi
+
+# ── ATTEMPTS: optional local observation, mandatory in dedicated CI ─────────
 NOEGRESS="$RT_PROJECT_DIR/packaging/ci/no-egress.sh"
-real_ran=no
+attempts_observed=no
 if [ -x "$NOEGRESS" ] || [ -f "$NOEGRESS" ]; then
     if command -v strace >/dev/null 2>&1 && unshare --net --mount --map-root-user true 2>/dev/null; then
-        echo "Real assertion - packaging/ci/no-egress.sh default (netns + strace + DNS sink)"
+        echo "Attempt observation - netns + strace + DNS/TCP sink"
         if XENEON_HUB="$HUB" XENEON_EGRESS_SECS="${XENEON_EGRESS_SECS:-10}" bash "$NOEGRESS" default > "$RT_WORK/no-egress.out" 2>&1; then
             if grep -qx 'NO-EGRESS ATTESTATION PASS' "$RT_WORK/no-egress.out" && \
                grep -q '^✓ liveness:' "$RT_WORK/no-egress.out" && \
                grep -q '^✓ ZERO egress:' "$RT_WORK/no-egress.out"; then
-                real_ran=yes
+                attempts_observed=yes
                 grep -E "^✓|ATTESTATION" "$RT_WORK/no-egress.out" | sed 's/^/  /'
             else
                 echo "  FAIL: no-egress runner exited zero without complete attestation evidence:"
@@ -86,7 +126,7 @@ if [ -x "$NOEGRESS" ] || [ -f "$NOEGRESS" ]; then
         else
             rc=$?
             if [ "$rc" -eq 77 ]; then
-                echo "  no-egress.sh skipped (77) - proxy assertion stands alone"
+                echo "  no-egress.sh skipped (77)"
             else
                 echo "  FAIL: the no-egress attestation failed (rc=$rc):"
                 tail -25 "$RT_WORK/no-egress.out" | sed 's/^/    /'
@@ -94,16 +134,16 @@ if [ -x "$NOEGRESS" ] || [ -f "$NOEGRESS" ]; then
             fi
         fi
     else
-        echo "Real assertion unavailable (no strace or no unprivileged user namespaces) - proxy only"
+        echo "Attempt observation not run (local strace unavailable or namespace unavailable)"
     fi
 else
-    echo "Real assertion unavailable (packaging/ci/no-egress.sh not found) - proxy only"
+    echo "Attempt observation not run (packaging/ci/no-egress.sh not found)"
 fi
 
 echo
-echo "Assertion level: proxy=yes real-no-egress=$real_ran"
-if [ "${XENEON_RELEASE_GATE:-0}" = "1" ] && [ "$real_ran" != "yes" ]; then
-    echo "  FAIL: strict release gate requires the real netns + strace no-egress attestation"
+echo "Assertion level: proxy=yes containment=$containment_ran attempts-observed=$attempts_observed"
+if [ "${XENEON_RELEASE_GATE:-0}" = "1" ] && [ "$containment_ran" != "yes" ]; then
+    echo "  FAIL: strict release gate requires real network namespace containment"
     fail=1
 fi
 if [ "$fail" -ne 0 ]; then echo "RESULT: FAILURE"; exit 1; fi

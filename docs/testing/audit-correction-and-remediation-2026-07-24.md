@@ -90,11 +90,15 @@ does not produce a DNS query. The repository script therefore combines:
 - `strace -f -e trace=connect` for raw-IP and failed connection attempts;
 - liveness and negative controls to reject vacuous green results.
 
-The authoritative behavioral attestation is that combined supply-chain job.
-`strace` is installed by that workflow. A missing local `strace` binary is
-therefore removed from release blockers when the exact clean release SHA has a
-green no-egress supply-chain job. Installing local `strace` remains an owner
-tooling choice, not an engineering task.
+Local release execution now gates on `packaging/ci/netns-containment.sh`, which
+proves the real Hub remains alive in a namespace with no external interface or
+route. That is authoritative for actual containment and does not require
+`strace`.
+
+The combined supply-chain job remains authoritative for the stronger claim that
+no connection was attempted during its observation window. `strace` is
+installed by that workflow. Installing local `strace` remains an owner tooling
+choice, not an engineering task.
 
 ### 2.3 Secrets at rest and local control
 
@@ -430,7 +434,7 @@ be presented as an automated metric.
 | B7 | Bounded startup orientation retry passes branch tests, a real cold-start turn, smooth animation review, and Manager reflection. | New automation plus manual hardware evidence |
 | B8 | Physical Hub and Manager integration passes on the exact SHA. | Manual commit-keyed gate |
 | B9 | The six requested physical touch/gesture actions pass a signed recorded manual run. | Manual commit-keyed gate |
-| B10 | No-egress supply-chain job passes on the exact SHA; local missing `strace` does not substitute for or block this CI evidence. | Existing supply-chain workflow |
+| B10 | Real-Hub network namespace containment passes locally; the stronger no-attempt supply-chain job passes on the exact SHA; local missing `strace` does not block release execution. | Runtime scenario 03 plus existing supply-chain workflow |
 | B11 | Branch-focused bridge tests pass, with per-file line and branch reporting; one real notification and one real MPRIS action pass. | New automation plus manual desktop evidence |
 | B12 | 30-minute resource slopes, steady-state CPU, cold-start time, and rotation frame timing are measured and accepted against documented thresholds. | New manual/instrumented gate |
 | B13 | Each required fault injection has an explicit pass/fail result and acceptable recovery behavior. | New automated/manual gate |

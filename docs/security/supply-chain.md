@@ -27,7 +27,10 @@ The one that matters. It runs the **real hub binary** and measures its network
 behaviour, rather than reading the source and trusting it.
 
 ```sh
-# Requires: strace, and a kernel that allows user namespaces (or run under sudo).
+# Local containment proof. Requires user namespaces, but not strace.
+bash packaging/ci/netns-containment.sh
+
+# Attempt observation. Requires strace and user namespaces, or run under sudo.
 bash packaging/ci/no-egress.sh default                     # asserts ZERO egress
 bash packaging/ci/no-egress.sh seeded                      # ZERO egress, post-wizard layout
 bash packaging/ci/no-egress.sh weather api.open-meteo.com  # ONLY that host
@@ -36,11 +39,23 @@ bash packaging/ci/no-egress.sh weather api.open-meteo.com  # ONLY that host
 Exit `0` pass, `1` fail, `77` skip (no hub binary). Point it at any build with
 `XENEON_HUB=/usr/bin/xeneon-edge-hub`.
 
-### How it measures
+### What is authoritative
+
+`netns-containment.sh` is authoritative for actual egress containment. The real
+Hub runs in a fresh network namespace that has no host network interface and no
+default route. The script also requires the Hub to remain alive for the full
+measurement window, so a startup failure cannot produce a vacuous pass.
+
+This structural proof does not claim that the Hub made no connection attempt.
+The stronger `no-egress.sh` attestation is mandatory in the dedicated
+supply-chain CI job and optional on developer machines. Missing local `strace`
+does not block release execution.
+
+### How attempted connections are measured
 
 The hub runs inside a **network namespace** containing only `lo`, so nothing can
-actually leave the machine during the test. Containment is not the assertion,
-though - two independent channels record what the hub *attempted*:
+actually leave the machine during the test. Two independent channels record
+what the hub *attempted*:
 
 1. **`strace -f -e trace=connect`** - ground truth. Every `connect(2)` in the
    process tree, whether or not it resolves, routes or completes. This is the
@@ -50,10 +65,10 @@ though - two independent channels record what the hub *attempted*:
    QNAME does. The sink answers every A query with `127.0.0.1` and accepts on
    80/443, so the attempt completes far enough to be logged and named.
 
-**Why not just `unshare -n`?** Under a bare `unshare -n` a phone-home dies at
-DNS resolution - *before* `connect(2)`. There would be nothing to observe and
-the test would pass for the wrong reason. The namespace is the containment; the
-sink is what makes the attempt visible. Neither is the assertion alone.
+**Why not just `unshare -n` for attempted-connection evidence?** Under a bare
+`unshare -n` a phone-home dies at DNS resolution before `connect(2)`. There
+would be nothing to observe. The namespace proves containment; the sink and
+trace make attempts visible.
 
 **Why not just the sink?** It is blind to a hard-coded IP, which never asks DNS.
 That case is caught only by `strace` - and is exercised by negative control 2,

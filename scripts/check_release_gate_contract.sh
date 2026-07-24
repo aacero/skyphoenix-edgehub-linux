@@ -275,6 +275,15 @@ else
     echo "  FAIL strict release tests can reuse or disagree about the mutable build/ tree"
     fail=$((fail + 1))
 fi
+if printf '%s\n' "$release_preflight" | grep -Fq 'network namespace (real no-egress attestation)' \
+        && ! printf '%s\n' "$release_preflight" | grep -Eq '(^|[[:space:]])strace([[:space:]]|$)' \
+        && grep -Fq 'packaging/ci/netns-containment.sh' "$PROJECT_DIR/tests/runtime/run_03_update_check_off.sh" \
+        && grep -Fq 'strict release gate requires real network namespace containment' "$PROJECT_DIR/tests/runtime/run_03_update_check_off.sh"; then
+    echo "  ok   strict local no-egress gate requires netns containment without requiring strace"
+else
+    echo "  FAIL strict local no-egress gate still depends on strace or lacks containment"
+    fail=$((fail + 1))
+fi
 if grep -Fq 'DEVELOPER_BUILD_DIR="$REPO_ROOT/build"' "$CPP_RUNNER" \
         && grep -Fq 'DEVELOPER_BUILD_DIR="$PROJECT_DIR/build"' "$COVERAGE_RUNNER" \
         && printf '%s\n' "$run_all_execution" | grep -Fq 'developer_build_dir="$PROJECT_DIR/build"'; then

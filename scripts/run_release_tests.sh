@@ -139,7 +139,7 @@ esac
 
 for command_name in \
     bash cargo cargo-llvm-cov git ip kscreen-doctor \
-    kwin_wayland python3 spectacle strace tee timeout unshare busctl; do
+    kwin_wayland python3 spectacle tee timeout unshare busctl; do
     require_command "$command_name"
 done
 require_command_or_executable cmake "$HOME/.local/bin/cmake"
@@ -208,9 +208,9 @@ else
     preflight_bad "org.kde.KWin is unavailable on the user D-Bus"
 fi
 
-# Scenario 03's strongest privacy assertion needs both tools and permission to
-# create an unprivileged network+mount namespace. Falling back to its proxy is
-# useful in developer mode but not sufficient for a release verdict.
+# Scenario 03's authoritative local containment assertion needs permission to
+# create an unprivileged network namespace. The dedicated supply-chain CI job
+# separately uses strace and a DNS/TCP sink to observe attempted connections.
 if command -v unshare >/dev/null 2>&1 && \
    timeout 15 unshare --net --mount --map-root-user true >/dev/null 2>&1; then
     preflight_ok "unprivileged network namespace (real no-egress attestation)"

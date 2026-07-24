@@ -43,9 +43,11 @@ The two input variables are intentionally not enabled by the script. They are
 the explicit authorization for synthetic input on the Edge and inside the
 render-verified Manager window. The preflight also requires a connected Edge,
 a live KWin Wayland session, writable `/dev/uinput`, a non-Edge Manager target
-screen, screenshot support, coverage tools, and the network-namespace +
-`strace` prerequisites for the real no-egress attestation. Geometry trust
-overrides are rejected for a release run.
+screen, screenshot support, coverage tools, and network namespace containment.
+Local `strace` is not required. The dedicated
+supply-chain CI job still uses `strace` and a DNS/TCP sink to observe attempted
+connections, including failed and raw-IP attempts. Geometry trust overrides are
+rejected for a release run.
 
 The gate covers:
 
