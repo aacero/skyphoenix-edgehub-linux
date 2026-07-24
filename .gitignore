@@ -51,6 +51,10 @@ packages/**/pkg/
 
 # Testing
 coverage/
+# Commit-keyed audit evidence is retained locally or uploaded as a release/CI
+# artifact. Screenshots and raw logs can be hundreds of MiB and must not bloat
+# normal source history.
+artifacts/
 # Visible GUI suite evidence (tests/gui/run_gui_tests.sh): ~1000 grabImage PNGs
 # plus a stitched video, ~35MB per run, wiped and regenerated on every run.
 # Reproducible output, not source.
@@ -101,6 +105,8 @@ __pycache__/
 *.pyc
 build-qa/
 build-cov-agent/
+# Local install-validation tree produced by release packaging checks.
+build-install/
 
 # Claude Code local state: settings.local.json is personal, and worktrees/ holds
 # agent git worktrees - 37 of them once reached 26GB here. Neither is shared.

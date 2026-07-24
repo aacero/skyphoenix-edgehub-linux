@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/XeneonEdge_Linux.iml" filepath="$PROJECT_DIR$/XeneonEdge_Linux.iml" />
+      <module fileurl="file://$PROJECT_DIR$/skyphoenix-edgehub-linux.iml" filepath="$PROJECT_DIR$/skyphoenix-edgehub-linux.iml" />
     </modules>
   </component>
 </project>

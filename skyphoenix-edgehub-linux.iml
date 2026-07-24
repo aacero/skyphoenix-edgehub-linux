@@ -3,11 +3,6 @@
   <component name="NewModuleRootManager" inherit-compiler-output="true">
     <exclude-output />
     <content url="file://$MODULE_DIR$">
-      <!-- Build artifacts and generated sources, excluded from indexing. The
-           tree is ~4.7 GB, of which core/target (2.5 GB) and tools/*/target
-           (1.4 GB) are Rust build output, and build/ holds two generated 25 MB
-           qrc_wallpapers.cpp translation units. Indexing those buys nothing and
-           costs heap, CPU and responsiveness on every project open. -->
       <excludeFolder url="file://$MODULE_DIR$/core/target" />
       <excludeFolder url="file://$MODULE_DIR$/tools/license-tool/target" />
       <excludeFolder url="file://$MODULE_DIR$/tools/license-webhook/target" />
