@@ -305,7 +305,7 @@ WidgetChrome {
                     anchors.centerIn: parent
                     text: "+" + stepList.hiddenStepCount + " more"
                     color: "#0D1117"
-                    font.pixelSize: 14
+                    font.pixelSize: theme.fontMinimum
                     font.bold: true
                 }
                 Accessible.role: Accessible.StaticText
