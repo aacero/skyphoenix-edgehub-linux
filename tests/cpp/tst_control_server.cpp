@@ -184,6 +184,7 @@ private slots:
         const auto r = exchange("{\"type\":\"setUiState\",\"state\":\"{\\\"a\\\":1}\"}");
         QCOMPARE(r.size(), 1);
         QCOMPARE(r[0].value("type").toString(), QStringLiteral("ok"));
+        QCOMPARE(r[0].value("for").toString(), QStringLiteral("setUiState"));
         QCOMPARE(spy.count(), 1);
     }
 
@@ -194,6 +195,7 @@ private slots:
         const auto r = exchange("{\"type\":\"setUiState\",\"state\":\"{\\\"a\\\":1}\"}");
         QCOMPARE(r.size(), 1);
         QCOMPARE(r[0].value("type").toString(), QStringLiteral("error"));
+        QCOMPARE(r[0].value("for").toString(), QStringLiteral("setUiState"));
         QCOMPARE(r[0].value("message").toString(), QStringLiteral("failed to apply state"));
     }
 
@@ -201,6 +203,7 @@ private slots:
         const auto r = exchange("{\"type\":\"setUiState\",\"state\":\"\"}");
         QCOMPARE(r.size(), 1);
         QCOMPARE(r[0].value("type").toString(), QStringLiteral("error"));
+        QCOMPARE(r[0].value("for").toString(), QStringLiteral("setUiState"));
         QCOMPARE(r[0].value("message").toString(), QStringLiteral("empty state"));
     }
 

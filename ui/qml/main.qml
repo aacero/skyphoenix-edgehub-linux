@@ -101,6 +101,16 @@ ApplicationWindow {
         return t ? t.currentPageIndex : -1
     }
 
+    // Clean shutdown calls this synchronously before the C++ persistence bridge
+    // is detached. The Dashboard first commits widget-local editor buffers and
+    // then forces its store to disk.
+    function flushPendingUiState() {
+        var t = stackView.find(function (item) {
+            return item && typeof item.flushPendingUiState === "function"
+        })
+        return t ? t.flushPendingUiState() : true
+    }
+
     // React to screen hotplug events
     onScreenAddedChanged: {
         if (screenAddedChanged) console.log("Screen added:", screenAddedChanged)

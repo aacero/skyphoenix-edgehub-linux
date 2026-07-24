@@ -42,6 +42,8 @@ Item {
             property string titleOverride: ""
             property string accentName: ""
             property string cardBackdrop: ""
+            property int flushCalls: 0
+            function flush() { flushCalls++ }
             MouseArea { anchors.fill: parent; onClicked: root.taps++ }
         }
     }
@@ -134,6 +136,14 @@ Item {
             host.foreground = false
             host.expanded = false
             host.sizeClass = "wide"
+        }
+
+        function test_clean_shutdown_flushes_a_widget_local_buffer() {
+            compare(host.item.flushCalls, 0)
+            verify(host.flushPendingState(), "a widget with flush() reports that it was flushed")
+            compare(host.item.flushCalls, 1, "WidgetHost invoked the loaded widget's flush() exactly once")
+            verify(!failedHost.flushPendingState(),
+                   "a failed or unloaded widget has no local buffer to flush")
         }
 
         function test_passive_preview_blocks_widget_actions() {

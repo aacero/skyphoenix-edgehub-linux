@@ -17,9 +17,10 @@ Item {
         id: fakeBridge
         property int saveCount: 0
         property string lastJson: ""
-        function saveUiState(json) { saveCount++; lastJson = json }
+        property bool saveSucceeds: true
+        function saveUiState(json) { saveCount++; lastJson = json; return saveSucceeds }
         function uiState() { return "" }
-        function reset() { saveCount = 0; lastJson = "" }
+        function reset() { saveCount = 0; lastJson = ""; saveSucceeds = true }
     }
     property var configBridge: null
 
@@ -140,6 +141,16 @@ Item {
             }
             compare(doc.settings["cpu-1"].warnTemp, 70, "real key present in saved JSON")
             compare(doc.settings["net-1"].iface, "eth0", "real key present in saved JSON")
+        }
+
+        function test_flushNow_reports_bridge_failure_and_clears_the_timer() {
+            root.configBridge = fakeBridge
+            store.setSetting("cpu-1", "warnTemp", 91)
+            verify(store._savePending, "real edit armed the debounce")
+            fakeBridge.saveSucceeds = false
+            verify(!store.flushNow(), "the synchronous flush reports a persistence rejection")
+            verify(!store._savePending, "the debounce is stopped even when persistence rejects")
+            compare(fakeBridge.saveCount, 1, "one immediate persistence attempt was made")
         }
 
         // ── Ephemeral writes never schedule a disk save ──────────────────────

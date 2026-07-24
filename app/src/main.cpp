@@ -47,6 +47,7 @@
 #include "notification_bridge.h"
 #include "license_bridge.h"
 #include "metrics_worker.h"
+#include "shutdown_flush.h"
 
 // --- Global handle for signal handler access ---
 static ConfigHandle* g_config = nullptr;
@@ -664,6 +665,14 @@ int main(int argc, char *argv[]) {
         xeneon_config_free(config);
         return 1;
     }
+
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &engine, [&engine]() {
+        const auto flushed = xeneon::flushPendingUiState(engine.rootObjects());
+        if (!flushed.ok())
+            qWarning() << "Hub: clean-shutdown UI flush failed"
+                       << "invoked:" << flushed.invoked
+                       << "failed:" << flushed.failed;
+    });
 
     // Window placement: QML starts invisible and Windowed (see main.qml).
     // C++ positions it on the target screen FIRST, then shows it.

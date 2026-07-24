@@ -95,13 +95,14 @@ Item {
         // org's preset; persisting it would overwrite the user's OWN saved
         // layout (which must come back intact if the policy is ever removed),
         // and "user edits to layout don't persist" is the policy's contract.
-        if (policyLockedPreset !== "") return
+        if (policyLockedPreset !== "") return true
         if (_hasBridge())
-            configBridge.saveUiState(JSON.stringify(store._persistableData()))
+            return configBridge.saveUiState(JSON.stringify(store._persistableData())) !== false
+        return true
     }
 
     // Force an immediate (non-debounced) save - used on structural edits.
-    function flushNow() { saveTimer.stop(); _flush() }
+    function flushNow() { saveTimer.stop(); return _flush() }
 
     function _clone(o) { return JSON.parse(JSON.stringify(o)) }
 

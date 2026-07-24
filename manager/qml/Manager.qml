@@ -328,6 +328,22 @@ ApplicationWindow {
     // + pushed live to a running hub).
     PresetCatalog { id: presetLib }
 
+    // Mirror the Hub shutdown contract. A live widget preview may own a short
+    // editor debounce, so flush every loaded WidgetHost before forcing the
+    // Manager's shared store through its single-writer backend.
+    function flushPendingUiState() {
+        function visit(node) {
+            if (!node) return
+            if (node !== win && typeof node.flushPendingState === "function")
+                node.flushPendingState()
+            var children = node.children || []
+            for (var i = 0; i < children.length; i++)
+                visit(children[i])
+        }
+        visit(win.contentItem)
+        return store.flushNow()
+    }
+
     // Colour tokens + the user's uploaded images, for the shared BackgroundPicker.
     readonly property var mCol: ({ textPrimary: m.textPrimary, textSecondary: m.textSecondary,
         panel: m.panel, panelAlt: m.panelAlt, border: m.border, accent: m.accent,

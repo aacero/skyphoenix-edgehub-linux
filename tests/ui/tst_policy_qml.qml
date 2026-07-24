@@ -2,7 +2,7 @@ import QtQuick
 import QtTest
 import "../../ui/qml" as App
 
-// COVERS: fn:Dashboard.policyAllowsWidget, fn:Dashboard.policyFilteredWidgets, fn:DashboardStore.lockToPreset
+// COVERS: fn:Dashboard.flushPendingUiState, fn:Dashboard.policyAllowsWidget, fn:Dashboard.policyFilteredWidgets, fn:DashboardStore.lockToPreset
 //
 // E9 managed/org policy - what the Dashboard ENFORCES, driven through a fake
 // configBridge whose policy() answer we control per test:
@@ -153,6 +153,19 @@ Item {
             compare(root.store().policyLockedPreset, "", "no policy: layout not locked")
             var line = root.managedLine()
             verify(!line || !line.visible, "no policy: no managed-by line")
+        }
+
+        function test_clean_shutdown_flushes_a_pending_dashboard_edit() {
+            reload({ "active": false, "source": "absent", "forcePreset": "",
+                     "netOffline": false, "allowedHosts": [],
+                     "disableUserWidgets": false, "disabledWidgetTypes": [] })
+            root.saveCalls = 0
+            var s = store()
+            s.setSetting("shutdown-probe", "text", "pending")
+            verify(s._savePending, "the edit is still inside the store debounce")
+            verify(ld.item.flushPendingUiState(), "Dashboard accepted the clean-shutdown flush")
+            verify(!s._savePending, "the store debounce was drained synchronously")
+            compare(root.saveCalls, 1, "the pending document was persisted exactly once")
         }
 
         // ── net_offline pin ──────────────────────────────────────────────────

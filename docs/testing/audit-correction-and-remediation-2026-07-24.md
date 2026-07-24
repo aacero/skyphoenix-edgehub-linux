@@ -146,19 +146,21 @@ store flush reaches Rust, persistence uses:
 - atomic rename.
 
 This is not an in-place write. However, the unconditional claim of no data loss
-is still unsupported:
+remains unsupported for abnormal termination. The current candidate closes the
+clean-shutdown and directory-entry gaps:
 
 - settings writes are debounced by 400 ms in `DashboardStore`;
 - Quick Note has its own 400 ms edit debounce before it reaches the store;
-- on clean Hub exit, C++ saves the existing Rust handle before QML destruction;
-- the bridge is then detached, so a late QML destruction flush cannot update the
-  handle;
-- the parent directory is not `fsync`ed after rename, so power-loss durability
-  of the new directory entry is not fully established.
+- both binaries invoke the QML shutdown flush before bridge detachment;
+- every loaded `WidgetHost` commits a widget-local `flush()` buffer first;
+- the DashboardStore then performs one synchronous persistence attempt;
+- a connected Manager waits up to one second for the Hub's tagged persistence
+  acknowledgement;
+- Rust fsyncs the parent directory after the atomic rename.
 
-Structural layout mutations call `flushNow()`, but recent widget content can
-still occupy a bounded unsaved window. A shutdown flush contract and
-power-failure test are required before making a no-data-loss claim.
+SIGKILL, fatal process failure, and power loss before or during the flush remain
+outside this clean-shutdown contract and require fault-injection evidence before
+making a general no-data-loss claim.
 
 ### 2.5 Widget fault isolation
 
@@ -308,8 +310,9 @@ and one real MPRIS transport action must also be recorded end to end.
 6. Move the QML harness to the compiled resource collection and fail on every
    unexpected warning. Resolve the Qt Virtual Keyboard package warning through
    a supported dependency disposition.
-7. Add an explicit shutdown flush for pending widget state and directory
-   durability handling before making a no-data-loss claim.
+7. Completed in the current candidate: explicit Hub and Manager shutdown flush,
+   widget-local buffer drain, synchronous store persistence, and parent-directory
+   fsync. Abnormal-termination fault injection remains separate.
 
 ### P1C: fast physical certification
 

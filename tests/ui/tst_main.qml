@@ -1,7 +1,7 @@
 import QtQuick
 import QtTest
 
-// COVERS: fn:main.bindStackItem, fn:main.onContentRotationChanged,
+// COVERS: fn:main.bindStackItem, fn:main.flushPendingUiState, fn:main.onContentRotationChanged,
 //         fn:main.onDisplayDisconnectedChanged,
 //         fn:main.onDisplaySelectionRequestedChanged
 //
@@ -154,6 +154,14 @@ Item {
             verify(!bare.hasOwnProperty("metricsJson"), "no property was injected")
             bare.destroy()
             verify(true, "null + bare items handled without error")
+        }
+
+        function test_flushPendingUiState_routes_to_the_dashboard() {
+            var dashboard = findPred(win.contentItem, function (n) {
+                return n && typeof n.flushPendingUiState === "function" && n !== win
+            })
+            verify(dashboard !== null, "the real Dashboard exposes the shutdown flush surface")
+            verify(win.flushPendingUiState(), "main.qml routes the clean-shutdown flush successfully")
         }
 
         function test_display_disconnect_events_are_declared_and_observable() {

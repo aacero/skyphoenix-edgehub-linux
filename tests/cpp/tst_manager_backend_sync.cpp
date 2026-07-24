@@ -106,6 +106,14 @@ public:
         client->write("\n");
         client->flush();
     }
+    void sendAck(bool ok, const QString& forType, const QString& message = QString()) {
+        if (!client) return;
+        QJsonObject reply{{"type", ok ? "ok" : "error"}, {"for", forType}};
+        if (!ok) reply.insert(QStringLiteral("message"), message);
+        client->write(QJsonDocument(reply).toJson(QJsonDocument::Compact));
+        client->write("\n");
+        client->flush();
+    }
     // Release a getUiState reply that was withheld while holdGet was set.
     void releaseGet() {
         if (getPending) { getPending = false; sendUiState(getReply); }
@@ -125,6 +133,7 @@ private slots:
                 else sendUiState(getReply);
             } else if (type == "setUiState") {
                 setStates << o.value("state").toString();
+                sendAck(true, QStringLiteral("setUiState"));
             } else if (type == "setActivePage") {
                 activePages << o.value("page").toInt(-1);
             }
@@ -209,6 +218,16 @@ private slots:
         // stopHub over a connected socket asks the hub to quit (shutdown message).
         QVERIFY(b.stopHub());
         QTRY_VERIFY_WITH_TIMEOUT(hub.received.contains(QStringLiteral("shutdown")), 5000);
+    }
+
+    void cleanShutdownWaitsForTheHubPersistenceAck() {
+        FakeHub hub; QVERIFY(hub.start());
+        ManagerBackend b;
+        QTRY_VERIFY_WITH_TIMEOUT(b.hubConnected(), 5000);
+
+        QVERIFY(b.saveUiState(QStringLiteral("{\"shutdown\":1}")));
+        QVERIFY(b.confirmShutdownUiStatePersisted());
+        QCOMPARE(hub.setStates.last(), QStringLiteral("{\"shutdown\":1}"));
     }
 
     // ── Invokable/config/env surface exercised without a hub (single-writer offline). ──

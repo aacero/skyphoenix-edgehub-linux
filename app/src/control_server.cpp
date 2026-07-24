@@ -134,9 +134,7 @@ void ControlServer::handleLine(QLocalSocket* sock, const QByteArray& line) {
     } else if (type == "setUiState") {
         const QString state = obj.value("state").toString();
         if (state.isEmpty()) {
-            writeJson(sock, QJsonDocument(QJsonObject{{"type", "error"},
-                                                      {"message", "empty state"}})
-                                .toJson(QJsonDocument::Compact));
+            writeAck(sock, false, type, QStringLiteral("empty state"));
             return;
         }
         // Let the owner apply the state and report whether it stuck. The signal is
@@ -145,14 +143,7 @@ void ControlServer::handleLine(QLocalSocket* sock, const QByteArray& line) {
         // the Manager treats a failed persist as success and silently diverges.
         bool ok = false;
         emit uiStateReceived(state, &ok);
-        if (ok) {
-            writeJson(sock,
-                      QJsonDocument(QJsonObject{{"type", "ok"}}).toJson(QJsonDocument::Compact));
-        } else {
-            writeJson(sock, QJsonDocument(QJsonObject{{"type", "error"},
-                                                      {"message", "failed to apply state"}})
-                                .toJson(QJsonDocument::Compact));
-        }
+        writeAck(sock, ok, type, QStringLiteral("failed to apply state"));
     } else if (type == "setTargetDisplay") {
         const QString connector = obj.value("connector").toString();
         const QString model = obj.value("model").toString();

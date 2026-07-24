@@ -261,6 +261,16 @@ public:
         pushLive(json);   // buffers the edit if a hub appears later
         return ok;
     }
+    // The normal live-edit path remains asynchronous. Clean shutdown is rare
+    // and must be stronger: after QML forces its final save, wait for the Hub's
+    // tagged acknowledgement that it applied and persisted that document.
+    bool confirmShutdownUiStatePersisted() {
+        if (!m_hubConnected)
+            return true;  // offline saveUiState already wrote synchronously
+        if (!m_sock || m_sock->state() != QLocalSocket::ConnectedState)
+            return false;
+        return waitForAck(QStringLiteral("setUiState"));
+    }
     Q_INVOKABLE QString starterLayout() const {
         if (!m_config) return QString();
         XeneonString s(xeneon_config_get_starter_layout(m_config));

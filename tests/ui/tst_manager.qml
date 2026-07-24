@@ -10,6 +10,7 @@ import QtTest
 // COVERS: fn:Manager._val, fn:Manager._lab, fn:Manager.catColor
 // COVERS: fn:Manager.refreshLicense, fn:Manager.onLicenseChanged, fn:Manager.reVerify
 // COVERS: fn:Manager.addScreen, fn:Manager.addWidget
+// COVERS: fn:Manager.flushPendingUiState
 //
 // manager/qml/Manager.qml (hosted with a STUBBED `backend`) -
 //   • the 5-tab StackLayout (Layout/Appearance/Images/Display/About) switches
@@ -930,6 +931,13 @@ Item {
             tryVerify(function () { return Qt.colorEqual(_theme.backgroundColor, "#0B1026") }, 2000)
             win.hoverPreview("theme", "midnight", false)   // restore
             win.endThemePreview()
+        }
+
+        function test_clean_shutdown_drains_the_manager_store_debounce() {
+            _store.setSetting("shutdown-probe", "text", "pending")
+            verify(_store._savePending, "a Manager edit is waiting in the shared debounce")
+            verify(win.flushPendingUiState(), "Manager accepted the clean-shutdown flush")
+            verify(!_store._savePending, "the Manager debounce was drained synchronously")
         }
 
         // ── D/B: adding a curated "screen" APPENDS one new page (single-page

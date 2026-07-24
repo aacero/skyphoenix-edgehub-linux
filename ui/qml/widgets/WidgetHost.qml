@@ -50,6 +50,17 @@ Item {
         return host.store.settingsFor(host.widgetId) || ({})
     }
 
+    // Clean-shutdown persistence hook. Most widgets write directly to the
+    // shared store and need no local action. Editors such as Quick Note expose
+    // flush() for their own shorter debounce; commit that buffer before the
+    // DashboardStore performs its final synchronous save.
+    function flushPendingState() {
+        if (!host.item || typeof host.item.flush !== "function")
+            return false
+        host.item.flush()
+        return true
+    }
+
     function configure(item) {
         if (!item) return
         host._ensureCurrent()

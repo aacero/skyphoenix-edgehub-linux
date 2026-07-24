@@ -30,6 +30,7 @@
 #include "../../app/src/distro_bridge.h"
 #include "../../app/src/system_settings_probe.h"
 #include "../../app/src/network_access_policy.h"
+#include "../../app/src/shutdown_flush.h"
 
 // Build a dark QPalette from the app's dark design tokens. Fusion (set below)
 // draws every Qt Quick control that ISN'T hand-restyled (Switch/Slider/Button/
@@ -238,6 +239,16 @@ int main(int argc, char* argv[]) {
         qCritical() << "Manager: failed to load QML";
         return 1;
     }
+
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &engine, [&engine, &backend]() {
+        const auto flushed = xeneon::flushPendingUiState(engine.rootObjects());
+        const bool persisted = flushed.ok() && backend.confirmShutdownUiStatePersisted();
+        if (!persisted)
+            qWarning() << "Manager: clean-shutdown UI flush failed"
+                       << "invoked:" << flushed.invoked
+                       << "failed:" << flushed.failed
+                       << "hub-confirmed:" << persisted;
+    });
 
     // Doc/review capture: XENEON_GRAB=<path> renders the window to a PNG and quits.
     // Optional XENEON_GRAB_W / XENEON_GRAB_H resize the window first - without them an

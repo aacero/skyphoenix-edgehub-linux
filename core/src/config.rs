@@ -402,6 +402,16 @@ fn salvage_partial_config(contents: &str) -> AppConfig {
 
 /// Save configuration to the default XDG config path.
 /// Creates parent directories if needed.
+#[cfg(unix)]
+fn sync_parent_directory(dir: &std::path::Path) -> io::Result<()> {
+    fs::File::open(dir)?.sync_all()
+}
+
+#[cfg(not(unix))]
+fn sync_parent_directory(_dir: &std::path::Path) -> io::Result<()> {
+    Ok(())
+}
+
 pub fn save_config(config: &AppConfig) -> Result<(), ConfigError> {
     let path = config_path();
     // config_path() always has a parent; fall back to CWD rather than panic.
@@ -466,6 +476,14 @@ pub fn save_config(config: &AppConfig) -> Result<(), ConfigError> {
             path: path.clone(),
             source: e,
         }
+    })?;
+
+    // The file fsync above makes the new bytes durable. After rename, fsync the
+    // containing directory as well so the new directory entry is committed
+    // before save_config reports success.
+    sync_parent_directory(dir).map_err(|e| ConfigError::Io {
+        path: dir.to_path_buf(),
+        source: e,
     })?;
 
     tracing::info!(path = %path.display(), "Configuration saved");
@@ -1161,6 +1179,13 @@ version = 1
         );
 
         std::env::remove_var("XDG_CONFIG_HOME");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn parent_directory_sync_accepts_the_config_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        sync_parent_directory(dir.path()).expect("directory fsync must succeed");
     }
 
     // --- reset_config: an unusable config surfaces an Io error ---

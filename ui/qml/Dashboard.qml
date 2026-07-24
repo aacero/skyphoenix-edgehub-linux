@@ -37,6 +37,22 @@ Item {
         return store.appearance().hubControlsMode !== "immersive"
     }
 
+    // Commit widget-local editor debounces first, then synchronously persist the
+    // shared store. Called by main.qml during clean shutdown while configBridge
+    // is still attached.
+    function flushPendingUiState() {
+        function visit(node) {
+            if (!node) return
+            if (node !== dashboard && typeof node.flushPendingState === "function")
+                node.flushPendingState()
+            var children = node.children || []
+            for (var i = 0; i < children.length; i++)
+                visit(children[i])
+        }
+        visit(dashboard)
+        return store.flushNow()
+    }
+
     // LOSS-001: screen deletion is destructive because removing a screen also
     // removes every widget settings bucket on it. Capture the exact screen the
     // user reviewed and refuse the action if the layout changes before confirm.
