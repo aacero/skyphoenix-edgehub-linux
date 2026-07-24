@@ -14,6 +14,7 @@ HERE = Path(__file__).resolve().parent
 RUNNER = HERE / "run_hub_profiles.py"
 README = HERE / "README.md"
 PREPARE = HERE / "prepare_release_candidate.sh"
+AUDIT_14_WIDGET = HERE / "run_audit_14_widget_30m.py"
 
 
 def _literal_assignment(source: str, name: str):
@@ -125,6 +126,30 @@ class RunnerContractTests(unittest.TestCase):
         self.assertIn("does not satisfy the 24-hour or 48-hour requirement", normalised)
         self.assertIn("--mode idle-24h", documentation)
         self.assertIn("--mode idle-48h", documentation)
+
+
+class AuditSubstituteContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.source = AUDIT_14_WIDGET.read_text(encoding="utf-8")
+
+    def test_literal_duration_interval_and_widget_manifest(self) -> None:
+        self.assertEqual(
+            _literal_assignment(self.source, "AUDIT_DURATION_SECONDS"),
+            1800.0,
+        )
+        self.assertEqual(
+            _literal_assignment(self.source, "AUDIT_INTERVAL_SECONDS"),
+            30.0,
+        )
+        widgets = _literal_assignment(self.source, "AUDIT_WIDGET_TYPES")
+        self.assertEqual(len(widgets), 14)
+        self.assertEqual(len(set(widgets)), 14)
+
+    def test_audit_cannot_be_presented_as_a_release_gate(self) -> None:
+        self.assertIn('"status": "MEASURED"', self.source)
+        self.assertIn('"qualified": None', self.source)
+        self.assertNotIn('"--duration"', self.source)
 
 
 if __name__ == "__main__":
