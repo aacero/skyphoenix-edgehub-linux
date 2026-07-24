@@ -33,6 +33,13 @@ QtObject {
     // may also pass a per-request `xhrFactory` in opts (used by widgets that
     // already own the seam, e.g. Weather), which takes precedence.
     property var xhrFactory: null
+    // Qt's QML XMLHttpRequest accepts a `timeout` property but does not emit
+    // `ontimeout` reliably on every supported runtime. Each production request
+    // therefore gets its own QML Timer watchdog. A shared Timer would let one
+    // widget cancel or extend another widget's deadline.
+    property Component _timeoutTimerFactory: Component {
+        Timer { repeat: false }
+    }
 
     // Resolves credential references (E7). Anything with a
     // resolveSecret(raw) -> { ok, value, error, plaintext } method; in the hub
@@ -286,15 +293,47 @@ QtObject {
 
         var mk = opts.xhrFactory ? opts.xhrFactory : (hub.xhrFactory ? hub.xhrFactory : null)
         var xhr = mk ? mk() : new XMLHttpRequest()
-        xhr.timeout = opts.timeout || 8000
-        xhr.ontimeout = function () { if (opts.onError) opts.onError("timeout") }
+        var requestTimeout = opts.timeout || 8000
+        var settled = false
+        var watchdog = null
+        function clearWatchdog() {
+            if (!watchdog) return
+            watchdog.stop()
+            watchdog.destroy()
+            watchdog = null
+        }
+        function fail(reason, abortRequest) {
+            if (settled) return
+            settled = true
+            clearWatchdog()
+            if (abortRequest && xhr.abort) {
+                try { xhr.abort() } catch (e) {}
+            }
+            if (opts.onError) opts.onError(reason)
+        }
+        function succeed(status, body) {
+            if (settled) return
+            settled = true
+            clearWatchdog()
+            if (opts.onDone) opts.onDone(status, body)
+        }
+        xhr.timeout = requestTimeout
+        xhr.ontimeout = function () { fail("timeout", false) }
+        // A caller abort is intentional supersession or teardown, not an HTTP
+        // failure. It still must cancel the watchdog and suppress late events.
+        xhr.onabort = function () {
+            if (settled) return
+            settled = true
+            clearWatchdog()
+        }
         xhr.onreadystatechange = function () {
+            if (settled) return
             if (xhr.readyState !== XMLHttpRequest.DONE) return
             var st = xhr.status
             var maxResponseBytes = opts.maxResponseBytes !== undefined
                 ? Math.max(1024, Number(opts.maxResponseBytes)) : 1048576
             if (xhr.responseText && xhr.responseText.length > maxResponseBytes) {
-                if (opts.onError) opts.onError("response-too-large")
+                fail("response-too-large", false)
                 return
             }
             // A local file read succeeds with status 0 (no HTTP layer). A remote
@@ -305,8 +344,8 @@ QtObject {
             // (204) still fails the caller's own parse, which is the right layer
             // for that.
             var ok = (st >= 200 && st < 300) || (local && (st === 0 || st === 200) && !!xhr.responseText)
-            if (ok) { if (opts.onDone) opts.onDone(st, xhr.responseText) }
-            else { if (opts.onError) opts.onError("http " + st) }
+            if (ok) succeed(st, xhr.responseText)
+            else fail("http " + st, false)
         }
         try {
             xhr.open(opts.method || "GET", url)
@@ -314,8 +353,15 @@ QtObject {
                 for (var k in headers) xhr.setRequestHeader(k, headers[k])
             xhr.send(opts.body !== undefined ? opts.body : undefined)
         } catch (e) {
-            if (opts.onError) opts.onError("open-failed")
+            fail("open-failed", false)
             return xhr
+        }
+        if (!mk && !settled) {
+            watchdog = hub._timeoutTimerFactory.createObject(hub, {
+                interval: Math.max(1, Number(requestTimeout))
+            })
+            watchdog.triggered.connect(function () { fail("timeout", true) })
+            watchdog.start()
         }
         return xhr
     }
