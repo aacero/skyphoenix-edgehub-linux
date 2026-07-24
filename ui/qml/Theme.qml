@@ -401,6 +401,25 @@ QtObject {
         }
         return _blendColor(source, target, high)
     }
+    function ensureTextContrast(value, minimum) {
+        var source = _colorValue(value)
+        if (_minimumCardContrast(source) >= minimum)
+            return source
+        var black = Qt.rgba(0, 0, 0, 1)
+        var white = Qt.rgba(1, 1, 1, 1)
+        var target = _minimumCardContrast(black) >= _minimumCardContrast(white)
+                ? black : white
+        var low = 0.0
+        var high = 1.0
+        for (var i = 0; i < 14; i++) {
+            var middle = (low + high) / 2
+            if (_minimumCardContrast(_blendColor(source, target, middle)) >= minimum)
+                high = middle
+            else
+                low = middle
+        }
+        return _blendColor(source, target, high)
+    }
     function readableAccentFor(name) {
         var preset = accentPresets[name] || accentPresets["blue"]
         return ensureNonTextContrast(preset.a)
@@ -599,6 +618,10 @@ QtObject {
             textPrimary = "#E6EDF3"; textSecondary = "#8B949E"; textTertiary = "#6E7681"
             radiusSm = 8; radiusMd = 12; radiusLg = 16; radiusXl = 22; decorative = true; cardBorderWidth = 1; break
         }
+        // Secondary text carries real labels and units throughout every widget.
+        // Give it margin above AA so decorative pixels can vary without pushing
+        // the final composed contrast below 4.5:1.
+        textSecondary = ensureTextContrast(textSecondary, 7.0)
         applyAccent(accentName)
     }
 }

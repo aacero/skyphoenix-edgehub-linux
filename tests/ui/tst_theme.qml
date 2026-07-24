@@ -485,9 +485,9 @@ Item {
                     verify(pagePrimary >= 4.5,
                            mode + "." + page.name + " primary=" + pagePrimary.toFixed(2)
                            + ":1, needs 4.5:1")
-                    verify(pageSecondary >= 4.5,
+                    verify(pageSecondary >= 7.0,
                            mode + "." + page.name + " secondary=" + pageSecondary.toFixed(2)
-                           + ":1, needs 4.5:1")
+                           + ":1, needs 7:1 decoration margin")
                     var glassValues = [0.0, 1.0]
                     for (var g = 0; g < glassValues.length; g++) {
                         theme.glassOpacity = glassValues[g]
@@ -498,10 +498,10 @@ Item {
                                mode + "." + page.name + " card primary at glass="
                                + glassValues[g] + " is " + cardPrimary.toFixed(2)
                                + ":1, needs 4.5:1")
-                        verify(cardSecondary >= 4.5,
+                        verify(cardSecondary >= 7.0,
                                mode + "." + page.name + " card secondary at glass="
                                + glassValues[g] + " is " + cardSecondary.toFixed(2)
-                               + ":1, needs 4.5:1")
+                               + ":1, needs 7:1 decoration margin")
                     }
                 }
             }
