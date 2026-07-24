@@ -34,6 +34,8 @@ Item {
     property real glassOpacity: 0.5
     property bool showWidgetGlow: true
     property bool reduceMotion: false
+    property alias textScale: _theme.textScale
+    property alias fontChoice: _theme.fontChoice
     property string themeMode: "dark"
     property bool animatedBackground: true
     property string orientationMode: "auto"

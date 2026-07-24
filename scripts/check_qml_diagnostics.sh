@@ -21,7 +21,9 @@ TIER="offscreen"
 [ "${2:-}" = "--tier" ] && TIER="${3:-offscreen}"
 [ -r "$LOG" ] || { echo "!! cannot read $LOG"; exit 2; }
 
-# Always fatal: these are product defects in any tier.
+# Always fatal: these are product defects in any tier. Qt can print these before
+# QtTest has attached its message handler, so scan the complete log rather than
+# only QWARN-prefixed lines.
 FATAL='TypeError|ReferenceError|is not a function|is not defined|Unable to assign|Binding loop detected|conflicting anchors'
 
 # Resource-resolution failures. In the OFFSCREEN tier the .qrc is compiled into
@@ -31,23 +33,38 @@ FATAL='TypeError|ReferenceError|is not a function|is not defined|Unable to assig
 # binaries -- the resources ARE present, so a miss is a real broken asset.
 RESOURCE='Cannot open: qrc:|No such file or directory'
 
-fatal_hits=$(grep -E 'QWARN' "$LOG" | grep -cE "$FATAL")
-res_hits=$(grep -E 'QWARN|No such file' "$LOG" | grep -cE "$RESOURCE")
-warn_hits=$(grep -cE '^QWARN[[:space:]]*:' "$LOG")
+# Some component-construction diagnostics can also precede QtTest and therefore
+# lack QWARN. Treat those as warnings too.
+WARNING='^QWARN[[:space:]]*:|^(file|qrc):.*QML (Connections|Binding|Loader|Image|Settings)'
 
-echo "  QML diagnostics [$TIER]: warnings=$warn_hits fatal=$fatal_hits resource=$res_hits"
+# Qt 6.11.1's installed Virtual Keyboard PopupList declares contentWidth over a
+# base member. This is in /usr/lib64/qt6/qml, outside this repository. Keep the
+# disposition exact and visible while still rejecting every other warning.
+KNOWN_EXTERNAL='^QWARN[[:space:]]*:.*qt\.qml\.propertyCache\.append: Member contentWidth of the object PopupList_QMLTYPE_[0-9]+ overrides a member of the base object\. Consider renaming it or adding final or override specifier$'
+
+diag_tmp="$(mktemp "${TMPDIR:-/tmp}/xeneon-qml-diag.XXXXXX")"
+trap 'rm -f "$diag_tmp"' EXIT
+grep -E "$WARNING" "$LOG" > "$diag_tmp" || true
+
+fatal_hits=$(grep -cE "$FATAL" "$LOG")
+res_hits=$(grep -cE "$RESOURCE" "$LOG")
+warn_hits=$(wc -l < "$diag_tmp")
+known_external_hits=$(grep -cE "$KNOWN_EXTERNAL" "$diag_tmp")
+unexpected_hits=$(grep -Ev "$KNOWN_EXTERNAL" "$diag_tmp" | wc -l)
+
+echo "  QML diagnostics [$TIER]: warnings=$warn_hits unexpected=$unexpected_hits known_external=$known_external_hits fatal=$fatal_hits resource=$res_hits"
 
 rc=0
 if [ "$fatal_hits" -gt 0 ]; then
   echo "  !! FAIL: $fatal_hits QML runtime diagnostic(s) - these are product bugs:"
-  grep -E 'QWARN' "$LOG" | grep -E "$FATAL" | sed 's/^/     /' | sort -u | head -40
+  grep -E "$FATAL" "$LOG" | sed 's/^/     /' | sort -u | head -40
   rc=1
 fi
 
 if { [ "$TIER" = "compiled" ] || [ "$TIER" = "composed" ]; } \
-        && [ "$warn_hits" -gt 0 ]; then
-  echo "  !! FAIL: $warn_hits unexpected QML warning(s) with compiled resources:"
-  grep -E '^QWARN[[:space:]]*:' "$LOG" | sed 's/^/     /' | sort -u | head -80
+        && [ "$unexpected_hits" -gt 0 ]; then
+  echo "  !! FAIL: $unexpected_hits unexpected QML warning(s) with compiled resources:"
+  grep -Ev "$KNOWN_EXTERNAL" "$diag_tmp" | sed 's/^/     /' | sort -u | head -80
   rc=1
 elif [ "$TIER" = "composed" ] && [ "$res_hits" -gt 0 ]; then
   echo "  !! FAIL: $res_hits unresolved resource(s) in a tier where resources exist:"
@@ -56,6 +73,10 @@ elif [ "$TIER" = "composed" ] && [ "$res_hits" -gt 0 ]; then
 elif [ "$res_hits" -gt 0 ]; then
   echo "     (offscreen: $res_hits resource misses not enforced - qrc is not"
   echo "      registered in qmltestrunner. See TEST-STRATEGY-v2.md Phase 1.)"
+fi
+
+if [ "$known_external_hits" -gt 0 ]; then
+  echo "     known external Qt 6.11.1 Virtual Keyboard warning: $known_external_hits"
 fi
 
 exit $rc

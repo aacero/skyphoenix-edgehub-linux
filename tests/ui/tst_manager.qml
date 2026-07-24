@@ -63,7 +63,19 @@ Item {
         property bool stopHubCalled: false
         property bool syncCalled: false
         property bool autostart: false
-        function imageUrl(n) { return "file:///imgs/" + n }
+        function imageUrl(n) {
+            var shipped = [
+                "aurora.png", "blossom.png", "daylight.png", "edge-cyan.png",
+                "edge-ember.png", "grape.png", "graphite.png", "midnight.png",
+                "nebula.png", "ocean.png", "prism.png", "slate.png",
+                "sunset.png", "teal.png", "techdots.png"
+            ]
+            var hash = 0
+            var name = String(n)
+            for (var i = 0; i < name.length; i++)
+                hash = (hash * 31 + name.charCodeAt(i)) & 0x7fffffff
+            return "qrc:/wallpapers/" + shipped[hash % shipped.length]
+        }
         function starterLayout() { return "blank" }
         function autoConfig() { return "" }
         function startTab() { return 0 }

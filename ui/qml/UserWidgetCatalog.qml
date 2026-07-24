@@ -11,7 +11,7 @@ import QtQuick
 // like any shipped widget via WidgetCatalog.userItems.
 //
 // Everything invalid SKIPS that one directory with a recorded reason (surfaced
-// in Diagnostics and as a structured stderr warning) - a broken manifest must
+// in Diagnostics and as structured informational output) - a broken manifest must
 // never take the dashboard down. Collisions are refused here AND in
 // WidgetCatalog.def(), which consults shipped items first: shipped wins twice.
 //
@@ -71,7 +71,7 @@ QtObject {
         uc.items = good
         uc.rejects = bad
         for (var j = 0; j < bad.length; j++)
-            console.warn("[user-widgets] skipped", bad[j].dir, "-", bad[j].reason)
+            console.info("[user-widgets] skipped", bad[j].dir, "-", bad[j].reason)
     }
 
     function _isObj(v) { return v !== null && typeof v === "object" && !Array.isArray(v) }
@@ -154,7 +154,7 @@ QtObject {
             if (!_plainFileName(m.icon) || !/\.(svg|png)$/.test(m.icon))
                 return no("icon must be a plain .svg or .png file name inside the widget directory")
             if (files.indexOf(m.icon) >= 0) { iconSource = _url(scan.dir + "/" + m.icon); iconName = "" }
-            else console.warn("[user-widgets]", scan.dir,
+            else console.info("[user-widgets]", scan.dir,
                               "- declared icon '" + m.icon + "' not found; using the fallback glyph")
         }
 

@@ -249,7 +249,9 @@ if(XENEON_BUILD_TESTS)
         tests/gui/runner.cpp
         ${CMAKE_SOURCE_DIR}/assets/icons.qrc
         ${CMAKE_SOURCE_DIR}/assets/wallpapers.qrc
-        ${CMAKE_SOURCE_DIR}/assets/fonts.qrc)
+        ${CMAKE_SOURCE_DIR}/assets/fonts.qrc
+        ${CMAKE_SOURCE_DIR}/ui/qml.qrc
+        ${CMAKE_SOURCE_DIR}/manager/manager.qrc)
     target_link_libraries(xeneon-qmltestrunner PRIVATE Qt6::QuickTest Qt6::Quick Qt6::Qml)
     target_compile_definitions(xeneon-qmltestrunner PRIVATE
         QUICK_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}/tests/gui")

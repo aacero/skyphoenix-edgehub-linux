@@ -1,10 +1,25 @@
+#include <QCoreApplication>
+#include <QObject>
 #include <QtQuickTest/quicktest.h>
 
-// The asset .qrc files are linked into this executable by CMake. Their generated
-// static initializers register the same qrc:/icons, qrc:/wallpapers and
-// qrc:/fonts trees used by the shipped Hub and Manager. Product QML itself is
-// intentionally loaded from the signed source-tree imports selected by the test
-// runner; packaged qrc:/qml startup is covered by the real-binary smoke tests.
-// Stock qmltestrunner has none of the asset resources, which made compositor
-// pixel tests compare blank/missing images while claiming to exercise the UI.
-QUICK_TEST_MAIN(xeneon_gui)
+// The complete shipped Hub and Manager resource collections are linked into this
+// executable by CMake. Product QML is still loaded from the committed source-tree
+// imports selected by each test, while every qrc URL resolves exactly as it does
+// in the packaged binaries. Stock qmltestrunner has none of these resources,
+// which made image and rendered-pixel assertions vacuous.
+class XeneonQuickTestSetup final : public QObject
+{
+    Q_OBJECT
+
+public slots:
+    void applicationAvailable()
+    {
+        QCoreApplication::setOrganizationName(QStringLiteral("SkyPhoenix"));
+        QCoreApplication::setOrganizationDomain(QStringLiteral("skyphoenix.eu"));
+        QCoreApplication::setApplicationName(QStringLiteral("xeneon-edge-tests"));
+    }
+};
+
+QUICK_TEST_MAIN_WITH_SETUP(xeneon_gui, XeneonQuickTestSetup)
+
+#include "runner.moc"

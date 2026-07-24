@@ -9,6 +9,7 @@ CPP_RUNNER="$PROJECT_DIR/scripts/run_cpp_tests.sh"
 COVERAGE_RUNNER="$PROJECT_DIR/scripts/coverage.sh"
 MANAGER_RUNNER="$PROJECT_DIR/scripts/run_manager_tests.sh"
 HARDWARE_PYTHON_RUNNER="$PROJECT_DIR/scripts/run_hardware_python.py"
+QML_DIAGNOSTIC_CHECKER="$PROJECT_DIR/scripts/check_qml_diagnostics.sh"
 GUI_RUNNER="$PROJECT_DIR/tests/gui/run_gui_tests.sh"
 PERFORMANCE_RUNNER="$PROJECT_DIR/tests/performance/run_hub_profiles.py"
 PERFORMANCE_PREPARE="$PROJECT_DIR/tests/performance/prepare_release_candidate.sh"
@@ -89,6 +90,29 @@ else
     echo "  ok   zero-pass QML totals are rejected"
 fi
 rm -rf "$qml_contract_dir"
+
+echo "==> QML diagnostic classifier"
+diagnostic_log="$(mktemp "${TMPDIR:-/tmp}/xe-qml-diagnostic.XXXXXX")"
+printf '%s\n' 'file:///tmp/Test.qml:4: TypeError: bad call' > "$diagnostic_log"
+if "$QML_DIAGNOSTIC_CHECKER" "$diagnostic_log" --tier compiled >/dev/null 2>&1; then
+    echo "  FAIL unprefixed TypeError was accepted"; fail=$((fail + 1))
+else
+    echo "  ok   unprefixed TypeError is rejected"
+fi
+printf '%s\n' \
+    'file:///tmp/Test.qml:4: QML Connections: Detected function "onMissingChanged"' \
+    > "$diagnostic_log"
+if "$QML_DIAGNOSTIC_CHECKER" "$diagnostic_log" --tier compiled >/dev/null 2>&1; then
+    echo "  FAIL unprefixed QML warning was accepted"; fail=$((fail + 1))
+else
+    echo "  ok   unprefixed QML warning is rejected"
+fi
+printf '%s\n' \
+    'QWARN  : suite::case() qt.qml.propertyCache.append: Member contentWidth of the object PopupList_QMLTYPE_26 overrides a member of the base object. Consider renaming it or adding final or override specifier' \
+    > "$diagnostic_log"
+check "exact Qt Virtual Keyboard dependency warning is separately dispositioned" \
+    "$QML_DIAGNOSTIC_CHECKER" "$diagnostic_log" --tier compiled
+rm -f "$diagnostic_log"
 
 echo "==> Nested-runner skip detection"
 check "zero skipped is accepted" xeneon_run_rejecting_skips \
@@ -223,6 +247,8 @@ if printf '%s\n' "$release_preflight" | grep -Fq 'unset QMLTESTRUNNER' \
         && printf '%s\n' "$run_all_execution" | grep -Fq 'QML GUI (compiled resources)' \
         && grep -Fq 'QMLTESTRUNNER="$TEST_BUILD_DIR/xeneon-qmltestrunner"' "$PROJECT_DIR/scripts/run_ui_tests.sh" \
         && grep -Fq -- '--tier compiled' "$PROJECT_DIR/scripts/run_ui_tests.sh" \
+        && grep -Fq '${CMAKE_SOURCE_DIR}/ui/qml.qrc' "$PROJECT_DIR/CMakeLists.txt" \
+        && grep -Fq '${CMAKE_SOURCE_DIR}/manager/manager.qrc' "$PROJECT_DIR/CMakeLists.txt" \
         && grep -Fq 'xeneon_qml_require_live_totals' "$PROJECT_DIR/scripts/run_ui_tests.sh"; then
     echo "  ok   strict QML uses the candidate resource runner and every file requires live Totals"
 else

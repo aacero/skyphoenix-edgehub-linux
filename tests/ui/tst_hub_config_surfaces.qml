@@ -64,6 +64,8 @@ Item {
     property alias glassOpacity: _theme.glassOpacity
     property alias showWidgetGlow: _theme.showWidgetGlow
     property alias reduceMotion: _theme.reduceMotion
+    property alias textScale: _theme.textScale
+    property alias fontChoice: _theme.fontChoice
     property bool animatedBackground: true
     property string orientationMode: "auto"
     // A hot CPU: 95 °C is above the schema's default warnTemp (85), so the

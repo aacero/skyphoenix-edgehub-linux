@@ -65,6 +65,14 @@ Item {
             field: ({ key: "startHour", label: "Start hour", type: "hour", dflt: 9 })
             st: cfStore
             instanceId: "cf-inst"
+            col: ({
+                textPrimary: cfTheme.textPrimary,
+                textSecondary: cfTheme.textSecondary,
+                bg: cfTheme.cardBackground,
+                accent: cfTheme.accent,
+                border: cfTheme.cardBorder,
+                panelAlt: cfTheme.cardBackgroundAlt
+            })
         }
     }
 
