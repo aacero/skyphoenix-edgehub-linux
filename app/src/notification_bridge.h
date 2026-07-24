@@ -10,45 +10,72 @@
 #include <functional>
 #include <utility>
 
+struct NotificationRequest {
+    QString service = QStringLiteral("org.freedesktop.Notifications");
+    QString path = QStringLiteral("/org/freedesktop/Notifications");
+    QString interfaceName = QStringLiteral("org.freedesktop.Notifications");
+    QString method = QStringLiteral("Notify");
+    QString applicationName = QStringLiteral("EdgeHub");
+    uint replacesId = 0;
+    QString icon = QStringLiteral("xeneon-edge-hub");
+    QString summary;
+    QString body;
+    QStringList actions;
+    QVariantMap hints;
+    int timeoutMs = 10000;
+
+    QList<QVariant> arguments() const {
+        return {
+            applicationName,
+            QVariant::fromValue<uint>(replacesId),
+            icon,
+            summary,
+            body,
+            actions,
+            hints,
+            timeoutMs,
+        };
+    }
+};
+
 class NotificationBridge final : public QObject {
     Q_OBJECT
 
 public:
-    using Sender = std::function<bool(const QString&, const QString&)>;
+    using Transport = std::function<bool(const NotificationRequest&)>;
 
-    explicit NotificationBridge(QObject* parent = nullptr, Sender sender = {})
-        : QObject(parent), sender_(std::move(sender)) {}
+    explicit NotificationBridge(QObject* parent = nullptr, Transport transport = {})
+        : QObject(parent), transport_(std::move(transport)) {}
 
     Q_INVOKABLE bool send(const QString& summary, const QString& body) {
         const QString safeSummary = summary.trimmed().left(120);
         const QString safeBody = body.trimmed().left(500);
         if (safeSummary.isEmpty() || safeBody.isEmpty()) return false;
-        if (sender_) return sender_(safeSummary, safeBody);
 
-        QDBusInterface notifications(
-            QStringLiteral("org.freedesktop.Notifications"),
-            QStringLiteral("/org/freedesktop/Notifications"),
-            QStringLiteral("org.freedesktop.Notifications"),
-            QDBusConnection::sessionBus());
-        if (!notifications.isValid()) return false;
+        NotificationRequest request;
+        request.summary = safeSummary;
+        request.body = safeBody;
+        request.hints.insert(QStringLiteral("desktop-entry"),
+                             QStringLiteral("xeneon-edge-hub"));
+        request.hints.insert(QStringLiteral("urgency"), QVariant::fromValue<uchar>(1));
+        if (transport_) return transport_(request);
 
-        QVariantMap hints;
-        hints.insert(QStringLiteral("desktop-entry"), QStringLiteral("xeneon-edge-hub"));
-        hints.insert(QStringLiteral("urgency"), QVariant::fromValue<uchar>(1));
-        const QList<QVariant> arguments{
-            QStringLiteral("EdgeHub"),
-            QVariant::fromValue<uint>(0),
-            QStringLiteral("xeneon-edge-hub"),
-            safeSummary,
-            safeBody,
-            QStringList{},
-            hints,
-            10000,
-        };
-        notifications.asyncCallWithArgumentList(QStringLiteral("Notify"), arguments);
-        return true;
+        return dispatch(request);
     }
 
 private:
-    Sender sender_;
+    static bool dispatch(const NotificationRequest& request) {
+        QDBusInterface notifications(
+            request.service,
+            request.path,
+            request.interfaceName,
+            QDBusConnection::sessionBus());
+        if (!notifications.isValid()) return false;
+
+        const QDBusPendingCall pending =
+            notifications.asyncCallWithArgumentList(request.method, request.arguments());
+        return !pending.isError();
+    }
+
+    Transport transport_;
 };

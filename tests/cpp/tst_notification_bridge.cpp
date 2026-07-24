@@ -1,6 +1,33 @@
+#include <QtDBus>
 #include <QtTest>
 
 #include "notification_bridge.h"
+
+class NotificationService final : public QObject {
+    Q_OBJECT
+    Q_CLASSINFO("D-Bus Interface", "org.freedesktop.Notifications")
+
+public:
+    int calls = 0;
+    NotificationRequest seen;
+
+public slots:
+    uint Notify(const QString& applicationName, uint replacesId,
+                const QString& icon, const QString& summary,
+                const QString& body, const QStringList& actions,
+                const QVariantMap& hints, int timeoutMs) {
+        ++calls;
+        seen.applicationName = applicationName;
+        seen.replacesId = replacesId;
+        seen.icon = icon;
+        seen.summary = summary;
+        seen.body = body;
+        seen.actions = actions;
+        seen.hints = hints;
+        seen.timeoutMs = timeoutMs;
+        return 42;
+    }
+};
 
 class NotificationBridgeTest : public QObject {
     Q_OBJECT
@@ -8,7 +35,7 @@ class NotificationBridgeTest : public QObject {
 private slots:
     void rejectsEmptyContent() {
         int calls = 0;
-        NotificationBridge bridge(nullptr, [&calls](const QString&, const QString&) {
+        NotificationBridge bridge(nullptr, [&calls](const NotificationRequest&) {
             ++calls;
             return true;
         });
@@ -17,31 +44,77 @@ private slots:
         QCOMPARE(calls, 0);
     }
 
-    void trimsAndBoundsContent() {
-        QString seenSummary;
-        QString seenBody;
+    void constructsTheCompleteProtocolRequest() {
+        NotificationRequest seen;
         NotificationBridge bridge(
-            nullptr, [&seenSummary, &seenBody](const QString& summary, const QString& body) {
-                seenSummary = summary;
-                seenBody = body;
+            nullptr, [&seen](const NotificationRequest& request) {
+                seen = request;
                 return true;
             });
         QVERIFY(bridge.send(QString(140, QLatin1Char('S')) + QStringLiteral("  "),
                             QStringLiteral("  ") + QString(530, QLatin1Char('B'))));
-        QCOMPARE(seenSummary.size(), 120);
-        QCOMPARE(seenBody.size(), 500);
-        QVERIFY(!seenSummary.endsWith(QLatin1Char(' ')));
-        QVERIFY(!seenBody.startsWith(QLatin1Char(' ')));
+
+        QCOMPARE(seen.service, QStringLiteral("org.freedesktop.Notifications"));
+        QCOMPARE(seen.path, QStringLiteral("/org/freedesktop/Notifications"));
+        QCOMPARE(seen.interfaceName, QStringLiteral("org.freedesktop.Notifications"));
+        QCOMPARE(seen.method, QStringLiteral("Notify"));
+        QCOMPARE(seen.applicationName, QStringLiteral("EdgeHub"));
+        QCOMPARE(seen.replacesId, 0U);
+        QCOMPARE(seen.icon, QStringLiteral("xeneon-edge-hub"));
+        QCOMPARE(seen.summary.size(), 120);
+        QCOMPARE(seen.body.size(), 500);
+        QVERIFY(!seen.summary.endsWith(QLatin1Char(' ')));
+        QVERIFY(!seen.body.startsWith(QLatin1Char(' ')));
+        QVERIFY(seen.actions.isEmpty());
+        QCOMPARE(seen.hints.value(QStringLiteral("desktop-entry")).toString(),
+                 QStringLiteral("xeneon-edge-hub"));
+        QCOMPARE(seen.hints.value(QStringLiteral("urgency")).value<uchar>(),
+                 static_cast<uchar>(1));
+        QCOMPARE(seen.timeoutMs, 10000);
+        QCOMPARE(seen.arguments().size(), 8);
     }
 
-    void returnsTransportResult() {
-        NotificationBridge bridge(nullptr, [](const QString&, const QString&) {
+    void returnsInjectedTransportFailure() {
+        NotificationBridge bridge(nullptr, [](const NotificationRequest&) {
             return false;
         });
         QVERIFY(!bridge.send(QStringLiteral("Focus complete"),
                              QStringLiteral("Your break is ready.")));
     }
+
+    void unavailableDesktopServiceFailsClosed() {
+        auto bus = QDBusConnection::sessionBus();
+        QVERIFY(bus.isConnected());
+        bus.unregisterService(QStringLiteral("org.freedesktop.Notifications"));
+        NotificationBridge bridge;
+        QVERIFY(!bridge.send(QStringLiteral("Focus complete"),
+                             QStringLiteral("Your break is ready.")));
+    }
+
+    void dispatchesToARealPrivateBusService() {
+        auto bus = QDBusConnection::sessionBus();
+        QVERIFY(bus.isConnected());
+        NotificationService service;
+        QVERIFY(bus.registerService(QStringLiteral("org.freedesktop.Notifications")));
+        QVERIFY(bus.registerObject(QStringLiteral("/org/freedesktop/Notifications"),
+                                   &service, QDBusConnection::ExportAllSlots));
+
+        NotificationBridge bridge;
+        QVERIFY(bridge.send(QStringLiteral("Medication reminder"),
+                            QStringLiteral("Time for the evening dose.")));
+        QTRY_COMPARE_WITH_TIMEOUT(service.calls, 1, 2000);
+        QCOMPARE(service.seen.applicationName, QStringLiteral("EdgeHub"));
+        QCOMPARE(service.seen.summary, QStringLiteral("Medication reminder"));
+        QCOMPARE(service.seen.body, QStringLiteral("Time for the evening dose."));
+        QCOMPARE(service.seen.icon, QStringLiteral("xeneon-edge-hub"));
+        QCOMPARE(service.seen.timeoutMs, 10000);
+        QCOMPARE(service.seen.hints.value(QStringLiteral("desktop-entry")).toString(),
+                 QStringLiteral("xeneon-edge-hub"));
+
+        bus.unregisterObject(QStringLiteral("/org/freedesktop/Notifications"));
+        bus.unregisterService(QStringLiteral("org.freedesktop.Notifications"));
+    }
 };
 
-QTEST_MAIN(NotificationBridgeTest)
+QTEST_GUILESS_MAIN(NotificationBridgeTest)
 #include "tst_notification_bridge.moc"
