@@ -147,28 +147,12 @@ require_command_or_executable ctest "$HOME/.local/bin/ctest"
 require_command_or_executable gcovr "$HOME/.local/bin/gcovr"
 
 # A caller-supplied QMLTESTRUNNER=/bin/true previously made every offscreen QML
-# file exit zero without running a single check.  Ignore that override at the
-# release boundary, resolve one real installation to an absolute path, and pass
-# only that pinned path to run_all_tests.sh.  run_ui_tests.sh independently
-# requires live per-file Totals, so even a broken executable cannot pass vacuously.
+# file exit zero without running a single check. Ignore that override. The suite
+# now builds and requires the repository's resource-aware QuickTest runner from
+# the clean candidate build tree and still requires live per-file Totals.
 unset QMLTESTRUNNER
-strict_qml_runner=""
-for qml_candidate in /usr/lib/qt6/bin/qmltestrunner /usr/lib/qt6/qmltestrunner qmltestrunner; do
-    if command -v "$qml_candidate" >/dev/null 2>&1; then
-        strict_qml_runner="$(readlink -f "$(command -v "$qml_candidate")")"
-        break
-    elif [ -x "$qml_candidate" ]; then
-        strict_qml_runner="$(readlink -f "$qml_candidate")"
-        break
-    fi
-done
-if [ -n "$strict_qml_runner" ] && [ -x "$strict_qml_runner" ] \
-        && [ "$(basename "$strict_qml_runner")" = "qmltestrunner" ]; then
-    export XENEON_STRICT_QMLTESTRUNNER="$strict_qml_runner"
-    preflight_ok "qmltestrunner ($XENEON_STRICT_QMLTESTRUNNER; caller override ignored)"
-else
-    preflight_bad "a real qmltestrunner installation is required"
-fi
+unset XENEON_STRICT_QMLTESTRUNNER
+preflight_ok "resource-aware QuickTest runner will be built from the candidate tree"
 
 if [ -c /dev/uinput ] && [ -r /dev/uinput ] && [ -w /dev/uinput ]; then
     preflight_ok "/dev/uinput is a readable/writable character device"

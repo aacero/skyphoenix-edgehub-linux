@@ -321,7 +321,7 @@ cmake --build build
 
 ```sh
 cd core && cargo test        # Rust core
-./scripts/run_ui_tests.sh    # QML GUI suite (offscreen, no cmake needed)
+./scripts/run_ui_tests.sh    # QML GUI suite (offscreen, compiled product assets)
 ./scripts/run_all_tests.sh   # everything: Rust + QML + ctest + behavior matrix + lints
 ```
 

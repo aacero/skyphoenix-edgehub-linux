@@ -219,12 +219,14 @@ else
 fi
 
 if printf '%s\n' "$release_preflight" | grep -Fq 'unset QMLTESTRUNNER' \
-        && printf '%s\n' "$release_preflight" | grep -Fq 'export XENEON_STRICT_QMLTESTRUNNER="$strict_qml_runner"' \
-        && printf '%s\n' "$run_all_execution" | grep -Fq 'QMLTESTRUNNER="$strict_qmltestrunner"' \
+        && printf '%s\n' "$release_preflight" | grep -Fq 'resource-aware QuickTest runner will be built from the candidate tree' \
+        && printf '%s\n' "$run_all_execution" | grep -Fq 'QML GUI (compiled resources)' \
+        && grep -Fq 'QMLTESTRUNNER="$TEST_BUILD_DIR/xeneon-qmltestrunner"' "$PROJECT_DIR/scripts/run_ui_tests.sh" \
+        && grep -Fq -- '--tier compiled' "$PROJECT_DIR/scripts/run_ui_tests.sh" \
         && grep -Fq 'xeneon_qml_require_live_totals' "$PROJECT_DIR/scripts/run_ui_tests.sh"; then
-    echo "  ok   strict QML runner ignores caller overrides and every file requires live Totals"
+    echo "  ok   strict QML uses the candidate resource runner and every file requires live Totals"
 else
-    echo "  FAIL strict offscreen QML tests can use an override or pass vacuously"
+    echo "  FAIL strict QML tests can use an override, miss resources, or pass vacuously"
     fail=$((fail + 1))
 fi
 

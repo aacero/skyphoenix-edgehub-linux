@@ -70,7 +70,6 @@ fi
 # can exercise the shipped issuer. Do not leak that entitlement into unrelated
 # QML, Manager, compositor, runtime, or hardware children.
 release_owner_test_key=""
-strict_qmltestrunner=""
 if [ "$release_gate" -eq 1 ]; then
     release_owner_test_key="$incoming_owner_test_key"
     case "$release_owner_test_key" in
@@ -80,12 +79,6 @@ if [ "$release_gate" -eq 1 ]; then
             exit 2
             ;;
     esac
-    strict_qmltestrunner="${XENEON_STRICT_QMLTESTRUNNER:-}"
-    if [ -z "$strict_qmltestrunner" ] || [ ! -x "$strict_qmltestrunner" ] \
-            || [ "$(basename "$strict_qmltestrunner")" != "qmltestrunner" ]; then
-        echo "ERROR: strict QML tests require the pinned qmltestrunner selected by run_release_tests.sh." >&2
-        exit 2
-    fi
 fi
 unset incoming_owner_test_key
 
@@ -154,17 +147,7 @@ else
     run_suite "Rust (cargo test)" bash -c 'cd "'"$PROJECT_DIR"'/core" && cargo test'
 fi
 
-# 3. QML GUI tests. Strict mode pins offscreen explicitly while leaving the
-# real-hardware Manager tier below on the live Wayland session.
-if [ "$release_gate" -eq 1 ]; then
-    run_suite "QML GUI (run_ui_tests.sh)" \
-        env QT_QPA_PLATFORM=offscreen QMLTESTRUNNER="$strict_qmltestrunner" \
-            bash "$PROJECT_DIR/scripts/run_ui_tests.sh"
-else
-    run_suite "QML GUI (run_ui_tests.sh)" bash "$PROJECT_DIR/scripts/run_ui_tests.sh"
-fi
-
-# 4. C++ ctest. A developer run keeps the historical fast path (reuse an
+# 3. C++ ctest. A developer run keeps the historical fast path (reuse an
 # existing test build or report SKIP). A release run ALWAYS configures, builds,
 # and executes with QA hooks, and ctest is made verbose so an internal QSKIP is
 # visible to the strict output scanner.
@@ -210,6 +193,11 @@ else
     names+=("C++ (ctest)")
     results+=("SKIP")
 fi
+
+# 4. QML GUI tests. C++ configuration runs first so strict mode reuses the
+# resource-aware QuickTest runner from the same clean candidate build tree.
+run_suite "QML GUI (compiled resources)" \
+    env QT_QPA_PLATFORM=offscreen bash "$PROJECT_DIR/scripts/run_ui_tests.sh"
 
 # 5. QML behavior-matrix coverage gate.
 run_suite "QML behavior matrix (qml_coverage.py)" python3 "$PROJECT_DIR/scripts/qml_coverage.py"

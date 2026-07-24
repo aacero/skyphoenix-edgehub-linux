@@ -123,15 +123,15 @@ jobs:
           version: '6.7.3'
           modules: 'qtvirtualkeyboard'
           cache: true
-      - name: Install runtime libs + fonts
+      - name: Install build tools, runtime libs + fonts
         # A real scalable font is required: several tests assert text metrics
         # (Text.fontSizeMode fit, paintedWidth <= tile), which have no meaningful
         # value under the offscreen platform with no font installed.
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon0 libgl1 fonts-dejavu-core fontconfig
+          sudo apt-get install -y cmake g++ libgl1-mesa-dev libxkbcommon0 libgl1 fonts-dejavu-core fontconfig
           sudo fc-cache -f
-      - name: Run QML GUI tests (offscreen)
+      - name: Run QML GUI tests (compiled resources, offscreen)
         env:
           QT_QPA_PLATFORM: offscreen
         run: ./scripts/run_ui_tests.sh

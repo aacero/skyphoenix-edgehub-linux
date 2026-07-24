@@ -17,8 +17,8 @@ cargo fmt --all -- --check
 
 Rust tests live **inline** in `core/src/{config,display,metrics}.rs`.
 
-**QML GUI tests:** `./scripts/run_ui_tests.sh` runs the `qmltestrunner` suite in
-`tests/ui/` (offscreen, no cmake needed). It loads every widget against a real
+**QML GUI tests:** `./scripts/run_ui_tests.sh` builds and runs the repository's
+resource-aware QuickTest runner against `tests/ui/` offscreen. It loads every widget against a real
 `DashboardStore`, checks render + boundary behavior (empty/zero/saturated/missing
 metrics), drives real mouse/key input on controls, and asserts touch-target sizes.
 Add a `tests/ui/tst_*.qml` `TestCase` for new widget behavior.
@@ -46,7 +46,7 @@ with `-DXENEON_COVERAGE=ON`) and gates ≥95%. QML uses a behavior matrix
 | `ui/qml/` | QML | All UI: `main.qml`, `Dashboard.qml`, `FirstRunWizard.qml`, 39 widget files in `widgets/` |
 | `ui/qml.qrc` | Qt resource | **Must be updated** when adding/removing QML files |
 | `manager/` | C++/QML | **Xeneon Edge Manager** - standalone companion app (`xeneon-edge-manager`) to manage layout/appearance/images/display. Reuses `DashboardStore.qml` + `WidgetCatalog.qml` via `manager/manager.qrc`; C++ `ManagerBackend` presents a `configBridge`-compatible surface + a live-push socket client |
-| `tests/ui/` | QML | `qmltestrunner` GUI + boundary suite. Harness = `WidgetHarness.qml` + `HarnessTheme.qml` + `MockMedia.qml`. Run with `./scripts/run_ui_tests.sh` (offscreen; exercises real layout + mouse/key input, no cmake needed) |
+| `tests/ui/` | QML | Resource-aware QuickTest GUI + boundary suite. Harness = `WidgetHarness.qml` + `HarnessTheme.qml` + `MockMedia.qml`. Run with `./scripts/run_ui_tests.sh` (offscreen; exercises real layout + mouse/key input with compiled assets) |
 
 ## FFI rules (C++ ↔ Rust)
 

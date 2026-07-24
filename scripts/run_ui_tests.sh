@@ -1,20 +1,35 @@
 #!/usr/bin/env bash
-# Run the QML widget GUI test suite (qmltestrunner) against the source tree -
-# no full C++ build required. Uses the offscreen platform so it runs headless
-# in CI, but exercises real layout + real mouse/key input via QtTest.
+# Run the QML widget GUI test suite against source QML with the repository's
+# resource-aware QuickTest runner. The runner embeds the shipped icons,
+# wallpapers, and fonts, so a qrc miss is a real defect rather than 10,000 lines
+# of allowlisted harness noise.
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_DIR"
 
-# Locate qmltestrunner (not always on PATH).
-QMLTESTRUNNER="${QMLTESTRUNNER:-}"
-if [ -z "$QMLTESTRUNNER" ]; then
-    for c in qmltestrunner /usr/lib/qt6/bin/qmltestrunner /usr/lib/qt6/qmltestrunner; do
-        if command -v "$c" >/dev/null 2>&1 || [ -x "$c" ]; then QMLTESTRUNNER="$c"; break; fi
-    done
+# Release evidence must identify a committed source state. Refuse an accidental
+# dirty-tree run unless an engineer explicitly opts into a non-audit diagnostic.
+if [ "${XENEON_ALLOW_DIRTY_TESTS:-0}" != "1" ] \
+        && [ -n "$(git status --porcelain=v1 --untracked-files=normal)" ]; then
+    echo "ERROR: QML tests require a clean committed tree." >&2
+    echo "       Set XENEON_ALLOW_DIRTY_TESTS=1 only for a non-audit diagnostic." >&2
+    exit 2
 fi
-[ -n "$QMLTESTRUNNER" ] || { echo "ERROR: qmltestrunner not found (install qt6-declarative)"; exit 1; }
+
+TEST_BUILD_DIR="${XENEON_TEST_BUILD_DIR:-$PROJECT_DIR/build}"
+QMLTESTRUNNER="$TEST_BUILD_DIR/xeneon-qmltestrunner"
+CMAKE_BIN="$(command -v cmake 2>/dev/null || true)"
+[ -n "$CMAKE_BIN" ] || { echo "ERROR: cmake is required for the resource-aware QML runner"; exit 1; }
+
+# Always ask CMake to update the small runner target. This is incremental when
+# current and prevents a stale executable from validating changed resource files.
+"$CMAKE_BIN" -B "$TEST_BUILD_DIR" -DCMAKE_BUILD_TYPE=Release -DXENEON_BUILD_TESTS=ON
+"$CMAKE_BIN" --build "$TEST_BUILD_DIR" --target xeneon-qmltestrunner -j"$(nproc)"
+[ -x "$QMLTESTRUNNER" ] || {
+    echo "ERROR: resource-aware QML runner was not produced: $QMLTESTRUNNER"
+    exit 1
+}
 
 IMPORTS=(-import ui/qml -import ui/qml/widgets -import manager/qml -import tests/ui)
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
@@ -47,7 +62,8 @@ filecount=0
 # this landed nothing anywhere treated them as failures: the inert
 # BackgroundPicker threw a TypeError on every click while three suites reported
 # 5/5, 16/16 and 16/16.
-QLOGDIR="${QLOGDIR:-$(mktemp -d -t xe-uilogs-XXXXXX)}"
+short_sha="$(git rev-parse --short=12 HEAD)"
+QLOGDIR="${QLOGDIR:-$PROJECT_DIR/artifacts/$short_sha/qml-ui-logs}"
 mkdir -p "$QLOGDIR"
 
 for t in tests/ui/tst_*.qml; do
@@ -70,7 +86,8 @@ for t in tests/ui/tst_*.qml; do
         *)  fail=1 ;;
     esac
     # A QML runtime diagnostic fails the file even when every assertion passed.
-    "$PROJECT_DIR/scripts/check_qml_diagnostics.sh" "$QLOGDIR/$base.log" || fail=1
+    "$PROJECT_DIR/scripts/check_qml_diagnostics.sh" "$QLOGDIR/$base.log" \
+        --tier compiled || fail=1
     # Exit zero is not proof of execution: an accidentally overridden runner
     # such as /bin/true produces no QtTest output at all.  Require a real Totals
     # record with at least one pass and no omitted/blacklisted checks per file.
