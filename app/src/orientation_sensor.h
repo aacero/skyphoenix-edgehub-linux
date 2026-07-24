@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QList>
 #include <QString>
 #include <QTimer>
 
@@ -38,6 +39,15 @@ public:
     bool openForTest(const QString& path) { return openAndWatch(path); }
     // Whether the reopen retry timer is currently armed (device-lost recovery).
     bool retryActiveForTest() const { return m_retry.isActive(); }
+    // Startup acquisition is deliberately separate from the unplug/reopen timer:
+    // a remembered rotation may render immediately, but must never suppress
+    // bounded GET_REPORT retries for the panel's current physical state.
+    bool startupRetryActiveForTest() const { return m_startupRetry.isActive(); }
+    int startupAttemptCountForTest() const { return m_startupAttemptCount; }
+    bool hasDeviceReadingForTest() const { return m_hasDeviceReading; }
+    void setStartupRetryScheduleForTest(const QList<int>& delays) {
+        m_startupRetryDelays = delays;
+    }
 
     // Remember the last orientation across runs. Some panels answer no GET_REPORT
     // and only push a report on physical *change*, so a restart would otherwise
@@ -52,6 +62,7 @@ private slots:
     void onReadable();
     // Poll for the device coming back after an unplug and re-open it transparently.
     void tryReopen();
+    void onStartupRetry();
 
 private:
     // Open the hidraw node, wire up the notifier, and seed the initial orientation.
@@ -61,9 +72,11 @@ private:
     void stopWatching();
     // stopWatching() + arm the reopen timer, for the device-lost (unplug) case.
     void handleDeviceLost();
-    // Actively query the current orientation once at open time (the panel only
-    // pushes reports on *change*, so without this the UI can start mis-rotated).
-    void queryInitialOrientation();
+    // Actively query the current orientation during the bounded startup window.
+    // Returns true only for a real HID result, never for persisted fallback.
+    bool queryInitialOrientation();
+    void scheduleStartupRetry();
+    void applyDeviceRotation(int rot);
     // Adopt a rotation: update m_rotation, emit, and persist it (single path so
     // every source - GET_REPORT, a pushed report, or the restored state - is saved).
     void applyRotation(int rot);
@@ -78,4 +91,9 @@ private:
     QString m_statePath;   // where the last orientation is remembered across runs
     QSocketNotifier* m_notifier = nullptr;
     QTimer m_retry;   // polls for the hidraw node to reappear after an unplug
+    QTimer m_startupRetry;
+    QList<int> m_startupRetryDelays{250, 500, 750, 1000, 1500};
+    int m_startupRetryIndex = 0;
+    int m_startupAttemptCount = 0;
+    bool m_hasDeviceReading = false;
 };

@@ -146,6 +146,68 @@ private slots:
         }
         ::close(wfd);
     }
+
+    // A persisted fallback is presentation state, not proof of the panel's
+    // current orientation. It must not cancel the bounded startup acquisition.
+    void persistedFallbackDoesNotSuppressStartupRetries() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString state = dir.path() + "/orientation.state";
+        const QString fifo = dir.path() + "/edge_fifo";
+        {
+            QFile f(state);
+            QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
+            QCOMPARE(f.write("90"), qint64(2));
+        }
+        QCOMPARE(::mkfifo(fifo.toUtf8().constData(), 0600), 0);
+        const int wfd = ::open(fifo.toUtf8().constData(), O_RDWR | O_NONBLOCK);
+        QVERIFY(wfd >= 0);
+
+        OrientationSensor s;
+        s.setStatePath(state);
+        s.setStartupRetryScheduleForTest({5, 10, 15});
+        QVERIFY(s.openForTest(fifo));
+        QCOMPARE(s.rotation(), 90);
+        QVERIFY(!s.hasDeviceReadingForTest());
+        QVERIFY(s.startupRetryActiveForTest());
+
+        // One immediate attempt plus all three scheduled attempts. ioctl on the
+        // FIFO always fails, so exhaustion is deterministic and fast.
+        QTRY_COMPARE_WITH_TIMEOUT(s.startupAttemptCountForTest(), 4, 1000);
+        QTRY_VERIFY_WITH_TIMEOUT(!s.startupRetryActiveForTest(), 1000);
+        QCOMPARE(s.rotation(), 90);
+        QVERIFY(!s.hasDeviceReadingForTest());
+        ::close(wfd);
+    }
+
+    // A real pushed report is authoritative and cancels remaining startup retries.
+    void pushedReportStopsStartupRetries() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString fifo = dir.path() + "/edge_fifo";
+        QCOMPARE(::mkfifo(fifo.toUtf8().constData(), 0600), 0);
+        const int wfd = ::open(fifo.toUtf8().constData(), O_RDWR | O_NONBLOCK);
+        QVERIFY(wfd >= 0);
+
+        OrientationSensor s;
+        s.setStartupRetryScheduleForTest({500, 500});
+        QVERIFY(s.openForTest(fifo));
+        QCOMPARE(s.startupAttemptCountForTest(), 1);
+        QVERIFY(s.startupRetryActiveForTest());
+
+        unsigned char report[64] = {0};
+        report[0] = 0x01;
+        report[1] = 0x11;
+        report[7] = 0x00;
+        QCOMPARE(::write(wfd, report, sizeof(report)), ssize_t(sizeof(report)));
+
+        QTRY_VERIFY_WITH_TIMEOUT(s.hasDeviceReadingForTest(), 1000);
+        QCOMPARE(s.rotation(), 270);
+        QVERIFY(!s.startupRetryActiveForTest());
+        QTest::qWait(550);
+        QCOMPARE(s.startupAttemptCountForTest(), 1);
+        ::close(wfd);
+    }
 };
 
 QTEST_GUILESS_MAIN(TstOrientationReopen)

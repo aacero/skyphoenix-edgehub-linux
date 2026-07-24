@@ -20,6 +20,8 @@ OrientationSensor::OrientationSensor(QObject* parent) : QObject(parent) {
     // Poll timer used only after an unplug, to re-open the node when it returns.
     m_retry.setInterval(3000);
     connect(&m_retry, &QTimer::timeout, this, &OrientationSensor::tryReopen);
+    m_startupRetry.setSingleShot(true);
+    connect(&m_startupRetry, &QTimer::timeout, this, &OrientationSensor::onStartupRetry);
 }
 
 // GCOVR_EXCL_START (dtor teardown of a live hidraw fd/notifier; the FIFO test tears
@@ -99,6 +101,10 @@ bool OrientationSensor::openAndWatch(const QString& path) {
     m_notifier = new QSocketNotifier(m_fd, QSocketNotifier::Read, this);
     connect(m_notifier, &QSocketNotifier::activated, this, &OrientationSensor::onReadable);
     qInfo() << "OrientationSensor: watching" << path << "for Xeneon Edge orientation";
+    m_startupRetry.stop();
+    m_startupRetryIndex = 0;
+    m_startupAttemptCount = 0;
+    m_hasDeviceReading = false;
     // The panel only pushes a report when the orientation *changes*, so actively
     // query the current state once - otherwise the UI stays at its default (the
     // native-portrait framebuffer, so it looks portrait even when mounted
@@ -109,22 +115,45 @@ bool OrientationSensor::openAndWatch(const QString& path) {
     // Still nothing? Restore the orientation remembered from the last run, so a
     // restart isn't stuck mis-rotated on panels that answer no GET_REPORT (they only
     // push on physical change). A later real report overrides this immediately.
-    if (m_rotation < 0) {
+    if (!m_hasDeviceReading && m_rotation < 0) {
         const int saved = restorePersistedRotation();
         if (saved >= 0) {
             qInfo() << "OrientationSensor: restored last-known orientation" << saved
-                    << "deg (panel gave no startup reading; will update on the next rotation)";
+                    << "deg while startup hardware acquisition continues";
             applyRotation(saved);
         }
     }
-    // Some panels don't answer a GET_REPORT the instant the node opens; if we still
-    // have no reading, try once more shortly after. Harmless if already resolved (it
-    // no-ops when m_rotation is set) or if GET is unsupported (it just warns again).
-    if (m_rotation < 0)
-        QTimer::singleShot(400, this, [this]() {
-            if (m_fd >= 0 && m_rotation < 0) queryInitialOrientation();
-        });
+    // Device enumeration and firmware readiness can lag the hidraw node. Continue
+    // acquisition for a bounded four-second stepped-backoff window even when a
+    // remembered rotation is already rendering. A real pushed report also stops it.
+    if (!m_hasDeviceReading)
+        scheduleStartupRetry();
     return true;
+}
+
+void OrientationSensor::scheduleStartupRetry() {
+    if (m_fd < 0 || m_hasDeviceReading || m_startupRetry.isActive())
+        return;
+    if (m_startupRetryIndex >= m_startupRetryDelays.size()) {
+        int windowMs = 0;
+        for (const int delay : m_startupRetryDelays)
+            windowMs += qMax(1, delay);
+        qWarning() << "OrientationSensor: no startup HID orientation after"
+                   << m_startupAttemptCount << "attempts over" << windowMs
+                   << "ms; keeping the"
+                      "remembered/default orientation and following pushed reports";
+        return;
+    }
+    const int delay = qMax(1, m_startupRetryDelays.at(m_startupRetryIndex));
+    ++m_startupRetryIndex;
+    m_startupRetry.start(delay);
+}
+
+void OrientationSensor::onStartupRetry() {
+    if (m_fd < 0 || m_hasDeviceReading)
+        return;
+    if (!queryInitialOrientation())
+        scheduleStartupRetry();
 }
 
 // Single place a new rotation is adopted: update, notify, and remember it.
@@ -134,6 +163,14 @@ void OrientationSensor::applyRotation(int rot) {
     m_rotation = rot;
     persistRotation();
     emit rotationChanged(m_rotation);
+}
+
+void OrientationSensor::applyDeviceRotation(int rot) {
+    if (rot < 0)
+        return;
+    m_hasDeviceReading = true;
+    m_startupRetry.stop();
+    applyRotation(rot);
 }
 
 void OrientationSensor::persistRotation() const {
@@ -161,9 +198,10 @@ int OrientationSensor::restorePersistedRotation() const {
     return -1;
 }
 
-void OrientationSensor::queryInitialOrientation() {
+bool OrientationSensor::queryInitialOrientation() {
     if (m_fd < 0)
-        return;
+        return false;
+    ++m_startupAttemptCount;
     unsigned char buf[64];
     // 1) GET_REPORT on the INPUT report the panel pushes on rotation (id 0x01,
     //    orientation byte at [7]). Many devices, however, refuse GET_REPORT on an
@@ -183,23 +221,22 @@ void OrientationSensor::queryInitialOrientation() {
         via = "feature report";
     }
     if (rot < 0) {
-        // Neither GET_REPORT worked (the FIFO test seam lands here too). Not fatal:
-        // the first physical rotation still corrects the UI via a pushed report.
-        qWarning() << "OrientationSensor: could not read the current orientation at "
-                      "startup (panel answered no GET_REPORT); using the remembered "
-                      "orientation if any, else the default landscape, and following "
-                      "the first physical rotation.";
-        return;
+        // Neither GET_REPORT worked (the FIFO test seam lands here too). The
+        // bounded startup scheduler decides whether another attempt remains.
+        return false;
     }
     // GCOVR_EXCL_START (a successful GET_REPORT needs a real hidraw node; over the
     // FIFO test seam both ioctls fail and we return at the guard above).
     qInfo() << "OrientationSensor: initial orientation from" << via << "-> rotation"
             << rot << "deg";
-    applyRotation(rot);
+    applyDeviceRotation(rot);
     // GCOVR_EXCL_STOP
+    return true;
 }
 
 void OrientationSensor::stopWatching() {
+    m_startupRetry.stop();
+    m_hasDeviceReading = false;
     if (m_notifier) {
         m_notifier->setEnabled(false);
         m_notifier->deleteLater();
@@ -270,6 +307,6 @@ void OrientationSensor::onReadable() {
         // Orientation notification: report id 0x01, header byte 0x11, value at [7].
         if (buf[0] != 0x01 || buf[1] != 0x11)
             continue;
-        applyRotation(byteToRotation(buf[7]));
+        applyDeviceRotation(byteToRotation(buf[7]));
     }
 }
