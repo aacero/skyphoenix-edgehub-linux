@@ -29,10 +29,13 @@ fail=0
 rt_mkroot c
 # A config in the hub's own on-disk shape (nested tables, single-quoted
 # ui_state literal - matches what save_config writes, verified by probe).
+# The expired Focus session is the established non-vacuous save trigger: after
+# salvage it completes and forces the recovered document back to disk.
+TODAY="$(date +%F)"
 python3 "$HERE/seed_config.py" "$RT_CFG" >/dev/null <<EOF
 {"version":1,"appearance":{"mode":"dark","accent":"#58A6FF"},
- "settings":{},
- "pages":[{"name":"Mine","tiles":[{"id":"clock-u1","type":"clock","size":"1x1"}]}]}
+ "settings":{"focus-u1":{"preset":"classic","phase":"work","running":true,"endEpoch":1600000000000,"pausedRemaining":1500,"doneToday":0,"day":"$TODAY","points":0,"dailyGoal":9,"rewardPoints":false,"celebrate":false,"autoStartBreak":false}},
+ "pages":[{"name":"Mine","tiles":[{"id":"focus-u1","type":"focus","size":"1x1.5"}]}]}
 EOF
 
 # A pre-existing GOOD backup that corruption must never clobber.
@@ -45,6 +48,12 @@ cp "$RT_CFG/config.toml" "$RT_WORK/corrupt-as-written.toml"
 echo "Launching hub over the corrupted config"
 rt_run_hub "$RT_ROOT" 8
 rt_assert_live "salvage" "$RT_ROOT" || fail=1
+if grep -aq "Configuration saved" "$RT_ROOT/hub.log"; then
+    echo "  [save] PASS: recovered state was persisted by the running Hub"
+else
+    echo "  [save] FAIL: no Hub-authored save; disk recovery cannot be asserted"
+    fail=1
+fi
 
 if grep -aq "Config parse failed; backing up and salvaging" "$RT_ROOT/hub.log"; then
     echo "  [salvage] PASS: hub hit the salvage path (log)"
@@ -94,7 +103,7 @@ else
         echo "  [recover] FAIL: post-salvage config has no parseable ui_state"
         fail=1
     fi
-    if [ "$page_name" = "Mine" ] && [ "$tile_type" = "clock" ]; then
+    if [ "$page_name" = "Mine" ] && [ "$tile_type" = "focus" ]; then
         echo "  [layout] PASS: Hub-authored literal ui_state survived into the live config"
     else
         echo "  [layout] FAIL: salvaged layout was reseeded (page=$page_name tile=$tile_type)"
