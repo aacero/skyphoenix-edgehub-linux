@@ -48,6 +48,20 @@ Item {
         }
     }
 
+    Component {
+        id: runtimeFaultComponent
+        Item {
+            property int successfulActions: 0
+            signal faultRequested()
+            onFaultRequested: {
+                throw new Error("INJECTED_WIDGET_RUNTIME_FAULT")
+            }
+            function healthyAction() {
+                successfulActions++
+            }
+        }
+    }
+
     W.WidgetHost {
         id: host
         anchors.fill: parent
@@ -73,6 +87,17 @@ Item {
         widgetId: "broken-1"
         widgetType: "broken-widget"
         widgetSource: "file:///definitely-missing/WidgetThatDoesNotExist.qml"
+        acceptsInput: true
+    }
+
+    W.WidgetHost {
+        id: runtimeFaultHost
+        width: 360
+        height: 220
+        x: root.width + 400
+        widgetId: "runtime-fault-1"
+        widgetType: "runtime-fault-probe"
+        widgetComponent: runtimeFaultComponent
         acceptsInput: true
     }
 
@@ -172,6 +197,27 @@ Item {
             compare(host.status, Loader.Ready,
                     "a second healthy host remains ready after one widget fails")
             failedHost.loadEnabled = false
+        }
+
+        function test_runtime_exception_aborts_only_the_throwing_handler() {
+            tryVerify(function () {
+                return runtimeFaultHost.status === Loader.Ready
+                        && runtimeFaultHost.item !== null
+            }, 3000)
+            ignoreWarning(/.*INJECTED_WIDGET_RUNTIME_FAULT.*/)
+            runtimeFaultHost.item.faultRequested()
+
+            compare(runtimeFaultHost.status, Loader.Ready,
+                    "a handler exception does not unload the throwing widget")
+            compare(runtimeFaultHost.loadFailed, false,
+                    "a runtime exception is not misclassified as a Loader failure")
+            runtimeFaultHost.item.healthyAction()
+            compare(runtimeFaultHost.item.successfulActions, 1,
+                    "the throwing widget remains usable after the failed handler")
+            compare(host.status, Loader.Ready,
+                    "a sibling widget remains ready after the runtime exception")
+            verify(root.visible,
+                   "the containing page remains alive after the runtime exception")
         }
     }
 }
