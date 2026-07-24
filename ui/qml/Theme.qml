@@ -377,6 +377,13 @@ QtObject {
         }
         return minimum
     }
+    function _minimumTextSurfaceContrast(color) {
+        var pages = [backgroundColor, backgroundColor2, backgroundColor3]
+        var minimum = _minimumCardContrast(color)
+        for (var p = 0; p < pages.length; p++)
+            minimum = Math.min(minimum, contrastRatio(color, pages[p]))
+        return minimum
+    }
     function _blendColor(from, to, amount) {
         return Qt.rgba(from.r + (to.r - from.r) * amount,
                        from.g + (to.g - from.g) * amount,
@@ -403,17 +410,17 @@ QtObject {
     }
     function ensureTextContrast(value, minimum) {
         var source = _colorValue(value)
-        if (_minimumCardContrast(source) >= minimum)
+        if (_minimumTextSurfaceContrast(source) >= minimum)
             return source
         var black = Qt.rgba(0, 0, 0, 1)
         var white = Qt.rgba(1, 1, 1, 1)
-        var target = _minimumCardContrast(black) >= _minimumCardContrast(white)
+        var target = _minimumTextSurfaceContrast(black) >= _minimumTextSurfaceContrast(white)
                 ? black : white
         var low = 0.0
         var high = 1.0
         for (var i = 0; i < 14; i++) {
             var middle = (low + high) / 2
-            if (_minimumCardContrast(_blendColor(source, target, middle)) >= minimum)
+            if (_minimumTextSurfaceContrast(_blendColor(source, target, middle)) >= minimum)
                 high = middle
             else
                 low = middle
