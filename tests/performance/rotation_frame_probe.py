@@ -18,9 +18,10 @@ import re
 import statistics
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
 
 HERE = Path(__file__).resolve().parent
@@ -41,7 +42,7 @@ from run_hub_profiles import validate_candidate_build  # noqa: E402
 
 
 WAYLAND_CALL = re.compile(
-    r"^\[(?P<timestamp>[0-9]+(?:\.[0-9]+)?)\].*?"
+    r"^\[\s*(?P<timestamp>[0-9]+(?:\.[0-9]+)?)\].*?"
     r"->\s+(?P<surface>wl_surface[#@][0-9]+)\."
     r"(?P<call>attach|commit)\((?P<arguments>.*)\)\s*$"
 )
@@ -73,6 +74,87 @@ def parse_buffer_commits(lines: Iterable[str]) -> dict[str, list[float]]:
         if surface in buffered:
             commits.setdefault(surface, []).append(float(match.group("timestamp")))
     return commits
+
+
+class WaylandCommitObserver:
+    """Drain a Hub protocol pipe and timestamp commits on the observer clock."""
+
+    def __init__(self, raw_path: Path, event_path: Path) -> None:
+        self._raw = raw_path.open("xb", buffering=0)
+        self._events = event_path.open("x", encoding="utf-8", buffering=1)
+        self._buffered: set[str] = set()
+        self._commits: dict[str, list[float]] = {}
+        self._error: Optional[BaseException] = None
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self, stream) -> None:
+        if self._thread is not None:
+            raise MeasurementError("Wayland observer was already started")
+        self._thread = threading.Thread(
+            target=self._drain,
+            args=(stream,),
+            name="wayland-commit-observer",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def _drain(self, stream) -> None:
+        try:
+            for raw in iter(stream.readline, b""):
+                observed_ms = time.monotonic() * 1000.0
+                self._raw.write(raw)
+                match = WAYLAND_CALL.match(
+                    raw.decode("utf-8", errors="replace").rstrip()
+                )
+                if match is None:
+                    continue
+                surface = match.group("surface")
+                call = match.group("call")
+                if call == "attach":
+                    first = match.group("arguments").split(",", 1)[0].strip().lower()
+                    if "wl_buffer" in first and "nil" not in first:
+                        self._buffered.add(surface)
+                    else:
+                        self._buffered.discard(surface)
+                elif surface in self._buffered:
+                    self._commits.setdefault(surface, []).append(observed_ms)
+                self._events.write(
+                    json.dumps(
+                        {
+                            "observer_monotonic_ms": observed_ms,
+                            "wayland_timestamp_ms": float(match.group("timestamp")),
+                            "surface": surface,
+                            "call": call,
+                            "non_null_buffer": surface in self._buffered,
+                        },
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
+                self._events.flush()
+        except BaseException as error:
+            self._error = error
+
+    def finish(self, stream) -> dict[str, list[float]]:
+        if self._thread is not None:
+            self._thread.join(timeout=5.0)
+            if self._thread.is_alive():
+                stream.close()
+                raise MeasurementError("Wayland observer did not stop after Hub exit")
+        stream.close()
+        self._raw.close()
+        self._events.flush()
+        os.fsync(self._events.fileno())
+        self._events.close()
+        if self._error is not None:
+            raise MeasurementError(f"Wayland observer failed: {self._error}")
+        return {surface: list(values) for surface, values in self._commits.items()}
+
+    def close(self) -> None:
+        if not self._raw.closed:
+            self._raw.close()
+        if not self._events.closed:
+            self._events.close()
 
 
 def dense_commit_cluster(
@@ -223,20 +305,27 @@ def run(binary: Path, output_dir: Path, cycles: int) -> int:
     state = audit_document()
     state["appearance"]["orientation"] = "portrait"
     raw_log = output_dir / "wayland.log"
+    event_log = output_dir / "wayland-events.jsonl"
+    request_log = output_dir / "orientation-requests.jsonl"
     started_utc = iso_now()
+    observer = WaylandCommitObserver(raw_log, event_log)
+    stream = None
 
     try:
         instance.write_config(state)
         environment = hub_environment(instance)
-        instance.log = raw_log.open("wb", buffering=0)
         instance.proc = subprocess.Popen(
             [str(binary)],
             cwd=REPO,
             env=environment,
-            stdout=instance.log,
+            stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             start_new_session=True,
+            bufsize=0,
         )
+        assert instance.proc.stdout is not None
+        stream = instance.proc.stdout
+        observer.start(stream)
         deadline = time.monotonic() + 15.0
         while time.monotonic() < deadline:
             if instance.proc.poll() is not None:
@@ -256,13 +345,18 @@ def run(binary: Path, output_dir: Path, cycles: int) -> int:
         observed_load = _verify_live_load(instance)
         time.sleep(1.0)
         transitions = []
-        for _ in range(cycles):
-            transitions.append(set_orientation(instance, state, "landscape"))
-            transitions.append(set_orientation(instance, state, "portrait"))
+        with request_log.open("x", encoding="utf-8", buffering=1) as requests:
+            for _ in range(cycles):
+                for mode in ("landscape", "portrait"):
+                    transition = set_orientation(instance, state, mode)
+                    transitions.append(transition)
+                    requests.write(json.dumps(transition, sort_keys=True) + "\n")
+                    requests.flush()
+                    os.fsync(requests.fileno())
 
         instance.stop_hub()
-        instance.log.close()
-        commits = parse_buffer_commits(raw_log.read_text(errors="replace").splitlines())
+        commits = observer.finish(stream)
+        stream = None
         for transition in transitions:
             transition["frames"] = summarise_transition(
                 commits,
@@ -330,8 +424,12 @@ def run(binary: Path, output_dir: Path, cycles: int) -> int:
         return 0
     finally:
         instance.cleanup()
-        if getattr(instance, "log", None) and not instance.log.closed:
-            instance.log.close()
+        if stream is not None:
+            try:
+                observer.finish(stream)
+            except BaseException:
+                pass
+        observer.close()
 
 
 def main() -> int:

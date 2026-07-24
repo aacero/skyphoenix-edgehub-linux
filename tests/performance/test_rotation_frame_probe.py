@@ -16,8 +16,8 @@ from rotation_frame_probe import (  # noqa: E402
 class RotationFrameProbeTest(unittest.TestCase):
     def test_parse_tracks_non_null_buffer_per_surface(self):
         lines = [
-            "[100.000] -> wl_surface#4.attach(wl_buffer#9, 0, 0)",
-            "[100.100] -> wl_surface#4.commit()",
+            "[ 100.000] -> wl_surface#4.attach(wl_buffer#9, 0, 0)",
+            "[ 100.100] -> wl_surface#4.commit()",
             "[101.000] -> wl_surface#5.attach(nil, 0, 0)",
             "[101.100] -> wl_surface#5.commit()",
             "[102.000] -> wl_surface@4.attach(wl_buffer@10, 0, 0)",
