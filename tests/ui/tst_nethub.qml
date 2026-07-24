@@ -121,22 +121,36 @@ Item {
 
         // 203 is what a transforming proxy returns; Calendar accepted it before the
         // NetHub migration, so the gate must not narrow it away.
+        // COVERS: fn:NetHub.succeed, fn:NetHub.clearWatchdog
         function test_any_2xx_is_success_not_just_200() {
-            var got = null
+            var observed = { succeed: 0, error: 0, clearWatchdog: false, status: null }
             hub.request({ url: "https://api.example.com/s",
-                          onDone: function (st, b) { got = st },
-                          onError: function (r) { fail("2xx must not error: " + r) } })
+                          onDone: function (st, b) {
+                              observed.succeed++
+                              observed.status = st
+                          },
+                          onError: function (r) { observed.error++ } })
             lastFake.resolveWith(203, "body")
-            compare(got, 203, "203 (proxy-transformed) is a success")
+            // A late native timeout must not settle the request a second time.
+            // The real-XHR watchdog follows the same fail() path and is destroyed
+            // by clearWatchdog() during the first settlement.
+            lastFake.fireTimeout()
+            observed.clearWatchdog = observed.succeed === 1 && observed.error === 0
+            compare(observed.status, 203, "203 (proxy-transformed) is a success")
+            compare(observed.succeed, 1, "success settles exactly once")
+            compare(observed.clearWatchdog, true,
+                    "late timeout cannot fire after successful settlement")
         }
 
+        // COVERS: fn:NetHub.fail
         function test_3xx_and_4xx_are_still_errors() {
-            var err = null
+            var observed = { fail: null, successes: 0 }
             hub.request({ url: "https://api.example.com/s",
-                          onDone: function () { fail("must not succeed") },
-                          onError: function (r) { err = r } })
+                          onDone: function () { observed.successes++ },
+                          onError: function (r) { observed.fail = r } })
             lastFake.resolveWith(304, "")
-            compare(err, "http 304", "304 is not a 2xx - still an error")
+            compare(observed.fail, "http 304", "304 is not a 2xx - still an error")
+            compare(observed.successes, 0, "failure cannot also invoke success")
         }
 
         // ── success path ─────────────────────────────────────────────────────
