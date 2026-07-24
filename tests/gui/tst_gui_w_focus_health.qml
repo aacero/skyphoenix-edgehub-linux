@@ -45,6 +45,8 @@ Item {
 
         // Load a widget file + pin geometry/size-class + reset per-instance seams.
         function prep(file, w, h, sc) {
+            root.width = Math.max(1300, w)
+            root.height = Math.max(720, h)
             wh.expanded = false
             if (wh.widgetFile !== file) {
                 wh.widgetFile = file
@@ -55,6 +57,9 @@ Item {
             wh.item.accentName = ""
             wh.item.cardBackdrop = "none"
             if (wh.item.hasOwnProperty("nowMinsOverride")) wh.item.nowMinsOverride = -1
+            if (file === "RoutineWidget.qml")
+                wh.storeCtl.patchSettings(iid,
+                    { routineFormat: "legacy", routineItems: [] })
             wait(80)
         }
 
@@ -100,13 +105,14 @@ Item {
         // Routine step-row delegate by its step text.
         function stepRows() {
             return G.collectPred(wh.item, function (n) {
-                try { return typeof n.done === "boolean" && typeof n.modelData === "string" }
+                try { return typeof n.done === "boolean" && n.modelData
+                             && typeof n.modelData.text === "string" }
                 catch (e) { return false }
             })
         }
         function stepRow(step) {
             var r = stepRows()
-            for (var i = 0; i < r.length; i++) if (r[i].modelData === step) return r[i]
+            for (var i = 0; i < r.length; i++) if (r[i].modelData.text === step) return r[i]
             return null
         }
         // Braindump entry-row delegates.
@@ -152,21 +158,44 @@ Item {
 
         function test_meds_01_sizes_data() {
             return [
-                { tag: "0.5x1", w: 340, h: 680, sc: "tall" },
-                { tag: "1x0.5", w: 840, h: 400, sc: "wide" },
-                { tag: "1x1",   w: 680, h: 640, sc: "compact" },
-                { tag: "1x1.5", w: 560, h: 700, sc: "tall" },
-                { tag: "1x2",   w: 500, h: 700, sc: "tall" }
+                { tag: "portrait-0.5x1",   w: 348,  h: 818,  sc: "tall" },
+                { tag: "landscape-0.5x1",  w: 846,  h: 306,  sc: "wide" },
+                { tag: "portrait-1x0.5",   w: 696,  h: 409,  sc: "wide" },
+                { tag: "landscape-1x0.5",  w: 423,  h: 612,  sc: "tall" },
+                { tag: "portrait-1x1",     w: 696,  h: 818,  sc: "compact" },
+                { tag: "landscape-1x1",    w: 846,  h: 612,  sc: "compact" },
+                { tag: "portrait-1x1.5",   w: 696,  h: 1226, sc: "tall" },
+                { tag: "landscape-1x1.5",  w: 1268, h: 612,  sc: "wide" },
+                { tag: "portrait-1x2",     w: 696,  h: 1635, sc: "large" },
+                { tag: "landscape-1x2",    w: 1691, h: 612,  sc: "large" }
             ]
         }
         function test_meds_01_sizes(r) {
             prep("MedsWidget.qml", r.w, r.h, r.sc)
-            set("schedule", "08:00 Vitamin D\n13:00 Ritalin"); set("taken", []); set("takenDay", "")
+            var doses = []
+            for (var i = 0; i < 20; i++)
+                doses.push((i < 10 ? "0" : "") + i + ":00 Dose " + (i + 1))
+            var schedule = doses.join("\n")
+            set("schedule", schedule)
+            set("taken", [doses[8], doses[12]])
+            set("takenDay", today())
+            wh.item.nowMinsOverride = 12 * 60 + 15
             wait(120)
             var img = snap(wh.item, "meds_sz_" + r.tag)
             compare(wh.item.width, r.w, "meds cell width " + r.tag)
             compare(wh.item.height, r.h, "meds cell height " + r.tag)
             verify(G.looksRendered(img), "meds rendered content at " + r.tag)
+            var list = G.byObjName(wh.item, "medsDoseList")
+            verify(list !== null && list.height >= wh.item.rowH,
+                   "at least one complete medication touch row fits")
+            if (r.sc === "large")
+                compare(wh.item.horiz, r.tag.indexOf("landscape") === 0,
+                        "large medication layouts follow physical orientation")
+            compare(wh.item.showFocus, r.tag.indexOf("landscape-0.5x1") === 0
+                                      || r.tag.indexOf("portrait-1x0.5") === 0
+                                      || r.tag.indexOf("landscape-1x1.5") === 0
+                                      || r.tag.indexOf("landscape-1x2") === 0,
+                    "wide projections expose a one-tap focused dose beside the schedule")
         }
 
         function test_meds_02_config_schedule_data() {
@@ -287,20 +316,20 @@ Item {
         }
 
         function test_meds_06_body_data() {
-            return [ { tag: "tap-row" }, { tag: "mark-pill" }, { tag: "untap" } ]
+            return [ { tag: "explicit-action" }, { tag: "mark-pill" }, { tag: "undo-action" } ]
         }
         function test_meds_06_body(r) {
-            if (r.tag === "tap-row") {
+            if (r.tag === "explicit-action") {
                 prep("MedsWidget.qml", 680, 640, "compact")
                 set("schedule", "08:00 A\n13:00 B"); set("taken", []); set("takenDay", ""); wait(120)
-                snap(wh.item, "meds_b_taprow_before")
-                var row = medRow("08:00 A")
-                verify(row !== null, "row present")
-                mouseClick(row, row.width / 2, row.height / 2)
+                snap(wh.item, "meds_b_action_before")
+                var action = G.byObjName(wh.item, "medsDoseAction-0")
+                verify(action !== null, "explicit dose action present")
+                mouseClick(action, action.width / 2, action.height / 2)
                 wait(200)
-                snap(wh.item, "meds_b_taprow_after")
-                verify(cfg().taken.indexOf("08:00 A") >= 0, "tap marked the dose taken in store")
-                compare(medRow("08:00 A").st, "taken", "row visibly reads taken after tap")
+                snap(wh.item, "meds_b_action_after")
+                verify(cfg().taken.indexOf("08:00 A") >= 0, "action marked the dose taken in store")
+                compare(medRow("08:00 A").st, "taken", "row visibly reads taken after action")
             } else if (r.tag === "mark-pill") {
                 prep("MedsWidget.qml", 840, 400, "wide")
                 set("schedule", "08:00 A\n13:00 B"); set("taken", []); set("takenDay", "")
@@ -315,15 +344,16 @@ Item {
                 // Focus advances to the next un-taken dose; the marked dose's
                 // schedule row (shown beside the focus in wide) now reads taken.
                 compare(medRow("08:00 A").st, "taken", "marked dose visibly reads taken")
-            } else { // untap
+            } else { // undo-action
                 prep("MedsWidget.qml", 680, 640, "compact")
                 set("schedule", "08:00 A"); set("takenDay", today()); set("taken", ["08:00 A"]); wait(120)
                 compare(medRow("08:00 A").st, "taken", "row starts taken")
-                var row2 = medRow("08:00 A")
-                mouseClick(row2, row2.width / 2, row2.height / 2)
+                var undoAction = G.byObjName(wh.item, "medsDoseAction-0")
+                verify(undoAction !== null, "explicit undo action present")
+                mouseClick(undoAction, undoAction.width / 2, undoAction.height / 2)
                 wait(200)
-                snap(wh.item, "meds_b_untap_after")
-                compare(cfg().taken.length, 0, "second tap un-took the dose")
+                snap(wh.item, "meds_b_undo_after")
+                compare(cfg().taken.length, 0, "undo action removed the taken mark")
                 verify(medRow("08:00 A").st !== "taken", "row no longer reads taken")
             }
         }
@@ -363,25 +393,62 @@ Item {
             verify(G.looksRendered(img), "card still renders with backdrop " + r.s)
         }
 
+        function test_meds_09_structured_recurrence_data() {
+            return [
+                { tag: "monday", day: 1, expected: "Monday dose" },
+                { tag: "rest-day", day: 4, expected: "No doses scheduled today" }
+            ]
+        }
+        function test_meds_09_structured_recurrence(r) {
+            prep("MedsWidget.qml", 680, 640, "compact")
+            set("scheduleFormat", "structured")
+            set("scheduleItems", [
+                { id: "mon", time: "08:00", name: "Monday dose", days: "1" },
+                { id: "tue", time: "09:00", name: "Tuesday dose", days: "2" }
+            ])
+            wh.item.todayWeekdayOverride = r.day
+            wh.item.nowMinsOverride = 8 * 60 + 10
+            wait(140)
+            var img = snap(wh.item, "meds_recurrence_" + r.tag)
+            verify(seeText(r.expected), "recurrence renders " + r.expected)
+            verify(G.looksRendered(img), "structured recurrence state renders")
+        }
+
         // ========================================================== ROUTINE ==
 
         function test_routine_01_sizes_data() {
             return [
-                { tag: "0.5x1", w: 340, h: 680, sc: "tall" },
-                { tag: "1x0.5", w: 840, h: 400, sc: "wide" },
-                { tag: "1x1",   w: 680, h: 640, sc: "compact" },
-                { tag: "1x1.5", w: 560, h: 700, sc: "tall" },
-                { tag: "1x2",   w: 500, h: 700, sc: "tall" }
+                { tag: "portrait-0.5x1",   w: 348,  h: 818,  sc: "tall" },
+                { tag: "landscape-0.5x1",  w: 846,  h: 306,  sc: "wide" },
+                { tag: "portrait-1x0.5",   w: 696,  h: 409,  sc: "wide" },
+                { tag: "landscape-1x0.5",  w: 423,  h: 612,  sc: "tall" },
+                { tag: "portrait-1x1",     w: 696,  h: 818,  sc: "compact" },
+                { tag: "landscape-1x1",    w: 846,  h: 612,  sc: "compact" },
+                { tag: "portrait-1x1.5",   w: 696,  h: 1226, sc: "tall" },
+                { tag: "landscape-1x1.5",  w: 1268, h: 612,  sc: "wide" },
+                { tag: "portrait-1x2",     w: 696,  h: 1635, sc: "large" },
+                { tag: "landscape-1x2",    w: 1691, h: 612,  sc: "large" }
             ]
         }
         function test_routine_01_sizes(r) {
             prep("RoutineWidget.qml", r.w, r.h, r.sc)
-            set("steps", "Meds\nBrush teeth\nPack bag"); set("done", []); set("day", "")
+            var steps = []
+            for (var i = 1; i <= 20; i++) steps.push("Routine step " + (i < 10 ? "0" : "") + i)
+            set("steps", steps.join("\n"))
+            set("done", [steps[0], steps[1], steps[2], steps[3], steps[4]])
+            set("day", today())
             wait(120)
             var img = snap(wh.item, "routine_sz_" + r.tag)
             compare(wh.item.width, r.w, "routine cell width " + r.tag)
             compare(wh.item.height, r.h, "routine cell height " + r.tag)
             verify(G.looksRendered(img), "routine rendered content at " + r.tag)
+            verify(seeText("Routine step 01"), "first routine step is visible")
+            var list = G.byObjName(wh.item, "routineStepList")
+            verify(list !== null && list.height >= wh.item.rowH,
+                   "at least one complete routine touch row fits")
+            if (r.sc === "large")
+                compare(wh.item.horiz, r.tag.indexOf("landscape") === 0,
+                        "large routines follow physical orientation")
         }
 
         function test_routine_02_config_steps_data() {
@@ -412,9 +479,10 @@ Item {
                 prep("RoutineWidget.qml", 680, 640, "compact")
                 set("steps", "Meds\nBrush teeth"); set("done", []); set("day", ""); wait(120)
                 snap(wh.item, "routine_b_tick_before")
-                var row = stepRow("Meds")
-                verify(row !== null, "step row present")
-                mouseClick(row, row.width / 2, row.height / 2)
+                verify(stepRow("Meds") !== null, "step row present")
+                var action = G.byObjName(wh.item, "routineStepAction-Meds")
+                verify(action !== null, "explicit completion action present")
+                mouseClick(action, action.width / 2, action.height / 2)
                 wait(200)
                 snap(wh.item, "routine_b_tick_after")
                 verify(cfg().done.indexOf("Meds") >= 0, "tap marked the step done in store")
@@ -423,8 +491,9 @@ Item {
                 prep("RoutineWidget.qml", 680, 640, "compact")
                 set("steps", "Meds\nBrush teeth"); set("day", today()); set("done", ["Meds"]); wait(120)
                 compare(stepRow("Meds").done, true, "step starts done")
-                var row2 = stepRow("Meds")
-                mouseClick(row2, row2.width / 2, row2.height / 2)
+                var undoAction = G.byObjName(wh.item, "routineStepAction-Meds")
+                verify(undoAction !== null, "explicit incomplete action present")
+                mouseClick(undoAction, undoAction.width / 2, undoAction.height / 2)
                 wait(200)
                 snap(wh.item, "routine_b_untick_after")
                 compare(cfg().done.length, 0, "second tap un-did the step")
@@ -434,7 +503,8 @@ Item {
 
         function test_routine_04_states_data() {
             return [ { tag: "empty" }, { tag: "list" }, { tag: "progress" },
-                     { tag: "alldone" }, { tag: "wide" }, { tag: "micro-footer" } ]
+                     { tag: "alldone" }, { tag: "wide" }, { tag: "micro-footer" },
+                     { tag: "overflow" }, { tag: "structured" } ]
         }
         function test_routine_04_states(r) {
             if (r.tag === "empty") {
@@ -470,7 +540,7 @@ Item {
                 verify(summ !== null && summ.visible, "summary shown in wide")
                 verify(row !== null, "list shown in wide")
                 verify(mapX(summ) < mapX(row), "summary sits left of the list (beside)")
-            } else { // micro-footer
+            } else if (r.tag === "micro-footer") {
                 prep("RoutineWidget.qml", 340, 400, "compact")   // min<480 → micro
                 set("steps", "Meds\nBrush teeth\nPack bag"); set("day", today()); set("done", ["Meds"]); wait(120)
                 snap(wh.item, "routine_st_microfooter")
@@ -478,6 +548,29 @@ Item {
                 verify(!wh.item.showSummary, "summary hidden at micro")
                 verify(seeText("1 of 3"), "footer count fallback shown")
                 verify(G.byText(wh.item, "done") === null, "no summary 'done' line at micro")
+            } else if (r.tag === "overflow") {
+                prep("RoutineWidget.qml", 680, 360, "compact")
+                var many = []
+                for (var i = 0; i < 30; i++) many.push("Routine step " + i)
+                set("steps", many.join("\n")); set("done", []); set("day", "")
+                wait(120)
+                snap(wh.item, "routine_st_overflow")
+                var overflow = G.byObjName(wh.item, "routineOverflow")
+                verify(overflow !== null && overflow.visible)
+                verify(overflow.Accessible.name.indexOf("more routine steps") >= 0)
+            } else { // structured
+                prep("RoutineWidget.qml", 680, 640, "compact")
+                set("routineFormat", "structured")
+                set("routineItems", [
+                    { id: "water", text: "Water plants" },
+                    { id: "pack", text: "Pack work bag" }
+                ])
+                set("done", ["pack"]); set("day", today())
+                wait(120)
+                snap(wh.item, "routine_st_structured")
+                compare(wh.item.stepItems[1].key, "pack")
+                compare(stepRow("Pack work bag").done, true,
+                        "completion follows structured immutable ID")
             }
         }
 
@@ -497,7 +590,9 @@ Item {
             prep("RoutineWidget.qml", 680, 640, "compact")
             set("steps", "Meds\nBrush teeth"); set("done", []); set("day", ""); wait(100)
             var row = stepRow("Meds")
-            mouseClick(row, row.width / 2, row.height / 2)   // tick → checkbox fills effAccent
+            var completion = G.byObjName(wh.item, "routineStepAction-Meds")
+            verify(row !== null && completion !== null)
+            mouseClick(completion, completion.width / 2, completion.height / 2)
             wh.item.accentName = r.accent
             wait(150)
             var img = snap(wh.item, "routine_chrome_" + r.tag)
@@ -527,23 +622,39 @@ Item {
 
         function test_braindump_01_sizes_data() {
             return [
-                { tag: "0.5x1", w: 340, h: 680, sc: "tall" },
-                { tag: "1x0.5", w: 840, h: 400, sc: "wide" },
-                { tag: "1x1",   w: 680, h: 640, sc: "compact" },
-                { tag: "1x1.5", w: 560, h: 700, sc: "tall" },
-                { tag: "1x2",   w: 500, h: 700, sc: "tall" }
+                { tag: "portrait-0.5x1",   w: 348,  h: 818,  sc: "tall" },
+                { tag: "landscape-0.5x1",  w: 846,  h: 306,  sc: "wide" },
+                { tag: "portrait-1x0.5",   w: 696,  h: 409,  sc: "wide" },
+                { tag: "landscape-1x0.5",  w: 423,  h: 612,  sc: "tall" },
+                { tag: "portrait-1x1",     w: 696,  h: 818,  sc: "compact" },
+                { tag: "landscape-1x1",    w: 846,  h: 612,  sc: "compact" },
+                { tag: "portrait-1x1.5",   w: 696,  h: 1226, sc: "tall" },
+                { tag: "landscape-1x1.5",  w: 1268, h: 612,  sc: "wide" },
+                { tag: "portrait-1x2",     w: 696,  h: 1635, sc: "large" },
+                { tag: "landscape-1x2",    w: 1691, h: 612,  sc: "large" }
             ]
         }
         function test_braindump_01_sizes(r) {
             prep("BraindumpWidget.qml", r.w, r.h, r.sc)
-            set("entries", [ { text: "call the bank", at: Date.now() },
-                             { text: "water plants",  at: Date.now() - 3600000 } ])
+            var entries = []
+            for (var i = 1; i <= 40; i++)
+                entries.push({ id: "thought-" + i,
+                               text: "Captured thought " + (i < 10 ? "0" : "") + i,
+                               at: Date.now() - i * 60000 })
+            set("entries", entries)
             set("showTimes", true)
             wait(120)
             var img = snap(wh.item, "braindump_sz_" + r.tag)
             compare(wh.item.width, r.w, "braindump cell width " + r.tag)
             compare(wh.item.height, r.h, "braindump cell height " + r.tag)
             verify(G.looksRendered(img), "braindump rendered content at " + r.tag)
+            verify(seeText("Captured thought 01"), "newest captured thought is visible")
+            var list = G.byObjName(wh.item, "braindumpList")
+            verify(list !== null && list.height >= wh.item.rowH,
+                   "at least one complete queue row fits")
+            if (r.sc === "large")
+                compare(wh.item.horiz, r.tag.indexOf("landscape") === 0,
+                        "large capture queues follow physical orientation")
         }
 
         function test_braindump_02_config_showtimes_data() {
@@ -564,18 +675,18 @@ Item {
 
         function test_braindump_03_body_data() {
             return [ { tag: "enter" }, { tag: "field-clears" }, { tag: "plus" },
-                     { tag: "remove" }, { tag: "clearall" } ]
+                     { tag: "remove" }, { tag: "edit" }, { tag: "undo" },
+                     { tag: "clearall" } ]
         }
         function test_braindump_03_body(r) {
             if (r.tag === "enter") {
                 prep("BraindumpWidget.qml", 680, 640, "compact")
                 set("entries", []); wait(100)
                 snap(wh.item, "braindump_b_enter_before")
-                var f = G.findPred(wh.item, function (n) {
-                    try { return n.placeholderText !== undefined && n.accepted !== undefined } catch (e) { return false } })
+                var f = G.byObjName(wh.item, "braindumpCaptureField")
                 verify(f !== null, "capture field present")
                 typeWord(f, "idea one")
-                keyClick(Qt.Key_Return)
+                keyClick(Qt.Key_Return, Qt.ControlModifier)
                 wait(200)
                 snap(wh.item, "braindump_b_enter_after")
                 compare(cfg().entries.length, 1, "Enter added one entry")
@@ -583,12 +694,11 @@ Item {
             } else if (r.tag === "field-clears") {
                 prep("BraindumpWidget.qml", 680, 640, "compact")
                 set("entries", []); wait(100)
-                var ff = G.findPred(wh.item, function (n) {
-                    try { return n.placeholderText !== undefined && n.accepted !== undefined } catch (e) { return false } })
+                var ff = G.byObjName(wh.item, "braindumpCaptureField")
                 verify(ff !== null, "capture field present")
                 typeWord(ff, "quick thought")
                 verify(ff.text.length > 0, "field holds typed text before commit")
-                keyClick(Qt.Key_Return)
+                keyClick(Qt.Key_Return, Qt.ControlModifier)
                 wait(200)
                 snap(wh.item, "braindump_b_fieldclears")
                 compare(ff.text, "", "capture field clears after Enter commits the thought")
@@ -596,8 +706,7 @@ Item {
             } else if (r.tag === "plus") {
                 prep("BraindumpWidget.qml", 680, 640, "compact")
                 set("entries", []); wait(100)
-                var f2 = G.findPred(wh.item, function (n) {
-                    try { return n.placeholderText !== undefined && n.accepted !== undefined } catch (e) { return false } })
+                var f2 = G.byObjName(wh.item, "braindumpCaptureField")
                 typeWord(f2, "idea two")
                 var plus = pillByGlyph("＋")
                 verify(plus !== null, "＋ add button present")
@@ -612,12 +721,48 @@ Item {
                 set("entries", [ { text: "aaa", at: Date.now() }, { text: "bbb", at: Date.now() - 1000 } ])
                 wait(140)
                 snap(wh.item, "braindump_b_remove_before")
-                var x = G.byText(wh.item, "✕")
-                verify(x !== null && x.visible, "remove ✕ visible when expanded")
-                mouseClick(x.parent, x.parent.width / 2, x.parent.height / 2)
+                var removeAction = G.findPred(wh.item, function(n) {
+                    return String(n.objectName).indexOf("braindumpRemove-") === 0
+                })
+                verify(removeAction !== null && removeAction.visible,
+                       "explicit remove action is visible when expanded")
+                mouseClick(removeAction, removeAction.width / 2, removeAction.height / 2)
                 wait(200)
                 snap(wh.item, "braindump_b_remove_after")
-                compare(cfg().entries.length, 1, "✕ removed one entry")
+                compare(cfg().entries.length, 1, "remove action removed one entry")
+            } else if (r.tag === "edit") {
+                prep("BraindumpWidget.qml", 680, 640, "compact")
+                wh.expanded = true
+                set("entries", [ { id: "edit-me", text: "draft", at: Date.now() } ])
+                wait(140)
+                var editAction = G.byObjName(wh.item, "braindumpEdit-edit-me")
+                verify(editAction !== null && editAction.visible)
+                mouseClick(editAction, editAction.width / 2, editAction.height / 2)
+                wait(100)
+                var editor = G.byObjName(wh.item, "braindumpEditor-edit-me")
+                verify(editor !== null && editor.visible)
+                editor.forceActiveFocus()
+                keyClick(Qt.Key_A, Qt.ControlModifier)
+                typeWord(editor, "finished")
+                keyClick(Qt.Key_Return)
+                wait(180)
+                snap(wh.item, "braindump_b_edit_after")
+                compare(cfg().entries[0].text, "finished")
+                compare(cfg().entries[0].id, "edit-me")
+            } else if (r.tag === "undo") {
+                prep("BraindumpWidget.qml", 680, 640, "compact")
+                wh.expanded = true
+                set("entries", [ { id: "restore-me", text: "restore me", at: Date.now() } ])
+                wait(100)
+                wh.item.remove(0)
+                wait(100)
+                var undo = pillByLabel("Restore removed thought")
+                verify(undo !== null && undo.visible, "shared undo action is visible")
+                mouseClick(undo, undo.width / 2, undo.height / 2)
+                wait(180)
+                snap(wh.item, "braindump_b_undo_after")
+                compare(cfg().entries.length, 1)
+                compare(cfg().entries[0].text, "restore me")
             } else { // clearall
                 prep("BraindumpWidget.qml", 680, 640, "compact")
                 wh.expanded = true
@@ -626,6 +771,9 @@ Item {
                 snap(wh.item, "braindump_b_clearall_before")
                 var clr = pillByLabel("Clear all")
                 verify(clr !== null, "'Clear all' button present")
+                mouseClick(clr, clr.width / 2, clr.height / 2)
+                wait(200)
+                verify(wh.item.clearArmed, "first tap arms the destructive clear")
                 mouseClick(clr, clr.width / 2, clr.height / 2)
                 wait(200)
                 snap(wh.item, "braindump_b_clearall_after")
@@ -645,22 +793,23 @@ Item {
         }
 
         function test_braindump_05_states_data() {
-            return [ { tag: "empty" }, { tag: "order" }, { tag: "wide" }, { tag: "count" } ]
+            return [ { tag: "empty" }, { tag: "order" }, { tag: "wide" },
+                     { tag: "count" }, { tag: "overflow" } ]
         }
         function test_braindump_05_states(r) {
             if (r.tag === "empty") {
                 prep("BraindumpWidget.qml", 680, 640, "compact")
                 set("entries", []); wait(120)
                 snap(wh.item, "braindump_st_empty")
-                verify(seeText("Empty"), "empty-state text shown")
+                verify(seeText("Ready for a thought"), "useful empty-state guidance shown")
                 compare(entryRows().length, 0, "no entry rows")
             } else if (r.tag === "order") {
                 prep("BraindumpWidget.qml", 680, 640, "compact")
                 set("entries", []); wait(100)
-                var f = G.findPred(wh.item, function (n) {
-                    try { return n.placeholderText !== undefined && n.accepted !== undefined } catch (e) { return false } })
-                typeWord(f, "older"); keyClick(Qt.Key_Return); wait(150)
-                typeWord(f, "newer"); keyClick(Qt.Key_Return); wait(200)
+                var f = G.byObjName(wh.item, "braindumpCaptureField")
+                verify(f !== null, "multiline capture field present")
+                typeWord(f, "older"); keyClick(Qt.Key_Return, Qt.ControlModifier); wait(150)
+                typeWord(f, "newer"); keyClick(Qt.Key_Return, Qt.ControlModifier); wait(200)
                 snap(wh.item, "braindump_st_order")
                 compare(cfg().entries[0].text, "newer", "newest entry is first in store")
                 var top = entryRow(0), second = entryRow(1)
@@ -671,18 +820,29 @@ Item {
                 prep("BraindumpWidget.qml", 840, 400, "wide")
                 set("entries", [ { text: "one thing", at: Date.now() } ]); wait(120)
                 snap(wh.item, "braindump_st_wide")
-                var field = G.findPred(wh.item, function (n) {
-                    try { return n.placeholderText !== undefined && n.accepted !== undefined } catch (e) { return false } })
-                var row = entryRow(0)
-                verify(field !== null && row !== null, "capture field and queue both present in wide")
-                verify(mapX(field) > mapX(row), "capture column sits right of the queue (beside)")
-            } else { // count
+                var capture = G.byObjName(wh.item, "braindumpCaptureColumn")
+                var queue = G.byObjName(wh.item, "braindumpQueueColumn")
+                verify(capture !== null && queue !== null, "capture and queue columns are present in wide")
+                verify(mapX(capture) > mapX(queue), "capture column sits right of the queue (beside)")
+            } else if (r.tag === "count") {
                 prep("BraindumpWidget.qml", 680, 640, "compact")
                 set("entries", [ { text: "a", at: Date.now() }, { text: "b", at: Date.now() },
                                  { text: "c", at: Date.now() } ]); wait(120)
                 snap(wh.item, "braindump_st_count")
                 compare(wh.item.status, "3", "header status shows entry count")
                 verify(seeText("3"), "count '3' rendered in header")
+            } else { // overflow
+                prep("BraindumpWidget.qml", 680, 360, "compact")
+                var many = []
+                for (var i = 0; i < 30; i++)
+                    many.push({ id: "overflow-" + i, text: "thought " + i,
+                                  at: Date.now() - i * 1000 })
+                set("entries", many)
+                wait(140)
+                snap(wh.item, "braindump_st_overflow")
+                var overflow = G.byObjName(wh.item, "braindumpOverflow")
+                verify(overflow !== null && overflow.visible)
+                verify(overflow.Accessible.name.indexOf("more thoughts") >= 0)
             }
         }
 

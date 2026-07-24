@@ -1,7 +1,7 @@
 import QtQuick
 import QtTest
+import "../../ui/qml" as App
 
-// COVERS: schema:date, schema:label, schema:repeatYearly
 
 // ─────────────────────────────────────────────────────────────────────────
 // Comprehensive tests for widget:countdown - ui/qml/widgets/CountdownWidget.qml
@@ -30,6 +30,7 @@ Item {
         id: hCd; anchors.fill: parent
         widgetFile: "CountdownWidget.qml"; expanded: true
     }
+    App.WidgetConfigSchema { id: schema }
 
     // A deliberately NARROW, COLLAPSED tile to exercise the big-number clip bug.
     Item {
@@ -83,6 +84,12 @@ Item {
             if (all[i].text === str) return all[i]
         return null
     }
+    function findTextContaining(item, str) {
+        var all = collectTexts(item, [])
+        for (var i = 0; i < all.length; i++)
+            if (String(all[i].text).indexOf(str) >= 0) return all[i]
+        return null
+    }
 
     // ── Core config → days/valid mapping ─────────────────────────────────────
     TestCase {
@@ -90,6 +97,7 @@ Item {
         when: windowShown
         function init() {
             tryVerify(function () { return hCd.ready }, 3000)
+            hCd.item.nowMsOverride = -1
             var s = hCd.storeCtl.settingsFor("test-instance")
             for (var k in s) delete s[k]
             hCd.storeCtl._touchSettings()
@@ -102,7 +110,8 @@ Item {
             compare(w.valid, false, "no date → not valid")
             compare(w.days, -999, "empty date is the -999 sentinel")
             verify(findText(w, "-") !== null, "collapsed placeholder number is -")
-            verify(findText(w, "Set a date below") !== null, "prompt text is shown")
+            verify(findText(w, "Set a valid date and time in the configuration panel") !== null,
+                   "expanded prompt directs the user to the structured controls")
         }
 
         // Parsing "YYYY-MM-DD" must use LOCAL midnight - no UTC off-by-one.
@@ -118,6 +127,36 @@ Item {
             set("date", offsetStr(10))
             compare(w.days, 10, "a date 10 days out reads 10")
             compare(w.valid, true)
+        }
+
+        function test_time_validation_auto_precision_and_complete_state() {
+            var w = hCd.item
+            patch({ date: offsetStr(1), time: "25:00" })
+            compare(w.valid, false, "impossible time is rejected")
+            var now = new Date(2030, 0, 1, 10, 0, 0)
+            var target = new Date(2030, 0, 1, 15, 0, 0)
+            w.nowMsOverride = now.getTime()
+            patch({ date: Qt.formatDate(target, "yyyy-MM-dd"),
+                    time: Qt.formatTime(target, "HH:mm"), precision: "auto" })
+            compare(w.valid, true)
+            compare(w.timeStr, "15:00")
+            compare(w.precision, "auto")
+            compare(w.hoursRemaining, 5)
+            verify(w.heroText.indexOf("h") > 0, "auto precision switches to hours")
+            patch({ date: offsetStr(-1), time: "00:00", precision: "days", afterEvent: "complete" })
+            compare(w.heroText, "✓")
+            w.nowMsOverride = -1
+        }
+
+        function test_structured_time_is_bounded_and_formatted() {
+            var w = hCd.item
+            patch({ date: offsetStr(1), targetHour: 15, targetMinute: 30 })
+            compare(w.timeStr, "15:30")
+            compare(w.valid, true)
+            patch({ targetHour: 25, targetMinute: 30 })
+            compare(w.valid, false, "out-of-range structured hour is rejected")
+            patch({ targetHour: 9, targetMinute: 60 })
+            compare(w.valid, false, "out-of-range structured minute is rejected")
         }
 
         function test_past_date_negative_and_valid() {
@@ -147,7 +186,8 @@ Item {
             var w = hCd.item
             set("date", offsetStr(0))
             compare(w.days, 0)
-            verify(findText(w, "🎉") !== null, "days===0 shows the 🎉 glyph, not a number")
+            verify(findText(w, "NOW") !== null,
+                   "days===0 shows a deterministic NOW hero, not a number")
             verify(findText(w, "Today!") !== null, "and the Today! caption")
         }
 
@@ -172,6 +212,7 @@ Item {
         when: windowShown
         function init() {
             tryVerify(function () { return hCd.ready }, 3000)
+            hCd.item.nowMsOverride = -1
             var s = hCd.storeCtl.settingsFor("test-instance")
             for (var k in s) delete s[k]
             hCd.storeCtl._touchSettings()
@@ -210,13 +251,28 @@ Item {
                 verify(w.days > 0 && w.days < 400, "future occurrence within a year")
         }
 
-        // On the exact anniversary day, days===0 ("Today"), NOT rolled to next
-        // year - guards the strict `< today0` comparison.
-        function test_exact_anniversary_is_today_not_next_year() {
+        // On the anniversary day, an occurrence later today remains this year's.
+        function test_anniversary_later_today_is_not_next_year() {
             var w = hCd.item
+            var now = new Date(2030, 6, 23, 10, 0, 0)
+            w.nowMsOverride = now.getTime()
             set("repeatYearly", true)
-            set("date", offsetStr(0))
+            set("date", "2024-07-23")
+            set("time", "15:00")
             compare(w.days, 0, "today's anniversary is 0, not ~365")
+        }
+
+        function test_anniversary_time_already_passed_rolls_to_next_year() {
+            var w = hCd.item
+            var now = new Date(2030, 6, 23, 16, 0, 0)
+            w.nowMsOverride = now.getTime()
+            set("repeatYearly", true)
+            set("date", "2024-07-23")
+            set("time", "15:00")
+            var target = w.nextTarget()
+            compare(target.getFullYear(), 2031,
+                    "a passed occurrence on the same day advances one year")
+            verify(w.days > 300, "the countdown no longer reports Today")
         }
 
         // BUG (medium): a Feb-29 anniversary rebuilt as new Date(year,1,29) drifts
@@ -232,6 +288,62 @@ Item {
             compare(w.days, expected,
                     "Feb-29 anniversary should count to the next real Feb-29 (" +
                     ymd(target) + "), not drift to Mar-1")
+        }
+
+        function test_feb29_policy_can_use_february_28() {
+            var w = hCd.item
+            w.nowMsOverride = new Date(2025, 0, 1, 12, 0, 0).getTime()
+            hCd.storeCtl.patchSettings("test-instance", {
+                repeatYearly: true, date: "2024-02-29",
+                leapDayPolicy: "feb28", targetHour: 9, targetMinute: 0
+            })
+            var target = w.nextTarget()
+            compare(target.getFullYear(), 2025)
+            compare(target.getMonth(), 1)
+            compare(target.getDate(), 28)
+            verify(w.leapPolicyText.indexOf("February 28") >= 0)
+        }
+
+        function test_feb29_policy_can_use_march_1() {
+            var w = hCd.item
+            w.nowMsOverride = new Date(2025, 0, 1, 12, 0, 0).getTime()
+            hCd.storeCtl.patchSettings("test-instance", {
+                repeatYearly: true, date: "2024-02-29",
+                leapDayPolicy: "mar1", targetHour: 9, targetMinute: 0
+            })
+            var target = w.nextTarget()
+            compare(target.getFullYear(), 2025)
+            compare(target.getMonth(), 2)
+            compare(target.getDate(), 1)
+            verify(w.leapPolicyText.indexOf("March 1") >= 0)
+        }
+    }
+
+    TestCase {
+        name: "CountdownSchema"
+
+        function field(key) {
+            var sections = schema.schemaFor("countdown").sections
+            for (var i = 0; i < sections.length; i++)
+                for (var j = 0; j < (sections[i].fields || []).length; j++)
+                    if (sections[i].fields[j].key === key) return sections[i].fields[j]
+            return null
+        }
+
+        function test_time_uses_bounded_structured_controls() {
+            compare(field("targetHour").type, "hour")
+            compare(field("targetHour").min, 0)
+            compare(field("targetHour").max, 23)
+            compare(field("targetMinute").type, "segmented")
+            compare(field("targetMinute").options.length, 4)
+            compare(field("time"), null, "raw HH:MM input is no longer exposed")
+        }
+
+        function test_leap_day_policy_is_explicit() {
+            var f = field("leapDayPolicy")
+            compare(f.type, "segmented")
+            compare(f.dflt, "nextLeap")
+            compare(f.options.length, 3)
         }
     }
 
@@ -451,7 +563,7 @@ Item {
             compare(w.showProgress, false, "compact keeps the progress bar for bigger sizes")
             var t = w.nextTarget()
             verify(t !== null, "a target exists")
-            verify(findText(w, Qt.formatDate(t, "ddd, d MMM yyyy")) !== null,
+            verify(findTextContaining(w, Qt.formatDate(t, "ddd, d MMM yyyy")) !== null,
                    "the formatted target date is rendered")
         }
 

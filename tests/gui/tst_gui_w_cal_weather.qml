@@ -25,7 +25,8 @@ import "../../ui/qml/widgets" as W
 // ─────────────────────────────────────────────────────────────────────────
 Item {
     id: root
-    width: 2560; height: 760
+    // Contains the largest declared projection in this suite without clipping.
+    width: 2700; height: 1700
 
     // The app-global egress gate, injected only for the offline / blocked cases
     // (a widget's local fallback hub cannot be driven offline). Everything else
@@ -63,6 +64,8 @@ Item {
         function resetGate() {
             gate.offline = false; gate.allowHosts = []
             gate.requests = 0; gate.blocked = 0
+            gate._sharedProviders = ({})
+            gate.sharedRevision = 0
         }
         function size(h, w, hh, cls) { h.width = w; h.height = hh; h.item.sizeClass = cls }
 
@@ -141,11 +144,16 @@ Item {
                 clearSettings(h)
                 h.item.accentName = ""; h.item.cardBackdrop = "none"; h.item.titleOverride = ""
                 h.item.netHub = null
+                if (h.item._hub && h.item._hub()._sharedProviders !== undefined) {
+                    h.item._hub()._sharedProviders = ({})
+                    h.item._hub().sharedRevision = 0
+                }
                 installFactory(h)
             }
             calH.item.events = []; calH.item.errorText = ""; calH.item.loading = false
             calH.item.sizeClass = "compact"
             wxH.item.loaded = false; wxH.item.errorText = ""
+            wxH.storeCtl.patchSettings("test-instance", { lat: 48.2, lon: 16.37, place: "Vienna" })
             wxH.item.sizeClass = "compact"
             nnH.item.sizeClass = "compact"
             nnH.item.refresh()   // empty url → resets the embedded agenda model
@@ -156,25 +164,35 @@ Item {
         //  CALENDAR
         // ═══════════════════════════════════════════════════════════════════
 
-        // Every declared size renders real content at the requested cell size.
+        // Every declared allocation is rendered in both physical orientations.
         function test_cal_size_data() {
             return [
-                { tag: "0.5x1",  w: 348, h: 819,  cls: "tall"    },
-                { tag: "1x0.5",  w: 846, h: 306,  cls: "wide"    },
-                { tag: "1x1",    w: 696, h: 819,  cls: "compact" },
-                { tag: "1x1.5",  w: 696, h: 1229, cls: "tall"    },
-                { tag: "1x2",    w: 696, h: 1637, cls: "large"   }
+                { tag: "p_0.5x1", w: 348,  h: 818,  cls: "tall"    },
+                { tag: "l_0.5x1", w: 846,  h: 306,  cls: "wide"    },
+                { tag: "p_1x0.5", w: 696,  h: 409,  cls: "wide"    },
+                { tag: "l_1x0.5", w: 423,  h: 612,  cls: "tall"    },
+                { tag: "p_1x1",   w: 696,  h: 818,  cls: "compact" },
+                { tag: "l_1x1",   w: 846,  h: 612,  cls: "compact" },
+                { tag: "p_1x1.5", w: 696,  h: 1226, cls: "tall"    },
+                { tag: "l_1x1.5", w: 1268, h: 612,  cls: "wide"    },
+                { tag: "p_1x2",   w: 696,  h: 1635, cls: "large"   },
+                { tag: "l_1x2",   w: 1691, h: 612,  cls: "large"   }
             ]
         }
         function test_cal_size(d) {
             size(calH, d.w, d.h, d.cls)
             calH.storeCtl.setSetting("test-instance", "url", "https://ex.com/c.ics")
+            calH.storeCtl.setSetting("test-instance", "maxEvents", 12)
             wait(400)                         // flush the url-change debounce
-            calH.item.refresh(); tc.lastFake.resolveWith(200, Fx.icsValid())
+            calH.item.refresh(); tc.lastFake.resolveWith(200, bigIcs(20))
             wait(150)
             compare(calH.item.width, d.w, "cell width honoured")
             compare(calH.item.height, d.h, "cell height honoured")
-            verify(calH.item.events.length === 3, "agenda parsed for size " + d.tag)
+            compare(calH.item.events.length, 20, "full agenda parsed for " + d.tag)
+            verify(calH.item.shownCount > 0 && calH.item.shownCount <= 12,
+                   "visible agenda is bounded for " + d.tag)
+            verify(calH.item.eventCols >= 1 && calH.item.eventCols <= 4,
+                   "agenda columns fit the physical shape for " + d.tag)
             var img = snap(calH, "cal_size_" + d.tag)
             verify(G.looksRendered(img), "calendar rendered content at " + d.tag)
         }
@@ -211,21 +229,22 @@ Item {
             snap(calH, "cal_maxevents_" + d.tag)
         }
 
-        // Body: the expanded URL field + Save persists the url AND fires a refresh.
+        // Body: connection editing is consolidated into WidgetConfigPanel. The
+        // expanded live preview owns only the agenda and a manual refresh action.
         function test_cal_body_save() {
             calH.expanded = true; size(calH, 700, 600, "full"); wait(150)
             var field = findByPlaceholder(calH.item, "ICS")
-            verify(field !== null, "expanded URL field present")
-            field.text = "https://saved.example.com/c.ics"
-            var save = findPill(calH.item, "Save")
-            verify(save !== null, "Save button present")
+            compare(field, null, "the widget does not duplicate the shared config editor")
+            calH.storeCtl.setSetting("test-instance", "url", "https://saved.example.com/c.ics")
+            wait(400)
+            var save = findPill(calH.item, "Refresh")
+            verify(save !== null, "Refresh now button present")
             tc.lastFake = null
             mouseClick(save, save.width / 2, save.height / 2)
             wait(120)
             compare(calH.storeCtl.settingsFor("test-instance").url, "https://saved.example.com/c.ics",
-                    "a real click on Save persisted the URL")
-            wait(400)   // the debounce the save kicked off
-            verify(tc.lastFake !== null, "saving the URL fired a fetch through the gate")
+                    "refresh does not rewrite the private setting")
+            verify(tc.lastFake !== null, "a real click fired a fetch through the gate")
             snap(calH, "cal_body_save")
         }
 
@@ -340,10 +359,12 @@ Item {
 
         function test_nn_size_data() {
             return [
-                { tag: "0.5x1", w: 348, h: 819,  cls: "tall"    },
-                { tag: "1x0.5", w: 846, h: 306,  cls: "wide"    },
-                { tag: "1x1",   w: 696, h: 819,  cls: "compact" },
-                { tag: "1x1.5", w: 696, h: 1229, cls: "tall"    }
+                { tag: "p_0.5x1", w: 348, h: 818, cls: "tall",    horiz: false },
+                { tag: "l_0.5x1", w: 846, h: 306, cls: "wide",    horiz: true  },
+                { tag: "p_1x0.5", w: 696, h: 409, cls: "wide",    horiz: true  },
+                { tag: "l_1x0.5", w: 423, h: 612, cls: "tall",    horiz: false },
+                { tag: "p_1x1",   w: 696, h: 818, cls: "compact", horiz: false },
+                { tag: "l_1x1",   w: 846, h: 612, cls: "compact", horiz: false }
             ]
         }
         function test_nn_size(d) {
@@ -351,7 +372,10 @@ Item {
             nnFeed(nowIcs())
             compare(nnH.item.width, d.w, "cell width honoured")
             compare(nnH.item.height, d.h, "cell height honoured")
+            compare(nnH.item.horiz, d.horiz, "NOW/NEXT composition follows physical shape")
             verify(nnH.item.nowEvent !== null || nnH.item.nextEvent !== null, "a block is populated")
+            verify(findExactText(nnH.item, "NOW") !== null, "NOW block visible")
+            verify(findExactText(nnH.item, "NEXT") !== null, "NEXT block visible")
             var img = snap(nnH, "nn_size_" + d.tag)
             verify(G.looksRendered(img), "now/next rendered content at " + d.tag)
         }
@@ -370,20 +394,15 @@ Item {
             snap(nnH, "nn_url_" + d.tag)
         }
 
-        // Body: expanded URL field + Save persists and the nested agenda refetches.
+        // Body: source editing is consolidated into WidgetConfigPanel. The live
+        // preview keeps the agenda presentation free of a second secret editor.
         function test_nn_body_save() {
             nnH.expanded = true; size(nnH, 700, 600, "full"); wait(150)
             var field = findByPlaceholder(nnH.item, "ICS")
-            verify(field !== null, "expanded URL field present")
-            field.text = "https://saved.example.com/n.ics"
-            var save = findPill(nnH.item, "Save")
-            verify(save !== null, "Save button present")
-            tc.lastFake = null
-            mouseClick(save, save.width / 2, save.height / 2); wait(120)
-            compare(nnH.storeCtl.settingsFor("test-instance").url, "https://saved.example.com/n.ics",
-                    "Save persisted the URL")
-            wait(400)
-            verify(tc.lastFake !== null, "the nested agenda refetched after Save")
+            compare(field, null, "the widget does not duplicate the shared config editor")
+            nnH.storeCtl.setSetting("test-instance", "url", "https://saved.example.com/n.ics")
+            wait(400); nnH.item.refresh(); wait(120)
+            verify(tc.lastFake !== null, "the nested agenda fetches the shared setting")
             snap(nnH, "nn_body_save")
         }
 
@@ -473,11 +492,16 @@ Item {
 
         function test_wx_size_data() {
             return [
-                { tag: "0.5x0.5", w: 348, h: 409,  cls: "compact", micro: true  },
-                { tag: "0.5x1",   w: 348, h: 819,  cls: "tall",    micro: false },
-                { tag: "1x0.5",   w: 846, h: 306,  cls: "wide",    micro: false },
-                { tag: "1x1",     w: 696, h: 819,  cls: "compact", micro: false },
-                { tag: "1x1.5",   w: 696, h: 1229, cls: "tall",    micro: false }
+                { tag: "p_0.5x0.5", w: 348,  h: 409,  cls: "compact", micro: true,  roomy: false },
+                { tag: "l_0.5x0.5", w: 423,  h: 306,  cls: "compact", micro: true,  roomy: false },
+                { tag: "p_0.5x1",   w: 348,  h: 818,  cls: "tall",    micro: false, roomy: false },
+                { tag: "l_0.5x1",   w: 846,  h: 306,  cls: "wide",    micro: false, roomy: false },
+                { tag: "p_1x0.5",   w: 696,  h: 409,  cls: "wide",    micro: false, roomy: false },
+                { tag: "l_1x0.5",   w: 423,  h: 612,  cls: "tall",    micro: false, roomy: false },
+                { tag: "p_1x1",     w: 696,  h: 818,  cls: "compact", micro: false, roomy: false },
+                { tag: "l_1x1",     w: 846,  h: 612,  cls: "compact", micro: false, roomy: false },
+                { tag: "p_1x1.5",   w: 696,  h: 1226, cls: "tall",    micro: false, roomy: true  },
+                { tag: "l_1x1.5",   w: 1268, h: 612,  cls: "wide",    micro: false, roomy: true  }
             ]
         }
         function test_wx_size(d) {
@@ -487,14 +511,19 @@ Item {
             compare(wxH.item.height, d.h, "cell height honoured")
             compare(wxH.item.micro, d.micro, "micro derivation for " + d.tag)
             compare(wxH.item.loaded, true, "forecast loaded")
+            compare(wxH.item.roomy, d.roomy, "detail density for " + d.tag)
+            var details = G.findPred(wxH.item, function (n) {
+                return n && n.objectName === "weatherConditionSummary" && G.isLive(n)
+            })
+            compare(details !== null, d.roomy, "condition summary for " + d.tag)
             var img = snap(wxH, "wx_size_" + d.tag)
             verify(G.looksRendered(img), "weather rendered content at " + d.tag)
         }
 
-        // Config: place label reflects the typed name, and clears back to Berlin.
+        // Config: place label reflects the typed name, and clears to coordinates.
         function test_wx_place_data() {
             return [ { tag: "vienna", val: "Vienna, AT", find: "Vienna" },
-                     { tag: "cleared", val: "", find: "Berlin" } ]
+                     { tag: "cleared", val: "", find: "48.20" } ]
         }
         function test_wx_place(d) {
             size(wxH, 696, 819, "compact")
@@ -650,7 +679,8 @@ Item {
                 wxLoad(Fx.FORECAST_VALID)                 // a good reading first
                 w.refresh(); tc.lastFake.fireTimeout(); wait(120)
                 compare(w.loaded, true, "a timeout after a good reading HOLDS it (no stale wipe)")
-                compare(w.errorText, "", "no error overwrites the held reading")
+                compare(w.errorText, "Timed out", "the held reading still discloses the timeout")
+                verify(G.byText(w, "Timed out") !== null, "the provider failure is visible")
                 verify(G.byText(w, "21°") !== null, "the last reading is still on screen")
             } else if (d.tag === "micro") {
                 size(wxH, 348, 409, "compact"); wxLoad(Fx.FORECAST_VALID)

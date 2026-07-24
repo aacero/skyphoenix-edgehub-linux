@@ -67,16 +67,16 @@ Item {
             verify(Qt.colorEqual(theme.backgroundColor, "#2E3440"), "nord background unchanged")
         }
 
-        // A config written before this change carries no textScale/preference; the
-        // defaults must reproduce the OLD rendering exactly.
-        function test_defaults_match_pre_change_rendering() {
+        // A config without a textScale gets the viewing-distance default.
+        function test_defaults_are_legible_at_viewing_distance() {
             var fresh = freshTheme.createObject(root)
-            compare(fresh.textScale, 1.0, "text scale defaults to 1.0")
-            compare(fresh.fontData, 40, "fontData default unchanged")
-            compare(fresh.fontDataLarge, 48, "fontDataLarge default unchanged")
-            compare(fresh.fontTitle, 17, "fontTitle default unchanged")
-            compare(fresh.fontLabel, 15, "fontLabel default unchanged")
-            compare(fresh.fontCaption, 13, "fontCaption default unchanged")
+            compare(fresh.textScale, 1.15, "text scale defaults to Comfortable")
+            compare(fresh.fontMinimum, 15, "minimum readable token is 15px")
+            compare(fresh.fontData, 46, "data token grows for viewing distance")
+            compare(fresh.fontDataLarge, 55, "large data token grows for viewing distance")
+            compare(fresh.fontTitle, 20, "title token grows for viewing distance")
+            compare(fresh.fontLabel, 17, "label token grows for viewing distance")
+            compare(fresh.fontCaption, 15, "caption token grows for viewing distance")
             compare(fresh.reduceMotionPreference, "auto", "preference defaults to auto")
             compare(fresh.systemReduceMotion, false, "no OS signal by default")
             compare(fresh.effectiveReduceMotion, false, "motion stays on by default")

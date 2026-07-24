@@ -25,7 +25,9 @@ import "GuiUtil.js" as G
 // one widget's control can never land on another.
 Item {
     id: root
-    width: 2900; height: 2600
+    // Wide enough to keep the KPI column fully on-screen at a landscape 1x3
+    // projection (1600 + 2536px), rather than silently clipping the test image.
+    width: 4300; height: 2600
 
     // Media column: x [0, 800)
     Item { id: mediaWrap; x: 0; y: 0; width: 696; height: 819
@@ -56,6 +58,9 @@ Item {
         return out
     }
     function first(node, pred) { var a = collect(node, pred); return a.length ? a[0] : null }
+    function named(node, objectName) {
+        return collect(node, function (n) { return n && n.objectName === objectName })
+    }
 
     function effVisible(n) {
         var c = n
@@ -184,11 +189,16 @@ Item {
         // ---- Sizes (5): every declared media size renders art + title. ----
         function test_size_data() {
             return [
-                { tag: "0.5x0.5", w: 348, h: 409, cls: "compact" },
-                { tag: "0.5x1",   w: 348, h: 819, cls: "tall" },
-                { tag: "1x0.5",   w: 696, h: 409, cls: "wide" },
-                { tag: "1x1",     w: 696, h: 819, cls: "compact" },
-                { tag: "1x1.5",   w: 696, h: 1228, cls: "tall" }
+                { tag: "portrait-0.5x0.5",  w: 348,  h: 409,  cls: "compact" },
+                { tag: "landscape-0.5x0.5", w: 423,  h: 306,  cls: "compact" },
+                { tag: "portrait-0.5x1",    w: 348,  h: 818,  cls: "tall" },
+                { tag: "landscape-0.5x1",   w: 846,  h: 306,  cls: "wide" },
+                { tag: "portrait-1x0.5",    w: 696,  h: 409,  cls: "wide" },
+                { tag: "landscape-1x0.5",   w: 423,  h: 612,  cls: "tall" },
+                { tag: "portrait-1x1",      w: 696,  h: 818,  cls: "compact" },
+                { tag: "landscape-1x1",     w: 846,  h: 612,  cls: "compact" },
+                { tag: "portrait-1x1.5",    w: 696,  h: 1226, cls: "tall" },
+                { tag: "landscape-1x1.5",   w: 1268, h: 612,  cls: "wide" }
             ]
         }
         function test_size(row) {
@@ -200,6 +210,16 @@ Item {
             var img = snap(mh, "size_" + row.tag)
             verify(G.looksRendered(img), row.tag + ": rendered non-blank pixels")
             verify(root.vexact(it, "SongZed").length >= 1, row.tag + ": title visible")
+            var artwork = G.byObjName(it, "mediaArtwork")
+            verify(artwork !== null && root.effVisible(artwork), row.tag + ": artwork visible")
+            var progress = G.byObjName(it, "mediaProgress")
+            verify(progress !== null, row.tag + ": progress track exists")
+            var micro = row.tag.indexOf("0.5x0.5") >= 0
+            compare(progress.visible, !micro, row.tag + ": progress only where it fits")
+            compare(root.iconByName(it, "ui-skip-back").length > 0, !micro,
+                    row.tag + ": full transport only where it fits")
+            verify(root.iconByName(it, "ui-pause").length > 0,
+                   row.tag + ": play/pause remains a full touch target")
         }
 
         // ---- Transport (3): counts change on a REAL click. ----
@@ -248,7 +268,8 @@ Item {
             mh.mediaCtl.clearTrack()
             wait(120)
             snap(mh, "state_nothing")
-            verify(root.vtexts(it, "Nothing playing").length >= 1, "nothing-playing placeholder shown")
+            verify(root.vtexts(it, "No track loaded").length >= 1,
+                   "idle-player placeholder shown")
         }
         function test_state_playing_meta() {
             var it = mFresh(696, 819, "compact")
@@ -262,9 +283,9 @@ Item {
             var it = mFresh(696, 819, "compact")
             mh.mediaCtl.loadTrack("SongZed", "BandY")   // position 0.3
             wait(200)
-            // The progress track is a ~6px Rectangle with a single inner fill child.
+            // The progress track is an 8px Rectangle with a single inner fill child.
             var tracks = G.collectPred(it, function (n) {
-                try { return n && n.radius !== undefined && Math.abs(n.height - 6) < 1.5
+                try { return n && n.radius !== undefined && Math.abs(n.height - 8) < 1.5
                              && n.width > 60 && root.effVisible(n)
                              && n.children && n.children.length >= 1 } catch (e) { return false }
             })
@@ -406,25 +427,37 @@ Item {
             return best
         }
 
-        // ---- Sizes (6) ----
+        // ---- Physical size projections (6 allocations x 2 orientations) ----
         function test_size_data() {
             return [
-                { tag: "0.5x0.5", w: 348, h: 409,  cls: "compact" },
-                { tag: "0.5x1",   w: 348, h: 819,  cls: "tall" },
-                { tag: "1x0.5",   w: 696, h: 409,  cls: "wide" },
-                { tag: "1x1",     w: 696, h: 819,  cls: "compact" },
-                { tag: "1x1.5",   w: 696, h: 1228, cls: "tall" },
-                { tag: "1x2",     w: 696, h: 1637, cls: "large" }
+                { tag: "p_0.5x0.5", w: 348,  h: 409,  cls: "compact", roomy: false },
+                { tag: "l_0.5x0.5", w: 423,  h: 306,  cls: "compact", roomy: false },
+                { tag: "p_0.5x1",   w: 348,  h: 818,  cls: "tall",    roomy: false },
+                { tag: "l_0.5x1",   w: 846,  h: 306,  cls: "wide",    roomy: false },
+                { tag: "p_1x0.5",   w: 696,  h: 409,  cls: "wide",    roomy: false },
+                { tag: "l_1x0.5",   w: 423,  h: 612,  cls: "tall",    roomy: false },
+                { tag: "p_1x1",     w: 696,  h: 818,  cls: "compact", roomy: false },
+                { tag: "l_1x1",     w: 846,  h: 612,  cls: "compact", roomy: false },
+                { tag: "p_1x1.5",   w: 696,  h: 1226, cls: "tall",    roomy: false },
+                { tag: "l_1x1.5",   w: 1268, h: 612,  cls: "wide",    roomy: false },
+                { tag: "p_1x2",     w: 696,  h: 1635, cls: "large",   roomy: true },
+                { tag: "l_1x2",     w: 1691, h: 612,  cls: "large",   roomy: true }
             ]
         }
         function test_size(row) {
-            var it = hFresh(row.w, row.h, row.cls, { url: "http://x/y", mode: "value" })
+            var it = hFresh(row.w, row.h, row.cls,
+                            { url: "http://status.lan/api", jsonPath: "system.load",
+                              pollSec: 30, mode: "value" })
+            it.hist = [0.25, 0.42, 0.38, 0.61, 0.57, 0.72]
             seedVal(128); wait(80)
             compare(it.width, row.w, row.tag + ": width")
             compare(it.height, row.h, row.tag + ": height")
             var img = snap(hh, "size_" + row.tag)
             verify(G.looksRendered(img), row.tag + ": rendered")
             verify(root.vexact(it, "128").length >= 1, row.tag + ": the reading is shown")
+            compare(root.named(it, "httpSourceContext").length > 0
+                    && root.effVisible(root.named(it, "httpSourceContext")[0]),
+                    row.roomy, row.tag + ": source context is reserved for roomy sizes")
         }
 
         // ---- Config fields (17) ----
@@ -530,9 +563,8 @@ Item {
         function test_body_refresh() {
             var it = hFresh(696, 819, "compact", { url: "http://x/y", mode: "value", jsonPath: "" })
             seedVal(1); wait(80)
-            var glyph = root.vexact(it, "⟳")
-            verify(glyph.length >= 1, "refresh control present on the tile")
-            var rect = glyph[0].parent
+            var rect = G.byObjName(it, "httpRefreshButton")
+            verify(rect !== null, "refresh control present on the tile")
             snap(hh, "refresh_before")
             mouseClick(rect, rect.width / 2, rect.height / 2)   // → w.refresh() via the stub
             verify(tcHttp.lastFake !== null, "a request was made through the gate")
@@ -706,26 +738,36 @@ Item {
             return best
         }
 
-        // ---- Sizes (7) ----
+        // ---- Physical size projections (7 allocations x 2 orientations) ----
         function test_size_data() {
             return [
-                { tag: "0.5x0.5", w: 348, h: 409,  cls: "compact" },
-                { tag: "0.5x1",   w: 348, h: 819,  cls: "tall" },
-                { tag: "1x0.5",   w: 696, h: 409,  cls: "wide" },
-                { tag: "1x1",     w: 696, h: 819,  cls: "compact" },
-                { tag: "1x1.5",   w: 696, h: 1228, cls: "tall" },
-                { tag: "1x2",     w: 696, h: 1637, cls: "large" },
-                { tag: "1x3",     w: 696, h: 2459, cls: "large" }
+                { tag: "p_0.5x0.5", w: 348,  h: 409,  cls: "compact", roomy: false, split: false },
+                { tag: "l_0.5x0.5", w: 423,  h: 306,  cls: "compact", roomy: false, split: false },
+                { tag: "p_0.5x1",   w: 348,  h: 818,  cls: "tall",    roomy: false, split: false },
+                { tag: "l_0.5x1",   w: 846,  h: 306,  cls: "wide",    roomy: false, split: true  },
+                { tag: "p_1x0.5",   w: 696,  h: 409,  cls: "wide",    roomy: false, split: true  },
+                { tag: "l_1x0.5",   w: 423,  h: 612,  cls: "tall",    roomy: false, split: false },
+                { tag: "p_1x1",     w: 696,  h: 818,  cls: "compact", roomy: false, split: false },
+                { tag: "l_1x1",     w: 846,  h: 612,  cls: "compact", roomy: false, split: false },
+                { tag: "p_1x1.5",   w: 696,  h: 1226, cls: "tall",    roomy: false, split: false },
+                { tag: "l_1x1.5",   w: 1268, h: 612,  cls: "wide",    roomy: false, split: true  },
+                { tag: "p_1x2",     w: 696,  h: 1635, cls: "large",   roomy: true,  split: false },
+                { tag: "l_1x2",     w: 1691, h: 612,  cls: "large",   roomy: true,  split: true  },
+                { tag: "p_1x3",     w: 696,  h: 2452, cls: "large",   roomy: true,  split: false },
+                { tag: "l_1x3",     w: 2536, h: 612,  cls: "large",   roomy: true,  split: true  }
             ]
         }
         function test_size(row) {
             var it = kFresh(row.w, row.h, row.cls, { source: "http", url: "http://x/y", label: "Lat", unit: "ms" })
-            seedVal(42); wait(80)
+            feed([31, 36, 33, 40, 38, 42]); wait(80)
             compare(it.width, row.w, row.tag + ": width")
             compare(it.height, row.h, row.tag + ": height")
+            compare(it.split, row.split, row.tag + ": physical composition")
             var img = snap(kh, "size_" + row.tag)
             verify(G.looksRendered(img), row.tag + ": rendered")
             verify(root.vexact(it, "42").length >= 1, row.tag + ": number rendered")
+            compare(root.vexact(it, "min").length > 0, row.roomy,
+                    row.tag + ": min/avg/max belongs only to roomy sizes")
         }
 
         // ---- Config fields (16) ----
@@ -829,9 +871,8 @@ Item {
         function test_body_refresh() {
             var it = kFresh(696, 819, "compact", { source: "http", url: "http://x/y", jsonPath: "" })
             seedVal(1); wait(80)
-            var glyph = root.vexact(it, "⟳")
-            verify(glyph.length >= 1, "refresh control present")
-            var rect = glyph[0].parent
+            var rect = G.byObjName(it, "kpiRefreshButton")
+            verify(rect !== null, "refresh control present")
             snap(kh, "refresh_before")
             mouseClick(rect, rect.width / 2, rect.height / 2)
             verify(tcKpi.lastFake !== null, "a request was made")

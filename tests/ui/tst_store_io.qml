@@ -51,6 +51,11 @@ Item {
         // ── _isEphemeralKey table ────────────────────────────────────────────
         function test_isEphemeralKey_table() {
             verify(store._isEphemeralKey("hist"), "hist is ephemeral")
+            verify(store._isEphemeralKey("histRaw"), "raw KPI history is ephemeral")
+            verify(store._isEphemeralKey("histDevice"), "GPU history identity is ephemeral")
+            verify(store._isEphemeralKey("quoteManualIdx"), "quote shuffle index is ephemeral")
+            verify(store._isEphemeralKey("quotePinnedText"), "quote identity is ephemeral")
+            verify(store._isEphemeralKey("quoteManualDay"), "quote shuffle day is ephemeral")
             verify(store._isEphemeralKey("peakRx"), "peakRx is ephemeral")
             verify(store._isEphemeralKey("peakTx"), "peakTx is ephemeral")
             verify(!store._isEphemeralKey("title"), "title is persisted")
@@ -99,7 +104,7 @@ Item {
         function test_persistableData_strips_ephemeral_from_every_bucket() {
             seedBuckets()
             var pd = store._persistableData()
-            verify(pd !== store.data, "persistable data is a separate clone")
+            verify(pd !== store.document, "persistable data is a separate clone")
             // Ephemeral keys gone from both buckets.
             compare(pd.settings["cpu-1"].hist, undefined, "cpu-1 hist stripped")
             compare(pd.settings["cpu-1"].peakRx, undefined, "cpu-1 peakRx stripped")
@@ -115,9 +120,9 @@ Item {
         function test_persistableData_is_non_destructive() {
             seedBuckets()
             store._persistableData()
-            verify(store.data.settings["cpu-1"].hist !== undefined,
+            verify(store.document.settings["cpu-1"].hist !== undefined,
                    "the live document keeps its runtime hist (only the on-disk copy is stripped)")
-            verify(store.data.settings["cpu-1"].peakRx !== undefined, "live peakRx retained")
+            verify(store.document.settings["cpu-1"].peakRx !== undefined, "live peakRx retained")
         }
 
         // ── flush writes the exact persistable JSON (no ephemeral keys) ──────

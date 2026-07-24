@@ -3,7 +3,6 @@ import QtTest
 import "../../ui/qml" as App
 import "../../ui/qml/widgets" as Wg
 
-// COVERS: schema:showHistory, schema:showTemp, schema:title, schema:warnTemp
 
 // Comprehensive coverage for the CPU widget (ui/qml/widgets/CpuWidget.qml).
 //
@@ -15,17 +14,9 @@ import "../../ui/qml/widgets" as Wg
 // clamping. Also directly instantiates the shared MetricGauge and the CPU
 // config schema.
 //
-// Assertions that encode the *intended* behaviour but fail against the current
-// code are deliberate - they pin the real bugs called out in the audit:
-//   • missing cpu_usage_percent renders a confident 0% ring (no ok:false /"N/A").
-//   • empty / malformed metrics frames still push a fake 0% history sample.
-//   • the header temp turns amber (warnTemp-17) before the ring does (warnTemp-12).
-//   • a genuine 0 °C reading is swallowed (temp>0 gate) instead of shown.
-//   • history lives on the widget instance, not the shared store, so a tile and
-//     its expanded overlay do NOT share it.
-//   • `active` is declared but never honoured (hidden instances keep churning).
-//   • cpu_core_count 0/absent renders a misleading "0 cores" instead of hiding.
-//   • the sparkline sample is not clamped for out-of-range usage.
+// The regression checks keep unavailable samples, thermal alerts, live history,
+// selectable temperature sources, richer large-size data, and expanded per-core
+// presentation aligned with the approved CPU widget behavior.
 Item {
     id: root
     width: 520; height: 440
@@ -164,7 +155,32 @@ Item {
             var w = h.item
             compare(w.showTemp, true, "showTemp defaults true")
             compare(w.showHistory, true, "showHistory defaults true")
+            compare(w.historyWindow, "2m", "history defaults to a named two-minute window")
+            compare(w.showFrequency, true, "showFrequency defaults true")
+            compare(w.showLoadAverage, true, "showLoadAverage defaults true")
+            compare(w.showPerCore, true, "showPerCore defaults true")
+            compare(w.showTopProcess, true, "showTopProcess defaults true")
+            compare(w.tempSource, "auto", "temperature source defaults automatic")
             compare(w.warnTemp, 85, "warnTemp defaults to 85")
+        }
+
+        function test_explicit_warming_state_is_not_a_real_zero() {
+            var w = h.item
+            feed({ cpu_usage_percent: 0, cpu_usage_available: false,
+                   cpu_sample_status: "warming" })
+            compare(w.avail, false, "a warming delta is not available yet")
+            compare(w.warming, true, "warming status is exposed to the widget")
+            compare(findGauge(w).big, "...", "warming has a distinct placeholder")
+            compare(w.status, "warming up", "the header explains the placeholder")
+        }
+
+        function test_explicit_unavailable_state_does_not_enter_history() {
+            var w = h.item
+            w.hist = []
+            feed({ cpu_usage_percent: 0, cpu_usage_available: false,
+                   cpu_sample_status: "unavailable" })
+            compare(w.hist.length, 0, "an unavailable core sample is never recorded as 0%")
+            compare(findGauge(w).big, "N/A", "an unavailable sample is labelled honestly")
         }
 
         // ── Availability (BUG: missing usage renders 0%, not N/A) ────────────
@@ -204,11 +220,11 @@ Item {
                     "a malformed metrics frame must not push a fake sample")
         }
 
-        function test_history_caps_at_48_and_drops_oldest() {
+        function test_history_caps_at_named_default_window_and_drops_oldest() {
             var w = h.item
             w.hist = []
-            for (var i = 1; i <= 60; i++) feed({ cpu_usage_percent: i })
-            compare(w.hist.length, 48, "history buffer caps at 48 samples")
+            for (var i = 1; i <= 75; i++) feed({ cpu_usage_percent: i })
+            compare(w.hist.length, 60, "two-minute history caps at 60 two-second samples")
             // Fed a strictly increasing series → the retained window is the most
             // recent 48 (oldest dropped): still in chronological order, and the
             // earliest low-value samples are gone.
@@ -218,6 +234,17 @@ Item {
             verify(increasing, "retained samples stay in chronological order")
             verify(w.hist[0] > 0.05, "the oldest low-value samples were dropped (got " + w.hist[0] + ")")
             verify(w.hist[w.hist.length - 1] <= 1.0, "newest sample is a recent in-range reading")
+        }
+
+        function test_history_window_setting_changes_retention() {
+            var w = h.item
+            h.storeCtl.setSetting("test-instance", "historyWindow", "1m")
+            compare(w.historyLimit, 30, "one minute retains 30 samples")
+            w.hist = []
+            for (var i = 0; i < 40; i++) feed({ cpu_usage_percent: i })
+            compare(w.hist.length, 30, "one-minute selection is applied to live retention")
+            h.storeCtl.setSetting("test-instance", "historyWindow", "5m")
+            compare(w.historyLimit, 150, "five minutes retains 150 samples")
         }
 
         // BUG (audit): history is a plain instance property, not shared through the
@@ -277,15 +304,32 @@ Item {
                    "header temperature colour and ring colour should switch to amber at the same threshold")
         }
 
-        // showTemp=false hides the header temp AND disables temp-based escalation.
-        function test_showTemp_false_hides_and_disables_escalation() {
+        function test_showTemp_false_hides_label_but_keeps_thermal_warning() {
             var w = h.item
             h.storeCtl.setSetting("test-instance", "showTemp", false)
             compare(w.showTemp, false, "showTemp honoured")
             feed({ cpu_usage_percent: 10, cpu_temp_celsius: 95 })   // very hot
-            compare(w.status, "", "header temperature is hidden")
-            verify(Qt.colorEqual(w.col(w.v), w.effAccent),
-                   "with showTemp off, a hot CPU no longer escalates the ring")
+            compare(w.status, "Critical temperature",
+                    "the numeric temperature is hidden but its critical meaning remains visible")
+            verify(Qt.colorEqual(w.col(w.v), h.theme.error),
+                   "hiding the label must not suppress a critical thermal warning")
+        }
+
+        function test_warning_meaning_is_visible_and_accessible_without_color() {
+            var w = h.item
+            feed({ cpu_usage_percent: 78, cpu_temp_celsius: 50 })
+            compare(w.alertLevel, "warning")
+            compare(w.alertText, "High load")
+            verify(w.status.indexOf("High load") >= 0,
+                   "a sighted color-blind user receives a text warning")
+            verify(w.accessibleSummary.indexOf("High load") >= 0,
+                   "assistive technology receives the same warning meaning")
+
+            feed({ cpu_usage_percent: 20, cpu_temp_celsius: 92 })
+            compare(w.alertLevel, "critical")
+            compare(w.alertText, "Critical temperature")
+            verify(w.status.indexOf("Critical temperature") >= 0)
+            verify(w.accessibleSummary.indexOf("degrees Celsius") >= 0)
         }
 
         // BUG (audit): a genuine 0°C reading is treated as missing (temp>0 gate).
@@ -295,6 +339,41 @@ Item {
             compare(w.temp, 0, "0°C is read as a real value, not the -1 sentinel")
             compare(w.status, "0°C",
                     "a genuine 0°C reading should be displayed, not swallowed as missing")
+        }
+
+        function test_subzero_celsius_is_displayed() {
+            var w = h.item
+            feed({ cpu_usage_percent: 20, cpu_temp_celsius: -1 })
+            compare(w.tempAvailable, true, "sub-zero temperature remains available")
+            compare(w.status, "-1°C", "a real -1°C reading is not used as a sentinel")
+        }
+
+        function test_temperature_source_selects_package_or_hottest_sensor() {
+            var w = h.item
+            var sensors = [
+                { id: "coretemp:temp2", label: "Core 0", celsius: 72 },
+                { id: "coretemp:temp1", label: "Package id 0", celsius: 65 }
+            ]
+            feed({ cpu_usage_percent: 20, cpu_temperature_sensors: sensors })
+            compare(w.temp, 72, "automatic uses the core-provided preferred first sensor")
+            h.storeCtl.setSetting("test-instance", "tempSource", "package")
+            compare(w.temp, 65, "package selection finds the package-labelled sensor")
+            h.storeCtl.setSetting("test-instance", "tempSource", "hottest")
+            compare(w.temp, 72, "hottest selection chooses the maximum live sensor")
+            compare(w.tempSourceLabel, "Core 0",
+                    "the chosen source is exposed to the detailed UI")
+        }
+
+        function test_missing_requested_package_sensor_is_explained() {
+            var w = h.item
+            feed({ cpu_usage_percent: 20, cpu_temperature_sensors: [
+                { id: "coretemp:temp2", label: "Core 0", celsius: 72 }
+            ] })
+            h.storeCtl.setSetting("test-instance", "tempSource", "package")
+            compare(w.tempAvailable, false,
+                    "package mode does not silently substitute a different sensor")
+            verify(w.tempUnavailableReason.indexOf("package") >= 0,
+                   "the unavailable reason names the missing requested source")
         }
 
         // ── History graph visibility ─────────────────────────────────────────
@@ -315,9 +394,17 @@ Item {
         function test_cfg_rereads_on_revision_bump() {
             var w = h.item
             h.storeCtl.patchSettings("test-instance",
-                { showTemp: false, showHistory: false, warnTemp: 70 })
+                { showTemp: false, tempSource: "hottest", showHistory: false,
+                  historyWindow: "5m", showFrequency: false, showLoadAverage: false,
+                  showPerCore: false, showTopProcess: false, warnTemp: 70 })
             compare(w.showTemp, false, "showTemp follows a revision bump")
+            compare(w.tempSource, "hottest", "tempSource follows a revision bump")
             compare(w.showHistory, false, "showHistory follows a revision bump")
+            compare(w.historyWindow, "5m", "historyWindow follows a revision bump")
+            compare(w.showFrequency, false, "showFrequency follows a revision bump")
+            compare(w.showLoadAverage, false, "showLoadAverage follows a revision bump")
+            compare(w.showPerCore, false, "showPerCore follows a revision bump")
+            compare(w.showTopProcess, false, "showTopProcess follows a revision bump")
             compare(w.warnTemp, 70, "warnTemp follows a revision bump")
         }
 
@@ -364,7 +451,8 @@ Item {
             h.expanded = true
             feed({ cpu_usage_percent: 25, cpu_core_count: 8 })
             var g = findGauge(w)
-            compare(g.sub, "8 cores", "expanded sub-line shows the core count")
+            verify(g.sub.indexOf("8 cores") >= 0,
+                   "expanded sub-line shows the core count")
         }
 
         function test_core_count_hidden_when_collapsed() {
@@ -381,8 +469,53 @@ Item {
             h.expanded = true
             feed({ cpu_usage_percent: 25 })   // no cpu_core_count
             var g = findGauge(w)
-            compare(g.sub, "",
-                    "an absent core count should hide the sub-line, not render '0 cores'")
+            verify(g.sub.indexOf("0 cores") < 0,
+                    "an absent core count must not render '0 cores'")
+            verify(g.sub.indexOf("temperature sensor") >= 0,
+                   "the space is used for the real temperature unavailable reason")
+        }
+
+        function test_large_details_use_real_frequency_load_and_freshness() {
+            var w = h.item
+            h.expanded = true
+            feed({ cpu_usage_percent: 25, cpu_usage_available: true,
+                   cpu_sample_status: "ready", cpu_sample_unix_ms: Date.now(),
+                   cpu_core_count: 8, cpu_frequency_mhz: 4200,
+                   cpu_load_1: 0.5, cpu_load_5: 0.75, cpu_load_15: 1.0 })
+            var detail = findGauge(w).sub
+            verify(detail.indexOf("8 cores") >= 0, "details retain logical core count")
+            verify(detail.indexOf("4.20 GHz") >= 0, "details add current average frequency")
+            verify(detail.indexOf("load 0.50 / 0.75 / 1.00") >= 0,
+                   "details add named 1, 5 and 15 minute load values")
+            verify(detail.indexOf("updated now") >= 0, "details expose sample freshness")
+        }
+
+        function test_large_detail_toggles_remove_optional_rows() {
+            var w = h.item
+            h.expanded = true
+            h.storeCtl.patchSettings("test-instance",
+                { showFrequency: false, showLoadAverage: false })
+            feed({ cpu_usage_percent: 25, cpu_core_count: 8,
+                   cpu_frequency_mhz: 4200, cpu_load_1: 0.5 })
+            var detail = findGauge(w).sub
+            verify(detail.indexOf("8 cores") >= 0,
+                   "large-detail toggles retain the core count")
+            verify(detail.indexOf("GHz") < 0 && detail.indexOf("load ") < 0,
+                   "large-detail toggles remove only their matching data")
+        }
+
+        function test_expanded_view_shows_busiest_process_and_cores() {
+            var w = h.item
+            h.expanded = true
+            feed({ cpu_usage_percent: 25, cpu_core_count: 4,
+                   cpu_top_process_name: "compiler", cpu_top_process_percent: 18.5,
+                   cpu_core_usage_percent: [12, 90, 45, 3] })
+            verify(findGauge(w).sub.indexOf("compiler 19%") >= 0,
+                   "expanded detail names the busiest local process")
+            verify(findText(w, "BUSIEST CORES") !== null,
+                   "expanded view renders the per-core activity panel")
+            verify(findText(w, "C2") !== null,
+                   "the busiest logical CPU is represented by its kernel index")
         }
 
         // ── Value clamping ───────────────────────────────────────────────────
@@ -440,8 +573,10 @@ Item {
             var w = hBase.item
             w.sizeClass = "compact"
             w.hist = []
-            feedTo(hBase, { cpu_usage_percent: 30 })
-            feedTo(hBase, { cpu_usage_percent: 40 })
+            feedTo(hBase, { cpu_usage_percent: 30, cpu_core_count: 8,
+                            cpu_frequency_mhz: 4200, cpu_load_1: 0.7 })
+            feedTo(hBase, { cpu_usage_percent: 40, cpu_core_count: 8,
+                            cpu_frequency_mhz: 4200, cpu_load_1: 0.7 })
             compare(w.micro, false, "a 696x840 compact box is the baseline, not micro")
             compare(w.showHeader, true, "the baseline keeps the header")
             var g = findGauge(w)
@@ -449,6 +584,18 @@ Item {
             compare(g.horizontal, false, "stacked, not side-by-side")
             compare(g.sparkFills, false, "classic sparkline strip at the baseline")
             compare(g.sub, "", "no avg/peak line at the baseline (no room to earn it)")
+            verify(g.detailItems.length >= 3,
+                   "the baseline uses its history area for cores, clock, and load context")
+            compare(g.detailLabelPixelSize, hBase.theme.fontLabel,
+                    "CPU supporting labels use the readable label token")
+            compare(g.detailValuePixelSize, hBase.theme.fontTitle,
+                    "CPU detail values use the stronger title token")
+            verify(Qt.colorEqual(g.detailLabelColor, hBase.theme.textPrimary),
+                   "CPU detail labels use primary contrast, not tertiary contrast")
+            compare(g.historyCaptionPixelSize, hBase.theme.fontLabel,
+                    "the history window remains readable at display distance")
+            verify(g.detailRowHeight >= g.detailLabelPixelSize + g.detailValuePixelSize + 19,
+                   "the raised typography expands its row instead of clipping")
         }
 
         // wide - ring beside the sparkline in BOTH projections of the class
@@ -481,12 +628,29 @@ Item {
             feedTo(hTall, { cpu_usage_percent: 80 })
             var g = findGauge(w)
             compare(g.sparkFills, true, "tall hands the sparkline all the height below the ring")
+            compare(g.stackedRingMaxFraction, 0.62,
+                    "the narrow tall card keeps the ring sized by its width")
             compare(w.histStats, "avg 50% · peak 80%", "avg/peak derive from the retained history")
             compare(g.sub, "avg 50% · peak 80%", "and the ring captions itself with them")
             // One sample has no average story to tell.
             w.hist = []
             feedTo(hTall, { cpu_usage_percent: 20 })
             compare(w.histStats, "", "a single sample earns no avg/peak line")
+        }
+
+        function test_roomy_tall_rebalances_ring_for_context() {
+            tryVerify(function () { return hTall.ready }, 3000)
+            var w = hTall.item
+            w.sizeClass = "tall"
+            tallWrap.width = 696
+            tallWrap.height = 1226
+            wait(0)
+            var g = findGauge(w)
+            compare(w.roomyTile, true)
+            compare(g.stackedRingMaxFraction, 0.48,
+                    "the half-screen portrait card gives more height to context and history")
+            tallWrap.width = 344
+            tallWrap.height = 840
         }
 
         // showHistory=false must also silence the tall tile's avg/peak line -
@@ -553,12 +717,37 @@ Item {
             var s = schema.schemaFor("cpu")
             verify(s && s.sections && s.sections.length > 0, "cpu has a schema")
             var showTemp = findField(s, "showTemp")
+            var tempSource = findField(s, "tempSource")
             var showHistory = findField(s, "showHistory")
+            var historyWindow = findField(s, "historyWindow")
+            var showFrequency = findField(s, "showFrequency")
+            var showLoadAverage = findField(s, "showLoadAverage")
+            var showPerCore = findField(s, "showPerCore")
+            var showTopProcess = findField(s, "showTopProcess")
             var warnTemp = findField(s, "warnTemp")
             verify(showTemp && showTemp.type === "toggle", "showTemp is a toggle")
             compare(showTemp.dflt, true, "showTemp defaults true (matches the widget)")
+            verify(tempSource && tempSource.type === "segmented", "tempSource is segmented")
+            compare(tempSource.dflt, "auto", "tempSource defaults automatic")
             verify(showHistory && showHistory.type === "toggle", "showHistory is a toggle")
             compare(showHistory.dflt, true, "showHistory defaults true")
+            verify(historyWindow && historyWindow.type === "segmented", "historyWindow is segmented")
+            compare(historyWindow.dflt, "2m", "historyWindow defaults to two minutes")
+            compare(historyWindow.visibleWhen.key, "showHistory",
+                    "history duration is disclosed only when history is enabled")
+            compare(historyWindow.visibleWhen.equals, true)
+            verify(showTemp.label.indexOf("label") >= 0,
+                   "temperature toggle says it hides only the label")
+            verify(showTemp.help.indexOf("remain active") >= 0,
+                   "the config explains that thermal safety remains active")
+            verify(showFrequency && showFrequency.type === "toggle", "showFrequency is a toggle")
+            compare(showFrequency.dflt, true, "showFrequency defaults true")
+            verify(showLoadAverage && showLoadAverage.type === "toggle", "showLoadAverage is a toggle")
+            compare(showLoadAverage.dflt, true, "showLoadAverage defaults true")
+            verify(showPerCore && showPerCore.type === "toggle", "showPerCore is a toggle")
+            compare(showPerCore.dflt, true, "showPerCore defaults true")
+            verify(showTopProcess && showTopProcess.type === "toggle", "showTopProcess is a toggle")
+            compare(showTopProcess.dflt, true, "showTopProcess defaults true")
             verify(warnTemp && warnTemp.type === "slider", "warnTemp is a slider")
             compare(warnTemp.dflt, 85, "warnTemp default matches the widget (85)")
             compare(warnTemp.min, 60, "warnTemp min 60")

@@ -1,7 +1,6 @@
 import QtQuick
 import QtTest
 
-// COVERS: schema:intervalMin, schema:message, schema:showSuggestion
 
 // ─────────────────────────────────────────────────────────────────────────
 // Comprehensive coverage for widget:break - ui/qml/widgets/BreakWidget.qml.
@@ -17,6 +16,18 @@ import QtTest
 Item {
     id: root
     width: 720; height: 900
+    property int notificationCalls: 0
+    property string notificationSummary: ""
+    property string notificationBody: ""
+    QtObject {
+        id: fakeNotifications
+        function send(summary, body) {
+            root.notificationCalls++
+            root.notificationSummary = summary
+            root.notificationBody = body
+            return true
+        }
+    }
 
     // Expanded instance (buttons + full controls exercised through functions).
     WidgetHarness { id: h; anchors.fill: parent; widgetFile: "BreakWidget.qml"; expanded: true }
@@ -61,6 +72,11 @@ Item {
     function clear(hh) {
         var s = hh.storeCtl.settingsFor("test-instance")
         for (var k in s) delete s[k]
+        // Timer behavior must not depend on the wall clock of the machine
+        // running the suite. Equal start/end means all day in BreakWidget.
+        s.workStartHour = 0
+        s.workEndHour = 0
+        s.workDays = "0,1,2,3,4,5,6"
         hh.storeCtl._touchSettings()
     }
     function cfg() { return h.storeCtl.settingsFor("test-instance") }
@@ -105,6 +121,57 @@ Item {
             var w = h.item
             h.storeCtl.setSetting("test-instance", "showSuggestion", false)
             compare(w.showSuggestion, false)
+        }
+        function test_work_schedule_supports_daytime_and_overnight() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { workStartHour: 9, workEndHour: 17, workDays: "1,2,3,4,5" })
+            verify(w.withinScheduleAt(10, 1)); verify(!w.withinScheduleAt(18, 1)); verify(!w.withinScheduleAt(10, 0))
+            h.storeCtl.patchSettings("test-instance", { workStartHour: 22, workEndHour: 6, workDays: "1" })
+            verify(w.withinScheduleAt(23, 1), "Monday evening starts Monday's shift")
+            verify(w.withinScheduleAt(2, 2), "Tuesday morning belongs to Monday's overnight shift")
+            verify(!w.withinScheduleAt(2, 1), "Monday morning belongs to Sunday's shift")
+            verify(!w.withinScheduleAt(12, 1))
+        }
+        function test_schedule_schema_uses_structured_weekdays_and_notification_opt_in() {
+            var schema = Qt.createQmlObject(
+                'import QtQuick; import "../../ui/qml"; WidgetConfigSchema {}', root)
+            var sections = schema.schemaFor("break").sections
+            var workDays = null
+            var notify = null
+            for (var i = 0; i < sections.length; i++) {
+                var fields = sections[i].fields || []
+                for (var j = 0; j < fields.length; j++) {
+                    if (fields[j].key === "workDays") workDays = fields[j]
+                    if (fields[j].key === "notifyWhenHidden") notify = fields[j]
+                }
+            }
+            verify(workDays !== null)
+            compare(workDays.type, "weekdays")
+            verify(notify !== null)
+            compare(notify.type, "toggle")
+            compare(notify.dflt, false, "desktop notifications are explicitly opt-in")
+            schema.destroy()
+        }
+        function test_timer_suspends_outside_schedule_and_resumes_without_losing_time() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", {
+                running: true, due: false, intervalMin: 30,
+                pausedRemaining: 900, endEpoch: Date.now() + 900000,
+                scheduleSuspended: false
+            })
+            w.applyScheduleState(false)
+            compare(root.cfg().scheduleSuspended, true,
+                    "leaving the work window suspends the interval")
+            compare(root.cfg().endEpoch, 0,
+                    "a suspended interval has no wall-clock deadline")
+            verify(root.cfg().pausedRemaining >= 898,
+                   "the remaining interval is preserved")
+            var saved = root.cfg().pausedRemaining
+            w.applyScheduleState(true)
+            compare(root.cfg().scheduleSuspended, false,
+                    "re-entering the work window resumes the interval")
+            verify(root.cfg().endEpoch >= Date.now() + (saved - 1) * 1000,
+                   "the resumed deadline is based on preserved active time")
         }
     }
 
@@ -194,6 +261,15 @@ Item {
             compare(root.cfg().day, w.todayKey, "the count is stamped with the CURRENT day")
             verify(root.cfg().endEpoch > Date.now(), "the timer restarts after acknowledging")
         }
+        function test_snooze_clears_due_without_counting_break() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { due: true, snoozeMin: 7, day: w.todayKey, breaksToday: 2 })
+            w.snooze()
+            compare(root.cfg().due, false); compare(root.cfg().breaksToday, 2)
+            compare(root.cfg().pausedRemaining, 420)
+            compare(root.cfg().snoozed, true, "snooze is a distinct persisted state")
+            verify(root.cfg().endEpoch > Date.now() + 6 * 60000)
+        }
 
         function test_pause_preserves_remaining_across_toggle() {
             var w = h.item
@@ -209,6 +285,70 @@ Item {
             compare(root.cfg().running, true, "resumed")
             w.pulse++
             verify(Math.abs(w.remaining - before) <= 2, "remaining survives pause→resume (got " + w.remaining + ")")
+        }
+    }
+
+    TestCase {
+        name: "BreakNotifications"
+        when: windowShown
+        function init() {
+            tryVerify(function () { return h.ready }, 3000)
+            root.clear(h)
+            h.item.notificationBridge = fakeNotifications
+            h.item.foreground = true
+            root.notificationCalls = 0
+            root.notificationSummary = ""
+            root.notificationBody = ""
+        }
+        function cleanup() { h.item.foreground = true }
+        function expire(patch) {
+            h.storeCtl.patchSettings("test-instance", Object.assign({
+                running: true, due: false, snoozed: false,
+                notifyWhenHidden: true,
+                endEpoch: Date.now() - 2000
+            }, patch || {}))
+            h.item.pulse++
+        }
+
+        function test_hidden_due_transition_notifies_once() {
+            expire()
+            h.item.foreground = false
+            compare(h.item.markDue(), true)
+            compare(root.notificationCalls, 1)
+            compare(root.notificationSummary, "Break reminder")
+            compare(root.notificationBody,
+                    "Time to stand up, reset, and take a short break.")
+            compare(h.item.markDue(), false, "an already-due cycle cannot notify twice")
+            compare(root.notificationCalls, 1)
+        }
+        function test_custom_message_is_the_notification_body() {
+            expire({ message: "Look away from the screen" })
+            h.item.foreground = false
+            h.item.markDue()
+            compare(root.notificationBody, "Look away from the screen")
+        }
+        function test_visible_or_opted_out_reminder_does_not_notify() {
+            expire()
+            h.item.foreground = true
+            h.item.markDue()
+            compare(root.notificationCalls, 0, "visible due feedback is not duplicated")
+
+            root.clear(h)
+            expire({ notifyWhenHidden: false })
+            h.item.foreground = false
+            h.item.markDue()
+            compare(root.notificationCalls, 0, "off-page notification remains opt-in")
+        }
+        function test_snooze_and_outside_schedule_suppress_due_notification() {
+            expire({ snoozed: true, endEpoch: Date.now() + 300000 })
+            h.item.foreground = false
+            compare(h.item.markDue(), false, "an active snooze is not due")
+            compare(root.notificationCalls, 0)
+
+            var excluded = (new Date().getDay() + 1) % 7
+            expire({ workDays: String(excluded), endEpoch: Date.now() - 2000 })
+            compare(h.item.markDue(), false, "outside-hours expiry is suspended")
+            compare(root.notificationCalls, 0)
         }
     }
 
@@ -422,10 +562,70 @@ Item {
             verify(resume !== null && resume.visible, "the pause/resume pill is rendered")
             verify(resume.implicitHeight >= 44,
                    "tile controls are touch sized (got " + resume.implicitHeight + ")")
-            var caption = root.findByProp(w, "text", "until next break")
-            verify(caption !== null && caption.visible, "the caption is rendered")
+            var caption = root.findByProp(w, "text", "Timer paused")
+            verify(caption !== null && caption.visible, "the paused state is explicit")
+            verify(caption.font.pixelSize >= 18, "paused state remains readable")
+            var ringState = root.findByProp(w, "objectName", "breakRingState")
+            verify(ringState !== null && ringState.visible)
+            compare(ringState.text, "paused")
+            verify(ringState.font.pixelSize >= 18, "ring state remains readable")
             var momentum = root.findByProp(w, "text", "✓ 3 breaks today")
             verify(momentum !== null && momentum.visible, "the momentum line earns its place")
+        }
+
+        function test_baseline_adds_rhythm_schedule_and_daily_context() {
+            tryVerify(function () { return hBBase.ready }, 3000)
+            prep(hBBase, { running: false, due: false, pausedRemaining: 600,
+                           intervalMin: 30, workStartHour: 9, workEndHour: 17,
+                           workDays: "1,2,3,4,5",
+                           day: Qt.formatDate(new Date(), "yyyy-MM-dd"), breaksToday: 3 })
+            var w = hBBase.item
+            w.sizeClass = "compact"
+            wait(32)
+            compare(w.showDetails, true, "the 1x1 card earns reminder context")
+            var details = root.findByProp(w, "objectName", "breakDetails")
+            verify(details !== null && details.visible, "the reminder detail panel is rendered")
+            verify(root.findByProp(details, "text", "Every 30 min") !== null)
+            verify(root.findByProp(details, "text", "09:00 to 17:00") !== null)
+            verify(root.findByProp(details, "text", "Weekdays") !== null)
+            verify(root.findByProp(details, "text", "3 breaks") !== null)
+
+            prep(hBMicro)
+            var micro = hBMicro.item; micro.sizeClass = "compact"
+            compare(micro.showDetails, false, "the micro timer stays a pure countdown")
+        }
+
+        function test_running_paused_snoozed_outside_disabled_and_due_are_distinct() {
+            tryVerify(function () { return hBBase.ready }, 3000)
+            var w = hBBase.item
+            w.sizeClass = "compact"
+
+            prep(hBBase, { running: true, due: false, snoozed: false,
+                           scheduleSuspended: false, pausedRemaining: 600 })
+            compare(w.stateLabel, "Running")
+            compare(w.stateDescription, "until next break")
+
+            prep(hBBase, { running: false, due: false, pausedRemaining: 600 })
+            compare(w.stateLabel, "Paused")
+            compare(w.stateDescription, "Timer paused")
+
+            prep(hBBase, { running: true, due: false, snoozed: true,
+                           scheduleSuspended: false, pausedRemaining: 300 })
+            compare(w.stateLabel, "Snoozed")
+            compare(w.stateDescription, "Snoozed until the next reminder")
+
+            prep(hBBase, { running: true, due: false, snoozed: false,
+                           scheduleSuspended: true, pausedRemaining: 600 })
+            compare(w.stateLabel, "Outside active hours")
+            compare(w.stateDescription, "Waiting for active hours")
+
+            prep(hBBase, { running: true, due: false, workDays: "",
+                           scheduleSuspended: true, pausedRemaining: 600 })
+            compare(w.stateLabel, "Schedule disabled")
+            compare(w.stateDescription, "No active weekdays selected")
+
+            prep(hBBase, { running: true, due: true, pausedRemaining: 600 })
+            compare(w.stateLabel, "Break due")
         }
 
         // The ring reads the interval: half the interval left ⇒ a half ring.

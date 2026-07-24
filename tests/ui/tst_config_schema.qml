@@ -57,7 +57,9 @@ Item {
 
         function test_field_types_are_known() {
             var known = ["text", "textarea", "number", "hour", "slider", "toggle",
-                         "segmented", "accent", "date", "tasks", "action", "info"]
+                         "segmented", "accent", "date", "tasks", "action", "info",
+                         "secret", "timezone", "timezoneList", "select", "reorder",
+                         "weekdays", "medSchedule", "routineSteps"]
             var items = catalog.items
             for (var i = 0; i < items.length; i++) {
                 var s = sc.schemaFor(items[i].type)

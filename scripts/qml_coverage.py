@@ -7,19 +7,19 @@
 # entries) and count how many are claimed-and-backed by a `tst_*.qml` test.
 #
 # A test file claims behaviors via a header convention:
-#     // COVERS: fn:Dashboard.cfgAction, schema:showSeconds, widget:cpu
+#     // COVERS: fn:Dashboard.cfgAction, schema:clock.showSeconds, widget:cpu
 # A claim is only honored if the file actually asserts: the claimed id's leaf
 # token must appear inside an assertion call (compare/verify/tryCompare/
 # tryVerify/fuzzyCompare) in that same file. Unbacked claims are rejected so a
 # test cannot inflate coverage by merely declaring a header with no real check.
 #
-# One narrow extra form is honored: a COLLECTION claim `widget:*` / `bg:*` /
-# `wallpaper:*`. A test that genuinely iterates the whole catalog under assertion
+# One narrow extra form is honored: a COLLECTION claim `widget:*`, `schema:*`,
+# `bg:*`, or `wallpaper:*`. A test that genuinely iterates the whole catalog under assertion
 # (instantiates the catalog, asserts its full `.length`, and loops over that same
 # collection) exercises EVERY entry, so such a claim credits every enumerated id
 # of that kind. This is restricted to the three catalogs and still requires a real
-# iteration+assertion - it is NOT a blanket pass, and only these three `*` kinds
-# are recognised (`fn:*`, `schema:*`, etc. are rejected as unknown collections).
+# iteration+assertion - it is NOT a blanket pass, and only these catalog-backed
+# `*` kinds are recognised (`fn:*`, etc. are rejected as unknown collections).
 #
 # Run `python3 scripts/qml_coverage.py --selftest` to verify the honesty
 # guarantees (reject-unknown-id, reject-unbacked-claim, credit-backed-claim, and
@@ -68,6 +68,7 @@ TESTS_DIR = "tests/ui"
 
 FUNCTION_RE = re.compile(r"\bfunction\s+(\w+)\s*\(")
 SCHEMA_KEY_RE = re.compile(r'\bkey\s*:\s*"([^"]+)"')
+SCHEMA_CASE_RE = re.compile(r'\bcase\s+"([^"]+)"\s*:')
 WIDGET_TYPE_RE = re.compile(r'\btype\s*:\s*"([^"]+)"')
 CATALOG_V_RE = re.compile(r'\bv\s*:\s*"([^"]+)"')
 CATALOG_NAME_RE = re.compile(r'\bname\s*:\s*"([^"]+)"')
@@ -142,9 +143,23 @@ def enumerate_behaviors():
         for name in FUNCTION_RE.findall(read(src)):
             add("fn:%s.%s" % (comp, name))
 
-    # 2. Config-schema field ids (unique key names).
-    for key in SCHEMA_KEY_RE.findall(read(SCHEMA_SOURCE)):
-        add("schema:%s" % key)
+    # 2. Config-schema fields. Per-widget identity is load-bearing: showHistory
+    # on CPU, GPU and Memory is three contracts, not one globally covered key.
+    # Shared title/appearance helpers are effective fields on every widget, so
+    # they are scoped to every widget too.
+    schema_text = read(SCHEMA_SOURCE)
+    schema_switch_at = schema_text.find("function _schemaFor")
+    shared_text = schema_text[:schema_switch_at] if schema_switch_at >= 0 else ""
+    shared_keys = SCHEMA_KEY_RE.findall(shared_text)
+
+    cases = list(SCHEMA_CASE_RE.finditer(schema_text))
+    for index, match in enumerate(cases):
+        wtype = match.group(1)
+        end = cases[index + 1].start() if index + 1 < len(cases) else len(schema_text)
+        for key in shared_keys:
+            add("schema:%s.%s" % (wtype, key))
+        for key in SCHEMA_KEY_RE.findall(schema_text[match.end():end]):
+            add("schema:%s.%s" % (wtype, key))
 
     # 3. Widget types from the catalog.
     for wtype in WIDGET_TYPE_RE.findall(read(WIDGET_CATALOG)):
@@ -188,6 +203,19 @@ def _iterates_catalog(text, comp, coll):
     return size_asserted and loops_collection
 
 
+def _iterates_scoped_schema(text):
+    """True only for a test that walks every catalog widget and every effective
+    schema field, constructs a widget-scoped identity, and asserts it."""
+    if "WidgetCatalog" not in text or "WidgetConfigSchema" not in text:
+        return False
+    asserts = assertion_text(text)
+    catalog_asserted = re.search(r"\.items\.length\b", asserts) is not None
+    schema_asserted = "schemaFor" in asserts or "scoped" in asserts
+    loops_widgets = re.search(r"for\s*\([^)]*\.items\.length\b", text) is not None
+    loops_fields = re.search(r"for\s*\([^)]*\.fields\.length\b", text) is not None
+    return catalog_asserted and schema_asserted and loops_widgets and loops_fields
+
+
 def credit_file(text, valid_ids):
     """
     Credit the COVERS claims in a single file's text.
@@ -214,6 +242,14 @@ def credit_file(text, valid_ids):
         # Collection claim: `<kind>:*`.
         if claim.endswith(":*"):
             kind = claim[:-2]
+            if kind == "schema":
+                if _iterates_scoped_schema(text):
+                    for b in valid_ids:
+                        if b.startswith("schema:"):
+                            covered.add(b)
+                else:
+                    rejected.append((claim, "no scoped schema catalog iteration"))
+                continue
             if kind not in COLLECTION_CATALOGS:
                 rejected.append((claim, "unknown collection"))
                 continue
@@ -261,7 +297,8 @@ def enumerate_covered(valid_ids):
 
 def selftest():
     """Verify the honesty guarantees on synthetic inputs (no repo files)."""
-    valid = {"fn:A.foo", "widget:cpu", "widget:gpu", "bg:none", "bg:orbs"}
+    valid = {"fn:A.foo", "schema:cpu.showHistory", "schema:gpu.showHistory",
+             "widget:cpu", "widget:gpu", "bg:none", "bg:orbs"}
     checks = []
 
     def check(desc, cond):
@@ -300,6 +337,25 @@ def selftest():
     # 7. A collection claim for one kind must not leak into another kind.
     cov, rej = credit_file(iter_txt, valid)
     check("collection scoped to its kind", "bg:none" not in cov and "bg:orbs" not in cov)
+
+    # 8. Same-named schema fields remain widget-scoped.
+    cov, rej = credit_file(
+        '// COVERS: schema:cpu.showHistory\ncompare(cpu.showHistory, true)', valid)
+    check("schema claim is widget scoped",
+          cov == {"schema:cpu.showHistory"}
+          and "schema:gpu.showHistory" not in cov and not rej)
+
+    # 9. Schema collection claims require both catalogs and nested field loops.
+    schema_iter = (
+        '// COVERS: schema:*\n'
+        'WidgetCatalog { id: catalog }\nWidgetConfigSchema { id: schemas }\n'
+        'compare(catalog.items.length, 2)\n'
+        'for (var i = 0; i < catalog.items.length; i++) {\n'
+        '  var d = schemas.schemaFor(catalog.items[i].type)\n'
+        '  for (var j = 0; j < d.fields.length; j++) verify(scoped)\n}\n')
+    cov, rej = credit_file(schema_iter, valid)
+    check("scoped schema collection credited on nested iteration",
+          cov == {"schema:cpu.showHistory", "schema:gpu.showHistory"} and not rej)
 
     ok = all(c for _, c in checks)
     print("qml_coverage self-test")

@@ -1,7 +1,6 @@
 import QtQuick
 import QtTest
 
-// COVERS: schema:showTimes
 
 // ─────────────────────────────────────────────────────────────────────────
 // tst_braindump - ui/qml/widgets/BraindumpWidget.qml.
@@ -46,9 +45,8 @@ Item {
         return harness.storeCtl.applyExternal(JSON.stringify(doc))
     }
     function fieldIn(w) {
-        // The TextField is the one editable input in the tree.
         var f = root.findAll(w, function (n) {
-            return n.hasOwnProperty("placeholderText") && n.hasOwnProperty("text")
+            return n.objectName === "braindumpCaptureField"
         }, [])
         return f.length ? f[0] : null
     }
@@ -66,6 +64,10 @@ Item {
             compare(e.length, 1)
             compare(e[0].text, "call the dentist")
             verify(e[0].at >= before && e[0].at <= Date.now(), "stamped with the time it arrived")
+            verify(h.item.undoSnapshot !== null)
+            compare(h.item.undoSnapshot.label, "Undo captured thought")
+            h.item.undoLastChange()
+            compare(h.item.entries.length, 0, "capture itself is undoable")
         }
 
         function test_add_trims_and_ignores_empty() {
@@ -98,6 +100,18 @@ Item {
             compare(e[0].text, "c"); compare(e[1].text, "a", "'b' is the one that went")
         }
 
+        function test_edit_preserves_identity_and_timestamp_and_can_be_undone() {
+            h.item.add("draft")
+            var original = h.item.entries[0]
+            h.item.beginEdit(0)
+            h.item.commitEdit("finished")
+            compare(h.item.entries[0].text, "finished")
+            compare(h.item.entries[0].id, original.id)
+            compare(h.item.entries[0].at, original.at)
+            h.item.undoLastChange()
+            compare(h.item.entries[0].text, "draft")
+        }
+
         function test_remove_ignores_an_out_of_range_index() {
             h.item.add("only")
             h.item.remove(5); h.item.remove(-1)
@@ -107,8 +121,36 @@ Item {
         function test_clear_all_empties_the_list() {
             h.item.add("a"); h.item.add("b")
             h.item.clearAll()
+            compare(h.item.entries.length, 2, "the first request only arms confirmation")
+            compare(h.item.clearArmed, true)
+            h.item.clearAll()
             compare(h.item.entries.length, 0)
             compare(h.storeCtl.settingsFor("test-instance").entries.length, 0, "and it persisted")
+            h.item.undoLastChange()
+            compare(h.item.entries.length, 2, "the confirmed clear can be undone")
+        }
+
+        function test_remove_can_be_undone() {
+            h.item.add("keep me")
+            h.item.remove(0)
+            compare(h.item.entries.length, 0)
+            h.item.undoLastChange()
+            compare(h.item.entries.length, 1)
+            compare(h.item.entries[0].text, "keep me")
+        }
+
+        function test_legacy_entries_receive_stable_ids_on_the_first_mutation() {
+            h.storeCtl.setSetting("test-instance", "entries", [
+                { text: "older", at: 1000 },
+                { text: "newer", at: 2000 }
+            ])
+            h.item.remove(1)
+            compare(h.item.entries.length, 1)
+            verify(String(h.item.entries[0].id).indexOf("dump-legacy-1000-0") === 0)
+            h.item.undoLastChange()
+            compare(h.item.entries.length, 2)
+            verify(String(h.item.entries[1].id).length > 0,
+                   "the restored snapshot keeps immutable IDs")
         }
 
         // An unbounded array here would grow config.toml forever - this is the
@@ -119,6 +161,17 @@ Item {
             compare(w.entries.length, w.maxEntries, "the list is capped")
             compare(w.entries[0].text, "entry " + (w.maxEntries + 9), "newest kept")
             compare(w.entries[w.entries.length - 1].text, "entry 10", "the oldest were dropped")
+            verify(w.captureNotice.indexOf("oldest thought") >= 0,
+                   "eviction is disclosed instead of silently losing the oldest item")
+        }
+
+        function test_entry_truncation_is_disclosed() {
+            var w = h.item
+            var longText = new Array(w.maxEntryLength + 12).join("x")
+            w.add(longText)
+            compare(w.entries[0].text.length, w.maxEntryLength)
+            verify(w.captureNotice.indexOf("" + w.maxEntryLength) >= 0,
+                   "the visible notice states the persisted limit")
         }
     }
 
@@ -145,6 +198,21 @@ Item {
             compare(e.length, 2, "the dump is still there after a reload")
             compare(e[0].text, "email Dana")
             compare(e[1].text, "remember the milk")
+        }
+
+        function test_undo_snapshot_survives_round_trip_for_another_host() {
+            h.item.add("shared thought")
+            h.item.remove(0)
+            compare(h.item.entries.length, 0)
+            var onDisk = JSON.parse(JSON.stringify(h.storeCtl._persistableData()))
+            compare(onDisk.settings["test-instance"].undoEntries.length, 1,
+                    "undo state is shared data, not local component state")
+            compare(root.reloadWith(h, onDisk, "braindump"), true)
+            verify(h.item.undoSnapshot !== null,
+                   "a newly loaded host sees the same undo action")
+            h.item.undoLastChange()
+            compare(h.item.entries.length, 1)
+            compare(h.item.entries[0].text, "shared thought")
         }
     }
 
@@ -193,17 +261,65 @@ Item {
         when: windowShown
         function init() { tryVerify(function () { return hc.ready }, 3000); clearSettings(hc) }
 
-        // Capture has to work from the tile itself, with Enter - that IS the widget.
-        function test_typing_and_pressing_enter_captures_from_the_tile() {
+        // Capture supports real multiline text. Ctrl+Enter commits while plain
+        // Enter remains available for a newline.
+        function test_multiline_capture_and_ctrl_enter_from_the_tile() {
             var f = root.fieldIn(hc.item)
             verify(f !== null, "the tile carries the capture field")
             f.forceActiveFocus()
             keyClick(Qt.Key_B); keyClick(Qt.Key_U); keyClick(Qt.Key_Y)
             keyClick(Qt.Key_Return)
+            keyClick(Qt.Key_N); keyClick(Qt.Key_O); keyClick(Qt.Key_W)
+            compare(f.text, "buy\nnow", "plain Enter inserts a newline")
+            keyClick(Qt.Key_Return, Qt.ControlModifier)
             compare(hc.item.entries.length, 1, "Enter commits the capture")
-            compare(hc.item.entries[0].text, "buy")
+            compare(hc.item.entries[0].text, "buy\nnow")
             compare(f.text, "", "and the field is cleared, ready for the next thought")
-            compare(hc.storeCtl.settingsFor("test-instance").entries[0].text, "buy", "persisted")
+            compare(hc.storeCtl.settingsFor("test-instance").entries[0].text, "buy\nnow", "persisted")
+        }
+    }
+
+    TestCase {
+        name: "BraindumpAccessibility"
+        when: windowShown
+        function init() {
+            tryVerify(function () { return h.ready }, 3000)
+            clearSettings(h)
+            h.storeCtl.setSetting("test-instance", "entries", [
+                { id: "one", text: "first thought", at: Date.now() }
+            ])
+            wait(32)
+        }
+
+        function test_edit_and_remove_are_explicit_named_keyboard_actions() {
+            var edits = root.findAll(h.item, function(n) {
+                return String(n.objectName).indexOf("braindumpEdit-") === 0
+            }, [])
+            var removes = root.findAll(h.item, function(n) {
+                return String(n.objectName).indexOf("braindumpRemove-") === 0
+            }, [])
+            compare(edits.length, 1)
+            compare(removes.length, 1)
+            compare(edits[0].Accessible.role, Accessible.Button)
+            compare(removes[0].Accessible.role, Accessible.Button)
+            compare(edits[0].Accessible.name, "Edit thought 1")
+            compare(removes[0].Accessible.name, "Remove thought 1")
+            verify(edits[0].width >= h.theme.touchTertiary
+                   && edits[0].height >= h.theme.touchTertiary)
+            verify(removes[0].width >= h.theme.touchTertiary
+                   && removes[0].height >= h.theme.touchTertiary)
+        }
+
+        function test_content_typography_leads_timestamp_typography() {
+            verify(h.item.rowFont >= 17)
+            verify(h.item.stampFont < h.item.rowFont)
+            var notice = root.findAll(h.item, function(n) {
+                return n.objectName === "braindumpActionNotice"
+            }, [])[0]
+            verify(notice !== null)
+            h.item.remove(0)
+            compare(notice.text, "Thought removed")
+            compare(notice.Accessible.name, "Thought removed")
         }
     }
 
@@ -290,7 +406,7 @@ Item {
         }
         function field(host) {
             return root.findAll(host.item, function (n) {
-                return n.hasOwnProperty("placeholderText") }, [])[0]
+                return n.objectName === "braindumpCaptureField" }, [])[0]
         }
         function listOf(host) {
             return root.findAll(host.item, function (n) {
@@ -342,6 +458,23 @@ Item {
             compare(d.horiz, true, "wide is the horizontal shape")
             compare(outer.columns, 2, "wide puts the capture column beside the queue")
             d.sizeClass = "tall"
+        }
+
+        function test_hidden_queue_rows_are_disclosed() {
+            tryVerify(function () { return dWide.ready }, 3000)
+            var d = dWide.item
+            d.sizeClass = "wide"
+            var many = []
+            for (var i = 0; i < 30; i++)
+                many.push({ id: "row-" + i, text: "thought " + i,
+                              at: Date.now() - i * 1000 })
+            dWide.storeCtl.setSetting(dWide.instanceId, "entries", many)
+            wait(32)
+            var overflow = root.findAll(d, function(n) {
+                return n.objectName === "braindumpOverflow"
+            }, [])[0]
+            verify(overflow !== null && overflow.visible)
+            verify(overflow.Accessible.name.indexOf("more thoughts") >= 0)
         }
     }
 }

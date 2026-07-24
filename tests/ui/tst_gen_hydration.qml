@@ -2,7 +2,6 @@ import QtQuick
 import QtTest
 import "../../ui/qml" as App
 
-// COVERS: schema:glassMl, schema:goal
 
 // Comprehensive coverage for area "widget:hydration" - HydrationWidget.qml.
 //
@@ -96,6 +95,43 @@ Item {
             seed(4)
             h.storeCtl.patchSettings("test-instance", { glassMl: 500 })
             compare(w.volumeText(), "2.0 L", "glassMl change re-applies live")
+        }
+
+        function test_fluid_ounce_display() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { glassMl: 250, unit: "oz" })
+            seed(2)
+            compare(w.volumeText(), "16.9 fl oz")
+        }
+
+        function test_undo_restores_previous_count() {
+            var w = h.item
+            seed(2, 8)
+            w.set(3); compare(w.count, 3); compare(cfg().previousCount, 2)
+            w.undoLast(); compare(w.count, 2)
+            compare(w.undoAvailable, false, "undo is consumed after one use")
+            w.undoLast(); compare(w.count, 2,
+                                  "a second press cannot toggle back to the newer count")
+        }
+
+        function test_manager_goal_edit_uses_the_goal_lifecycle() {
+            var w = h.item
+            seed(6, 8)
+            compare(cfg().lastGoalDay, undefined)
+            h.storeCtl.setSetting("test-instance", "goal", 5)
+            tryCompare(cfg(), "lastGoalDay", w.todayKey, 1000)
+            compare(cfg().streak, 1,
+                    "a direct Manager setting edit credits the reached goal")
+        }
+
+        function test_motivation_can_be_disabled() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { celebrate: false, showStreak: false,
+                goal: 2, day: w.todayKey, count: 1, streak: 3, lastGoalDay: w._yesterdayKey() })
+            w.celebrateMsg = ""
+            w.set(2)
+            compare(w.celebrateMsg, "")
+            compare(w.showStreak, false)
         }
 
         // - status string -------------------------------------------------
@@ -426,12 +462,13 @@ Item {
             compare(y.showStreak, false, "…and the streak line")
             verify(y.countPx >= 20, "the count is a readout, not a caption ("
                    + y.countPx.toFixed(0) + "px)")
-            // The +1 survives, at a real touch size.
+            // The one-tap serving action survives, at a real touch size.
             var p = pills(yMicro)
-            compare(p.length, 1, "micro keeps exactly one control: +1")
-            compare(p[0].label, "+1", "…and it is the +1")
+            compare(p.length, 1, "micro keeps exactly one serving control")
+            compare(p[0].label, "+ 250 ml", "the action states the configured serving")
+            compare(p[0].glyphIcon, "hydration", "the action uses the bundled hydration icon")
             verify(p[0].height >= yMicro.theme.touchTertiary,
-                   "the +1 is >= touchTertiary (" + p[0].height + " >= "
+                   "the add action is >= touchTertiary (" + p[0].height + " >= "
                    + yMicro.theme.touchTertiary + ") - never shrunk to fit")
         }
 
@@ -447,12 +484,48 @@ Item {
             compare(y.showGrid, true, "the baseline earns the glass grid")
             verify(y.glassPx > 16, "the droplets scale to the box, past the old fixed 16px ("
                    + y.glassPx.toFixed(0) + ")")
+            var icons = findAll(y, function (n) {
+                return n.objectName === "hydrationGlassIcon" && n.visible
+            }, [])
+            compare(icons.length, 3, "logged servings use three bundled hydration icons")
+            var emoji = findAll(y, function (n) {
+                return n.hasOwnProperty("text")
+                    && ["💧", "🎉", "💪", "🔥"].indexOf(String(n.text)) >= 0
+            }, [])
+            compare(emoji.length, 0, "no functional state or action depends on emoji rendering")
             // Both controls, both real targets.
             var p = pills(yBase)
-            compare(p.length, 2, "the baseline carries both − and +1")
+            compare(p.length, 2, "the baseline carries Undo and the serving action")
             for (var i = 0; i < p.length; i++)
                 verify(p[i].height >= yBase.theme.touchTertiary,
                        p[i].label + " is >= touchTertiary (" + p[i].height + ")")
+        }
+
+        function test_baseline_uses_its_room_for_volume_and_remaining_context() {
+            tryVerify(function () { return yBase.ready }, 3000)
+            var y = yBase.item
+            y.sizeClass = "compact"
+            seed(yBase)
+            wait(32)
+            compare(y.showDetails, true, "the 1x1 card earns hydration context")
+            compare(y.volumeText(), "750 ml")
+            compare(y.servingText(), "250 ml")
+            compare(y.remainingText(), "1.3 L")
+            var details = findAll(y, function (n) {
+                return n.objectName === "hydrationDetails" && n.visible
+            }, [])
+            compare(details.length, 1, "today, serving, and remaining volume are rendered")
+            var serving = findAll(y, function (n) {
+                return n.objectName === "hydrationServing" && n.visible
+            }, [])
+            compare(serving.length, 1, "serving size remains visible outside the detail card")
+            compare(serving[0].text, "250 ml per glass")
+
+            var micro = yMicro.item
+            micro.sizeClass = "compact"
+            seed(yMicro)
+            wait(16)
+            compare(micro.showDetails, false, "the micro card keeps only the count and action")
         }
 
         // wide - the grid moves BESIDE the count/controls; same delegates.
@@ -464,12 +537,12 @@ Item {
             var grid = gridOf(yWide)
             compare(grid.columns, 1, "a stacked box is one column")
             var dropBefore = findAll(y, function (n) {
-                return n.hasOwnProperty("text") && String(n.text) === "💧" }, [])[0]
+                return n.objectName === "hydrationGlass-0" }, [])[0]
             y.sizeClass = "wide"
             compare(y.horiz, true, "wide is the horizontal shape")
             compare(grid.columns, 2, "wide flows the grid beside the controls")
             var dropAfter = findAll(y, function (n) {
-                return n.hasOwnProperty("text") && String(n.text) === "💧" }, [])[0]
+                return n.objectName === "hydrationGlass-0" }, [])[0]
             verify(dropAfter === dropBefore,
                    "the same droplet object survives the class flip (no rebuild)")
             y.sizeClass = "compact"
@@ -647,7 +720,7 @@ Item {
                 return n.hasOwnProperty("minWidth") && n.hasOwnProperty("glyph")
                        && n.visible && n.minWidth === 170
             }, [])[0]
-            if (p) p.label = "Remove"
+            if (p) p.label = "Remove " + h.item.servingText()
             settle()
         }
         // A real event-loop turn: a textScale change re-polishes the layout, and
@@ -681,7 +754,8 @@ Item {
         // Half one: the generosity is intact - the pills are still much larger
         // than their text at every reachable text size.
         function test_hero_actions_keep_their_generous_floor() {
-            var cases = [ { l: "Remove", w: 170 }, { l: "Add a glass", w: 240 } ]
+            var cases = [ { l: "Remove " + h.item.servingText(), w: 170 },
+                          { l: "Add " + h.item.servingText(), w: 240 } ]
             var scales = [0.8, 1.0, 1.3, 1.6]
             for (var s = 0; s < scales.length; s++) {
                 h.theme.textScale = scales[s]
@@ -709,7 +783,7 @@ Item {
         function test_hero_actions_grow_for_a_longer_label_instead_of_eliding() {
             h.theme.textScale = 1.6
             settle()
-            var p = pillNamed("Remove")
+            var p = pillNamed("Remove " + h.item.servingText())
             verify(p !== null, "precondition: the Remove pill")
             // Deliberately NOT "p.width <= minWidth" - that would assert that
             // "Remove" measures under 170px, which is a claim about the font. It

@@ -2,7 +2,6 @@ import QtQuick
 import QtTest
 import "../../ui/qml" as App
 
-// COVERS: schema:zoneId
 
 // ClockWidget - verifies every config option actually changes what's shown:
 // 12/24-hour, seconds, date visibility + style, and the world clock (real IANA
@@ -27,6 +26,15 @@ Item {
             h.storeCtl._touchSettings()
         }
         function set(k, v) { h.storeCtl.setSetting("test-instance", k, v) }
+        function schemaField(key) {
+            var sections = sc.schemaFor("clock").sections
+            for (var i = 0; i < sections.length; i++) {
+                var fields = sections[i].fields || []
+                for (var j = 0; j < fields.length; j++)
+                    if (fields[j].key === key) return fields[j]
+            }
+            return null
+        }
 
         function test_12h_vs_24h() {
             var w = h.item
@@ -49,10 +57,33 @@ Item {
 
         function test_date_style() {
             var w = h.item
+            set("localeName", "en_US")
             set("dateStyle", "short")
-            compare(w.dateFmt, "dd/MM", "short date style")
+            compare(w.dateFmt, Qt.locale("en_US").dateFormat(Locale.ShortFormat),
+                    "short date uses the selected locale's order and separators")
+            var usPattern = w.dateFmt
+            set("localeName", "en_GB")
+            compare(w.dateFmt, Qt.locale("en_GB").dateFormat(Locale.ShortFormat))
+            verify(w.dateFmt !== usPattern,
+                   "US and British short-date patterns do not collapse to a fixed dd/MM")
             set("dateStyle", "full")
             verify(w.dateFmt.indexOf("MMM") >= 0, "full date style uses a month name")
+        }
+
+        function test_custom_date_pattern_is_validated_with_a_safe_fallback() {
+            var w = h.item
+            set("dateStyle", "custom")
+            set("datePattern", "yyyy 'week' ww")
+            compare(w.dateFmt, "yyyy 'week' ww")
+            verify(w.validDatePattern(w.datePattern))
+            set("datePattern", "'unterminated")
+            verify(!w.validDatePattern(w.datePattern))
+            compare(w.dateFmt, "ddd, d MMM",
+                    "an invalid persisted pattern cannot blank or corrupt the date")
+
+            var field = schemaField("datePattern")
+            compare(field.validator, "qtDatePattern")
+            compare(field.preview, "qtDatePattern")
         }
 
         // The bug this epic exists for: a fixed offset cannot follow daylight saving,
@@ -91,23 +122,14 @@ Item {
         // of silent wrongness this epic exists to remove. Shape-checked here; the
         // ids themselves are resolved against the OS tzdata in the C++ suite.
         function test_schema_zone_options_are_well_formed_iana_ids() {
-            var secs = sc.schemaFor("clock").sections, f = null
-            for (var i = 0; i < secs.length && !f; i++) {
-                var fields = secs[i].fields || []
-                for (var j = 0; j < fields.length; j++)
-                    if (fields[j].key === "zoneId") { f = fields[j]; break }
-            }
+            var f = schemaField("zoneId")
             verify(f !== null, "the clock schema still exposes a zoneId field")
             compare(f.dflt, "", "dflt MUST stay empty: a city default would silently " +
                                 "re-point every saved world clock")
-            var opts = f.options || []
-            verify(opts.length > 1, "the picker offers cities, got " + opts.length)
-            for (var k = 0; k < opts.length; k++) {
-                var v = opts[k].value
-                verify(v === "" || v === "UTC" || /^[A-Za-z_]+\/[A-Za-z0-9_+\/-]+$/.test(v),
-                       "zoneId option '" + v + "' is an IANA id (Region/City), not a label")
-                verify(opts[k].label && opts[k].label.length, "option '" + v + "' has a label")
-            }
+            compare(f.type, "timezone", "the full OS timezone picker owns zone selection")
+            var secondary = schemaField("secondaryZones")
+            compare(secondary.type, "timezoneList",
+                    "additional zones use a structured searchable editor, not CSV text")
         }
 
         function test_zone_is_resolved_through_the_bridge_not_locally() {
@@ -200,6 +222,23 @@ Item {
             verify(w.offsetLabel().indexOf("UTC") >= 0, "falls back to a UTC offset label")
             set("zoneLabel", "Tokyo")
             compare(w.zoneLabel, "Tokyo")
+        }
+
+        function test_secondary_zones_are_validated_deduplicated_and_bounded() {
+            var w = h.item
+            w.timeZones = fakeTz({
+                "Europe/London": 1,
+                "Asia/Tokyo": 9,
+                "America/New_York": -4,
+                "Australia/Sydney": 10
+            })
+            set("secondaryZones",
+                "Europe/London, Asia/Tokyo, Europe/London, Invalid/Zone, America/New_York, Australia/Sydney")
+            compare(w.secondaryZoneIds().length, 3)
+            compare(w.secondaryZoneIds()[0], "Europe/London")
+            compare(w.secondaryZoneIds()[1], "Asia/Tokyo")
+            compare(w.secondaryZoneIds()[2], "America/New_York")
+            w.timeZones = null
         }
     }
 }

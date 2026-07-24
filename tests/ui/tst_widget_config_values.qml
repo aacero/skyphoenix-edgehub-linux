@@ -15,7 +15,7 @@ import "../../ui/qml/widgets" as Wg
 //
 // The dialog itself only wires store.setSetting(id, key, val) + the appearance
 // bindings (titleOverride / accentName / cardBackdrop) onto the live widget -
-// see WidgetConfigDialog.inject(). This test reproduces exactly that path (the
+// see WidgetHost. This test reproduces exactly that binding path (the
 // store write plus the same three Qt.bindings) against a harness-hosted CPU
 // widget and asserts the OBSERVABLE the field is supposed to drive.
 //
@@ -79,7 +79,7 @@ Item {
         when: windowShown
 
         // Wire the per-instance appearance bindings exactly as
-        // WidgetConfigDialog.inject() / Dashboard.injectWidget do (the harness
+        // WidgetHost does in WidgetConfigDialog and Dashboard (the harness
         // does not). Without this the title/accent config has nothing to flow
         // through and the "custom title" / "accent" assertions could never move.
         function wireAppearance(w) {

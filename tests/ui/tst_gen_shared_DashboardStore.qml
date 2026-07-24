@@ -149,8 +149,8 @@ Item {
             store.setSetting(id1, "b", 2)
             store.removePage(1)
             compare(store.pageCount(), 1, "page removed")
-            verify(store.data.settings.hasOwnProperty(id0), "surviving page's tile settings kept")
-            verify(!store.data.settings.hasOwnProperty(id1), "removed page's tile settings dropped")
+            verify(store.document.settings.hasOwnProperty(id0), "surviving page's tile settings kept")
+            verify(!store.document.settings.hasOwnProperty(id1), "removed page's tile settings dropped")
         }
 
         // (OK) removePage never drops below one page.
@@ -167,14 +167,14 @@ Item {
         when: windowShown
         function init() { _bridge.reset(); store.load("blank"); _bridge.reset() }
 
-        // (BUG) removeTile dereferences data.pages[pageIdx].tiles with no guard.
+        // (BUG) removeTile dereferences document.pages[pageIdx].tiles with no guard.
         function test_removeTile_oob_page_does_not_throw() {
             var threw = false
             try { store.removeTile(5, "whatever") } catch (e) { threw = true }
             verify(!threw, "removeTile with an out-of-range pageIdx must return safely, not throw")
         }
 
-        // (BUG) moveTile dereferences data.pages[pageIdx].tiles with no guard.
+        // (BUG) moveTile dereferences document.pages[pageIdx].tiles with no guard.
         function test_moveTile_oob_page_does_not_throw() {
             var threw = false
             try { store.moveTile(5, 0, 0) } catch (e) { threw = true }
@@ -221,8 +221,8 @@ Item {
             store.applyExternal(docStr({ version: 1,
                 pages: [ { name: "P", tiles: [ { id: "keep-1", type: "cpu" } ] } ],
                 settings: { "keep-1": { a: 1 }, "orphan-9": { b: 2 } } }))
-            verify(store.data.settings.hasOwnProperty("keep-1"), "live tile settings kept")
-            verify(!store.data.settings.hasOwnProperty("orphan-9"),
+            verify(store.document.settings.hasOwnProperty("keep-1"), "live tile settings kept")
+            verify(!store.document.settings.hasOwnProperty("orphan-9"),
                 "settings for a tile absent from every page should be pruned")
         }
 
@@ -231,7 +231,7 @@ Item {
             _bridge.stored = docStr({ version: 1, appearance: {}, settings: { "orphan-x": { z: 1 } },
                 pages: [ { name: "P", tiles: [ { id: "keep-2", type: "cpu" } ] } ] })
             store.load("productivity")
-            verify(!store.data.settings.hasOwnProperty("orphan-x"),
+            verify(!store.document.settings.hasOwnProperty("orphan-x"),
                 "load() should prune settings whose ids no longer exist in any page")
         }
 
@@ -241,7 +241,7 @@ Item {
                 settings: { "": { junk: 1 }, "t1": { ok: 1 } },
                 pages: [ { name: "P", tiles: [ { id: "t1", type: "cpu" } ] } ] })
             store.load("productivity")
-            verify(!store.data.settings.hasOwnProperty(""), "empty-id settings scrubbed on load")
+            verify(!store.document.settings.hasOwnProperty(""), "empty-id settings scrubbed on load")
         }
 
         // (BUG) load() discards a valid saved doc with pages:[] and re-seeds,
@@ -286,9 +286,9 @@ Item {
         // (BUG) settingsFor() lazily creates a persisted empty {} entry as a
         // side effect of a read used inside widget bindings.
         function test_settingsFor_read_creates_no_persisted_entry() {
-            verify(!store.data.settings.hasOwnProperty("ghost-id"), "precondition: no entry yet")
+            verify(!store.document.settings.hasOwnProperty("ghost-id"), "precondition: no entry yet")
             store.settingsFor("ghost-id")
-            verify(!store.data.settings.hasOwnProperty("ghost-id"),
+            verify(!store.document.settings.hasOwnProperty("ghost-id"),
                 "reading settingsFor for an unknown id must not permanently create a persisted {} entry")
         }
 

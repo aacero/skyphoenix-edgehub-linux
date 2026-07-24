@@ -266,5 +266,20 @@ Item {
             tryVerify(function () { return cr.scale === 1 && cr.opacity === 1 }, 3000,
                       "reorient fx eases contentRoot back to full scale/opacity")
         }
+
+        function test_rotation_is_temporally_smooth_when_motion_is_enabled() {
+            var cr = findPred(win.contentItem, function (n) {
+                return n && typeof n.swapped === "boolean" })
+            verify(cr !== null, "found contentRoot")
+            win.reduceMotion = false
+            win.orientationMode = "portrait"
+            tryCompare(cr, "rotation", 0, 2000)
+
+            win.orientationMode = "landscape"
+            wait(90)
+            verify(cr.rotation > 0 && cr.rotation < 90,
+                   "a physical quarter-turn is between endpoints while easing")
+            tryCompare(cr, "rotation", 90, 2000)
+        }
     }
 }

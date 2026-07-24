@@ -106,12 +106,8 @@ Item {
         function dropletCount() {
             return G.collectPred(wh.item, function (n) {
                 try {
-                    return n && n.text !== undefined && n.visible
-                           && ("" + n.text) === "💧" && n.parent
-                           // Tile droplets are direct children of the Grid.
-                           // Exclude the identical glyph inside the +1 pill.
-                           && n.parent.columns !== undefined
-                           && n.parent.visible
+                    return n && n.objectName === "hydrationGlassIcon"
+                           && n.visible && G.isLive(n)
                 } catch (e) {
                     return false
                 }
@@ -165,22 +161,38 @@ Item {
 
         function test_hydration_sizes_data() {
             return [
-                { tag: "0.5x0.5", cls: "compact", w: 348, h: 306 },
-                { tag: "0.5x1",   cls: "tall",    w: 348, h: 700 },
-                { tag: "1x0.5",   cls: "wide",    w: 760, h: 409 },
-                { tag: "1x1",     cls: "compact", w: 696, h: 612 }
+                { tag: "portrait-0.5x0.5",  cls: "compact", w: 348, h: 409 },
+                { tag: "landscape-0.5x0.5", cls: "compact", w: 423, h: 306 },
+                { tag: "portrait-0.5x1",    cls: "tall",    w: 348, h: 818 },
+                { tag: "landscape-0.5x1",   cls: "wide",    w: 846, h: 306 },
+                { tag: "portrait-1x0.5",    cls: "wide",    w: 696, h: 409 },
+                { tag: "landscape-1x0.5",   cls: "tall",    w: 423, h: 612 },
+                { tag: "portrait-1x1",      cls: "compact", w: 696, h: 818 },
+                { tag: "landscape-1x1",     cls: "compact", w: 846, h: 612 }
             ]
         }
         function test_hydration_sizes(r) {
             loadWidget()
             resetInst()
-            seed({ goal: 8, count: 3, day: wh.item.todayKey })
+            seed({ goal: 8, count: 3, day: wh.item.todayKey,
+                   glassMl: 300, streak: 3, lastGoalDay: wh.item.todayKey })
             setSize(r.cls, r.w, r.h)
             var img = snap(wh, "hyd_size_" + r.tag)
             verify(G.looksRendered(img),
                    "hydration " + r.tag + " renders content")
             compare(wh.item.width, r.w, "hydration " + r.tag + " width")
             compare(wh.item.height, r.h, "hydration " + r.tag + " height")
+            compare(dropletCount(), r.tag.indexOf("0.5x0.5") >= 0 ? 0 : 3,
+                    "filled-glass grid is reserved for non-micro tiles")
+            var details = G.byObjName(wh.item, "hydrationDetails")
+            verify(details !== null, "hydration volume detail card exists")
+            compare(details.visible, r.tag.indexOf("1x1") >= 0,
+                    "1x1 earns volume consumed and remaining")
+            verify(pill("Add", false) !== null || pill("+ ", false) !== null,
+                   "one-tap serving logging remains available")
+            var serving = G.byObjName(wh.item, "hydrationServing")
+            verify(serving !== null && serving.visible,
+                   "configured serving volume remains visible")
         }
 
         function test_hydration_config_goal() {
@@ -219,18 +231,19 @@ Item {
             seed({ goal: 8, count: 2, day: wh.item.todayKey })
             setSize("compact", 696, 612)
             snap(wh, "hyd_plus_before")
-            clickPill("+1")
-            compare(settings().count, 3, "+1 raises count to 3")
+            clickPill("Add", false)
+            compare(settings().count, 3, "Add serving raises count to 3")
             snap(wh, "hyd_plus_after")
         }
-        function test_hydration_body_minus() {
+        function test_hydration_body_undo() {
             loadWidget()
             resetInst()
-            seed({ goal: 8, count: 2, day: wh.item.todayKey })
+            seed({ goal: 8, count: 2, previousCount: 1,
+                   countUndoAvailable: true, day: wh.item.todayKey })
             setSize("compact", 696, 612)
-            clickPill(minusSign, true)
-            compare(settings().count, 1, "−1 lowers count to 1")
-            snap(wh, "hyd_minus_after")
+            clickPill("Undo", true)
+            compare(settings().count, 1, "Undo restores the previous count")
+            snap(wh, "hyd_undo_after")
         }
         function test_hydration_body_overlay_glass() {
             loadWidget()
@@ -302,7 +315,7 @@ Item {
             seed({ goal: 2, count: 1, day: wh.item.todayKey })
             setSize("compact", 696, 612)
             snap(wh, "hyd_st_goal_before")
-            clickPill("+1")
+            clickPill("Add", false)
             compare(settings().count, 2, "reached goal")
             verify(vtext("Goal reached") !== null,
                    "goal-reached celebration fires")
@@ -316,7 +329,7 @@ Item {
             setSize("compact", 696, 612)
             compare(wh.item.streakDisplay, 3,
                     "streak display resolves to 3")
-            verify(vtext("3-day streak") !== null, "streak line shown")
+            verify(vtext("3-day goal streak") !== null, "goal streak line shown")
             snap(wh, "hyd_st_streak")
         }
         function test_hydration_state_micro_number() {
@@ -329,6 +342,28 @@ Item {
             compare(dropletCount(), 0, "micro drops the glass grid")
             snap(wh, "hyd_st_micro")
         }
+        function test_hydration_micro_celebration_does_not_cover_count() {
+            loadWidget()
+            resetInst()
+            seed({ goal: 2, count: 1, day: wh.item.todayKey })
+            setSize("compact", 348, 306)
+            clickPill("+ ", false)
+            var banner = G.byObjName(wh.item, "hydrationCelebration")
+            var count = G.byObjName(wh.item, "hydrationCount")
+            verify(banner !== null && banner.opacity > 0,
+                   "micro celebration is currently visible")
+            verify(count !== null && count.visible, "micro count is visible")
+            var bp = banner.mapToItem(wh.item, 0, 0)
+            var cp = count.mapToItem(wh.item, 0, 0)
+            var separated = bp.y + banner.height <= cp.y
+                            || cp.y + count.height <= bp.y
+            verify(separated,
+                   "celebration and primary count do not overlap (banner "
+                   + Math.round(bp.y) + ".." + Math.round(bp.y + banner.height)
+                   + ", count " + Math.round(cp.y) + ".."
+                   + Math.round(cp.y + count.height) + ")")
+            snap(wh, "hyd_st_micro_celebration")
+        }
         function test_hydration_state_overfill() {
             loadWidget()
             resetInst()
@@ -336,7 +371,7 @@ Item {
             setSize("compact", 696, 612)
             wh.expanded = true
             wait(220)
-            verify(vtext("Overachiever") !== null,
+            verify(vtext("Goal exceeded") !== null,
                    "overfill bonus message shown")
             snap(wh, "hyd_st_overfill")
         }

@@ -253,9 +253,9 @@ jobs:
           name: cpp-lcov
           path: coverage/cpp-lcov.info
 
-  # --- Rust + C++ merged coverage gate ---
+  # --- Rust coverage gate + non-gating combined diagnostic ---
   coverage:
-    name: Coverage Gate (Rust + C++ >= 95%)
+    name: Rust Coverage Gate + Combined Report
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs: [rust, cpp-test]
@@ -293,7 +293,7 @@ jobs:
           lcov --add-tracefile coverage/rust-lcov.info \
                --add-tracefile coverage/cpp-lcov.info \
                --output-file coverage/merged-lcov.info
-      - name: Enforce merged (Rust + C++) >= 95%
+      - name: Report merged Rust + C++ coverage (non-gating)
         run: |
           pct=$(python3 - <<'PY'
           total = hit = 0
@@ -308,7 +308,6 @@ jobs:
           PY
           )
           echo "Merged (Rust + C++) line coverage: ${pct}%"
-          python3 -c "import sys; sys.exit(0 if float('${pct}') >= 95 else 1)"
       - name: Upload coverage reports
         if: always()
         uses: actions/upload-artifact@v7

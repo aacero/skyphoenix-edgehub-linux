@@ -22,7 +22,7 @@ import "GuiUtil.js" as G
 // loaded item - config edits via store.setSetting then drive the widget end-to-end.
 Item {
     id: root
-    width: 1040; height: 1080
+    width: 1400; height: 1400
 
     UI.WidgetHarness {
         id: wh
@@ -127,11 +127,7 @@ Item {
         }
 
         function moonGlyph() {
-            var ph = wh.item.phases
-            return G.findPred(wh.item, function (n) {
-                try { return n && n.text !== undefined && ("" + n.text).length <= 3 && ph.indexOf("" + n.text) >= 0 }
-                catch (e) { return false }
-            })
+            return G.byObjName(wh.item, "moonDisc")
         }
 
         function scanRegion(img, x0, y0, x1, y1, hex, tol, step) {
@@ -189,6 +185,8 @@ Item {
             setC("format24", false); setC("showSeconds", false); setC("showDate", true)
             setC("dateStyle", "full"); setC("customZone", false); setC("zoneId", "")
             setC("zoneLabel", ""); setC("utcOffset", 0)
+            setC("datePattern", "ddd, d MMM"); setC("localeName", "")
+            setC("secondaryZones", "")
             setC("title", ""); setC("accent", ""); setC("cardBackdrop", "none")
             wh.width = w; wh.height = h; wh.item.sizeClass = cls; wait(160)
         }
@@ -196,13 +194,19 @@ Item {
             useWidget("AnalogClockWidget.qml")
             wh.expanded = false
             setC("showSeconds", true); setC("showNumerals", false)
+            setC("faceStyle", "classic"); setC("handStyle", "round")
+            setC("customZone", false); setC("zoneId", "")
+            setC("zoneLabel", ""); setC("utcOffset", 0)
             setC("title", ""); setC("accent", ""); setC("cardBackdrop", "none")
             wh.width = w; wh.height = h; wh.item.sizeClass = cls; wait(160)
         }
         function moonPrep(w, h, cls, cyclePos) {
             useWidget("MoonWidget.qml")
             wh.expanded = false
-            setC("hemisphere", "north"); setC("title", ""); setC("accent", ""); setC("cardBackdrop", "none")
+            setC("hemisphere", "north"); setC("showAccuracyNote", true)
+            setC("showLocalEvents", false); setC("locationMode", "search")
+            setC("place", ""); setC("lat", null); setC("lon", null)
+            setC("title", ""); setC("accent", ""); setC("cardBackdrop", "none")
             wh.width = w; wh.height = h; wh.item.sizeClass = cls
             wh.item._cyclePos = (cyclePos === undefined) ? 0.35 : cyclePos
             wait(160)
@@ -213,11 +217,16 @@ Item {
         // ════════════════════════════════════════════════════════════════════
         function test_analog_size_data() {
             return [
-                { tag: "0.5x0.5", w: 360, h: 420, cls: "compact" },
-                { tag: "0.5x1",   w: 360, h: 760, cls: "tall" },
-                { tag: "1x0.5",   w: 820, h: 300, cls: "wide" },
-                { tag: "1x1",     w: 600, h: 600, cls: "compact" },
-                { tag: "1x1.5",   w: 640, h: 980, cls: "tall" }
+                { tag: "portrait-0.5x0.5",  w: 348,  h: 409,  cls: "compact" },
+                { tag: "landscape-0.5x0.5", w: 423,  h: 306,  cls: "compact" },
+                { tag: "portrait-0.5x1",    w: 348,  h: 818,  cls: "tall" },
+                { tag: "landscape-0.5x1",   w: 846,  h: 306,  cls: "wide" },
+                { tag: "portrait-1x0.5",    w: 696,  h: 409,  cls: "wide" },
+                { tag: "landscape-1x0.5",   w: 423,  h: 612,  cls: "tall" },
+                { tag: "portrait-1x1",      w: 696,  h: 818,  cls: "compact" },
+                { tag: "landscape-1x1",     w: 846,  h: 612,  cls: "compact" },
+                { tag: "portrait-1x1.5",    w: 696,  h: 1226, cls: "tall" },
+                { tag: "landscape-1x1.5",   w: 1268, h: 612,  cls: "wide" }
             ]
         }
         function test_analog_size(row) {
@@ -227,6 +236,12 @@ Item {
             compare(wh.item.height, row.h, "cell height matches request")
             verify(findCanvas() !== null, "face Canvas exists")
             verify(G.looksRendered(img), "face rendered non-blank")
+            var info = G.byObjName(wh.item, "analogClockInfo")
+            verify(info !== null, "analog date and digital-time region exists")
+            compare(info.visible, row.tag.indexOf("0.5x0.5") < 0,
+                    "only the true micro tile is a pure clock face")
+            compare(wh.item.showDigital, row.cls === "wide" || row.cls === "tall",
+                    "shaped tiles earn the synchronized digital readout")
         }
 
         function test_analog_cf_seconds() {
@@ -269,6 +284,61 @@ Item {
                 var d = sigDiff(_numSigOff, sig)
                 verify(d >= 4, "numerals changed face pixels vs off (" + d + " samples)")
             }
+        }
+
+        function test_analog_cf_face_style() {
+            analogPrep(600, 600, "compact")
+            setC("showSeconds", false)
+            setC("faceStyle", "classic")
+            wait(300)
+            var classic = snap(wh, "anl_face_classic")
+
+            setC("faceStyle", "minimal")
+            wait(300)
+            var minimal = snap(wh, "anl_face_minimal")
+            compare(cfg().faceStyle, "minimal", "face style persisted")
+            var d = sigDiff(gridSig(classic), gridSig(minimal))
+            verify(d >= 8, "minimal face visibly removes the classic rim (" + d + " samples)")
+        }
+
+        function test_analog_cf_hand_style() {
+            analogPrep(600, 600, "compact")
+            setC("showSeconds", false)
+            setC("handStyle", "round")
+            wait(300)
+            var round = snap(wh, "anl_hands_round")
+
+            setC("handStyle", "slender")
+            wait(300)
+            var slender = snap(wh, "anl_hands_slender")
+            compare(cfg().handStyle, "slender", "hand style persisted")
+            var d = sigDiff(gridSig(round), gridSig(slender))
+            verify(d >= 2, "slender hands visibly differ from round hands (" + d + " samples)")
+        }
+
+        function test_analog_cf_micro_world_zone_badge() {
+            analogPrep(360, 420, "compact")
+            setC("customZone", true)
+            setC("utcOffset", 5.5)
+            wait(220)
+            var badge = G.byObjName(wh.item, "analogZoneBadge")
+            verify(badge !== null && effVisible(badge), "micro world clock shows its zone badge")
+            verify(G.byText(badge, "UTC+5:30") !== null, "fractional fixed offset is explicit")
+            snap(wh, "anl_micro_world_zone")
+        }
+
+        function test_analog_cf_invalid_zone_fallback() {
+            analogPrep(820, 300, "wide")
+            setC("customZone", true)
+            setC("zoneId", "Mars/Olympus")
+            setC("utcOffset", 2)
+            wait(220)
+            verify(wh.item.invalidZone, "invalid IANA zone detected")
+            var zone = G.byText(wh.item, "Invalid zone")
+            verify(zone !== null && effVisible(zone), "invalid-zone label is visible")
+            var fallback = G.byText(wh.item, "fixed offset")
+            verify(fallback !== null && effVisible(fallback), "fallback behavior is disclosed")
+            snap(wh, "anl_invalid_zone_fallback")
         }
 
         function test_analog_cf_title() {
@@ -368,11 +438,16 @@ Item {
         // ════════════════════════════════════════════════════════════════════
         function test_clock_size_data() {
             return [
-                { tag: "0.5x0.5", w: 360, h: 420, cls: "compact" },
-                { tag: "0.5x1",   w: 360, h: 760, cls: "tall" },
-                { tag: "1x0.5",   w: 820, h: 300, cls: "wide" },
-                { tag: "1x1",     w: 600, h: 600, cls: "compact" },
-                { tag: "1x1.5",   w: 640, h: 980, cls: "tall" }
+                { tag: "portrait-0.5x0.5",  w: 348,  h: 409,  cls: "compact" },
+                { tag: "landscape-0.5x0.5", w: 423,  h: 306,  cls: "compact" },
+                { tag: "portrait-0.5x1",    w: 348,  h: 818,  cls: "tall" },
+                { tag: "landscape-0.5x1",   w: 846,  h: 306,  cls: "wide" },
+                { tag: "portrait-1x0.5",    w: 696,  h: 409,  cls: "wide" },
+                { tag: "landscape-1x0.5",   w: 423,  h: 612,  cls: "tall" },
+                { tag: "portrait-1x1",      w: 696,  h: 818,  cls: "compact" },
+                { tag: "landscape-1x1",     w: 846,  h: 612,  cls: "compact" },
+                { tag: "portrait-1x1.5",    w: 696,  h: 1226, cls: "tall" },
+                { tag: "landscape-1x1.5",   w: 1268, h: 612,  cls: "wide" }
             ]
         }
         function test_clock_size(row) {
@@ -384,6 +459,10 @@ Item {
             verify(t !== null && effVisible(t), "time readout rendered & visible")
             verify(t.contentWidth <= t.width + 1 || !t.truncated, "primary time not clipped")
             verify(G.looksRendered(img), "content rendered")
+            var context = G.byObjName(wh.item, "clockCalendarContext")
+            verify(context !== null, "calendar context exists")
+            compare(context.visible, row.cls === "wide" || row.cls === "tall",
+                    "shaped clock tiles earn calendar context")
         }
 
         function test_clock_cf_format24_data() {
@@ -440,8 +519,8 @@ Item {
             compare(cfg().dateStyle, row.v, "store updated")
             snap(wh, "clk_datestyle_" + row.tag)
             if (row.v === "short") {
-                var sl = G.byText(wh.item, "/")   // dd/MM
-                verify(sl !== null && effVisible(sl), "short date uses dd/MM")
+                var sl = G.byText(wh.item, wh.item.formatAt(wh.item.dateFmt))
+                verify(sl !== null && effVisible(sl), "short date uses the active locale format")
             } else {
                 var fl = G.byText(wh.item, ",")    // ddd, d MMM
                 verify(fl !== null && effVisible(fl), "full date spells weekday form")
@@ -541,7 +620,7 @@ Item {
             var head = G.byText(wh.item, "Clock")
             verify(head !== null && effVisible(head), "header visible")
             verify(effVisible(timeText()), "time visible")
-            var d = G.byText(wh.item, "/")
+            var d = G.byText(wh.item, wh.item.formatAt(wh.item.dateFmt))
             verify(d !== null && effVisible(d), "date visible")
             snap(wh, "clk_st_baseline")
         }
@@ -550,7 +629,10 @@ Item {
             var wideSz = timeText().font.pixelSize
             clockPrep(600, 600, "compact")
             var baseSz = timeText().font.pixelSize
-            verify(wideSz > baseSz, "wide time font grows into width (" + wideSz.toFixed(0) + ">" + baseSz.toFixed(0) + ")")
+            verify(wideSz >= 96, "wide time remains glance-readable (" + wideSz.toFixed(0) + "px)")
+            verify(wideSz >= baseSz - 4,
+                   "wide time uses nearly the full short-axis budget (" + wideSz.toFixed(0)
+                   + " vs " + baseSz.toFixed(0) + ")")
             clockPrep(820, 300, "wide")
             snap(wh, "clk_st_wide")
         }
@@ -559,6 +641,19 @@ Item {
             var info = G.byText(wh.item, "Week")
             verify(info !== null && effVisible(info), "tall shows 'Week N · Day M' info line")
             snap(wh, "clk_st_tall")
+        }
+        function test_clock_st_secondary_zones() {
+            clockPrep(640, 980, "tall")
+            setC("customZone", true)
+            setC("secondaryZones", "Europe/London, Asia/Tokyo, America/New_York")
+            wait(260)
+            var board = G.byObjName(wh.item, "clockSecondaryZones")
+            verify(board !== null && effVisible(board),
+                   "structured secondary-zone board is visible in a tall tile")
+            verify(G.byText(wh.item, "London") !== null)
+            verify(G.byText(wh.item, "Tokyo") !== null)
+            verify(G.byText(wh.item, "New York") !== null)
+            snap(wh, "clk_st_secondary_zones")
         }
         function test_clock_st_worldchip() {
             clockPrep(600, 600, "compact")
@@ -614,10 +709,16 @@ Item {
         // ════════════════════════════════════════════════════════════════════
         function test_moon_size_data() {
             return [
-                { tag: "0.5x0.5", w: 360, h: 420, cls: "compact" },
-                { tag: "0.5x1",   w: 360, h: 760, cls: "tall" },
-                { tag: "1x0.5",   w: 820, h: 300, cls: "wide" },
-                { tag: "1x1",     w: 600, h: 600, cls: "compact" }
+                { tag: "portrait-0.5x0.5",  w: 348, h: 409, cls: "compact" },
+                { tag: "landscape-0.5x0.5", w: 423, h: 306, cls: "compact" },
+                { tag: "portrait-0.5x1",    w: 348, h: 818, cls: "tall" },
+                { tag: "landscape-0.5x1",   w: 846, h: 306, cls: "wide" },
+                { tag: "portrait-1x0.5",    w: 696, h: 409, cls: "wide" },
+                { tag: "landscape-1x0.5",   w: 423, h: 612, cls: "tall" },
+                { tag: "portrait-1x1",      w: 696, h: 818, cls: "compact" },
+                { tag: "landscape-1x1",     w: 846, h: 612, cls: "compact" },
+                { tag: "portrait-1x1.5",    w: 696, h: 1226, cls: "tall" },
+                { tag: "landscape-1x1.5",   w: 1268, h: 612, cls: "wide" }
             ]
         }
         function test_moon_size(row) {
@@ -626,8 +727,19 @@ Item {
             compare(wh.item.width, row.w, "cell width matches request")
             compare(wh.item.height, row.h, "cell height matches request")
             var g = moonGlyph()
-            verify(g !== null && effVisible(g), "moon glyph rendered & visible")
+            verify(g !== null && effVisible(g), "deterministic moon disc rendered and visible")
+            if (row.tag === "landscape-1x1.5")
+                verify(g.width >= 250, "wide 1x1.5 uses the extra area for a larger disc")
             verify(G.looksRendered(img), "content rendered")
+            var upcoming = G.byObjName(wh.item, "moonUpcomingDates")
+            verify(upcoming !== null, "upcoming phase dates exist")
+            var rich = row.cls === "tall" || row.w * row.h > 700000
+            compare(upcoming.visible, rich,
+                    "tall and 1x1.5 tiles earn next-new and next-full dates")
+            var cycle = G.byObjName(wh.item, "moonCyclePosition")
+            verify(cycle !== null, "lunar-cycle timeline exists")
+            compare(cycle.visible, rich,
+                    "tall and 1x1.5 tiles visualize position within the lunar cycle")
         }
 
         function test_moon_cf_hemisphere_data() {
@@ -639,11 +751,9 @@ Item {
             wait(220)
             compare(cfg().hemisphere, row.v, "store updated")
             var g = moonGlyph()
-            verify(g !== null, "glyph found")
-            var sc = null
-            try { sc = g.transform[0] } catch (e) {}
-            verify(sc !== null && sc !== undefined, "glyph carries a Scale transform")
-            compare(sc.xScale, row.xs, row.v + " hemisphere sets glyph xScale " + row.xs)
+            verify(g !== null, "deterministic disc found")
+            compare(g.mirrored, row.v === "south",
+                    row.v + " hemisphere sets deterministic disc mirroring")
             snap(wh, "moon_hemi_" + row.tag)
         }
 
@@ -662,7 +772,7 @@ Item {
             moonPrep(360, 420, "compact", 0.5)   // Full Moon
             verify(wh.item.micro === true, "micro derived")
             var g = moonGlyph()
-            verify(g !== null && effVisible(g), "glyph shown in micro")
+            verify(g !== null && effVisible(g), "deterministic disc shown in micro")
             var name = G.byText(wh.item, "Full Moon")
             verify(name === null || !effVisible(name), "name/illum column hidden in micro")
             snap(wh, "moon_st_micro")
@@ -679,7 +789,7 @@ Item {
             moonPrep(820, 300, "wide", 0.5)
             var g = moonGlyph()
             var name = G.byText(wh.item, "Full Moon")
-            verify(g !== null && name !== null && effVisible(name), "glyph + name present")
+            verify(g !== null && name !== null && effVisible(name), "disc + name present")
             var gx = g.mapToItem(wh, g.width / 2, 0).x
             var nx = name.mapToItem(wh, name.width / 2, 0).x
             verify(gx < nx, "glyph left of the name column (" + gx.toFixed(0) + "<" + nx.toFixed(0) + ")")
@@ -688,7 +798,7 @@ Item {
         function test_moon_st_talldates() {
             moonPrep(600, 900, "tall", 0.5)   // roomy → next new/full rows
             verify(wh.item.roomy === true, "roomy derived")
-            var nd = G.byText(wh.item, "New")   // the "🌑 New" date label
+            var nd = G.byText(wh.item, "NEXT NEW")
             verify(nd !== null && effVisible(nd), "next-new/next-full date rows shown on tall tile")
             snap(wh, "moon_st_talldates")
         }
@@ -696,7 +806,7 @@ Item {
             moonPrep(600, 600, "compact", 0.0)   // pinned new moon
             compare(wh.item.idx, 0, "phase index is New Moon")
             var g = moonGlyph()
-            compare("" + g.text, "🌑", "glyph is the new-moon disc")
+            verify(g !== null && effVisible(g), "new moon uses the deterministic disc")
             var name = G.byText(wh.item, "New Moon")
             verify(name !== null && effVisible(name), "name reads 'New Moon'")
             snap(wh, "moon_st_newmoon")
@@ -709,6 +819,32 @@ Item {
             snap(wh, "moon_st_illumfull")
         }
 
+        function test_moon_st_local_events_unconfigured() {
+            moonPrep(600, 900, "tall", 0.35)
+            setC("showLocalEvents", true)
+            wait(220)
+            var panel = G.byObjName(wh.item, "moonLocalEvents")
+            verify(panel !== null && effVisible(panel), "local-events panel shown")
+            var reason = G.byText(panel, "Location needed for local sky events")
+            verify(reason !== null && effVisible(reason), "missing location reason is visible")
+            snap(wh, "moon_local_events_unconfigured")
+        }
+
+        function test_moon_st_local_events_configured() {
+            moonPrep(600, 1000, "tall", 0.35)
+            setC("showLocalEvents", true)
+            setC("place", "Vienna, AT")
+            setC("lat", 48.2082)
+            setC("lon", 16.3738)
+            wait(260)
+            var panel = G.byObjName(wh.item, "moonLocalEvents")
+            verify(panel !== null && effVisible(panel), "configured local-events panel shown")
+            verify(G.byText(panel, "Vienna, AT") !== null, "location identity shown")
+            verify(G.byText(panel, "NEXT RISE") !== null, "rise is labelled")
+            verify(G.byText(panel, "NEXT SET") !== null, "set is labelled")
+            snap(wh, "moon_local_events_configured")
+        }
+
         function test_moon_ch_accent_data() {
             return [ { tag: "override", name: "red", hex: cRed }, { tag: "auto", name: "", hex: cInfo } ]
         }
@@ -718,8 +854,7 @@ Item {
             wait(260)
             var img = snap(wh, "moon_ch_accent_" + row.tag)
             if (row.name !== "") compare(cfg().accent, row.name, "accent persisted")
-            // Scan the lower half (name + next-new/full rows are effAccent-coloured;
-            // avoids the emoji glyph up top).
+            // Scan the lower half where name and next-date rows use the accent.
             verify(scanRegion(img, 0, img.height * 0.45, img.width, img.height, row.hex, 130, 3),
                    "name/date text rendered in " + (row.name || "Auto/catInfo") + " colour")
         }

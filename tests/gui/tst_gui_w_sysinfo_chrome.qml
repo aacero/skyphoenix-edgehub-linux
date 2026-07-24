@@ -148,7 +148,8 @@ Item {
         }
 
         function counted(count, name) {
-            return { ready: true, info: { packageCount: count, name: (name || "Arch Linux") } }
+            return { ready: true, info: { packageCount: count, name: (name || "Arch Linux"),
+                                          family: "arch" } }
         }
         function daysAgoEpoch(days) { return Math.floor(Date.now() / 1000) - days * 86400 }
 
@@ -158,11 +159,14 @@ Item {
 
         function test_pkg_a_sizes_data() {
             return [
-                { tag: "0.5x0.5", w: 348, h: 409, sc: "compact" },
-                { tag: "0.5x1",   w: 348, h: 819, sc: "tall" },
-                { tag: "1x0.5",   w: 846, h: 306, sc: "wide" },
-                { tag: "1x1",     w: 696, h: 819, sc: "compact" },
-                { tag: "1x1.5",   w: 696, h: 1229, sc: "tall" }
+                { tag: "portrait-0.5x0.5",  w: 348, h: 409, sc: "compact" },
+                { tag: "landscape-0.5x0.5", w: 423, h: 306, sc: "compact" },
+                { tag: "portrait-0.5x1",    w: 348, h: 818, sc: "tall" },
+                { tag: "landscape-0.5x1",   w: 846, h: 306, sc: "wide" },
+                { tag: "portrait-1x0.5",    w: 696, h: 409, sc: "wide" },
+                { tag: "landscape-1x0.5",   w: 423, h: 612, sc: "tall" },
+                { tag: "portrait-1x1",      w: 696, h: 818, sc: "compact" },
+                { tag: "landscape-1x1",     w: 846, h: 612, sc: "compact" }
             ]
         }
         function test_pkg_a_sizes(row) {
@@ -176,6 +180,10 @@ Item {
             var num = findNumber(it, "1461")
             verify(num !== null, "grouped count '1 461' visible @ " + row.tag)
             verify(num.truncated === false, "count not clipped @ " + row.tag)
+            var details = G.byObjName(it, "packageDetailCard")
+            verify(details !== null, "package provenance card exists")
+            compare(details.visible, it.shapedTile,
+                    "every layout with useful room earns provenance and refresh context")
         }
 
         function test_pkg_b_showdistro_data() {
@@ -310,16 +318,24 @@ Item {
         // ══════════════════════════════════════════════════════════════════════
 
         function knownEpoch(days, name) {
-            return { ready: true, info: { installEpoch: tc.daysAgoEpoch(days), name: (name || "Arch Linux") } }
+            return { ready: true, info: { installEpoch: tc.daysAgoEpoch(days),
+                                          name: (name || "Arch Linux"),
+                                          installSource: "package-log-estimate",
+                                          installEvidence: "/var/log/pacman.log",
+                                          installEvidenceNote: "Earliest record in visible pacman history. Deleted logs may make this younger than the system.",
+                                          installReason: null } }
         }
 
         function test_sia_a_sizes_data() {
             return [
-                { tag: "0.5x0.5", w: 348, h: 409, sc: "compact" },
-                { tag: "0.5x1",   w: 348, h: 819, sc: "tall" },
-                { tag: "1x0.5",   w: 846, h: 306, sc: "wide" },
-                { tag: "1x1",     w: 696, h: 819, sc: "compact" },
-                { tag: "1x1.5",   w: 696, h: 1229, sc: "tall" }
+                { tag: "portrait-0.5x0.5",  w: 348, h: 409, sc: "compact" },
+                { tag: "landscape-0.5x0.5", w: 423, h: 306, sc: "compact" },
+                { tag: "portrait-0.5x1",    w: 348, h: 818, sc: "tall" },
+                { tag: "landscape-0.5x1",   w: 846, h: 306, sc: "wide" },
+                { tag: "portrait-1x0.5",    w: 696, h: 409, sc: "wide" },
+                { tag: "landscape-1x0.5",   w: 423, h: 612, sc: "tall" },
+                { tag: "portrait-1x1",      w: 696, h: 818, sc: "compact" },
+                { tag: "landscape-1x1",     w: 846, h: 612, sc: "compact" }
             ]
         }
         function test_sia_a_sizes(row) {
@@ -331,7 +347,11 @@ Item {
             compare(it.width, row.w, "width @ " + row.tag)
             compare(it.height, row.h, "height @ " + row.tag)
             verify(("" + it.valueText).length > 0, "value text non-empty @ " + row.tag)
-            verify(G.byText(it, "since install") !== null, "unit caption rendered @ " + row.tag)
+            verify(G.byText(it, it.unitText) !== null, "derived install-age caption rendered @ " + row.tag)
+            var details = G.byObjName(it, "systemAgeDetailCard")
+            verify(details !== null, "system-age provenance card exists")
+            compare(details.visible, it.richTile,
+                    "information-rich tiles earn date confidence and source context")
         }
 
         function test_sia_b_ageunit_data() {
@@ -345,10 +365,11 @@ Item {
             snap(it, "sia_ageunit_" + row.tag)
             if (row.v === "days") {
                 compare(stripWs(it.valueText), "500", "days mode shows raw day count")
-                verify(G.byText(it, "days since install") !== null, "days caption")
+                verify(G.byText(it, "days since earliest record") !== null, "days caption")
             } else {
-                compare(stripWs(it.valueText), "16", "auto mode promotes 500 days → 16 months")
-                verify(G.byText(it, "months since install") !== null, "months caption")
+                compare(stripWs(it.valueText), "" + it.completedMonths,
+                        "auto mode uses completed calendar months")
+                verify(G.byText(it, "months since earliest record") !== null, "months caption")
             }
         }
 
@@ -403,12 +424,15 @@ Item {
 
         function test_sia_h_state_unknown() {
             var it = host("SinceInstallWidget.qml", "sia-unk", 696, 819, "compact")
-            it.distroOverride = { ready: true, info: { installEpoch: null, name: "Arch Linux" } }
+            it.distroOverride = { ready: true, info: {
+                installEpoch: null, name: "Arch Linux",
+                installReason: "No readable pacman installation record was found."
+            } }
             wait(150)
             snap(it, "sia_unknown")
             verify(it.known === false, "unknown state")
             verify(G.byText(it, "-") !== null, "dash when install date unknown")
-            verify(G.byText(it, "Install date unavailable") !== null, "unavailable caption")
+            verify(G.byText(it, "System age unavailable") !== null, "unavailable caption")
         }
 
         function test_sia_i_state_expanded() {
@@ -419,7 +443,7 @@ Item {
             wait(200)
             snap(it, "sia_expanded")
             verify(G.byText(it, "CachyOS") !== null, "distro + date line in body when expanded")
-            verify(G.byText(it, "package manager") !== null, "measurement caveat text shown")
+            verify(G.byText(it, "visible pacman history") !== null, "measurement caveat text shown")
             wh.expanded = false
         }
 

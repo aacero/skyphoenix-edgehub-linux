@@ -231,6 +231,8 @@ run_suite "UI links (no dead openUrlExternally)" bash "$PROJECT_DIR/scripts/chec
 # 5c. Icon lint - every widget type needs a bundled, registered picker icon (the
 #     QML suite can't see missing assets: it runs source-tree, with no qrc).
 run_suite "Icon lint (widget types)" bash "$PROJECT_DIR/scripts/check_widget_icons.sh"
+run_suite "Widget resource parity (Catalog, Hub, Manager)" \
+    python3 "$PROJECT_DIR/scripts/check_widget_resources.py"
 
 # 5d. AppImage update contract - the cross-file invariants of the zsync delta-update
 #     path (artifact name ↔ binary appVersion ↔ zsync -u URL ↔ UpdateChecker's repo).

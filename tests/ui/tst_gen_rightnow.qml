@@ -1,6 +1,7 @@
 import QtQuick
 import QtTest
 
+
 // ─────────────────────────────────────────────────────────────────────────
 // Comprehensive coverage for widget:rightnow (ui/qml/widgets/RightNowWidget.qml)
 //
@@ -121,9 +122,50 @@ Item {
             w.setText("Finish the report")
             compare(cfg().text, "Finish the report", "setText writes the config")
             compare(w.current, "Finish the report", "current reflects the saved value")
+            verify(w.startedAt > 0, "a new focus records when it started")
             // External write (as the Manager would do) must flow through via revision.
             patch({ text: "External focus" })
             compare(w.current, "External focus", "current reacts to an external setSetting")
+            tryVerify(function () { return w.startedAt > 0 }, 1000,
+                      "a Manager text edit starts the focus timer lifecycle")
+            patch({ text: "" })
+            tryCompare(w, "startedAt", 0, 1000)
+        }
+
+        function test_calm_completion_counts_without_celebration() {
+            var w = hRN.item
+            patch({ text: "Quiet work", startedAt: Date.now() - 60000, completionStyle: "calm" })
+            w.finish()
+            compare(w.finishedToday, 1)
+            compare(w.celebrateMsg, "")
+            compare(cfg().startedAt, 0)
+        }
+
+        function test_clear_focus_does_not_count_completion() {
+            var w = hRN.item
+            patch({ text: "Replace me", startedAt: Date.now() - 5000 })
+            w.clearFocus()
+            compare(w.current, "")
+            compare(w.finishedToday, 0)
+            compare(cfg().startedAt, 0)
+        }
+
+        function test_clear_requires_a_second_deliberate_tap() {
+            var w = hRN.item
+            var field = findTextField(w)
+            patch({ text: "Keep this focus", startedAt: Date.now() })
+            compare(field.text, "Keep this focus")
+            var clearButton = findByProp(w, "label", "Clear")
+            verify(clearButton !== null)
+            mouseClick(clearButton)
+            compare(w.current, "Keep this focus",
+                    "the first Clear tap changes no data")
+            compare(clearButton.label, "Confirm")
+            verify(w.clearArmed)
+            mouseClick(clearButton)
+            compare(w.current, "")
+            compare(field.text, "")
+            compare(w.clearArmed, false)
         }
 
         // finish() counts a win, clears the text and fires the celebration.
@@ -354,6 +396,25 @@ Item {
             compare(w.showCount, false, "micro drops the momentum line")
             var hero = textWith(w, "Ship it")
             verify(hero !== null && hero.visible, "the focus text is the whole tile")
+            verify(hero.font.pixelSize >= 36,
+                   "short micro focus text is glanceable (" + hero.font.pixelSize + "px)")
+        }
+
+        function test_focus_text_wraps_before_eliding_and_keeps_a_legible_floor() {
+            tryVerify(function () { return hRBase.ready }, 3000)
+            seed(hRBase,
+                 "Prepare the release notes and verify every package checksum",
+                 0)
+            var w = hRBase.item
+            w.sizeClass = "compact"
+            wait(16)
+            var hero = findByProp(w, "objectName", "rightNowHero")
+            verify(hero !== null && hero.visible)
+            verify(hero.lineCount > 1,
+                   "long focus uses available lines before eliding")
+            verify(hero.lineCount <= hero.maximumLineCount)
+            verify(hero.font.pixelSize >= hRBase.theme.fontTitle,
+                   "long focus remains at the title legibility floor")
         }
 
         // 1x1 - eyebrow + hero + Done + momentum: the tile earns real actions.
@@ -372,6 +433,26 @@ Item {
             verify(done.height >= 44, "the Done pill is touch sized (got " + done.height + ")")
             compare(w.showCount, true, "the momentum line shows with finished > 0")
             verify(textWith(w, "✓ 2 today") !== null, "the momentum line is rendered")
+            var labelledEyebrow = findByProp(w, "objectName", "rightNowEyebrow")
+            verify(labelledEyebrow.font.pixelSize >= hRBase.theme.fontLabel)
+            var count = findByProp(w, "objectName", "rightNowCount")
+            verify(count.font.pixelSize >= hRBase.theme.fontLabel)
+        }
+
+        function test_baseline_earns_readable_elapsed_context() {
+            tryVerify(function () { return hRBase.ready }, 3000)
+            seed(hRBase, "Review the release", 0)
+            hRBase.storeCtl.setSetting("test-instance", "startedAt",
+                                       Date.now() - 7 * 60000)
+            var w = hRBase.item
+            w.sizeClass = "compact"
+            wait(16)
+            compare(w.showElapsed, true,
+                    "every non-micro focus tile reports elapsed time")
+            var elapsed = findByProp(w, "objectName", "rightNowElapsed")
+            verify(elapsed !== null && elapsed.visible)
+            verify(elapsed.text.indexOf("7 min") >= 0)
+            verify(elapsed.font.pixelSize >= hRBase.theme.fontLabel)
         }
 
         // The tile Done button IS the real action: it finishes the focus.
@@ -426,6 +507,35 @@ Item {
             var hero = textWith(w, "Ship it")
             verify(hero !== null && hero.visible, "the hero is rendered")
             compare(hero.maximumLineCount, 5, "tall earns the most hero lines")
+            hRTall.storeCtl.setSetting("test-instance", "startedAt", Date.now() - 5 * 60000)
+            compare(w.showElapsed, true, "the larger tile earns elapsed focus context")
+            verify(w.elapsedLabel().indexOf("5 min") >= 0)
+        }
+
+        function test_hero_tall_adds_focus_context_instead_of_blank_space() {
+            tryVerify(function () { return hRTall.ready }, 3000)
+            rTallWrap.width = 696; rTallWrap.height = 1228
+            seed(hRTall, "Finish the release notes", 2)
+            hRTall.storeCtl.setSetting("test-instance", "startedAt", Date.now() - 12 * 60000)
+            var w = hRTall.item
+            w.sizeClass = "tall"
+            wait(32)
+            compare(w.heroRoomy, true, "the 1x1.5 portrait card earns the rich context")
+            var context = findByProp(w, "objectName", "rightNowFocusContext")
+            verify(context !== null && context.visible, "the context panel is rendered")
+            verify(textWith(context, "12 min") !== null, "elapsed flow time is visible")
+            verify(textWith(context, "2 today") !== null, "today's momentum is visible")
+            var started = textWith(context, "STARTED")
+            var flow = textWith(context, "IN FLOW")
+            var finished = textWith(context, "FINISHED")
+            verify(started.font.pixelSize >= hRTall.theme.fontLabel
+                   && flow.font.pixelSize >= hRTall.theme.fontLabel
+                   && finished.font.pixelSize >= hRTall.theme.fontLabel,
+                   "rich context headings use the readable label floor")
+
+            rTallWrap.width = 344; rTallWrap.height = 840
+            wait(16)
+            compare(w.heroRoomy, false, "the narrow tall card stays visually focused")
         }
 
         // ── size, not mode ──────────────────────────────────────────────────

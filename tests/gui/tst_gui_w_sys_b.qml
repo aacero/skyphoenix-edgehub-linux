@@ -88,12 +88,58 @@ Item {
         }
 
         function feed(obj) { wh.metricsJson = JSON.stringify(obj) }
-        function netFeed() { return { net_rx_bytes_per_sec: 2000000, net_tx_bytes_per_sec: 500000 } }
-        function diskFeed(pct) { return { disk_total_bytes: 500107862016, disk_usage_percent: pct } }
+        function netFeed(rx, tx) {
+            return {
+                net_metrics_available: true, net_sample_status: "ready",
+                net_rx_bytes_per_sec: rx === undefined ? 2000000 : rx,
+                net_tx_bytes_per_sec: tx === undefined ? 500000 : tx,
+                net_interfaces: [{
+                    name: "enp7s0", category: "physical", link_state: "up",
+                    speed_mbps: 2500, rate_available: true,
+                    rx_bytes_per_sec: rx === undefined ? 2000000 : rx,
+                    tx_bytes_per_sec: tx === undefined ? 500000 : tx,
+                    rx_total_bytes: 384000000000, tx_total_bytes: 72000000000,
+                    rx_dropped: 2, tx_dropped: 0, rx_errors: 0, tx_errors: 0
+                }]
+            }
+        }
+        function diskFeed(pct) {
+            var root = {
+                path: "/", source: "/dev/nvme0n1p2", fs_type: "ext4",
+                device: "nvme0n1p2", metrics_available: true,
+                total_bytes: 1000 * 1073741824,
+                used_bytes: 420 * 1073741824,
+                available_bytes: 540 * 1073741824,
+                reserved_bytes: 40 * 1073741824,
+                usage_percent: pct,
+                io_rate_available: true,
+                read_bytes_per_sec: 18 * 1048576,
+                write_bytes_per_sec: 6 * 1048576
+            }
+            return {
+                disk_metrics_available: true,
+                disk_total_bytes: 1000 * 1073741824,
+                disk_used_bytes: 420 * 1073741824,
+                disk_available_bytes: 540 * 1073741824,
+                disk_reserved_bytes: 40 * 1073741824,
+                disk_usage_percent: pct,
+                disk_mounts: [root]
+            }
+        }
         function snsFeed(cpuT, gpuT) {
-            return { cpu_usage_percent: 42, gpu_usage_percent: 30, ram_usage_percent: 55,
+            return { cpu_usage_available: true, ram_metrics_available: true,
+                     disk_metrics_available: true,
+                     cpu_usage_percent: 42, gpu_usage_percent: 30, ram_usage_percent: 55,
                      disk_usage_percent: 60, disk_total_bytes: 500107862016,
-                     cpu_temp_celsius: cpuT, gpu_temp_celsius: gpuT }
+                     cpu_temp_celsius: cpuT, gpu_temp_celsius: gpuT,
+                     gpu_primary_id: "card1",
+                     gpu_devices: [{
+                         id: "card1", name: "Radeon Test", usage_percent: 30,
+                         temperature_celsius: gpuT,
+                         power_watts: 188, power_cap_watts: 250,
+                         fan_rpm: 1320, fan_max_rpm: 3200,
+                         temperature_critical_celsius: 105
+                     }] }
         }
 
         // Load `file`, wait ready, pin size, clear appearance overrides.
@@ -110,13 +156,17 @@ Item {
         function resetNetCfg() {
             wh.storeCtl.setSetting(wh.instanceId, "showHistory", true)
             wh.storeCtl.setSetting(wh.instanceId, "unit", "bytes")
+            wh.storeCtl.setSetting(wh.instanceId, "showDetails", true)
         }
         function resetDiskCfg() {
             wh.storeCtl.setSetting(wh.instanceId, "warnPercent", 90)
         }
         function resetSensorsCfg() {
-            var ks = ["showCpu", "showGpu", "showRam", "showDisk", "showTemps"]
+            var ks = ["showCpu", "showGpu", "showRam", "showDisk", "showTemps",
+                      "showGpuPower", "showGpuFan"]
             for (var i = 0; i < ks.length; i++) wh.storeCtl.setSetting(wh.instanceId, ks[i], true)
+            wh.storeCtl.setSetting(wh.instanceId, "gpuDevice", "auto")
+            wh.storeCtl.setSetting(wh.instanceId, "rowOrder", [])
         }
 
         // Uniform size-render assertion.
@@ -144,11 +194,28 @@ Item {
         }
 
         // ────────────────────────────── DISK ──────────────────────────────
-        function test_disk_a_size_data() { return sizeRows() }
+        function test_disk_a_size_data() {
+            return [
+                { tag: "portrait-0.5x0.5",  cls: "compact", w: 348,  h: 409 },
+                { tag: "landscape-0.5x0.5", cls: "compact", w: 423,  h: 306 },
+                { tag: "portrait-0.5x1",    cls: "tall",    w: 348,  h: 818 },
+                { tag: "landscape-0.5x1",   cls: "wide",    w: 846,  h: 306 },
+                { tag: "portrait-1x0.5",    cls: "wide",    w: 696,  h: 409 },
+                { tag: "landscape-1x0.5",   cls: "tall",    w: 423,  h: 612 },
+                { tag: "portrait-1x1",      cls: "compact", w: 696,  h: 818 },
+                { tag: "landscape-1x1",     cls: "compact", w: 846,  h: 612 },
+                { tag: "portrait-1x1.5",    cls: "tall",    w: 696,  h: 1226 },
+                { tag: "landscape-1x1.5",   cls: "wide",    w: 1268, h: 612 }
+            ]
+        }
         function test_disk_a_size(row) {
             setup("DiskWidget.qml", row.cls, row.w, row.h)
             resetDiskCfg(); feed(diskFeed(42)); wait(200)
             assertRendered(row.w, row.h, "%", "dsk", "DSK-SZ_" + row.tag)
+            var composition = G.byObjName(wh.item, "diskCapacityComposition")
+            verify(composition !== null, "capacity composition exists")
+            compare(composition.visible, row.cls === "wide" || row.cls === "tall",
+                    "shape with spare space earns the complete capacity composition")
         }
 
         function test_disk_b_config_data() {
@@ -226,9 +293,9 @@ Item {
             case "ST5_details":
                 setup("DiskWidget.qml", "wide", 846, 612); resetDiskCfg()
                 feed(diskFeed(42)); wait(250)
-                var u = exactText(wh.item, "Used"), f = exactText(wh.item, "Free"), tt = exactText(wh.item, "Total")
+                var u = exactText(wh.item, "Used"), f = exactText(wh.item, "Available"), tt = exactText(wh.item, "Total")
                 verify(u && u.visible, "DSK-ST5: 'Used' detail row visible on wide")
-                verify(f && f.visible, "DSK-ST5: 'Free' detail row visible on wide")
+                verify(f && f.visible, "DSK-ST5: 'Available' detail row visible on wide")
                 verify(tt && tt.visible, "DSK-ST5: 'Total' detail row visible on wide")
                 snap(wh, "dsk_ST5_details")
                 break
@@ -261,11 +328,34 @@ Item {
         }
 
         // ────────────────────────────── NET ───────────────────────────────
-        function test_net_a_size_data() { return sizeRows() }
+        function test_net_a_size_data() {
+            return [
+                { tag: "portrait-0.5x0.5",  cls: "compact", w: 348,  h: 409 },
+                { tag: "landscape-0.5x0.5", cls: "compact", w: 423,  h: 306 },
+                { tag: "portrait-0.5x1",    cls: "tall",    w: 348,  h: 818 },
+                { tag: "landscape-0.5x1",   cls: "wide",    w: 846,  h: 306 },
+                { tag: "portrait-1x0.5",    cls: "wide",    w: 696,  h: 409 },
+                { tag: "landscape-1x0.5",   cls: "tall",    w: 423,  h: 612 },
+                { tag: "portrait-1x1",      cls: "compact", w: 696,  h: 818 },
+                { tag: "landscape-1x1",     cls: "compact", w: 846,  h: 612 },
+                { tag: "portrait-1x1.5",    cls: "tall",    w: 696,  h: 1226 },
+                { tag: "landscape-1x1.5",   cls: "wide",    w: 1268, h: 612 }
+            ]
+        }
         function test_net_a_size(row) {
             setup("NetWidget.qml", row.cls, row.w, row.h)
-            resetNetCfg(); feed(netFeed()); wait(200)
+            resetNetCfg()
+            feed(netFeed(1400000, 320000)); wait(40)
+            feed(netFeed(2400000, 610000)); wait(40)
+            feed(netFeed(2000000, 500000)); wait(200)
             assertRendered(row.w, row.h, "↓", "net", "NET-SZ_" + row.tag)
+            var micro = row.tag.indexOf("0.5x0.5") >= 0
+            var spark = canvasOf(wh.item)
+            verify(spark !== null, "network history canvas exists")
+            compare(spark.visible, !micro, "only the true micro tile omits history")
+            compare(wh.item.hist.length >= 3, true, "the visual gate contains live throughput history")
+            compare(wh.item.roomy, row.tag.indexOf("1x1.5") >= 0,
+                    "only the largest declared tile shows interface and transfer details")
         }
 
         function test_net_b_config_data() {
@@ -290,8 +380,8 @@ Item {
                 break
             case "unit_bytes":
                 wh.storeCtl.setSetting(wh.instanceId, "unit", "bytes"); wait(200)
-                var mb = G.byText(wh.item, "MB/s")
-                verify(mb !== null && mb.visible, "NET-CF2 bytes: rate reads MB/s")
+                var mb = G.byText(wh.item, "MiB/s")
+                verify(mb !== null && mb.visible, "NET-CF2 bytes: rate reads MiB/s")
                 snap(wh, "net_CF_unit_bytes")
                 break
             case "unit_bits":
@@ -386,11 +476,36 @@ Item {
         }
 
         // ──────────────────────────── SENSORS ─────────────────────────────
-        function test_sensors_a_size_data() { return sizeRows() }
+        function test_sensors_a_size_data() {
+            return [
+                { tag: "portrait-0.5x1",    cls: "tall",    w: 348,  h: 818 },
+                { tag: "landscape-0.5x1",   cls: "wide",    w: 846,  h: 306 },
+                { tag: "portrait-1x0.5",    cls: "wide",    w: 696,  h: 409 },
+                { tag: "landscape-1x0.5",   cls: "tall",    w: 423,  h: 612 },
+                { tag: "portrait-1x1",      cls: "compact", w: 696,  h: 818 },
+                { tag: "landscape-1x1",     cls: "compact", w: 846,  h: 612 },
+                { tag: "portrait-1x1.5",    cls: "tall",    w: 696,  h: 1226 },
+                { tag: "landscape-1x1.5",   cls: "wide",    w: 1268, h: 612 }
+            ]
+        }
         function test_sensors_a_size(row) {
             setup("SensorsWidget.qml", row.cls, row.w, row.h)
             resetSensorsCfg(); feed(snsFeed(55, 50)); wait(200)
             assertRendered(row.w, row.h, "42%", "sns", "SNS-SZ_" + row.tag)
+            compare(wh.item.availableRowCount, 8, "all configured sensor sources are represented")
+            var source = exactText(wh.item, "kernel CPU delta")
+            verify(source !== null, "CPU source label exists")
+            compare(source.visible, wh.item.showSources,
+                    "source context follows the widget's readable source layout")
+            if (wh.item.smallFootprint) {
+                compare(wh.item.hiddenRowCount, 4,
+                        "the shortest supported layout prioritizes four rows")
+                var hidden = exactText(wh.item, "+4 sensors hidden in this size")
+                verify(hidden !== null && hidden.visible,
+                       "the short layout discloses its hidden sensor count")
+            } else {
+                compare(wh.item.hiddenRowCount, 0)
+            }
         }
 
         function test_sensors_b_config_data() {
@@ -423,7 +538,7 @@ Item {
         function test_sensors_c_state_data() {
             return [
                 { id: "ST1_rows" }, { id: "ST2_wide" }, { id: "ST3_cool" }, { id: "ST4_warn" },
-                { id: "ST5_hot" }, { id: "ST6_empty" }, { id: "ST7_micro" }
+                { id: "ST5_hot" }, { id: "ST6_empty" }
             ]
         }
         function test_sensors_c_state(row) {
@@ -452,12 +567,23 @@ Item {
                 setup("SensorsWidget.qml", "compact", 696, 819); resetSensorsCfg()
                 feed(snsFeed(50, 48)); wait(650)                       // both temps <70 → no warn/hot
                 img = snap(wh, "sns_ST3_cool")
-                verify(!pixNear(img, wh.theme.warning, 40), "SNS-ST3: no amber temp bar when cool")
-                verify(!pixNear(img, wh.theme.error, 40), "SNS-ST3: no red temp bar when cool")
+                var coolRows = wh.item.rows
+                var coolCpu = null, coolGpu = null
+                for (var c = 0; c < coolRows.length; c++) {
+                    if (coolRows[c].lbl === "CPU °") coolCpu = coolRows[c]
+                    if (coolRows[c].lbl === "GPU °") coolGpu = coolRows[c]
+                }
+                verify(coolCpu && coolGpu, "SNS-ST3: both temperature rows exist")
+                verify(G.colorDist("" + coolCpu.col, "" + wh.theme.warning) > 40
+                       && G.colorDist("" + coolGpu.col, "" + wh.theme.warning) > 40,
+                       "SNS-ST3: cool temperature bars are not amber")
+                verify(G.colorDist("" + coolCpu.col, "" + wh.theme.error) > 40
+                       && G.colorDist("" + coolGpu.col, "" + wh.theme.error) > 40,
+                       "SNS-ST3: cool temperature bars are not red")
                 break
             case "ST4_warn":
                 setup("SensorsWidget.qml", "compact", 696, 819); resetSensorsCfg()
-                feed(snsFeed(78, 76)); wait(650)                       // 70..85 → amber
+                feed(snsFeed(84, 82)); wait(650)                       // default 80..89 → amber
                 img = snap(wh, "sns_ST4_warn")
                 verify(pixNear(img, wh.theme.warning, 40), "SNS-ST4: amber temp bar in warn band")
                 verify(!pixNear(img, wh.theme.error, 40), "SNS-ST4: not yet red in warn band")
@@ -471,22 +597,13 @@ Item {
             case "ST6_empty":
                 setup("SensorsWidget.qml", "compact", 696, 819); resetSensorsCfg()
                 feed(snsFeed(55, 50))
-                var ks = ["showCpu", "showGpu", "showRam", "showDisk", "showTemps"]
+                var ks = ["showCpu", "showGpu", "showRam", "showDisk", "showTemps",
+                          "showGpuPower", "showGpuFan"]
                 for (var i = 0; i < ks.length; i++) wh.storeCtl.setSetting(wh.instanceId, ks[i], false)
                 wait(250)
                 var ph = exactText(wh.item, "No sensors enabled")
                 verify(ph !== null && ph.visible, "SNS-ST6: 'No sensors enabled' placeholder shown")
                 snap(wh, "sns_ST6_empty")
-                break
-            case "ST7_micro":
-                setup("SensorsWidget.qml", "compact", 348, 409); resetSensorsCfg()
-                feed(snsFeed(55, 50)); wait(250)
-                verify(wh.item.micro, "SNS-ST7: micro derived on half-cell")
-                var hdr = exactText(wh.item, "Sensors")
-                verify(hdr !== null && !hdr.visible, "SNS-ST7: header hidden at micro")
-                var r = exactText(wh.item, "CPU")
-                verify(r !== null && r.visible, "SNS-ST7: slim CPU row still shown")
-                snap(wh, "sns_ST7_micro")
                 break
             }
         }

@@ -37,7 +37,7 @@ import "../../ui/qml" as App
 //   • BackgroundPicker's style/wallpaper exclusivity + page-vs-global precedence,
 //     driven through pickStyle()/pickWallpaper() on a standalone picker
 //       → tst_background_picker.qml
-//   • cfgAction / closeExpanded / injectWidget as FUNCTIONS, and the overlay's
+//   • cfgAction / closeExpanded, WidgetHost lifecycle, and the overlay's
 //     retained-content fade
 //       → tst_dashboard.qml
 //   • DashboardStore.resetSettings semantics (deep clone, stale-key drop)
@@ -183,7 +183,7 @@ Item {
                 manifestVersion: 1, type: "user.cpu", title: "CPU",
                 category: "User", description: "The shipped CPU widget, addressed by file.",
                 entry: "CpuWidget.qml", sizes: ["1x1", "1x2"], dflt: "1x1",
-                // No seeded defaults: "Reset to defaults" must then CLEAR the
+                // No seeded defaults: "Reset configuration" must then CLEAR the
                 // keys the user set here, which is what that button promises.
                 defaults: {},
                 // The two keys CpuWidget actually reads, with the shipped
@@ -577,7 +577,8 @@ Item {
             var w = ld.item.overlayLoaderItem
             compare(w.instanceId, id, "the preview widget is bound to the tapped instance")
             compare(w.expanded, true, "…and rendered in its full interactive layout")
-            compare(w.status, "95°C", "precondition: the preview renders the temperature")
+            compare(w.status, "95°C · Critical temperature",
+                    "precondition: the preview renders the temperature and state")
 
             var field = findObj(ld.item, "field-showTemp")
             verify(field !== null, "the on-hub form offers the 'Show temperature' field")
@@ -588,11 +589,13 @@ Item {
             clickInForm(sw)
             compare(root.store().settingsFor(id).showTemp, false,
                     "the tap landed in THAT tile's settings bucket")
-            compare(w.status, "", "…and the rendered preview dropped the temperature")
+            compare(w.status, "Critical temperature",
+                    "…and the rendered preview dropped the numeric temperature")
 
             clickInForm(sw)
             compare(root.store().settingsFor(id).showTemp, true, "…and back on")
-            compare(w.status, "95°C", "…with the temperature rendered again")
+            compare(w.status, "95°C · Critical temperature",
+                    "…with the temperature and state rendered again")
         }
 
         // A slider on the hub's form, driven by a real drag (a touch panel has no
@@ -625,23 +628,28 @@ Item {
                     "…and 95 °C is no longer an error, only a warning - the render followed")
         }
 
-        // "Reset to defaults" is on the hub's overlay and nowhere else. It must
+        // "Reset configuration" is on the hub's overlay and nowhere else. It must
         // clear the keys the user set here and put the render back.
         function test_reset_to_defaults_on_the_overlay_restores_the_rendered_widget() {
             var id = openRenderingTile()
             var w = ld.item.overlayLoaderItem
             root.store().setSetting(id, "showTemp", false)
             root.store().setSetting(id, "warnTemp", 61)
-            compare(w.status, "", "precondition: the configured widget hides the temperature")
+            compare(w.status, "Critical temperature",
+                    "precondition: the configured widget hides the numeric temperature")
 
-            var reset = findText(ld.item, "Reset to defaults")
-            verify(reset !== null && reset.visible, "the overlay offers Reset to defaults")
+            var reset = findText(ld.item, "Reset configuration")
+            verify(reset !== null && reset.visible, "the overlay offers Reset configuration")
             mouseClick(reset.parent)
+            tryVerify(function () { return ld.item.widgetDataDialog.visible }, 2000,
+                      "reset opens a scoped confirmation")
+            ld.item.widgetDataConfirmButton.clicked()
 
             compare(root.store().settingsFor(id).showTemp, undefined,
                     "the reset dropped the key from the tile's settings")
             compare(root.store().settingsFor(id).warnTemp, undefined, "…and the other one")
-            compare(w.status, "95°C", "…and the preview is back to the default rendering")
+            compare(w.status, "95°C · Critical temperature",
+                    "…and the preview is back to the default rendering")
             compare(String(w.statusColor), String(_theme.error), "…including its default warning threshold")
         }
 
@@ -655,13 +663,15 @@ Item {
                 return x.instanceId === id && x.status !== undefined && x !== w
             })
             verify(tileWidget !== null, "found the tile's own widget instance behind the overlay")
-            compare(tileWidget.status, "95°C", "precondition: the tile renders the temperature too")
+            compare(tileWidget.status, "95°C · Critical temperature",
+                    "precondition: the tile renders the temperature and state too")
 
             var field = findObj(ld.item, "field-showTemp")
             var sw = findPred(field, function (x) { return x.checked !== undefined && x.checkable !== undefined })
             clickInForm(sw)
-            compare(w.status, "", "the overlay preview updated")
-            compare(tileWidget.status, "", "…and so did the tile on the dashboard behind it")
+            compare(w.status, "Critical temperature", "the overlay preview updated")
+            compare(tileWidget.status, "Critical temperature",
+                    "…and so did the tile on the dashboard behind it")
         }
     }
 }

@@ -9,6 +9,7 @@ import QtTest
 // COVERS: fn:Manager.commitTheme, fn:Manager._themeDef
 // COVERS: fn:Manager._val, fn:Manager._lab, fn:Manager.catColor
 // COVERS: fn:Manager.refreshLicense, fn:Manager.onLicenseChanged, fn:Manager.reVerify
+// COVERS: fn:Manager.addScreen, fn:Manager.addWidget
 //
 // manager/qml/Manager.qml (hosted with a STUBBED `backend`) -
 //   • the 5-tab StackLayout (Layout/Appearance/Images/Display/About) switches
@@ -323,6 +324,32 @@ Item {
             verify(Qt.colorEqual(_theme.accent, _theme.accentPresets["red"].a), "second store.onChanged re-applies syncTheme live")
         }
 
+        function test_syncTheme_keeps_the_complete_look_after_each_edit() {
+            _store.setAppearance("themeMode", "midnight")
+            _store.setAppearance("accent", "blue")
+            verify(Qt.colorEqual(_theme.backgroundColor, "#0B1026"),
+                   "Manager clone applies the stored Midnight background")
+            verify(Qt.colorEqual(_theme.accent, _theme.accentPresets["blue"].a),
+                   "the stored blue accent is reapplied after the theme")
+
+            _store.setAppearance("bgStyle", "waves")
+            verify(Qt.colorEqual(_theme.backgroundColor, "#0B1026"),
+                   "changing the background style does not lose the theme")
+            verify(Qt.colorEqual(_theme.accent, _theme.accentPresets["blue"].a),
+                   "changing the background style does not lose the accent")
+
+            _store.setAppearance("wallpaper", "qrc:/wallpapers/midnight.png")
+            verify(Qt.colorEqual(_theme.backgroundColor, "#0B1026"),
+                   "changing a wallpaper keeps the stored theme in the clone")
+            verify(Qt.colorEqual(_theme.accent, _theme.accentPresets["blue"].a),
+                   "changing a wallpaper keeps the stored accent in the clone")
+
+            _store.setAppearance("textScale", 1.3)
+            _store.setAppearance("fontChoice", "lexend")
+            compare(_theme.textScale, 1.3, "Manager preview follows Hub text scale")
+            compare(_theme.fontChoice, "lexend", "Manager preview follows Hub typeface")
+        }
+
         // ── currentPageName ───────────────────────────────────────────────────
         function test_currentPageName_tracks_selected_page() {
             compare(win.currentPageName(), "Home", "currentPageName returns the blank layout's Home page")
@@ -435,7 +462,8 @@ Item {
             // visited (and collected) many times over.
             var seen = []
             findAll(win, function (x) {
-                if (x && typeof x.injectInto === "function" && x.editable !== undefined
+                if (x && typeof x.wsrc === "function" && x.widgetStore !== undefined
+                        && x.editable !== undefined
                         && seen.indexOf(x) < 0) seen.push(x)
                 return false
             })
@@ -470,6 +498,100 @@ Item {
             dlg.close()
         }
 
+        function test_config_dialog_separates_reset_from_personal_erase() {
+            var id = _store.addTile(0, "tasks")
+            _store.patchSettings(id, {
+                items: [ { id: "task-1", text: "Keep me", done: false } ],
+                nextId: 2,
+                celebrate: false,
+                accent: "gold"
+            })
+            var dlg = findPred(win, function (x) { return x && typeof x.openFor === "function" })
+            verify(dlg)
+            dlg.openFor(id, "tasks")
+            compare(dlg.hasPersonalData, true)
+            verify(dlg.personalDataLabel.indexOf("tasks") >= 0)
+            verify(dlg.resetActionButton.visible)
+            verify(dlg.eraseActionButton.visible)
+            verify(dlg.resetActionButton.height >= 48)
+            verify(dlg.eraseActionButton.height >= 48)
+
+            verify(dlg.resetConfiguration())
+            var got = _store.settingsFor(id)
+            compare(got.items.length, 1, "reset kept tasks")
+            compare(got.nextId, 2, "reset kept task identity")
+            compare(got.celebrate, undefined, "reset removed configuration override")
+            compare(got.accent, undefined, "reset removed appearance override")
+
+            _store.setSetting(id, "celebrate", false)
+            _store.setSetting(id, "accent", "gold")
+            compare(dlg.erasePersonalData(), 2)
+            got = _store.settingsFor(id)
+            compare(got.items, undefined, "erase removed tasks")
+            compare(got.nextId, undefined, "erase removed task identity")
+            compare(got.celebrate, false, "erase kept configuration")
+            compare(got.accent, "gold", "erase kept appearance")
+            dlg.close()
+        }
+
+        function test_tasks_config_uses_the_live_preview_as_its_single_editor() {
+            var id = _store.addTile(0, "tasks")
+            _store.setSetting(id, "items", [
+                { id: "task-1", text: "Edit me here", done: false }
+            ])
+            var dlg = findPred(win, function (x) {
+                return x && typeof x.openFor === "function"
+            })
+            verify(dlg)
+            dlg.openFor(id, "tasks")
+            tryVerify(function () {
+                return dlg.previewItem !== null
+                    && dlg.previewItem.instanceId === id
+            }, 3000)
+            compare(dlg.previewAcceptsInput, true,
+                    "the expanded Tasks preview is the interactive content editor")
+            var itemFields = 0
+            for (var s = 0; s < dlg.schema.sections.length; s++) {
+                var fields = dlg.schema.sections[s].fields || []
+                for (var f = 0; f < fields.length; f++)
+                    if (fields[f].key === "items") itemFields++
+            }
+            compare(itemFields, 0,
+                    "the settings form does not duplicate the checklist editor")
+            dlg.close()
+
+            var clockId = _store.addTile(0, "clock")
+            dlg.openFor(clockId, "clock")
+            compare(dlg.previewAcceptsInput, false,
+                    "other Manager previews remain read-only")
+            dlg.close()
+        }
+
+        function test_notes_config_uses_the_live_preview_as_its_single_editor() {
+            var id = _store.addTile(0, "notes")
+            _store.setSetting(id, "text", "Edit me in the note")
+            var dlg = findPred(win, function (x) {
+                return x && typeof x.openFor === "function"
+            })
+            verify(dlg)
+            dlg.openFor(id, "notes")
+            tryVerify(function () {
+                return dlg.previewItem !== null
+                    && dlg.previewItem.instanceId === id
+            }, 3000)
+            compare(dlg.previewAcceptsInput, true,
+                    "the expanded Quick Note preview is the interactive editor")
+            var textFields = 0
+            for (var s = 0; s < dlg.schema.sections.length; s++) {
+                var fields = dlg.schema.sections[s].fields || []
+                for (var f = 0; f < fields.length; f++)
+                    if (fields[f].key === "text") textFields++
+            }
+            compare(textFields, 0,
+                    "the settings form does not duplicate the note textarea")
+            dlg.close()
+        }
+
         // Opening a preview is passive UI, not consent to contact every network
         // widget's endpoint. The dialog's explicit city search has a separate,
         // narrowly allow-listed gate; every loaded preview receives the hard-off
@@ -497,7 +619,8 @@ Item {
             compare(preview.netHub, previewGate, "the real Weather preview uses the offline gate")
             wait(450) // cross Weather's initial 350 ms refresh debounce
             compare(previewGate.requests, 0, "opening the preview sent no request")
-            verify(previewGate.blocked >= 1, "the attempted automatic poll was visibly refused")
+            compare(previewGate.blocked, 0, "passive preview did not even attempt a request")
+            compare(preview.active, false, "Manager config preview is not a state driver")
             dlg.close()
         }
 
@@ -603,6 +726,37 @@ Item {
             win.currentPageIndex = 0
             verify(lbl.text.indexOf("Home") >= 0, "…and it follows the selected page")
             picker.close()
+        }
+
+        // The custom visual controls expose small helper functions used by mouse,
+        // keyboard, and accessibility activation. Exercise the helpers directly
+        // so the behavior matrix proves their product effects, not just their
+        // existence in source.
+        function test_add_screen_helper_creates_and_selects_a_screen() {
+            var addScreenButton = findPred(win, function (x) {
+                return x && x.objectName === "addScreenButton" })
+            verify(addScreenButton && typeof addScreenButton.addScreen === "function",
+                   "the semantic Add screen control exposes addScreen")
+            var before = _store.pageCount()
+            addScreenButton.addScreen()
+            compare(_store.pageCount(), before + 1, "addScreen creates exactly one page")
+            compare(win.currentPageIndex, before, "the new page becomes the active page")
+        }
+
+        function test_add_widget_helper_creates_a_real_tile() {
+            var picker = findPred(win, function (x) {
+                return x && x.title === "Add a widget" && typeof x.open === "function" })
+            verify(picker, "found the add-widget picker")
+            picker.open()
+            var addWidgetChoice = findPred(win, function (x) {
+                return x && x.objectName === "widgetChoice-cpu" })
+            verify(addWidgetChoice && typeof addWidgetChoice.addWidget === "function",
+                   "the semantic CPU choice exposes addWidget")
+            addWidgetChoice.addWidget()
+            compare(_store.pages()[0].tiles.length, 1,
+                    "addWidget creates exactly one tile on the active page")
+            compare(_store.pages()[0].tiles[0].type, "cpu",
+                    "addWidget creates the selected widget type")
         }
 
         // ── inline MSwitch (Widget glow) ──────────────────────────────────────
@@ -740,6 +894,18 @@ Item {
             compare(_store.appearance().updateCheck, false, "toggling back persists updateCheck=false")
         }
 
+        function test_hub_navigation_toggle_persists_immersive_mode() {
+            _nav.currentIndex = 1
+            var sw = findSwitch("Show navigation bar on the Hub")
+            verify(sw, "the Manager exposes the Hub navigation choice")
+            compare(sw.checked, true, "the Hub bar defaults on")
+            sw.checked = false; sw.toggled()
+            compare(_store.appearance().hubControlsMode, "immersive",
+                    "turning the Manager switch off persists immersive mode")
+            sw.checked = true; sw.toggled()
+            compare(_store.appearance().hubControlsMode, "standard", "the Manager can restore the bar")
+        }
+
         // The full-control functions the Manager now exposes are present (this also
         // backs the coverage claims - each leaf token appears in an assertion).
         function test_manager_control_functions_are_exposed() {
@@ -771,13 +937,15 @@ Item {
             backend.configChanged()   // restore the blank "Home" baseline for later tests
         }
 
-        // The preset picker shows a live LAYOUT PREVIEW of each screen (PresetMini),
-        // so the user sees what they'll get before adding it. Opening the dialog must
-        // render at least one preview whose packing has the screen's tiles.
+        // The Manager uses a two-stage selection: selecting is passive and updates
+        // the detailed preview; only the separate Add action mutates the store.
         function test_preset_picker_shows_layout_previews() {
             var dlg = findPred(win, function (x) { return x && x.title === "Start from a preset screen" })
             verify(dlg, "found the preset dialog")
             dlg.open()
+            compare(dlg.selectedId, "", "opening starts with no armed screen")
+            var add = findButton("Add selected screen")
+            verify(add && !add.enabled, "Add is disabled until a screen is reviewed")
             var mini = null
             tryVerify(function () {
                 mini = findPred(win, function (x) { return x && x.objectName === "presetMini" })
@@ -789,7 +957,24 @@ Item {
                    "catColor maps Focus widgets to the productivity category colour")
             verify(Qt.colorEqual(mini.catColor("not-a-widget"), _theme.accent),
                    "catColor falls back to the active accent for an unknown type")
+
+            var before = _store.pageCount()
+            dlg.selectedId = "developer"
+            var detail = findPred(win, function (x) {
+                return x && x.objectName === "managerPresetPreview"
+            })
+            verify(detail !== null, "the detailed shared preview is present")
+            compare(detail.titleItem.text, "Developer")
+            verify(detail.purposeItem.text.length > 20)
+            verify(detail.setupItem.text.indexOf("CI") >= 0)
+            tryCompare(detail, "previewTileCount", 2, 3000,
+                       "the real Developer widgets finish loading in the preview")
+            compare(_store.pageCount(), before, "selecting and previewing changes no pages")
+            verify(add.enabled, "Add becomes available after review")
+            add.clicked()
+            compare(_store.pageCount(), before + 1, "the separate Add action commits once")
             dlg.close()
+            backend.configChanged()
         }
 
         // ── D: resetting to the default layout replaces pages with the starter set.
@@ -910,7 +1095,7 @@ Item {
             // implicit sizes collapses the Slider to ~0 height, so it can't be pressed
             // or dragged - the real "stuck at 55%" bug. This guards that regression
             // (offscreen, so a real drag can't be delivered here - height is the proxy).
-            verify(sl.height >= 16, "the glass slider has a pressable height (" + sl.height + ")")
+            verify(sl.height >= 48, "the glass slider has a touch-safe height (" + sl.height + ")")
             _theme.glassOpacity = 0.77
             compare(sl.value, 0.77, "the glass slider tracks theme.glassOpacity (the fix)")
             // A metric tick bumps store.revision WITHOUT changing glass (hist is ephemeral).

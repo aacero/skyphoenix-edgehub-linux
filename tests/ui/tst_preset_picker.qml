@@ -108,6 +108,14 @@ Item {
             verify(bar.visible, "…and the confirm bar appears")
             verify(picker.pendingTitle.indexOf("Developer") >= 0,
                    "the confirm names the preset (" + picker.pendingTitle + ")")
+            var preview = root.byName("presetPreview")
+            verify(preview !== null, "the shared preview is present")
+            compare(preview.titleItem.text, "Developer")
+            verify(preview.purposeItem.text.length > 20, "the preview explains the screen's job")
+            verify(preview.setupItem.text.indexOf("CI") >= 0, "the preview explains setup")
+            tryCompare(preview, "previewTileCount", 2, 3000,
+                       "the exact two-widget layout is previewed")
+            compare(preview.passive, true, "previewing starts no live providers")
             compare(root.applyCount, 0, "a first tap NEVER applies - the layout replace needs a confirm")
         }
 

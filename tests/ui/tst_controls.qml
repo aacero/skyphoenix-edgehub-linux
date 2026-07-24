@@ -98,7 +98,7 @@ Item {
         name: "PillButton"
         when: windowShown
 
-        function init() { root.pillClicks = 0; pill.enabledState = true }
+        function init() { root.pillClicks = 0; pill.enabledState = true; pill.focus = false }
 
         function test_defaults_and_labels() {
             compare(pill.label, "Start", "label stored")
@@ -112,6 +112,13 @@ Item {
             compare(spy.count, 1, "a tap emits clicked once")
             compare(root.pillClicks, 1, "handler ran")
             spy.destroy()
+        }
+
+        function test_keyboard_activation_fires_once() {
+            pill.forceActiveFocus()
+            verify(pill.activeFocus, "button accepts keyboard focus")
+            keyClick(Qt.Key_Space)
+            compare(root.pillClicks, 1, "Space activates the focused button")
         }
 
         function test_primary_vs_outline_border() {
@@ -402,6 +409,15 @@ Item {
             // The control must NOT imperatively assign currentValue - the external
             // binding (root.mode) still governs it (S2 self-destruct guard).
             compare(seg.currentValue, "work", "currentValue still follows the external binding, not the tap")
+        }
+
+        function test_segment_keyboard_activation() {
+            var target = segments()[1]
+            target.forceActiveFocus()
+            verify(target.activeFocus, "segment accepts keyboard focus")
+            keyClick(Qt.Key_Return)
+            compare(root.selectCount, 1, "Return activates the focused segment")
+            compare(root.lastSelected, "short")
         }
 
         function test_external_state_change_moves_selection() {

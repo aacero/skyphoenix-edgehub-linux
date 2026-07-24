@@ -2,9 +2,11 @@ import QtQuick
 import QtTest
 import "../../ui/qml" as App
 
-// COVERS: fn:Dashboard._tileExists, fn:Dashboard.applyAppearance, fn:Dashboard.applyExternalState, fn:Dashboard.cfgAction, fn:Dashboard.closeExpanded, fn:Dashboard.injectWidget
+// COVERS: fn:Dashboard._tileExists, fn:Dashboard.applyAppearance, fn:Dashboard.applyExternalState, fn:Dashboard.cfgAction, fn:Dashboard.closeExpanded
 // COVERS: fn:Dashboard.onAccentNameChanged, fn:Dashboard.onAnimatedBackgroundChanged, fn:Dashboard.onGlassOpacityChanged, fn:Dashboard.onOrientationModeChanged, fn:Dashboard.onReduceMotionChanged, fn:Dashboard.onShowWidgetGlowChanged
-// COVERS: fn:Dashboard.onThemeModeChanged, fn:Dashboard.applyPreset, fn:Dashboard.appendPreset
+// COVERS: fn:Dashboard.onThemeModeChanged, fn:Dashboard.onTextScaleChanged, fn:Dashboard.onFontChoiceChanged, fn:Dashboard.applyPreset, fn:Dashboard.appendPreset
+// COVERS: fn:Dashboard.requestPageRemoval, fn:Dashboard.confirmPageRemoval
+// COVERS: fn:Dashboard.requestWidgetDataAction, fn:Dashboard.confirmWidgetDataAction
 // COVERS: fn:Dashboard._sweepStaleDying
 //
 // ui/qml/Dashboard.qml -
@@ -16,8 +18,8 @@ import "../../ui/qml" as App
 //   • _tileExists: present id / unknown id / empty id
 //   • applyAppearance: pushes accent/glass/glow/reduceMotion/themeMode/animatedBg/
 //     orientation to the shell (root) + theme
-//   • injectWidget: instanceId/store/expanded set; titleOverride/accentName/
-//     cardBackdrop/metrics/tick bindings track the store + shell live
+//   • WidgetHost: tile/overlay bindings track the store + shell, and exactly one
+//     Hub view is the active state driver
 //   • the 7 appearance→store Connections handlers (root change → store.setAppearance)
 //
 // Dashboard resolves the shell (`root`), `theme`, and `metricsJson` through the
@@ -41,27 +43,13 @@ Item {
     property string themeMode: "dark"
     property bool animatedBackground: true
     property string orientationMode: "auto"
+    property real textScale: 1.15
+    property string fontChoice: "hyperlegible"
     property string metricsJson: "{}"
     property string screensData: "[]"
 
     // Recorder for the geocode delegate handed to cfgAction.
     property string geocodedPlace: ""
-
-    // A stand-in widget exposing the universal contract properties injectWidget
-    // wires up, so we can assert the bindings track the store/shell live.
-    Component {
-        id: fakeWidget
-        QtObject {
-            property string instanceId: ""
-            property var store: null
-            property bool expanded: false
-            property var metrics: ({})
-            property string titleOverride: "unset"
-            property string accentName: "unset"
-            property string cardBackdrop: "unset"
-            property int tick: -1
-        }
-    }
 
     Loader {
         id: ld
@@ -124,6 +112,14 @@ Item {
         var cs = tileCells()
         for (var i = 0; i < cs.length; i++) if (cs[i].tileId === id) return cs[i]
         return null
+    }
+    function widgetHostsFor(id) {
+        var out = []
+        eachItem(ld.item, function (x) {
+            if (x && x.widgetId !== undefined && x.driverActive !== undefined
+                    && x.widgetId === id) out.push(x)
+        })
+        return out
     }
     // The edit-mode "Add widget" slot: the one placed box on a page that is not a
     // tile, so it carries the eased slot mirror but none of the tile roles. (Its
@@ -188,6 +184,121 @@ Item {
             root.store().load("blank")
             d.closeExpanded()
             d.cfgStatus = ""
+            if (d.pageDeleteDialog.visible) d.pageDeleteDialog.close()
+            if (d.widgetDataDialog.visible) d.widgetDataDialog.close()
+        }
+
+        function test_configuration_reset_keeps_personal_content() {
+            var d = ld.item, s = root.store()
+            var id = s.addTile(0, "tasks")
+            s.patchSettings(id, {
+                items: [ { id: "task-1", text: "Keep me", done: false } ],
+                nextId: 2,
+                celebrate: false,
+                accent: "gold"
+            })
+            d.expandedId = id
+            d.expandedType = "tasks"
+            verify(d.requestWidgetDataAction("reset"))
+            verify(d.widgetDataDialog.visible)
+            verify(d.widgetDataSummary.text.indexOf("tasks and their ordering will be kept") >= 0)
+            verify(d.widgetDataCancelButton.height >= 48)
+            verify(d.widgetDataConfirmButton.height >= 48)
+            verify(d.confirmWidgetDataAction())
+            var got = s.settingsFor(id)
+            compare(got.items.length, 1)
+            compare(got.items[0].text, "Keep me")
+            compare(got.nextId, 2)
+            compare(got.celebrate, undefined, "configuration was reset")
+            compare(got.accent, undefined, "appearance override was reset")
+            d.widgetDataDialog.close()
+        }
+
+        function test_personal_erase_keeps_widget_configuration() {
+            var d = ld.item, s = root.store()
+            var id = s.addTile(0, "tasks")
+            s.patchSettings(id, {
+                items: [ { id: "task-1", text: "Erase me", done: false } ],
+                nextId: 2,
+                celebrate: false,
+                accent: "gold"
+            })
+            d.expandedId = id
+            d.expandedType = "tasks"
+            verify(d.requestWidgetDataAction("erase"))
+            verify(d.widgetDataSummary.text.indexOf("This cannot be undone") >= 0)
+            verify(d.confirmWidgetDataAction())
+            var got = s.settingsFor(id)
+            compare(got.items, undefined)
+            compare(got.nextId, undefined)
+            compare(got.celebrate, false, "configuration was kept")
+            compare(got.accent, "gold", "appearance was kept")
+            d.widgetDataDialog.close()
+        }
+
+        function test_personal_erase_is_unavailable_for_stateless_widget() {
+            var d = ld.item, s = root.store()
+            var id = s.addTile(0, "cpu")
+            d.expandedId = id
+            d.expandedType = "cpu"
+            compare(d.requestWidgetDataAction("erase"), false)
+            compare(d.widgetDataDialog.visible, false)
+        }
+
+        function test_page_removal_requires_named_confirmation() {
+            var d = ld.item, s = root.store()
+            s.renamePage(0, "Home")
+            s.addPage("Ops")
+            var widgetId = s.addTile(1, "cpu")
+            verify(widgetId !== null)
+            s.setSetting(widgetId, "goal", 99)
+            compare(s.pageCount(), 2)
+
+            verify(d.requestPageRemoval(1), "a removable screen opens confirmation")
+            compare(s.pageCount(), 2, "requesting removal changes nothing")
+            compare(d.pendingPageRemovalName, "Ops")
+            compare(d.pendingPageRemovalWidgetCount, 1)
+            verify(d.pageDeleteDialog.visible, "confirmation is visible")
+            var summary = d.pageDeleteSummary
+            verify(summary.text.indexOf("Ops") >= 0, "screen name is stated")
+            verify(summary.text.indexOf("1 widget") >= 0, "widget count is stated")
+
+            verify(d.confirmPageRemoval(), "reviewed screen is removed")
+            compare(s.pageCount(), 1)
+            compare(s.settingsFor(widgetId).goal, undefined,
+                    "the removed widget bucket is no longer addressable")
+            d.pageDeleteDialog.close()
+        }
+
+        function test_page_removal_refuses_stale_confirmation() {
+            var d = ld.item, s = root.store()
+            s.addPage("Ops")
+            verify(d.requestPageRemoval(1))
+            s.addTile(1, "cpu")
+            compare(d.confirmPageRemoval(), false,
+                    "a changed layout cannot delete the formerly reviewed screen")
+            compare(s.pageCount(), 2)
+            verify(d.pageRemovalError.indexOf("changed") >= 0)
+            d.pageDeleteDialog.close()
+        }
+
+        function test_last_screen_cannot_request_removal() {
+            var d = ld.item, s = root.store()
+            compare(s.pageCount(), 1)
+            compare(d.requestPageRemoval(0), false)
+            compare(d.pageDeleteDialog.visible, false)
+        }
+
+        function test_page_removal_buttons_are_touch_sized() {
+            var d = ld.item, s = root.store()
+            s.addPage("Ops")
+            verify(d.requestPageRemoval(1))
+            var cancel = d.pageDeleteCancelButton
+            var confirm = d.pageDeleteConfirmButton
+            verify(cancel !== null && confirm !== null)
+            verify(cancel.height >= 48, "Cancel is at least 48 pixels tall")
+            verify(confirm.height >= 48, "Remove is at least 48 pixels tall")
+            d.pageDeleteDialog.close()
         }
 
         // Wallpaper rendering must not become an uncounted network client. Remote,
@@ -439,7 +550,7 @@ Item {
             s.setAppearance("accent", "green")
             s.setAppearance("glass", 0.31)
             s.setAppearance("netOffline", true)
-            // reduceMotion IS a preset character key - but a11y beats character.
+            // Accessibility is explicit and never belongs to a screen preset.
             s.setAppearance("reduceMotion", true)
 
             verify(d.applyPreset("developer"), "applyPreset accepts a known preset id")
@@ -453,7 +564,7 @@ Item {
             compare(a.accent, "green", "accent survives")
             compare(a.glass, 0.31, "glass survives")
             compare(a.netOffline, true, "the egress kill switch is NEVER silently re-enabled by a preset")
-            compare(a.reduceMotion, true, "an explicit reduce-motion choice beats the preset's character")
+            compare(a.reduceMotion, true, "the explicit reduce-motion choice survives unchanged")
             compare(a.bgStyle, "grid", "the preset's character still lands where the user made no choice (bgStyle)")
             compare(a.animatedBg, true, "…and animatedBg comes from the preset's character")
 
@@ -575,6 +686,47 @@ Item {
         }
 
         // ── applyAppearance ───────────────────────────────────────────────────
+        function test_immersive_mode_hides_only_the_hub_bar_and_keeps_an_edit_escape() {
+            var d = ld.item, s = root.store()
+            var bar = root.findPred(d, function (x) {
+                return x && x.objectName === "hubBottomBar"
+            })
+            verify(bar !== null, "the Hub navigation bar is present")
+            compare(d.showHubBar, true, "an unset appearance keeps the bar by default")
+            compare(bar.visible, true)
+
+            s.setAppearance("hubControlsMode", "invalid")
+            compare(s.appearance().hubControlsMode, "standard",
+                    "an invalid mode normalizes to the safe Standard mode")
+            compare(bar.visible, true)
+
+            s.setAppearance("hubControlsMode", "immersive")
+            compare(d.showHubBar, false, "the immersive preference reacts live")
+            compare(bar.visible, false, "immersive mode removes the Hub navigation bar")
+
+            var id = s.addTile(0, "clock")
+            var cfg = null
+            tryVerify(function () {
+                cfg = root.findPred(d, function (x) {
+                    return x && x.objectName === "widgetConfigButton-" + id
+                })
+                return cfg !== null && cfg.visible
+            }, 3000, "the widget-specific configuration corner remains visible")
+            var cfgTap = root.findPred(cfg, function (x) {
+                return x && x.hoverEnabled !== undefined && x.enabled !== undefined
+            })
+            verify(cfgTap !== null && cfgTap.enabled,
+                    "immersive mode keeps widget-specific configuration interactive")
+
+            d.editMode = true
+            compare(bar.visible, true,
+                    "an edit already in progress keeps a visible Done escape")
+            d.editMode = false
+            compare(bar.visible, false, "leaving edit mode completes the immersive transition")
+            s.setAppearance("hubControlsMode", "standard")
+            compare(bar.visible, true, "Manager can restore the bar live")
+        }
+
         function test_applyAppearance_pushes_all_keys() {
             var d = ld.item
             var s = root.store()
@@ -583,6 +735,8 @@ Item {
             s.setAppearance("glass", 0.33)
             s.setAppearance("glow", false)
             s.setAppearance("reduceMotion", true)
+            s.setAppearance("textScale", 1.3)
+            s.setAppearance("fontChoice", "lexend")
             s.setAppearance("animatedBg", false)
             s.setAppearance("orientation", "landscape")
             d.applyAppearance()
@@ -590,6 +744,8 @@ Item {
             compare(root.glassOpacity, 0.33, "glass pushed to shell")
             compare(root.showWidgetGlow, false, "glow pushed to shell")
             compare(root.reduceMotion, true, "reduceMotion pushed to shell")
+            compare(_theme.textScale, 1.3, "textScale pushed to the theme")
+            compare(_theme.fontChoice, "lexend", "fontChoice pushed to the theme")
             compare(root.animatedBackground, false, "animatedBg pushed to shell")
             compare(root.orientationMode, "landscape", "orientation pushed to shell")
             verify(Qt.colorEqual(_theme.accent, _theme.accentPresets["green"].a),
@@ -611,6 +767,12 @@ Item {
             root.reduceMotion = !root.reduceMotion
             compare(s.appearance().reduceMotion, root.reduceMotion, "onReduceMotionChanged persisted reduceMotion → store")
 
+            root.textScale = root.textScale === 1.3 ? 1.4 : 1.3
+            compare(s.appearance().textScale, root.textScale, "onTextScaleChanged persisted textScale → store")
+
+            root.fontChoice = root.fontChoice === "lexend" ? "hyperlegible" : "lexend"
+            compare(s.appearance().fontChoice, root.fontChoice, "onFontChoiceChanged persisted fontChoice → store")
+
             root.themeMode = (root.themeMode === "oled") ? "dark" : "oled"
             compare(s.appearance().themeMode, root.themeMode, "onThemeModeChanged persisted themeMode → store")
 
@@ -621,50 +783,77 @@ Item {
             compare(s.appearance().orientation, root.orientationMode, "onOrientationModeChanged persisted orientation → store")
         }
 
-        // ── injectWidget ──────────────────────────────────────────────────────
-        function test_injectWidget_sets_props_and_binds() {
+        // ── shared WidgetHost and one-driver election ────────────────────────
+        function test_widget_host_binds_and_elects_one_active_hub_view() {
             var d = ld.item
             var s = root.store()
-            var w = fakeWidget.createObject(root)
-            d.injectWidget(w, "iw1", "cpu", true)
-            compare(w.instanceId, "iw1", "injectWidget set the instanceId")
+            s.addPage("Other")
+            var id = s.addTile(0, "clock")
+            var tileHost = null
+            tryVerify(function () {
+                var hs = root.widgetHostsFor(id)
+                for (var i = 0; i < hs.length; i++)
+                    if (!hs[i].expanded && hs[i].item) tileHost = hs[i]
+                return tileHost !== null
+            }, 3000)
+            var w = tileHost.item
+            compare(w.instanceId, id, "host set the instanceId")
             compare(w.store, s, "store injected (the Dashboard's own store)")
-            compare(w.expanded, true, "expanded flag set")
+            compare(w.expanded, false, "tile is not expanded")
+            compare(tileHost.driverActive, true, "visible Hub tile is the driver")
+            compare(tileHost.foreground, true, "current Hub page is in the foreground")
+            compare(w.active, true, "widget receives the elected state")
 
             // Per-instance appearance bindings track the store live.
-            s.setSetting("iw1", "title", "Hello")
+            s.setSetting(id, "title", "Hello")
             compare(w.titleOverride, "Hello", "titleOverride binding follows the store")
-            s.setSetting("iw1", "accent", "green")
+            s.setSetting(id, "accent", "green")
             compare(w.accentName, "green", "accentName binding follows the store")
-            s.setSetting("iw1", "cardBackdrop", "aurora")
+            s.setSetting(id, "cardBackdrop", "aurora")
             compare(w.cardBackdrop, "aurora", "cardBackdrop binding follows the store")
 
-            // metrics binding tracks the shell metricsJson.
-            root.metricsJson = "{\"z\":5}"
-            compare(w.metrics.z, 5, "metrics binding follows the shell metrics")
-
-            // tick binding tracks the dashboard drive counter.
             d._tick = 42
             compare(w.tick, 42, "tick binding follows the dashboard tick")
 
-            w.destroy()
-        }
+            d.editMode = true
+            compare(tileHost.driverActive, false, "editing pauses the tile driver")
+            compare(w.active, false)
+            d.editMode = false
 
-        function test_injectWidget_defaults_when_no_override() {
-            var d = ld.item
-            var w = fakeWidget.createObject(root)
-            d.injectWidget(w, "iw2", "cpu", false)
-            // No title/accent/backdrop settings → the bindings resolve to the
-            // documented empty/"none" fallbacks.
-            compare(w.titleOverride, "", "no title → empty override")
-            compare(w.accentName, "", "no accent → empty accent name")
-            compare(w.cardBackdrop, "none", "no backdrop → 'none'")
-            w.destroy()
-        }
+            var sw = root.findPred(d, function (x) {
+                return x && x.objectName === "pageSwipe"
+            })
+            verify(sw !== null, "found the page SwipeView")
+            sw.goToPage(1)
+            tryVerify(function () { return sw.currentIndex === 1 }, 4000,
+                      "landed on the other Hub page")
+            compare(tileHost.driverActive, true,
+                    "an off-page timer remains an elected state driver")
+            compare(tileHost.foreground, false,
+                    "an off-page widget is not considered foreground content")
+            sw.goToPage(0)
+            tryVerify(function () { return sw.currentIndex === 0 }, 4000,
+                      "returned to the widget page")
+            compare(tileHost.foreground, true,
+                    "returning to the page restores foreground state")
 
-        function test_injectWidget_null_is_safe() {
-            ld.item.injectWidget(null, "x", "cpu", false)   // must not throw
-            verify(true, "injectWidget(null) is a no-op")
+            d.expandedId = id
+            d.expandedType = "clock"
+            var overlayHost = null
+            tryVerify(function () {
+                var hs = root.widgetHostsFor(id)
+                for (var i = 0; i < hs.length; i++)
+                    if (hs[i].expanded && hs[i].item) overlayHost = hs[i]
+                return overlayHost !== null
+            }, 3000)
+            compare(tileHost.driverActive, false, "tile yields while overlay is open")
+            compare(overlayHost.driverActive, true, "expanded Hub view is sole driver")
+            compare(overlayHost.foreground, true, "expanded Hub view is foreground content")
+            compare(overlayHost.item.active, true)
+
+            d.closeExpanded()
+            compare(overlayHost.driverActive, false, "closing deactivates overlay immediately")
+            compare(tileHost.driverActive, true, "tile resumes during overlay close fade")
         }
     }
 

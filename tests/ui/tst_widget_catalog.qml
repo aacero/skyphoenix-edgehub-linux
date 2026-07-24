@@ -58,6 +58,24 @@ Item {
             }
         }
 
+        function test_personal_data_classification_is_explicit_and_copied() {
+            var expected = ["braindump", "break", "focus", "habit", "hydration",
+                            "meds", "notes", "rightnow", "routine", "tasks"]
+            var actual = []
+            for (var i = 0; i < catalog.items.length; i++)
+                if (catalog.hasPersonalData(catalog.items[i].type)) actual.push(catalog.items[i].type)
+            actual.sort()
+            compare(actual.join(","), expected.join(","))
+            for (var j = 0; j < actual.length; j++) {
+                verify(catalog.personalDataKeys(actual[j]).length > 0)
+                verify(catalog.personalDataLabel(actual[j]).length > 0)
+            }
+            var copy = catalog.personalDataKeys("tasks")
+            copy.push("poison")
+            verify(catalog.personalDataKeys("tasks").indexOf("poison") < 0,
+                   "callers cannot mutate catalog classification")
+        }
+
         // def / source / title / desc / defaults helpers.
         function test_lookup_helpers() {
             var d = catalog.def("cpu")

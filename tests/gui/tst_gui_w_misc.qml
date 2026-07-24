@@ -17,7 +17,7 @@ import "GuiUtil.js" as G
 // Data-driven throughout to reach volume; every test_*_data() has its consumer.
 Item {
     id: root
-    width: 1200; height: 940
+    width: 1800; height: 1700
 
     UI.WidgetHarness {
         id: wh
@@ -39,15 +39,34 @@ Item {
             return i
         }
 
-        // ── the five declared sizes (shared by all three widgets) ───────────
-        function sizeRows() {
+        // Physical projections are widget-specific. The catalog deliberately
+        // gives these widgets different allocations, so sharing one list hid
+        // unsupported cases and skipped real orientations.
+        function countdownRows() {
             return [
-                { tag: "0.5x0.5", w: 340, h: 400, cls: "compact", micro: true },
-                { tag: "0.5x1",   w: 340, h: 600, cls: "tall",    micro: false },
-                { tag: "1x0.5",   w: 800, h: 300, cls: "wide",    micro: false },
-                { tag: "1x1",     w: 600, h: 600, cls: "compact", micro: false },
-                { tag: "1x1.5",   w: 600, h: 820, cls: "tall",    micro: false }
+                { tag: "p_0.5x0.5", w: 348, h: 409, cls: "compact", micro: true  },
+                { tag: "l_0.5x0.5", w: 423, h: 306, cls: "compact", micro: true  },
+                { tag: "p_0.5x1",   w: 348, h: 818, cls: "tall",    micro: false },
+                { tag: "l_0.5x1",   w: 846, h: 306, cls: "wide",    micro: false },
+                { tag: "p_1x0.5",   w: 696, h: 409, cls: "wide",    micro: false },
+                { tag: "l_1x0.5",   w: 423, h: 612, cls: "tall",    micro: false },
+                { tag: "p_1x1",     w: 696, h: 818, cls: "compact", micro: false },
+                { tag: "l_1x1",     w: 846, h: 612, cls: "compact", micro: false }
             ]
+        }
+        function eodRows() {
+            return countdownRows().concat([
+                { tag: "p_1x1.5", w: 696,  h: 1226, cls: "tall", micro: false, roomy: true },
+                { tag: "l_1x1.5", w: 1268, h: 612,  cls: "wide", micro: false, roomy: true }
+            ])
+        }
+        function quoteRows() {
+            return countdownRows()
+        }
+        function withRoomy(rows) {
+            for (var i = 0; i < rows.length; i++)
+                if (rows[i].roomy === undefined) rows[i].roomy = rows[i].cls === "tall"
+            return rows
         }
         // The 8 cardBackdrop options asserted in every widget's chrome sweep.
         function backdropRows() {
@@ -175,7 +194,7 @@ Item {
         // ════════════════════════════════════════════════════════════════════
         //  COUNTDOWN  (30 cases)
         // ════════════════════════════════════════════════════════════════════
-        function test_cd_1_size_data() { return sizeRows() }
+        function test_cd_1_size_data() { return countdownRows() }
         function test_cd_1_size(d) {
             prep("CountdownWidget.qml", { label: "Trip", date: futureDate(40), repeatYearly: false })
             setSize(d.w, d.h, d.cls)
@@ -243,7 +262,7 @@ Item {
                 verify(txtExact("" + wh.item.days) !== null, "day number visible")
                 verify(txtHas("days until") !== null, "future caption")
             } else if (d.tag === "ST3-today") {
-                verify(txtExact("🎉") !== null, "today shows celebration glyph")
+                verify(txtExact("NOW") !== null, "today has a deterministic hero state")
                 verify(txtHas("Today") !== null, "today caption")
             } else if (d.tag === "ST4-passed") {
                 verify(txtHas("passed") !== null, "passed caption")
@@ -266,7 +285,8 @@ Item {
             }
         }
 
-        // CD-B1: expanded label + date fields + Save → persisted + tile updates.
+        // The expanded preview does not duplicate the structured configuration
+        // panel. It reflects the same store changes immediately.
         function test_cd_4_body_save() {
             prep("CountdownWidget.qml", { label: "", date: "", repeatYearly: false })
             wh.expanded = true
@@ -274,27 +294,19 @@ Item {
             wait(150)
             var lab = fieldByPlaceholder("Label")
             var dat = fieldByPlaceholder("YYYY-MM-DD")
-            verify(lab !== null, "label field present")
-            verify(dat !== null, "date field present")
+            compare(lab, null, "preview does not duplicate the label editor")
+            compare(dat, null, "preview does not duplicate the date editor")
             var future = futureDate(21)
-            // Real key-typing into the (unmasked) label field.
-            mouseClick(lab, lab.width / 2, lab.height / 2)
-            var name = "Launch"
-            for (var i = 0; i < name.length; i++) keyClick(name.charAt(i))
-            // The date field carries an inputMask ("9999-99-99"); synthetic
-            // keyClick text is dropped by the masked validator under
-            // qmltestrunner (it renders as bare "--"), so drive the field's own
-            // control directly, then exercise the REAL Save click that persists it.
-            mouseClick(dat, dat.width / 2, dat.height / 2)
-            dat.text = future
-            var save = pill("Save")
-            verify(save !== null, "Save pill present")
-            mouseClick(save, save.width / 2, save.height / 2)
+            wh.storeCtl.patchSettings(wh.instanceId, {
+                label: "Launch", date: future, targetHour: 14, targetMinute: 30
+            })
             wait(250)
             snap(wh, "cd_body_save")
             compare(wh.storeCtl.settingsFor(wh.instanceId).label, "Launch", "label saved")
             compare(wh.storeCtl.settingsFor(wh.instanceId).date, future, "date saved")
+            compare(wh.item.timeStr, "14:30", "structured time reflected")
             verify(txtHas("Launch") !== null, "tile caption reflects saved label")
+            verify(txtHas("Target:") !== null, "preview explains the exact occurrence")
         }
 
         function test_cd_5_chrome_accent_data() { return accentRows() }
@@ -322,7 +334,7 @@ Item {
         // ════════════════════════════════════════════════════════════════════
         //  END OF DAY  (37 cases)
         // ════════════════════════════════════════════════════════════════════
-        function test_eod_1_size_data() { return sizeRows() }
+        function test_eod_1_size_data() { return withRoomy(eodRows()) }
         function test_eod_1_size(d) {
             prep("EndOfDayWidget.qml", { startHour: 9, endHour: 17, progressStyle: "bar", showPercent: true })
             wh.item.nowOverride = todayAt(13, 0)
@@ -334,6 +346,7 @@ Item {
             compare(wh.height, d.h, "cell height " + d.tag)
             var rem = txtExact(wh.item.remaining)
             verify(rem !== null, "remaining readout visible @ " + d.tag)
+            compare(wh.item.roomy, d.roomy, "detail density @ " + d.tag)
         }
 
         function test_eod_2_config_data() {
@@ -361,7 +374,7 @@ Item {
             else if (d.hasOwnProperty("ring"))
                 compare(ringVisible(), d.ring, "ring visibility @ " + d.tag)
             else if (d.hasOwnProperty("pct"))
-                compare(txtHas("of 09:00") !== null, d.pct, "percent caption visibility @ " + d.tag)
+                compare(txtHas("% elapsed") !== null, d.pct, "percent caption visibility @ " + d.tag)
         }
 
         function test_eod_3_state_data() {
@@ -379,7 +392,10 @@ Item {
             ]
         }
         function test_eod_3_state(d) {
-            prep("EndOfDayWidget.qml", { startHour: d.sh, endHour: d.eh, progressStyle: d.style, showPercent: true })
+            prep("EndOfDayWidget.qml", {
+                startHour: d.sh, endHour: d.eh, progressStyle: d.style,
+                showPercent: true, allowOvernight: d.tag === "ST10-night"
+            })
             wh.item.nowOverride = todayAt(d.at[0], d.at[1])
             setSize(d.w, d.h, d.cls)
             bumpTick(); wait(150)
@@ -393,15 +409,17 @@ Item {
             } else if (d.tag === "ST3-remain") {
                 verify(txtExact("3h 20m") !== null, "remaining time 3h 20m at 13:40 of 9-17")
             } else if (d.tag === "ST4-percent") {
-                verify(txtHas("of 09:00") !== null && txtHas("17:00") !== null, "percent-of-window caption")
+                verify(txtHas("% elapsed") !== null && txtHas("remaining") !== null,
+                       "elapsed and remaining caption")
             } else if (d.tag === "ST5-before") {
                 verify(txtHas("Starts in") !== null, "before-start label")
             } else if (d.tag === "ST6-done") {
-                verify(txtHas("Done") !== null, "done label after end")
+                verify(txtHas("Complete") !== null, "completion label after end")
             } else if (d.tag === "ST7-invalid") {
-                verify(txtHas("Set hours") !== null, "invalid window prompt")
+                verify(txtHas("Enable overnight mode") !== null, "invalid window prompt")
             } else if (d.tag === "ST8-detail") {
-                verify(txtExact("Started") !== null && txtExact("Elapsed") !== null, "tall detail rows")
+                verify(txtExact("Start") !== null && txtExact("Elapsed") !== null
+                       && txtExact("Remaining") !== null, "tall detail rows")
                 verify(txtExact("09:00") !== null, "detail shows start hour")
             } else if (d.tag === "ST9-micro") {
                 verify(wh.item.micro === true, "micro derivation active")
@@ -462,7 +480,7 @@ Item {
         // ════════════════════════════════════════════════════════════════════
         //  DAILY QUOTE  (34 cases)
         // ════════════════════════════════════════════════════════════════════
-        function test_qt_1_size_data() { return sizeRows() }
+        function test_qt_1_size_data() { return quoteRows() }
         function test_qt_1_size(d) {
             prep("QuoteWidget.qml", { category: "focus", customText: "" })
             setSize(d.w, d.h, d.cls)
@@ -483,7 +501,7 @@ Item {
                 { tag: "stoic",    cat: "stoic",    pool: "stoic" },
                 { tag: "humor",    cat: "humor",    pool: "humor" },
                 { tag: "kindness", cat: "kindness", pool: "kindness" },
-                { tag: "custom-empty", cat: "custom", pool: "focus" }   // empty custom → focus fallback
+                { tag: "custom-empty", cat: "custom", pool: "" }
             ]
         }
         function test_qt_2_config_category(d) {
@@ -492,9 +510,15 @@ Item {
             wait(150)
             compare(wh.storeCtl.settingsFor(wh.instanceId).category, d.cat, "category persisted " + d.tag)
             snap(wh, "qt_cat_" + d.tag)
-            var pool = wh.item.library[d.pool]
-            verify(inPool(pool, wh.item.q.t), "quote belongs to '" + d.pool + "' pool @ " + d.tag)
-            verify(txtExact(wh.item.q.t) !== null, "quote text visible @ " + d.tag)
+            if (d.pool === "") {
+                compare(wh.item.pool.length, 0, "empty custom mode has no bundled fallback")
+                verify(txtExact("Add at least one custom quote in settings") !== null,
+                       "empty custom guidance is visible")
+            } else {
+                var pool = wh.item.library[d.pool]
+                verify(inPool(pool, wh.item.q.t), "quote belongs to '" + d.pool + "' pool @ " + d.tag)
+                verify(txtExact(wh.item.q.t) !== null, "quote text visible @ " + d.tag)
+            }
         }
 
         function test_qt_3_config_custom_data() {
@@ -512,16 +536,18 @@ Item {
                 verify(txtExact(d.body) !== null, "custom quote body '" + d.body + "'")
                 verify(txtExact("- " + d.author) !== null, "custom author '" + d.author + "'")
             } else {
-                // empty custom falls back to the focus pool
-                verify(inPool(wh.item.library["focus"], wh.item.q.t), "empty custom → focus fallback")
+                compare(wh.item.pool.length, 0, "empty custom mode remains empty")
+                verify(txtExact("Add at least one custom quote in settings") !== null,
+                       "empty custom guidance is rendered")
             }
         }
 
         // QT-ST4 + task requirement: every custom-text separator variant, parsed
-        // author/body asserted ON SCREEN (exercises the fixed em-dash separator).
+        // author/body asserted on screen for every supported separator.
         function test_qt_4_separators_data() {
+            var typographic = " " + String.fromCharCode(0x2014) + " "
             return [
-                { tag: "em-dash",      text: "Make it - Me",  author: "Me" },
+                { tag: "typographic",  text: "Make it" + typographic + "Me", author: "Me" },
                 { tag: "double-hyphen",text: "Make it -- You", author: "You" },
                 { tag: "pipe",         text: "Make it | Her",  author: "Her" },
                 { tag: "ascii-hyphen", text: "Make it - Him",  author: "Him" }
@@ -601,14 +627,16 @@ Item {
             wait(150)
             var before = wh.item.q.t
             if (d.expanded) {
-                var p = pill("Shuffle")
-                verify(p !== null, "expanded Shuffle pill present")
+                var p = pill("Another quote")
+                verify(p !== null, "expanded quote action present")
                 mouseClick(p, p.width / 2, p.height / 2)
             } else {
-                var glyph = txtNode(function (t) { return t.indexOf("🔀") >= 0 })
-                verify(glyph !== null, "tile shuffle control present")
-                var rect = glyph.parent
-                mouseClick(rect, rect.width / 2, rect.height / 2)
+                var action = G.findPred(wh.item, function (n) {
+                    try { return n && n.objectName === "quoteTileShuffle" && effVis(n) }
+                    catch (e) { return false }
+                })
+                verify(action !== null, "tile quote action present")
+                mouseClick(action, action.width / 2, action.height / 2)
             }
             wait(250)
             snap(wh, "qt_body_" + d.tag)

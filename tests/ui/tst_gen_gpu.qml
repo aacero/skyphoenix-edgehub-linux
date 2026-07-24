@@ -3,6 +3,7 @@ import QtTest
 import "../../ui/qml" as App
 import "../../ui/qml/widgets" as Wg
 
+
 // Comprehensive coverage for the GPU widget (ui/qml/widgets/GpuWidget.qml).
 //
 // Exercises: availability (N/A) logic, percent reading + ring value + clamping,
@@ -11,15 +12,8 @@ import "../../ui/qml/widgets" as Wg
 // warnTemp), history accumulation / cap / pause, the shared MetricGauge gauge,
 // the "gpu" config schema, and the universal appearance keys (accent / title).
 //
-// Assertions that encode the *intended* behaviour but fail against the current
-// code are deliberate - they pin real bugs called out in the audit:
-//   • the header amber threshold (warnTemp-17) and the ring amber threshold
-//     (warnTemp-12) disagree by 5°C, so a warning-coloured number can sit inside
-//     a calm ring;
-//   • turning off "Show temperature" ALSO kills all thermal ring colouring, so a
-//     110°C GPU renders a calm accent ring;
-//   • `active` is declared + bound by the host but never honoured, so a paused
-//     (expanded / off-page) instance keeps sampling history.
+// The regression checks cover truthful capability states, multi-GPU selection,
+// supported hardware details, hot-plug recovery, history, and thermal safety.
 Item {
     id: root
     width: 520; height: 640
@@ -39,6 +33,26 @@ Item {
 
     // Directly-instantiated shared gauge for the store/gauge shared-area tests.
     Wg.MetricGauge { id: gauge; width: 200; height: 200; visible: false }
+    Wg.ConfigField {
+        id: gpuDeviceField
+        x: root.width + 40
+        width: 420
+        field: ({
+            key: "gpuDevice", label: "GPU device", type: "select", dflt: "auto",
+            options: [
+                { value: "auto", label: "Automatic: Radeon Test GPU" },
+                { value: "card0", label: "Integrated Graphics (card0)" },
+                { value: "card1", label: "Radeon Test GPU (card1)" }
+            ]
+        })
+        st: h.storeCtl
+        instanceId: "gpu-select-test"
+        col: ({
+            textPrimary: "#E6EDF3", textSecondary: "#8B949E", bg: "#0D1117",
+            accent: "#58A6FF", border: "#30363D", panel: "#161B22",
+            panelAlt: "#1C222B", ctlH: 58, fontBase: 17
+        })
+    }
 
     // ── Tree helpers ─────────────────────────────────────────────────────────
     function eachItem(node, fn) {
@@ -88,6 +102,7 @@ Item {
         if (temp !== undefined) m.gpu_temp_celsius = temp
         h.metricsJson = JSON.stringify(m)
     }
+    function feedObject(obj) { h.metricsJson = JSON.stringify(obj || {}) }
     // Commit the last real sample. An unavailable feed triggers the (lagged)
     // accumulator for the previous available tick but adds nothing of its own.
     function flush() { h.metricsJson = "{}" }
@@ -117,11 +132,20 @@ Item {
 
         function test_gpu_schema_display_fields() {
             var f = fieldsOf("gpu")
+            verify(f.gpuDevice !== undefined, "gpu exposes device selection")
+            compare(f.gpuDevice.type, "select")
+            compare(f.gpuDevice.dflt, "auto")
+            compare(f.gpuDevice.options.length, 1,
+                    "without runtime telemetry only Automatic is offered")
+            compare(f.gpuDevice.options[0].label, "Automatic")
             verify(f.showTemp !== undefined, "gpu exposes showTemp")
             compare(f.showTemp.type, "toggle")
             compare(f.showTemp.dflt, true, "showTemp defaults on")
             verify(f.showHistory !== undefined, "gpu exposes showHistory")
             compare(f.showHistory.dflt, true, "showHistory defaults on")
+            verify(f.showDetails !== undefined, "gpu exposes hardware details")
+            compare(f.showDetails.type, "toggle")
+            compare(f.showDetails.dflt, true, "hardware details default on")
             verify(f.warnTemp !== undefined, "gpu exposes warnTemp")
             compare(f.warnTemp.type, "slider")
             compare(f.warnTemp.dflt, 90, "warnTemp default is 90")
@@ -133,6 +157,43 @@ Item {
             verify(f.title !== undefined, "custom title field present")
             verify(f.accent !== undefined, "per-widget accent present")
             verify(f.cardBackdrop !== undefined, "per-widget backdrop present")
+        }
+        function test_gpu_schema_uses_discovered_identity_and_keeps_offline_selection() {
+            var runtime = {
+                gpu_primary_id: "card1",
+                gpu_devices: [
+                    { id: "card0", name: "Integrated Graphics", vendor: "AMD" },
+                    { id: "card1", name: "Radeon Test GPU", vendor: "AMD" }
+                ]
+            }
+            var definition = sc.schemaFor("gpu", runtime, "card9")
+            var options = null
+            for (var i = 0; i < definition.sections.length; i++) {
+                var fields = definition.sections[i].fields || []
+                for (var j = 0; j < fields.length; j++)
+                    if (fields[j].key === "gpuDevice") options = fields[j].options
+            }
+            verify(options !== null)
+            compare(options.length, 4)
+            compare(options[0].label, "Automatic: Radeon Test GPU")
+            compare(options[1].label, "Integrated Graphics (card0)")
+            compare(options[2].label, "Radeon Test GPU (card1)")
+            compare(options[3].label, "Offline selection (card9)")
+        }
+        function test_discovered_device_select_renders_and_persists_a_choice() {
+            h.storeCtl.setSetting("gpu-select-test", "gpuDevice", "auto")
+            var control = findChild(gpuDeviceField, "control")
+            verify(control !== null, "the select renderer creates a real ComboBox")
+            compare(control.count, 3)
+            compare(control.displayText, "Automatic: Radeon Test GPU")
+            compare(control.Accessible.name, "GPU device")
+            control.popup.open()
+            tryCompare(control.popup, "opened", true)
+            control.currentIndex = 2
+            control.activated(2)
+            compare(h.storeCtl.settingsFor("gpu-select-test").gpuDevice, "card1")
+            compare(control.displayText, "Radeon Test GPU (card1)")
+            control.popup.close()
         }
     }
 
@@ -228,22 +289,21 @@ Item {
             feed(30, 65)
             compare(w.status, "", "showTemp off hides the header temperature")
         }
-        function test_status_hidden_when_temp_zero() {
+        function test_status_shows_zero_celsius() {
             var w = h.item
             feed(30, 0)
-            // temp stays 0 (only <0 is normalised to -1), but status gates on temp>0.
             compare(w.temp, 0, "0°C passes through as 0")
-            compare(w.status, "", "no temperature shown at/below 0")
+            compare(w.status, "0°C", "a real zero-degree reading is shown")
         }
-        function test_status_hidden_when_temp_negative() {
+        function test_status_shows_subzero_temperature() {
             var w = h.item
             feed(30, -5)
-            compare(w.status, "", "negative temperature hidden")
+            compare(w.status, "-5°C", "a sub-zero reading is not an unavailable sentinel")
         }
         function test_status_hidden_when_temp_null() {
             var w = h.item
             feed(30, null)
-            compare(w.temp, -1)
+            compare(w.tempAvailable, false)
             compare(w.status, "", "null temperature hidden")
         }
         function test_status_colour_thresholds() {
@@ -320,6 +380,8 @@ Item {
             var w = h.item
             compare(w.showTemp, true, "showTemp defaults true")
             compare(w.showHistory, true, "showHistory defaults true")
+            compare(w.showDetails, true, "showDetails defaults true")
+            compare(w.gpuDevice, "auto", "device selection defaults automatic")
             compare(w.warnTemp, 90, "warnTemp defaults 90")
         }
         function test_defaults_when_store_null() {
@@ -328,6 +390,8 @@ Item {
             w.store = null
             compare(w.showTemp, true, "null store → showTemp default")
             compare(w.showHistory, true, "null store → showHistory default")
+            compare(w.showDetails, true, "null store → showDetails default")
+            compare(w.gpuDevice, "auto", "null store → automatic device")
             compare(w.warnTemp, 90, "null store → warnTemp default")
             w.store = saved                 // restore harness wiring
         }
@@ -353,6 +417,12 @@ Item {
             compare(w.showHistory, true)
             h.storeCtl.patchSettings("test-instance", { showHistory: false })
             compare(w.showHistory, false, "patchSettings bump re-reads showHistory")
+        }
+        function test_device_and_details_reactive() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { gpuDevice: "card1", showDetails: false })
+            compare(w.gpuDevice, "card1", "device selection updates live")
+            compare(w.showDetails, false, "hardware detail visibility updates live")
         }
     }
 
@@ -404,6 +474,131 @@ Item {
             feed(33); feed(44); flush()
             compare(w.hist.length, 0,
                     "an inactive (expanded/off-page) instance should not sample history")
+        }
+    }
+
+    // ── DRM device catalog, selection and capability truth ──────────────────
+    TestCase {
+        name: "GpuCatalog"
+        when: windowShown
+        function init() { tryVerify(function () { return h.ready }, 3000); reset() }
+
+        function catalogFrame() {
+            return {
+                gpu_primary_id: "card1",
+                gpu_devices: [
+                    { id: "card0", name: "Integrated Graphics", vendor: "AMD",
+                      driver: "amdgpu", device_type: "integrated", usage_percent: 12,
+                      unavailable_reason: "", temperature_celsius: 45,
+                      vram_total_bytes: 2147483648, vram_used_bytes: 268435456 },
+                    { id: "card1", name: "Radeon Test GPU", vendor: "AMD",
+                      driver: "amdgpu", device_type: "discrete", usage_percent: 67,
+                      unavailable_reason: "", temperature_celsius: 55,
+                      vram_total_bytes: 17179869184, vram_used_bytes: 4294967296,
+                      power_watts: 45, clock_mhz: 2400, fan_rpm: 900 }
+                ]
+            }
+        }
+
+        function test_auto_uses_primary_device_and_all_supported_details() {
+            var w = h.item
+            feedObject(catalogFrame())
+            compare(w.selectedDevice.id, "card1", "automatic selection follows gpu_primary_id")
+            compare(w.v, 67, "selected device drives utilization")
+            compare(w.status, "55°C", "selected device drives temperature")
+            compare(w.vramText, "4.0 / 16.0 GiB")
+            compare(w.powerText, "45 W")
+            compare(w.clockText, "2.40 GHz")
+            compare(w.fanText, "900 RPM")
+            verify(findText("Radeon Test GPU") !== null, "expanded panel names the device")
+            verify(findText("AMD · amdgpu · discrete") !== null,
+                   "expanded panel identifies vendor, driver and device class")
+        }
+
+        function test_numbered_device_selection_pins_another_gpu() {
+            var w = h.item
+            h.storeCtl.setSetting("test-instance", "gpuDevice", "card0")
+            feedObject(catalogFrame())
+            compare(w.selectedDevice.id, "card0")
+            compare(w.deviceName, "Integrated Graphics")
+            compare(w.v, 12, "pinned card drives the gauge instead of the automatic card")
+        }
+
+        function test_selected_device_disconnect_and_reconnect_recovers_live() {
+            var w = h.item
+            h.storeCtl.setSetting("test-instance", "gpuDevice", "card1")
+            feedObject({ gpu_primary_id: "card0", gpu_devices: [catalogFrame().gpu_devices[0]] })
+            compare(w.avail, false, "missing selected card is unavailable")
+            compare(w.unavailableReason, "Selected GPU is not connected")
+            compare(w.capabilityState, "disconnected")
+            compare(w.alertText, "Selected GPU offline")
+            verify(w.accessibleSummary.indexOf("Selected GPU offline") >= 0,
+                   "disconnect is available without relying on colour")
+            var button = findChild(w, "gpuUseAutomaticButton")
+            verify(button !== null && button.visible, "disconnect exposes a recovery action")
+            feedObject(catalogFrame())
+            compare(w.avail, true, "reconnected selected card recovers without restarting")
+            compare(w.v, 67)
+            compare(button.visible, false, "reconnect removes the recovery action")
+        }
+
+        function test_disconnected_recovery_switches_to_automatic_selection() {
+            var w = h.item
+            h.storeCtl.setSetting("test-instance", "gpuDevice", "card1")
+            feedObject({ gpu_primary_id: "card0", gpu_devices: [catalogFrame().gpu_devices[0]] })
+            compare(w.selectedOffline, true)
+            w.useAutomaticGpu()
+            compare(h.storeCtl.settingsFor("test-instance").gpuDevice, "auto")
+            compare(w.gpuDevice, "auto")
+            compare(w.selectedDevice.id, "card0")
+            compare(w.avail, true)
+        }
+
+        function test_history_resets_when_selected_device_changes() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", {
+                gpuDevice: "card0", hist: [0.1, 0.2], histDevice: "card0"
+            })
+            w.hist = [0.1, 0.2]
+            w._recordSample(catalogFrame().gpu_devices[0])
+            compare(w.hist.length, 3, "same GPU extends its existing history")
+            w._recordSample(catalogFrame().gpu_devices[1])
+            compare(w.hist.length, 1,
+                    "a different GPU begins a separate history")
+            compare(h.storeCtl.settingsFor("test-instance").histDevice, "card1")
+            compare(w.hist[0], 0.67, "new history starts with the new GPU sample")
+        }
+
+        function test_vendor_without_usage_explains_capability_gap() {
+            var w = h.item
+            feedObject({ gpu_primary_id: "card0", gpu_devices: [
+                { id: "card0", name: "NVIDIA Test GPU", vendor: "NVIDIA",
+                  driver: "nvidia", device_type: "discrete", usage_percent: null,
+                  unavailable_reason: "The NVIDIA driver does not expose utilization through DRM sysfs",
+                  vram_total_bytes: 12884901888 }
+            ] })
+            compare(w.avail, false)
+            compare(findGauge().big, "N/A")
+            compare(w.unavailableReason,
+                    "The NVIDIA driver does not expose utilization through DRM sysfs")
+            compare(w.capabilityState, "unsupported")
+            compare(w.alertText, "Utilization unsupported")
+            verify(findText(w.unavailableReason) !== null,
+                   "expanded view tells the user why utilization is unavailable")
+        }
+
+        function test_catalog_temperature_preserves_zero_and_subzero_values() {
+            var w = h.item
+            feedObject({ gpu_primary_id: "card0", gpu_devices: [
+                { id: "card0", usage_percent: 10, unavailable_reason: "",
+                  temperature_celsius: 0 }
+            ] })
+            compare(w.status, "0°C")
+            feedObject({ gpu_primary_id: "card0", gpu_devices: [
+                { id: "card0", usage_percent: 10, unavailable_reason: "",
+                  temperature_celsius: -2 }
+            ] })
+            compare(w.status, "-2°C")
         }
     }
 
@@ -550,6 +745,10 @@ Item {
             feed(20, 110)  // dangerously hot, but light load
             compare(String(w.col(w.v)), String(root.theme.error),
                     "a 110°C GPU must still show a red ring even with the temp text hidden")
+            compare(w.alertText, "Critical temperature")
+            verify(w.status.indexOf("Critical temperature") >= 0,
+                   "thermal danger is visible as text when the temperature number is hidden")
+            verify(w.accessibleSummary.indexOf("Critical temperature") >= 0)
         }
     }
 }

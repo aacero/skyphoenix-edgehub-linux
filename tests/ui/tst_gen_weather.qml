@@ -2,7 +2,6 @@ import QtQuick
 import QtTest
 import "../../ui/qml" as App
 
-// COVERS: schema:forecastDays, schema:lat, schema:lon, schema:place, schema:units
 
 // ─────────────────────────────────────────────────────────────────────────
 // tst_gen_weather - COMPREHENSIVE coverage for area "widget:weather"
@@ -128,9 +127,9 @@ Item {
 
         function test_derived_defaults() {
             var w = h.item
-            fuzzyCompare(w.lat, 52.52, 0.001, "default latitude Berlin")
-            fuzzyCompare(w.lon, 13.405, 0.001, "default longitude Berlin")
-            compare(w.place, "Berlin", "default place")
+            compare(w.locationConfigured, false, "weather requires location setup")
+            verify(isNaN(w.lat)); verify(isNaN(w.lon))
+            compare(w.place, "")
             compare(w.units, "celsius", "default units")
             compare(w.forecastDays, 4, "default forecast days")
             compare(w.degSym, "°C", "celsius degree symbol")
@@ -143,6 +142,12 @@ Item {
         when: windowShown
         function init() { tryVerify(function () { return h.ready }, 3000); clearSettings(h) }
         function set(k, v) { h.storeCtl.setSetting("test-instance", k, v) }
+
+        function test_location_mode_is_persisted_for_conditional_configuration() {
+            set("locationMode", "manual")
+            compare(h.storeCtl.settingsFor("test-instance").locationMode, "manual",
+                    "locationMode selects the manual-coordinate configuration branch")
+        }
 
         function test_lat_lon_place_honored() {
             var w = h.item
@@ -169,8 +174,8 @@ Item {
                 compare(w.forecastDays, n, "forecastDays honored = " + n)
             }
         }
-        // locKey drives the debounced refetch: lat/lon/units/forecastDays must
-        // all be part of it so an edit to any of them re-fetches.
+        // locKey drives the debounced refetch. Every provider-affecting unit and
+        // location choice must be part of it.
         function test_lockey_covers_every_fetch_input() {
             var w = h.item
             h.storeCtl.patchSettings("test-instance",
@@ -179,32 +184,36 @@ Item {
             set("lat", 11);          verify(w.locKey !== base, "lat change re-keys"); base = w.locKey
             set("lon", 21);          verify(w.locKey !== base, "lon change re-keys"); base = w.locKey
             set("units", "fahrenheit"); verify(w.locKey !== base, "units change re-keys"); base = w.locKey
+            set("windUnits", "mph"); verify(w.locKey !== base, "wind unit change re-keys"); base = w.locKey
+            set("precipitationUnits", "inch")
+            verify(w.locKey !== base, "precipitation unit change re-keys"); base = w.locKey
             set("forecastDays", 5);  verify(w.locKey !== base, "forecastDays change re-keys")
         }
     }
 
-    // ── weatherGlyph: full WMO-code mapping ──────────────────────────────────
+    // Deterministic condition classification drives the Canvas artwork.
     TestCase {
         name: "WeatherGlyph"
         when: windowShown
         function init() { tryVerify(function () { return h.ready }, 3000) }
 
-        function test_glyph_mapping() {
+        function test_condition_kind_mapping() {
             var w = h.item
-            compare(w.weatherGlyph(0), "☀️", "clear")
-            compare(w.weatherGlyph(1), "⛅", "mainly clear")
-            compare(w.weatherGlyph(2), "⛅", "partly cloudy")
-            compare(w.weatherGlyph(3), "☁️", "overcast")
-            compare(w.weatherGlyph(45), "🌫️", "fog")
-            compare(w.weatherGlyph(48), "🌫️", "rime fog")
-            compare(w.weatherGlyph(53), "🌦️", "drizzle")
-            compare(w.weatherGlyph(63), "🌧️", "rain")
-            compare(w.weatherGlyph(73), "🌨️", "snow")
-            compare(w.weatherGlyph(81), "🌧️", "rain showers")
-            compare(w.weatherGlyph(85), "🌨️", "snow showers")
-            compare(w.weatherGlyph(95), "⛈️", "thunderstorm")
-            compare(w.weatherGlyph(99), "⛈️", "thunderstorm w/ hail")
-            compare(w.weatherGlyph(40), "🌡️", "unmapped code → fallback")
+            compare(w.weatherKind(0), "clear")
+            compare(w.weatherKind(1), "partly-cloudy")
+            compare(w.weatherKind(2), "partly-cloudy")
+            compare(w.weatherKind(3), "cloudy")
+            compare(w.weatherKind(45), "fog")
+            compare(w.weatherKind(48), "fog")
+            compare(w.weatherKind(53), "rain")
+            compare(w.weatherKind(63), "rain")
+            compare(w.weatherKind(73), "snow")
+            compare(w.weatherKind(81), "rain")
+            compare(w.weatherKind(85), "snow")
+            compare(w.weatherKind(95), "storm")
+            compare(w.weatherKind(99), "storm")
+            compare(w.weatherKind(40), "unknown")
+            compare(w.weatherDescription(95), "Thunderstorm")
         }
     }
 
@@ -296,15 +305,17 @@ Item {
         // AUDIT (line 72, medium): on a non-200 / offline result errorText is set
         // but `loaded` stays true and curTemp/days are never invalidated, so the
         // big temperature keeps showing the last city's number as if it were live.
-        function test_error_does_not_keep_current_temp() {
+        function test_error_keeps_last_temp_but_labels_it_as_error() {
             var w = h.item
+            h.storeCtl.patchSettings("test-instance", { lat: 48.2, lon: 16.37, place: "Vienna" })
             seedLoaded(w, [{ day: "Today", code: 0, max: 26, min: 12 }])
             compare(tempNode(h).text, "20°C", "shows current temp while loaded")
             // Reproduce the exact post-failure state refresh() leaves behind.
             w.errorText = "Offline"
-            var node = tempNode(h)
-            verify(node === null || !node.visible,
-                   "with an error present, the stale current temperature must no longer be shown as live")
+            compare(w.loaded, true, "the last useful reading remains retained")
+            compare(w.curTemp, 20)
+            compare(w.status, "Offline", "the active surface labels the connectivity failure")
+            compare(w.providerState, "disconnected")
         }
     }
 
@@ -423,7 +434,9 @@ Item {
         }
 
         function test_schema_exposes_every_widget_key() {
-            var required = ["place", "lat", "lon", "units", "forecastDays", "title", "accent"]
+            var required = ["place", "locationMode", "lat", "lon", "units",
+                            "windUnits", "precipitationUnits", "forecastDays",
+                            "title", "accent"]
             for (var r = 0; r < required.length; r++)
                 verify(fieldByKey(required[r]) !== null, "schema exposes '" + required[r] + "'")
         }
@@ -445,6 +458,15 @@ Item {
             var vals = f.options.map(function (o) { return o.value })
             verify(vals.indexOf("celsius") >= 0 && vals.indexOf("fahrenheit") >= 0,
                    "offers both °C and °F")
+            var wind = fieldByKey("windUnits")
+            compare(wind.type, "segmented")
+            var windVals = wind.options.map(function (o) { return o.value })
+            verify(windVals.indexOf("kmh") >= 0 && windVals.indexOf("mph") >= 0
+                   && windVals.indexOf("ms") >= 0)
+            var rain = fieldByKey("precipitationUnits")
+            compare(rain.type, "segmented")
+            var rainVals = rain.options.map(function (o) { return o.value })
+            verify(rainVals.indexOf("mm") >= 0 && rainVals.indexOf("inch") >= 0)
         }
     }
 
@@ -453,7 +475,10 @@ Item {
         name: "WeatherSizes"
         when: windowShown
 
-        function initTestCase() { tryVerify(function () { return hS.ready }, 3000) }
+        function initTestCase() {
+            tryVerify(function () { return hS.ready }, 3000)
+            hS.storeCtl.patchSettings(hS.instanceId, { lat: 48.2, lon: 16.37, place: "Vienna" })
+        }
 
         function days(n) {
             var names = ["Today", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]

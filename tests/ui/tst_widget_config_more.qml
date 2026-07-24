@@ -121,7 +121,7 @@ Item {
 
         // ── segmented: "Center reading" (unit: percent | gb) ─────────────────
         // Observable: the gauge's centre Text and its supporting line SWAP -
-        // percent mode reads "40%" over "8.0 / 16.0 GB", gb mode reads "8.0 GB"
+        // percent mode reads "40%" over "8.0 / 16.0 GiB", gb mode reads "8.0 GiB"
         // over "40%". Both are rendered Text nodes, captured by exact string.
         function test_unit_field_swaps_the_rendered_centre_reading() {
             var w = ramH.item
@@ -135,8 +135,8 @@ Item {
             compare(g.big, "40%", "precondition: percent mode leads with the percentage")
             verify(findExactText(w, "40%") !== null,
                    "the centre Text renders '40%' by default")
-            verify(findExactText(w, "8.0 GB") === null,
-                   "and the GB reading is NOT rendered by default")
+            verify(g.sub.indexOf("used 8.0") === 0,
+                   "and the supporting line explains the used memory by default")
 
             ramH.storeCtl.setSetting("test-instance", "unit", "gb")
 
@@ -146,14 +146,14 @@ Item {
             compare(w.unit, "gb", "widget re-reads unit from the store")
 
             // (b) the rendered readout actually swaps.
-            compare(findGauge(w).big, "8.0 GB",
-                    "the centre reading becomes the used-GB figure")
-            verify(findExactText(w, "8.0 GB") !== null,
+            compare(findGauge(w).big, "8.0 GiB",
+                    "the centre reading becomes the used-GiB figure")
+            verify(findExactText(w, "8.0 GiB") !== null,
                    "and a Text node renders it")
-            verify(findExactText(w, "8.0 / 16.0 GB") === null,
+            verify(findExactText(w, "8.0 / 16.0 GiB") === null,
                    "the used/total sub-line is replaced, not shown alongside")
             compare(findGauge(w).sub, "40%",
-                    "the sub-line reports the percentage instead of repeating GB")
+                    "the sub-line reports the percentage instead of repeating GiB")
         }
 
         // ── toggle: "Show the history graph" ─────────────────────────────────
@@ -288,8 +288,8 @@ Item {
                     "dateStyle lands in the tile's settings")
             compare(w.dateStyle, "short", "widget re-reads dateStyle from the store")
 
-            verify(/^\d{2}\/\d{2}$/.test(d.text),
-                   "the same Text now renders the numeric dd/MM form - got '" + d.text + "'")
+            compare(d.text, Qt.formatDate(new Date(), w.localeShortDatePattern()),
+                    "the same Text now renders the locale's real short-date form")
             verify(/^[A-Za-z]{3}$/.test(w.status),
                    "and the header picks up the weekday the short form drops - got '" + w.status + "'")
             verify(findExactText(w, w.status) !== null,
@@ -380,8 +380,8 @@ Item {
             hydH.storeCtl.patchSettings("test-instance", { day: todayKey(), count: 2 })
             compare(w.count, 2, "precondition: two glasses logged today")
             compare(w.glassMl, 250, "precondition: the default glass is 250 ml")
-            verify(findExactText(w, "500 ml today") !== null,
-                   "precondition: 2 × 250 ml renders as '500 ml today'")
+            verify(findExactText(w, "500 ml today  ·  250 ml per glass") !== null,
+                   "precondition: the expanded summary renders volume and serving size")
 
             hydH.storeCtl.setSetting("test-instance", "glassMl", 600)
 
@@ -391,9 +391,9 @@ Item {
 
             compare(w.volumeText(), "1.2 L",
                     "2 × 600 ml is reported as 1.2 L")
-            verify(findExactText(w, "1.2 L today") !== null,
-                   "the volume line renders the new total in litres")
-            verify(findExactText(w, "500 ml today") === null,
+            verify(findExactText(w, "1.2 L today  ·  600 ml per glass") !== null,
+                   "the volume line renders the new total and serving size")
+            verify(findExactText(w, "500 ml today  ·  250 ml per glass") === null,
                    "and the old 250 ml total is no longer rendered")
         }
     }
@@ -420,8 +420,10 @@ Item {
             var w = notesH.item
             var preview = findExactText(w, "Tap to jot a note…")
             verify(preview !== null, "precondition: the empty note shows the placeholder")
-            verify(Qt.colorEqual(preview.color, notesH.theme.textTertiary),
-                   "precondition: the placeholder is drawn in the tertiary tone")
+            verify(Qt.colorEqual(preview.color, notesH.theme.textPrimary),
+                   "precondition: the placeholder uses the legible primary tone")
+            fuzzyCompare(preview.opacity, 0.78, 0.01,
+                         "the placeholder is distinguished without reducing contrast")
 
             notesH.storeCtl.setSetting("test-instance", "text", "Buy milk")
 
@@ -433,6 +435,8 @@ Item {
                     "the very Text that showed the placeholder now renders the note")
             verify(Qt.colorEqual(preview.color, notesH.theme.textPrimary),
                    "and it is promoted to the primary body colour")
+            fuzzyCompare(preview.opacity, 1, 0.01,
+                         "and the saved note uses full opacity")
         }
 
         // A whitespace-only note is deliberately treated as empty: the preview
@@ -449,8 +453,10 @@ Item {
                     "the whitespace note lands in the tile's settings verbatim")
             compare(preview.text, "Tap to jot a note…",
                     "the preview falls back to the placeholder for an empty note")
-            verify(Qt.colorEqual(preview.color, notesH.theme.textTertiary),
-                   "and back to the tertiary placeholder tone")
+            verify(Qt.colorEqual(preview.color, notesH.theme.textPrimary),
+                   "and keeps the legible primary placeholder tone")
+            fuzzyCompare(preview.opacity, 0.78, 0.01,
+                         "while returning to the placeholder opacity")
         }
     }
 
@@ -472,7 +478,7 @@ Item {
             // otherwise it would wipe the seed a moment later.
             wait(500)
             kpiH.storeCtl.patchSettings("test-instance", {
-                source: "file", filePath: "/dev/null",
+                source: "file", filePath: "/proc/uptime",
                 httpErr: "", httpVal: v, httpText: "" + v
             })
             compare(kpiH.item.valText, "" + v, "the seeded reading is what the widget shows")

@@ -346,7 +346,7 @@ Item {
             compare(root.store()._catalog.sizesFor("user.hello").length, 2)
 
             // Add a tile of the user type through the real store → the real
-            // tile pipeline loads the file:// entry and injectWidget seeds the
+            // tile pipeline loads the file:// entry and WidgetHost seeds the
             // manifest defaults ({who:"fixture"}).
             root.store().addTile(0, "user.hello")
             var tiles = root.store().pages()[0].tiles

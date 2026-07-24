@@ -110,6 +110,7 @@ Item {
             if (p.settings) for (var k in p.settings) s[k] = p.settings[k]
             for (var kk in s) wh.storeCtl.setSetting(wh.instanceId, kk, s[kk])
             feed(p.metrics)
+            if (p.history) wh.item.hist = p.history.slice()
             wait(120)
         }
         function feed(m) {
@@ -131,6 +132,11 @@ Item {
             ]
         }
         function checkSize(row, readout, pfx) {
+            // Portrait half-screen tiles are taller than the suite's historical
+            // 720px landscape window. Grow the composed window before grabbing,
+            // otherwise Qt clips the bottom and a "size" screenshot silently
+            // judges only the first 720px of a 1226px widget.
+            root.height = Math.max(720, row.h)
             prep(row)
             wait(120)
             compare(wh.item.width, row.w, "cell width matches request")
@@ -146,10 +152,42 @@ Item {
         // ===================================================================
         //  CPU
         // ===================================================================
-        readonly property var cpuMetrics: ({ cpu_usage_percent: 42, cpu_temp_celsius: 55, cpu_core_count: 8 })
+        readonly property var cpuMetrics: ({
+            cpu_usage_available: true, cpu_sample_status: "ready",
+            cpu_usage_percent: 42, cpu_temp_celsius: 55, cpu_core_count: 8,
+            cpu_frequency_mhz: 4675, cpu_load_1: 1.34, cpu_load_5: 1.12,
+            cpu_load_15: 0.96, cpu_top_process_name: "rustc",
+            cpu_top_process_percent: 18,
+            cpu_core_usage_percent: [74, 66, 58, 52, 47, 39, 31, 22]
+        })
 
-        function test_cpu_00_sizes_data() { return sizeRows("CpuWidget.qml", cpuMetrics) }
-        function test_cpu_00_sizes(row) { checkSize(row, "42%", "cpu") }
+        function test_cpu_00_sizes_data() {
+            return [
+                { tag: "portrait-0.5x0.5",  file: "CpuWidget.qml", w: 348,  h: 409,  sizeClass: "compact", metrics: cpuMetrics, history: [0.24, 0.31, 0.38, 0.42] },
+                { tag: "landscape-0.5x0.5", file: "CpuWidget.qml", w: 423,  h: 306,  sizeClass: "compact", metrics: cpuMetrics, history: [0.24, 0.31, 0.38, 0.42] },
+                { tag: "portrait-0.5x1",    file: "CpuWidget.qml", w: 348,  h: 818,  sizeClass: "tall",    metrics: cpuMetrics, history: [0.24, 0.31, 0.38, 0.42] },
+                { tag: "landscape-0.5x1",   file: "CpuWidget.qml", w: 846,  h: 306,  sizeClass: "wide",    metrics: cpuMetrics, history: [0.24, 0.31, 0.38, 0.42] },
+                { tag: "portrait-1x0.5",    file: "CpuWidget.qml", w: 696,  h: 409,  sizeClass: "wide",    metrics: cpuMetrics, history: [0.24, 0.31, 0.38, 0.42] },
+                { tag: "landscape-1x0.5",   file: "CpuWidget.qml", w: 423,  h: 612,  sizeClass: "tall",    metrics: cpuMetrics, history: [0.24, 0.31, 0.38, 0.42] },
+                { tag: "portrait-1x1",      file: "CpuWidget.qml", w: 696,  h: 818,  sizeClass: "compact", metrics: cpuMetrics, history: [0.24, 0.31, 0.38, 0.42] },
+                { tag: "landscape-1x1",     file: "CpuWidget.qml", w: 846,  h: 612,  sizeClass: "compact", metrics: cpuMetrics, history: [0.24, 0.31, 0.38, 0.42] },
+                { tag: "portrait-1x1.5",    file: "CpuWidget.qml", w: 696,  h: 1226, sizeClass: "tall",    metrics: cpuMetrics, history: [0.24, 0.31, 0.38, 0.42] },
+                { tag: "landscape-1x1.5",   file: "CpuWidget.qml", w: 1268, h: 612,  sizeClass: "wide",    metrics: cpuMetrics, history: [0.24, 0.31, 0.38, 0.42] }
+            ]
+        }
+        function test_cpu_00_sizes(row) {
+            checkSize(row, "42%", "cpu")
+            if (row.tag.indexOf("0.5x0.5") < 0)
+                verify(wh.item.hist.length >= 2, "the visual gate contains real history")
+            var strip = G.byObjName(wh.item, "metricDetailStrip")
+            verify(strip !== null, "CPU detail strip exists")
+            compare(strip.visible, row.tag.indexOf("0.5x0.5") < 0,
+                    "only the true micro tile omits glanceable detail")
+            var cores = G.byObjName(wh.item, "cpuCorePanel")
+            verify(cores !== null, "CPU core panel exists")
+            compare(cores.visible, row.tag.indexOf("1x1.5") >= 0,
+                    "the half-screen tile earns per-core distribution")
+        }
 
         function test_cpu_10_showTemp_data() {
             return [ { tag: "on", on: true }, { tag: "off", on: false } ]
@@ -331,10 +369,42 @@ Item {
         // ===================================================================
         //  GPU
         // ===================================================================
-        readonly property var gpuMetrics: ({ gpu_usage_percent: 42, gpu_temp_celsius: 55 })
+        readonly property var gpuMetrics: ({
+            gpu_primary_id: "card1",
+            gpu_devices: [ {
+                id: "card1", name: "Radeon RX 7900 XTX", vendor: "AMD",
+                driver: "amdgpu", device_type: "discrete", usage_percent: 42,
+                temperature_celsius: 55, vram_used_bytes: 7516192768,
+                vram_total_bytes: 25769803776, power_watts: 188,
+                clock_mhz: 2487, fan_rpm: 1320
+            } ]
+        })
 
-        function test_gpu_00_sizes_data() { return sizeRows("GpuWidget.qml", gpuMetrics) }
-        function test_gpu_00_sizes(row) { checkSize(row, "42%", "gpu") }
+        function test_gpu_00_sizes_data() {
+            return [
+                { tag: "portrait-0.5x0.5",  file: "GpuWidget.qml", w: 348,  h: 409,  sizeClass: "compact", metrics: gpuMetrics, history: [0.28, 0.34, 0.39, 0.42] },
+                { tag: "landscape-0.5x0.5", file: "GpuWidget.qml", w: 423,  h: 306,  sizeClass: "compact", metrics: gpuMetrics, history: [0.28, 0.34, 0.39, 0.42] },
+                { tag: "portrait-0.5x1",    file: "GpuWidget.qml", w: 348,  h: 818,  sizeClass: "tall",    metrics: gpuMetrics, history: [0.28, 0.34, 0.39, 0.42] },
+                { tag: "landscape-0.5x1",   file: "GpuWidget.qml", w: 846,  h: 306,  sizeClass: "wide",    metrics: gpuMetrics, history: [0.28, 0.34, 0.39, 0.42] },
+                { tag: "portrait-1x0.5",    file: "GpuWidget.qml", w: 696,  h: 409,  sizeClass: "wide",    metrics: gpuMetrics, history: [0.28, 0.34, 0.39, 0.42] },
+                { tag: "landscape-1x0.5",   file: "GpuWidget.qml", w: 423,  h: 612,  sizeClass: "tall",    metrics: gpuMetrics, history: [0.28, 0.34, 0.39, 0.42] },
+                { tag: "portrait-1x1",      file: "GpuWidget.qml", w: 696,  h: 818,  sizeClass: "compact", metrics: gpuMetrics, history: [0.28, 0.34, 0.39, 0.42] },
+                { tag: "landscape-1x1",     file: "GpuWidget.qml", w: 846,  h: 612,  sizeClass: "compact", metrics: gpuMetrics, history: [0.28, 0.34, 0.39, 0.42] },
+                { tag: "portrait-1x1.5",    file: "GpuWidget.qml", w: 696,  h: 1226, sizeClass: "tall",    metrics: gpuMetrics, history: [0.28, 0.34, 0.39, 0.42] },
+                { tag: "landscape-1x1.5",   file: "GpuWidget.qml", w: 1268, h: 612,  sizeClass: "wide",    metrics: gpuMetrics, history: [0.28, 0.34, 0.39, 0.42] }
+            ]
+        }
+        function test_gpu_00_sizes(row) {
+            checkSize(row, "42%", "gpu")
+            var strip = G.byObjName(wh.item, "metricDetailStrip")
+            verify(strip !== null, "GPU detail strip exists")
+            compare(strip.visible, row.tag.indexOf("0.5x0.5") < 0,
+                    "only the true micro tile omits GPU telemetry detail")
+            var panel = G.byObjName(wh.item, "gpuDetailPanel")
+            verify(panel !== null, "GPU identity panel exists")
+            compare(panel.visible, row.tag.indexOf("1x1.5") >= 0,
+                    "the half-screen tile earns full device identity")
+        }
 
         function test_gpu_10_showTemp_data() {
             return [ { tag: "on", on: true }, { tag: "off", on: false } ]
@@ -472,7 +542,8 @@ Item {
                    metrics: { gpu_usage_percent: 30, gpu_temp_celsius: 95 } })
             wait(200)
             snap(wh, "gpu_state_header_status")
-            compare(wh.item.status, "95°C", "header status is the temperature")
+            compare(wh.item.status, "95°C · Critical temperature",
+                    "header reports the temperature and non-color critical state")
             verify(G.colorDist("" + wh.item.statusColor, "" + wh.theme.error) < 40,
                    "header status colour is error when temp exceeds warn")
         }
@@ -516,16 +587,51 @@ Item {
         //  RAM
         // ===================================================================
         readonly property real gib: 1073741824
-        readonly property var ramMetrics: ({ ram_usage_percent: 55,
-                                             ram_used_bytes: 8 * 1073741824,
-                                             ram_total_bytes: 16 * 1073741824 })
+        readonly property var ramMetrics: ({
+            ram_metrics_available: true, ram_usage_percent: 55,
+            ram_used_bytes: 8 * 1073741824,
+            ram_total_bytes: 16 * 1073741824,
+            ram_available_bytes: 7.2 * 1073741824,
+            ram_cached_bytes: 3.4 * 1073741824,
+            ram_buffers_bytes: 0.6 * 1073741824,
+            swap_used_bytes: 1.1 * 1073741824,
+            swap_total_bytes: 8 * 1073741824,
+            ram_pressure_some_avg10: 0.72
+        })
 
-        function test_ram_00_sizes_data() { return sizeRows("RamWidget.qml", ramMetrics) }
-        function test_ram_00_sizes(row) { checkSize(row, "55%", "ram") }
+        function test_ram_00_sizes_data() {
+            return [
+                { tag: "portrait-0.5x0.5",  file: "RamWidget.qml", w: 348,  h: 409,  sizeClass: "compact", metrics: ramMetrics, history: [0.48, 0.51, 0.53, 0.55] },
+                { tag: "landscape-0.5x0.5", file: "RamWidget.qml", w: 423,  h: 306,  sizeClass: "compact", metrics: ramMetrics, history: [0.48, 0.51, 0.53, 0.55] },
+                { tag: "portrait-0.5x1",    file: "RamWidget.qml", w: 348,  h: 818,  sizeClass: "tall",    metrics: ramMetrics, history: [0.48, 0.51, 0.53, 0.55] },
+                { tag: "landscape-0.5x1",   file: "RamWidget.qml", w: 846,  h: 306,  sizeClass: "wide",    metrics: ramMetrics, history: [0.48, 0.51, 0.53, 0.55] },
+                { tag: "portrait-1x0.5",    file: "RamWidget.qml", w: 696,  h: 409,  sizeClass: "wide",    metrics: ramMetrics, history: [0.48, 0.51, 0.53, 0.55] },
+                { tag: "landscape-1x0.5",   file: "RamWidget.qml", w: 423,  h: 612,  sizeClass: "tall",    metrics: ramMetrics, history: [0.48, 0.51, 0.53, 0.55] },
+                { tag: "portrait-1x1",      file: "RamWidget.qml", w: 696,  h: 818,  sizeClass: "compact", metrics: ramMetrics, history: [0.48, 0.51, 0.53, 0.55] },
+                { tag: "landscape-1x1",     file: "RamWidget.qml", w: 846,  h: 612,  sizeClass: "compact", metrics: ramMetrics, history: [0.48, 0.51, 0.53, 0.55] },
+                { tag: "portrait-1x1.5",    file: "RamWidget.qml", w: 696,  h: 1226, sizeClass: "tall",    metrics: ramMetrics, history: [0.48, 0.51, 0.53, 0.55] },
+                { tag: "landscape-1x1.5",   file: "RamWidget.qml", w: 1268, h: 612,  sizeClass: "wide",    metrics: ramMetrics, history: [0.48, 0.51, 0.53, 0.55] }
+            ]
+        }
+        function test_ram_00_sizes(row) {
+            checkSize(row, "55%", "ram")
+            var micro = row.tag.indexOf("0.5x0.5") >= 0
+            var complete = row.tag.indexOf("1x1.5") >= 0
+            var glance = !micro && !complete
+                         && (row.sizeClass === "wide" || row.sizeClass === "tall")
+            var strip = G.byObjName(wh.item, "metricDetailStrip")
+            verify(strip !== null, "RAM detail strip exists")
+            compare(strip.visible, glance,
+                    "only wide and tall intermediate sizes use the glance strip")
+            var panel = G.byObjName(wh.item, "ramDetailPanel")
+            verify(panel !== null, "RAM roomy detail panel exists")
+            compare(panel.visible, complete,
+                    "the largest declared tile earns the complete memory breakdown")
+        }
 
         function test_ram_10_unit_data() {
             return [ { tag: "percent", unit: "percent", readout: "55%" },
-                     { tag: "gb",      unit: "gb",      readout: "8.0 GB" } ]
+                     { tag: "gb",      unit: "gb",      readout: "8.0 GiB" } ]
         }
         function test_ram_10_unit(row) {
             prep({ file: "RamWidget.qml", w: 620, h: 560, sizeClass: "compact",
@@ -589,18 +695,18 @@ Item {
             prep({ file: "RamWidget.qml", w: 620, h: 560, sizeClass: "compact",
                    settings: { unit: "gb" }, metrics: ramMetrics })
             wait(150)
-            var v = G.byText(wh.item, "8.0 GB")
+            var v = G.byText(wh.item, "8.0 GiB")
             snap(wh, "ram_state_gb")
-            verify(v && v.visible, "gb mode centre shows used GB (8.0 GB)")
+            verify(v && v.visible, "gb mode centre shows used GiB (8.0 GiB)")
         }
 
         function test_ram_23_state_usedtotal() {
             prep({ file: "RamWidget.qml", w: 620, h: 560, sizeClass: "compact",
                    settings: { unit: "percent" }, metrics: ramMetrics })
             wait(150)
-            var sub = G.byText(wh.item, "8.0 / 16.0 GB")
+            var sub = G.byText(wh.item, "used 8.0 · available 7.2 GiB")
             snap(wh, "ram_state_usedtotal")
-            verify(sub && sub.visible, "sub-line shows used / total GB")
+            verify(sub && sub.visible, "sub-line distinguishes used and available GiB")
         }
 
         function test_ram_24_state_micro() {

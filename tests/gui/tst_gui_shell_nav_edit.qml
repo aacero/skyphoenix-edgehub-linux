@@ -68,8 +68,8 @@ Item {
             catch (e) { return false }
         })
     }
-    function indicatorDelegate(pi, idx) { return G.findPred(pi, function (n) { try { return n && n.implicitHeight === 44 && n.index === idx } catch (e) { return false } }) }
-    function innerRect(del) { return G.findPred(del, function (n) { try { return n && n.radius !== undefined && n.border !== undefined && Math.round(n.height) === 14 } catch (e) { return false } }) }
+    function indicatorDelegate(pi, idx) { return G.byObjName(pi, "pageIndicatorDelegate-" + idx) }
+    function innerRect(del) { return G.byObjName(del, "pageIndicatorChip-" + del.index) }
     function allTileIds(s) { var out = []; var ps = s.pages(); for (var p = 0; p < ps.length; p++) { var t = ps[p].tiles || []; for (var i = 0; i < t.length; i++) out.push(t[i].id) } return out }
     function findNewId(before, after) { for (var i = 0; i < after.length; i++) if (before.indexOf(after[i]) < 0) return after[i]; return "" }
 
@@ -301,6 +301,9 @@ Item {
             sw.goToPage(d.removeAt); tryVerify(function () { return sw.currentIndex === d.removeAt }, 4000)
             var del = barBtn("ui-del-page"); verify(del && del.visible, "del-page button visible with >1 page")
             clickItem(del)
+            tryVerify(function () { return db.pageDeleteDialog.visible }, 2000,
+                      "remove confirmation is shown")
+            clickItem(db.pageDeleteConfirmButton)
             tryVerify(function () { return sw.count === d.pages - 1 }, 4000, "page removed")
             wait(900)
             verify(sw.currentIndex >= 0 && sw.currentIndex < sw.count, "index re-clamped into range after remove")
@@ -433,7 +436,8 @@ Item {
             var s = store(); s.addPage("")
             var pi = pageInd(); tryVerify(function () { return pi.count === 2 }, 4000); wait(150)
             var del = indicatorDelegate(pi, 0); verify(del, "chip delegate present")
-            compare(Math.round(del.implicitHeight), 44, "chip hit-area is 44px (touch sized)")
+            verify(Math.round(del.implicitHeight) >= 44,
+                   "chip hit-area is at least 44px (touch sized)")
         }
 
         // NAV-37 - page-name label shows the current page name.
@@ -873,7 +877,7 @@ Item {
             tryVerify(function () { return db.hasExpanded === false }, 4000, "back button closed the overlay")
         }
 
-        // EDIT-48 - a config action (Reset to defaults) persists to the store.
+        // EDIT-48 - a confirmed config reset persists without erasing personal data.
         function test_edit_overlay_reset_writes_store() {
             resetShell("portrait")
             var s = store(), db = dash()
@@ -881,7 +885,10 @@ Item {
             clickIcon(cellFor(id), "ui-expand"); tryVerify(function () { return db.hasExpanded }, 4000); wait(150)
             s.setSetting(id, "goal", 99); verify(s.settingsFor(id).goal === 99, "seeded a non-default value")
             var rev0 = s.revision
-            verify(clickText(overlayItem(), "Reset to defaults"), "clicked Reset to defaults")
+            verify(clickText(overlayItem(), "Reset configuration"), "clicked Reset configuration")
+            tryVerify(function () { return db.widgetDataDialog.visible }, 3000,
+                      "scoped reset confirmation opened")
+            db.widgetDataConfirmButton.clicked()
             tryVerify(function () { return s.settingsFor(id).goal === 8 }, 4000, "config reset persisted (goal back to default 8)")
             verify(s.revision > rev0, "store revision bumped by the config action")
         }

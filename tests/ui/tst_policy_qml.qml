@@ -20,8 +20,8 @@ import "../../ui/qml" as App
 //   • the "Managed by your organization" line is visible exactly when managed
 //
 // The real Dashboard.qml is loaded via a Loader exactly as tst_dashboard.qml
-// does; the store and tile loaders are duck-typed out of the object graph, and
-// the app-global NetHub is obtained through injectWidget's own injection seam.
+// does; the store and tile hosts are duck-typed out of the object graph, and
+// the app-global NetHub is exposed by Dashboard's host contract.
 Item {
     id: root
     width: 900; height: 600
@@ -58,19 +58,6 @@ Item {
 
     Loader { id: ld; anchors.fill: parent }
 
-    // A stand-in widget exposing the injection contract, so injectWidget hands
-    // us the app-global NetHub (a QtObject - not reachable via children).
-    Component {
-        id: probeWidget
-        QtObject {
-            property string instanceId: ""
-            property var store: null
-            property bool expanded: false
-            property var metrics: ({})
-            property var netHub: null
-        }
-    }
-
     // A fake XHR so the allowlist tests never open a socket (see tst_nethub).
     function makeFake() {
         return {
@@ -105,11 +92,7 @@ Item {
         return _store
     }
     function netHub() {
-        var probe = probeWidget.createObject(root)
-        ld.item.injectWidget(probe, "policy-probe", "clock", false, null)
-        var hub = probe.netHub
-        probe.destroy()
-        return hub
+        return ld.item ? ld.item.netGate : null
     }
     function tileLoaderFor(type) {
         return findPred(ld.item, function (x) {
@@ -270,8 +253,8 @@ Item {
             tryVerify(function () { return root.tileLoaderFor("clock") !== null }, 5000)
             var blockedLd = root.tileLoaderFor("httpjson")
             verify(blockedLd !== null, "the disabled tile's loader exists")
-            compare(blockedLd.active, false, "…but never loads the widget")
-            compare(root.tileLoaderFor("clock").active, true, "allowed neighbour renders")
+            compare(blockedLd.loadEnabled, false, "…but never loads the widget")
+            compare(root.tileLoaderFor("clock").loadEnabled, true, "allowed neighbour renders")
         }
 
         // ── force_preset: locked layout, nothing persists ────────────────────

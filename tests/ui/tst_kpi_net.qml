@@ -2,7 +2,6 @@ import QtQuick
 import QtTest
 import "../../ui/qml" as App
 
-// COVERS: schema:source, schema:filePath, schema:invert
 //
 // ui/qml/widgets/KpiWidget.qml network + file path, offline via xhrFactory. Covers
 // the HTTP source, the LOCAL FILE source (file:// endpoint, works offline), JSON
@@ -23,7 +22,8 @@ Item {
             resolveWith: function (status, body) {
                 this.status = status; this.responseText = body; this.readyState = 4
                 if (this.onreadystatechange) this.onreadystatechange()
-            }
+            },
+            fireTimeout: function () { if (this.ontimeout) this.ontimeout() }
         }
     }
 
@@ -32,6 +32,29 @@ Item {
         widgetFile: "KpiWidget.qml"; expanded: true
     }
     App.WidgetConfigSchema { id: sc }
+    QtObject {
+        id: blockedHub
+        function request(options) {
+            options.onError("blocked")
+            return null
+        }
+    }
+    QtObject {
+        id: metricReader
+        property int calls: 0
+        property string lastPath: ""
+        property var nextResult: ({ ok: true, body: "7", error: "", message: "" })
+        function readMetricFile(path) {
+            calls++
+            lastPath = String(path)
+            return nextResult
+        }
+        function reset() {
+            calls = 0
+            lastPath = ""
+            nextResult = { ok: true, body: "7", error: "", message: "" }
+        }
+    }
     function iid() { return h.instanceId }
     function clearSettings() {
         var s = h.storeCtl.settingsFor(iid()); for (var k in s) delete s[k]; h.storeCtl._touchSettings()
@@ -44,6 +67,9 @@ Item {
         function init() {
             tryVerify(function () { return h.ready }, 3000)
             clearSettings(); h.active = false
+            h.item.netHub = null
+            metricReader.reset()
+            h.item.fileReader = metricReader
             h.item.xhrFactory = function () { lastFake = root.makeFake(); return lastFake }
         }
 
@@ -55,6 +81,15 @@ Item {
             lastFake.resolveWith(200, '{"stats":{"count":128}}')
             compare(h.item.valNum, 128)
             compare(h.item.valText, "128")
+            compare(h.item.providerState, "fresh")
+            compare(h.item.status, "")
+        }
+
+        function test_pending_request_is_loading() {
+            h.storeCtl.patchSettings(iid(), { source: "http", url: "https://api/loading" })
+            h.item.refresh()
+            compare(h.item.providerState, "loading")
+            compare(h.item.status, "Loading")
         }
 
         function test_http_bare_number_body() {
@@ -64,33 +99,147 @@ Item {
             compare(h.item.valNum, 42, "a bare numeric body is taken as the value")
         }
 
+        function test_raw_history_is_shared_and_wins_over_instance_local_state() {
+            h.storeCtl.patchSettings(iid(), {
+                source: "http", url: "https://api/x",
+                histRaw: [10, 20], hist: [0, 1]
+            })
+            // Simulate a stale second host. The next sample must extend the
+            // shared raw series, not normalize from this divergent local array.
+            h.item.hist = [900]
+            h.item._apply(30)
+            compare(JSON.stringify(h.storeCtl.settingsFor(iid()).histRaw),
+                    JSON.stringify([10, 20, 30]),
+                    "the shared raw history is the source of truth")
+            compare(JSON.stringify(h.item.histNorm), JSON.stringify([0, 0.5, 1]),
+                    "normalisation is derived from the shared raw series")
+        }
+
+        function test_poll_interval_honors_schema_minimum() {
+            h.storeCtl.patchSettings(iid(), {
+                source: "http", url: "https://api/x", pollSec: 2
+            })
+            compare(h.item.pollSec, 5,
+                    "runtime clamp matches the schema's five-second minimum")
+        }
+
+        function test_number_format_prefix_target_and_freshness() {
+            h.item.nowMsOverride = 500000
+            h.storeCtl.patchSettings(iid(), { source: "http", url: "https://api/x",
+                decimals: 2, prefix: "$", target: "40" })
+            h.item.refresh(); lastFake.resolveWith(200, "42.125")
+            compare(h.item.valText, "42.13")
+            compare(h.item.prefix, "$")
+            compare(h.item.deltaText, "+2.13 vs target")
+            compare(h.item.lastSuccessAt, 500000)
+            compare(h.item.stale, false)
+            h.item.nowMsOverride = 500000 + h.item.staleAfterSec * 1000
+            compare(h.item.stale, true)
+            compare(h.item.providerState, "stale")
+            compare(h.item.status, "Stale")
+            h.item.nowMsOverride = -1
+        }
+
         // ── local FILE source ────────────────────────────────────────────────
         function test_file_source_builds_file_url() {
             h.storeCtl.patchSettings(iid(), { source: "file", filePath: "/run/metrics/depth", jsonPath: "" })
             h.item.refresh()
-            compare(lastFake.url, "file:///run/metrics/depth", "a bare path becomes a file:// URL")
+            compare(metricReader.lastPath, "/run/metrics/depth")
+            compare(metricReader.calls, 1)
+            compare(h.item.valNum, 7)
         }
 
         function test_file_already_prefixed_is_left_alone() {
-            h.storeCtl.patchSettings(iid(), { source: "file", filePath: "file:///tmp/x", jsonPath: "" })
+            h.storeCtl.patchSettings(iid(), { source: "file", filePath: "file:///run/x", jsonPath: "" })
             h.item.refresh()
-            compare(lastFake.url, "file:///tmp/x")
+            compare(metricReader.lastPath, "file:///run/x")
         }
 
-        function test_file_status_zero_is_success() {
-            // A local file read reports status 0 (no HTTP layer) - must still succeed.
-            h.storeCtl.patchSettings(iid(), { source: "file", filePath: "/x", jsonPath: "" })
+        function test_file_outside_metric_directories_is_blocked() {
+            var before = metricReader.calls
+            h.storeCtl.patchSettings(iid(), {
+                source: "file", filePath: "/home/user/.ssh/id_ed25519", jsonPath: ""
+            })
+            compare(h.item.localPathApproved, false)
             h.item.refresh()
-            lastFake.resolveWith(0, "7")
-            compare(h.item.valNum, 7, "status 0 with a body is a valid local read")
+            compare(metricReader.calls, before,
+                    "an unapproved local path never reaches the native reader")
+            verify(h.item.errText.indexOf("approved metric directories") >= 0)
+        }
+
+        function test_native_file_reader_success_is_applied() {
+            h.storeCtl.patchSettings(iid(), { source: "file", filePath: "/run/x", jsonPath: "" })
+            metricReader.nextResult = { ok: true, body: "7", error: "", message: "" }
+            h.item.refresh()
+            compare(h.item.valNum, 7, "a bounded native file result is applied")
             compare(h.item.errText, "")
         }
 
         function test_non_numeric_file_shows_as_text() {
-            h.storeCtl.patchSettings(iid(), { source: "file", filePath: "/x", jsonPath: "" })
+            h.storeCtl.patchSettings(iid(), { source: "file", filePath: "/run/x", jsonPath: "" })
+            metricReader.nextResult = { ok: true, body: "degraded", error: "", message: "" }
             h.item.refresh()
-            lastFake.resolveWith(0, "degraded")
             compare(h.item.valText, "degraded")
+        }
+
+        function test_native_file_rejection_is_actionable() {
+            h.storeCtl.patchSettings(iid(), {
+                source: "file", filePath: "/run/metrics/depth", jsonPath: ""
+            })
+            metricReader.nextResult = {
+                ok: false, body: "", error: "symlink",
+                message: "Symbolic-link metric files are not allowed."
+            }
+            h.item.refresh()
+            compare(h.item.errText, "Symbolic-link metric files are not allowed.")
+            verify(h.item.errorHelp.indexOf("symlink") >= 0)
+        }
+
+        function test_source_test_previews_without_replacing_live_value() {
+            h.storeCtl.patchSettings(iid(), {
+                source: "http", url: "https://api/x", jsonPath: "v",
+                httpText: "17", httpVal: 17, warnAt: "20", critAt: "30"
+            })
+            h.item.testConnection()
+            lastFake.resolveWith(200, '{"v":25}')
+            verify(h.item.connectionStatus.indexOf("HTTP 200") >= 0)
+            verify(h.item.connectionStatus.indexOf("Warning") >= 0)
+            compare(h.item.valNum, 17)
+
+            h.storeCtl.patchSettings(iid(), {
+                source: "file", filePath: "/run/metrics/depth", jsonPath: ""
+            })
+            metricReader.nextResult = { ok: true, body: "31", error: "", message: "" }
+            h.item.testConnection()
+            verify(h.item.connectionStatus.indexOf("Local file ready") >= 0)
+            verify(h.item.connectionStatus.indexOf("Critical") >= 0)
+        }
+
+        function test_failed_refresh_preserves_last_successful_value() {
+            h.storeCtl.patchSettings(iid(), { source: "http", url: "https://api/x" })
+            h.item.refresh(); lastFake.resolveWith(200, "17")
+            h.item.refresh(); lastFake.resolveWith(503, "")
+            compare(h.item.errText, "Unavailable")
+            compare(h.item.valText, "17")
+            compare(h.item.providerState, "error")
+            compare(h.item.status, "Error")
+        }
+
+        function test_timeout_is_disconnected() {
+            h.storeCtl.patchSettings(iid(), { source: "http", url: "https://api/slow" })
+            h.item.refresh(); lastFake.fireTimeout()
+            compare(h.item.errText, "Timed out")
+            compare(h.item.providerState, "disconnected")
+            compare(h.item.status, "Offline")
+        }
+
+        function test_policy_block_has_its_own_state() {
+            h.item.netHub = blockedHub
+            h.storeCtl.patchSettings(iid(), { source: "http", url: "https://api/blocked" })
+            h.item.refresh()
+            compare(h.item.errText, "Blocked")
+            compare(h.item.providerState, "blocked")
+            compare(h.item.status, "Blocked")
         }
 
         // ── thresholds ───────────────────────────────────────────────────────
@@ -98,8 +247,10 @@ Item {
             h.storeCtl.patchSettings(iid(), { source: "http", url: "https://a/x", jsonPath: "", warnAt: "80", critAt: "95" })
             h.item.refresh(); lastFake.resolveWith(200, "50")
             compare(h.item.valColor, h.item.effAccent, "below warn → accent")
+            compare(h.item.thresholdState, "Normal")
             h.item.refresh(); lastFake.resolveWith(200, "97")
             compare(h.item.valColor, h.theme.error, "≥ crit → red")
+            compare(h.item.thresholdState, "Critical")
         }
 
         function test_inverted_thresholds_lower_is_worse() {
@@ -109,8 +260,20 @@ Item {
             compare(h.item.valColor, h.item.effAccent, "well above → accent")
             h.item.refresh(); lastFake.resolveWith(200, "80")
             compare(h.item.valColor, h.theme.warning, "≤ warn → amber (lower is worse)")
+            compare(h.item.thresholdState, "Warning")
             h.item.refresh(); lastFake.resolveWith(200, "40")
             compare(h.item.valColor, h.theme.error, "≤ crit → red")
+            compare(h.item.thresholdState, "Critical")
+        }
+
+        function test_invalid_threshold_order_is_explained() {
+            h.storeCtl.patchSettings(iid(), {
+                source: "http", url: "https://a/x", warnAt: "90", critAt: "50",
+                invert: false
+            })
+            verify(h.item.thresholdConfigError.indexOf("less than") >= 0)
+            h.storeCtl.patchSettings(iid(), { invert: true, warnAt: "40", critAt: "80" })
+            verify(h.item.thresholdConfigError.indexOf("Lower is worse") >= 0)
         }
 
         function test_unconfigured_does_not_fetch() {
@@ -119,6 +282,8 @@ Item {
             lastFake = null
             h.item.refresh()
             verify(lastFake === null, "no request without an endpoint")
+            compare(h.item.providerState, "unconfigured")
+            compare(h.item.status, "Setup")
         }
     }
 
@@ -139,6 +304,17 @@ Item {
             verify(k["source"] === true, "kpi schema exposes source")
             verify(k["filePath"] === true, "kpi schema exposes filePath")
             verify(k["invert"] === true, "kpi schema exposes invert")
+            verify(k["prefix"] === true, "kpi schema exposes prefix")
+            verify(k["decimals"] === true, "kpi schema exposes decimals")
+            verify(k["target"] === true, "kpi schema exposes target")
+        }
+
+        function test_schema_exposes_test_source_action() {
+            var s = sc.schemaFor("kpi"), found = false
+            for (var i = 0; i < s.sections.length; i++)
+                for (var j = 0; j < (s.sections[i].fields || []).length; j++)
+                    if (s.sections[i].fields[j].action === "testConnection") found = true
+            verify(found, "KPI schema exposes Test source")
         }
     }
 

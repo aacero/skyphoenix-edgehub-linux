@@ -1,7 +1,6 @@
 import QtQuick
 import QtTest
 
-// COVERS: schema:name
 
 // ─────────────────────────────────────────────────────────────────────────
 // Comprehensive coverage for the Habit streak widget
@@ -125,11 +124,49 @@ Item {
             compare(occurrences(cfg().checkins, w.todayKey), 0, "today's key gone from storage")
         }
 
-        function test_status_compact_shows_streak_flames() {
+        function test_status_compact_shows_current_state() {
             var w = hHabit.item
             hHabit.storeCtl.patchSettings("test-instance", { checkins: consecutiveDays(w, 4, 0) })
             // In expanded mode status is blank; drive the compact instance.
-            compare(hCompact.item.status, hCompact.item.streak + "🔥", "compact status = N🔥")
+            compare(hCompact.item.status, hCompact.item.doneToday ? "Checked in" : "Ready",
+                    "compact status reports today's state instead of duplicating the streak")
+        }
+
+        function test_weekday_and_weekend_schedules() {
+            var w = hHabit.item
+            hHabit.storeCtl.setSetting("test-instance", "cadence", "weekdays")
+            verify(w.scheduled(new Date(2026, 6, 20, 12)), "Monday is scheduled")
+            verify(!w.scheduled(new Date(2026, 6, 19, 12)), "Sunday is a rest day")
+            hHabit.storeCtl.setSetting("test-instance", "cadence", "weekends")
+            verify(w.scheduled(new Date(2026, 6, 19, 12)), "Sunday is scheduled")
+        }
+
+        function test_custom_schedule_blocks_unscheduled_checkin() {
+            var w = hHabit.item
+            var today = new Date().getDay(), excluded = (today + 1) % 7
+            hHabit.storeCtl.patchSettings("test-instance", { cadence: "custom", activeDays: String(excluded), checkins: [] })
+            compare(w.scheduledToday, false)
+            w.toggleToday(); compare(w.checkins.length, 0)
+            hHabit.storeCtl.setSetting("test-instance", "activeDays", String(today))
+            compare(w.scheduledToday, true)
+            w.toggleToday(); compare(w.doneToday, true)
+        }
+
+        function test_empty_custom_schedule_has_no_accidental_sunday() {
+            var w = hHabit.item
+            hHabit.storeCtl.patchSettings("test-instance",
+                { cadence: "custom", activeDays: "", checkins: [] })
+            for (var day = 0; day < 7; day++)
+                verify(!w.scheduled(new Date(2026, 6, 19 + day, 12)),
+                       "empty custom schedule excludes weekday " + day)
+        }
+
+        function test_pause_and_streak_free_modes() {
+            var w = hHabit.item
+            hHabit.storeCtl.patchSettings("test-instance", { paused: true, showStreak: false, checkins: [] })
+            compare(w.status, "")
+            w.toggleToday(); compare(w.checkins.length, 0)
+            compare(w.showStreak, false)
         }
     }
 
@@ -145,11 +182,11 @@ Item {
 
         function test_milestone_message_formatting() {
             var w = hHabit.item
-            compare(w.milestoneMsg(7), "🏆 7-day milestone!", "7 is a milestone")
-            compare(w.milestoneMsg(365), "🏆 365-day milestone!", "365 is a milestone")
-            compare(w.milestoneMsg(1), "🔥 1 day!", "singular day")
-            compare(w.milestoneMsg(2), "🔥 2 days!", "plural days")
-            compare(w.milestoneMsg(8), "🔥 8 days!", "non-milestone plural")
+            compare(w.milestoneMsg(7), "7-day milestone!", "7 is a milestone")
+            compare(w.milestoneMsg(365), "365-day milestone!", "365 is a milestone")
+            compare(w.milestoneMsg(1), "1 day complete!", "singular day")
+            compare(w.milestoneMsg(2), "2 days complete!", "plural days")
+            compare(w.milestoneMsg(8), "8 days complete!", "non-milestone plural")
         }
 
         function test_checkin_fires_singular_message() {
@@ -157,7 +194,7 @@ Item {
             hHabit.storeCtl.patchSettings("test-instance", { checkins: [] })
             w.celebrateMsg = ""
             w.toggleToday()
-            compare(w.celebrateMsg, "🔥 1 day!", "first check-in → singular")
+            compare(w.celebrateMsg, "1 day complete!", "first check-in has deterministic feedback")
         }
         function test_checkin_fires_plural_message() {
             var w = hHabit.item
@@ -165,7 +202,7 @@ Item {
             hHabit.storeCtl.patchSettings("test-instance", { checkins: consecutiveDays(w, 1, 1) })
             w.celebrateMsg = ""
             w.toggleToday()
-            compare(w.celebrateMsg, "🔥 2 days!", "second consecutive day → plural")
+            compare(w.celebrateMsg, "2 days complete!", "second consecutive day has plural feedback")
         }
         function test_milestone_fires_on_crossing_seven() {
             var w = hHabit.item
@@ -174,7 +211,7 @@ Item {
             w.celebrateMsg = ""
             w.toggleToday()
             compare(w.streak, 7, "crossed into a 7-day run")
-            compare(w.celebrateMsg, "🏆 7-day milestone!", "milestone popup on crossing 7")
+            compare(w.celebrateMsg, "7-day milestone!", "milestone popup on crossing 7")
         }
 
         // BUG (audit line 58): re-checking the same already-milestone day
@@ -437,7 +474,7 @@ Item {
             w.celebrateMsg = ""
             w.toggleToday()   // check in today → 30
             compare(w.streak, 30, "crossed into a 30-day run")
-            compare(w.celebrateMsg, "🏆 30-day milestone!", "30-day milestone celebration fires")
+            compare(w.celebrateMsg, "30-day milestone!", "30-day milestone celebration fires")
         }
 
         // (c) A gap (last check-in older than the grace day) resets the streak to
@@ -453,7 +490,7 @@ Item {
             w.toggleToday()   // check in today after the gap
             compare(w.streak, 1, "the gap starts a fresh 1-day streak")
             compare(w.bestStreak, 20, "the best-ever streak is preserved across the gap")
-            compare(w.celebrateMsg, "🔥 1 day!", "no false milestone on the reset")
+            compare(w.celebrateMsg, "1 day complete!", "no false milestone on the reset")
         }
 
         // (d) Checking in when today is already counted is idempotent - it must
@@ -486,6 +523,27 @@ Item {
             w.toggleToday()   // recheck today → 25
             compare(w.streak, 25, "maintained back to 25, no legacy-derivation reset")
             compare(cfg().streak, 25, "the number is now persisted")
+        }
+
+        function test_uncheck_preserves_streak_beyond_pruned_heatmap() {
+            var w = hHabit.item
+            var today = w.key(new Date())
+            var visibleWindow = consecutiveDays(w, 28, 0)
+            hHabit.storeCtl.patchSettings("test-instance", {
+                checkins: visibleWindow,
+                streak: 100,
+                lastCheckinDay: today,
+                bestStreak: 100
+            })
+            compare(w.streak, 100, "precondition: maintained 100-day streak")
+            w.toggleToday()
+            compare(cfg().streak, 99,
+                    "removing one day removes exactly one day from a long streak")
+            compare(w.streak, 99,
+                    "the live streak does not collapse to the pruned heatmap length")
+            compare(cfg().lastCheckinDay, w.prevDayKey(today),
+                    "the maintained run now ends on the previous scheduled day")
+            compare(cfg().bestStreak, 100, "the historical best remains intact")
         }
     }
 
@@ -601,6 +659,35 @@ Item {
             compare(cells.length, 28, "all 28 days are rendered")
         }
 
+        function test_heatmap_has_non_color_state_and_date_context() {
+            var b = bBase.item
+            b.sizeClass = "compact"
+            seed(bBase)
+            wait(0)
+            var cells = findAll(b, function (n) {
+                return n.objectName && String(n.objectName).indexOf("habitDay-") === 0
+            }, [])
+            compare(cells.length, 28, "all day cells expose stable semantic identities")
+            for (var i = 0; i < cells.length; i++) {
+                verify(cells[i].stateLabel.length > 0, "day " + i + " has a textual state")
+                var marks = findAll(cells[i], function (n) {
+                    return n.hasOwnProperty("text")
+                        && ["✓", "○", "−"].indexOf(String(n.text)) >= 0
+                }, [])
+                compare(marks.length, 1, "day " + i + " has one non-color state mark")
+            }
+            var ranges = findAll(b, function (n) {
+                return n.objectName === "habitHeatmapRange" && n.visible
+            }, [])
+            var legends = findAll(b, function (n) {
+                return n.objectName === "habitHeatmapLegend" && n.visible
+            }, [])
+            compare(ranges.length, 1, "the visible heatmap includes its date range")
+            compare(legends.length, 1, "the visible heatmap includes its state legend")
+            verify(b.heatmapSummary.indexOf("scheduled check-ins completed") >= 0,
+                   "assistive summary explains completion rather than only color")
+        }
+
         // wide - the streak/button column moves beside the heatmap; the cells are
         // the SAME objects (the literal-28 model never rebuilds).
         function test_wide_puts_streak_beside_heatmap() {
@@ -608,7 +695,7 @@ Item {
             var b = bWide.item
             b.sizeClass = "compact"
             seed(bWide)
-            var outer = heat(bWide).parent
+            var outer = heat(bWide).parent.parent
             compare(outer.columns, 1, "a stacked box is one column")
             var cellBefore = findAll(b, function (n) { return n.hasOwnProperty("dk") }, [])[0]
             b.sizeClass = "wide"
@@ -703,7 +790,7 @@ Item {
             compare(b.tallBox, false, "…so it is NOT the tall layout")
             var g = heat(bRoomyL)
             compare(g.columns, 7, "the map stays 7 wide beside the streak column")
-            compare(g.parent.columns, 2, "the streak column sits BESIDE the map")
+            compare(g.parent.parent.columns, 2, "the streak column sits BESIDE the map")
         }
 
         // The record is earned by ROOM. This is the assertion that would have
@@ -730,6 +817,32 @@ Item {
             var baseLine = bestLine(bBase)
             verify(!baseLine || !baseLine.visible,
                    "…and does not render it")
+        }
+
+        function test_roomy_card_adds_consistency_and_next_goal_insights() {
+            var roomy = bRoomyP.item
+            roomy.sizeClass = "tall"
+            seed(bRoomyP)
+            wait(16)
+            var panel = root.findAll(roomy, function (n) {
+                return n.objectName === "habitInsightPanel" && n.visible
+            }, [])
+            compare(panel.length, 1, "the half-screen habit card renders its insight panel")
+            compare(roomy.recentStats.done, 5)
+            compare(roomy.recentStats.total, 28)
+            compare(roomy.nextMilestone, 7)
+            verify(root.findAll(panel[0], function (n) {
+                return n.hasOwnProperty("text") && String(n.text) === "2 days"
+            }, []).length === 1, "the next milestone is turned into an actionable distance")
+
+            var base = bBase.item
+            base.sizeClass = "compact"
+            seed(bBase)
+            wait(16)
+            panel = root.findAll(base, function (n) {
+                return n.objectName === "habitInsightPanel" && n.visible
+            }, [])
+            compare(panel.length, 0, "the baseline card keeps the simpler streak and heatmap")
         }
 
         // 1x1.5 must differ from 1x1 in more than pixels: the map is genuinely
@@ -828,8 +941,8 @@ Item {
             // properties that feed them: a GridLayout that ignored the binding and
             // kept a literal would sail through a property-only check.
             var g = heat(bRoomyP)
-            var outerRoomy = g.parent
-            var outerBase = heat(bBase).parent
+            var outerRoomy = g.parent.parent
+            var outerBase = heat(bBase).parent.parent
             verify(outerRoomy.rowSpacing > outerBase.rowSpacing,
                    "the rendered grid gives a half screen more air between the map "
                    + "and the streak (" + outerRoomy.rowSpacing + " vs "
@@ -955,7 +1068,7 @@ Item {
                 var host = cases[i].h
                 host.item.sizeClass = cases[i].sc
                 seed(host)
-                wait(0)
+                wait(16)
                 var p = pill(host)
                 verify(p && p.visible, cases[i].n + ": the check-in pill is present")
                 verify(p.height >= host.theme.touchTertiary,

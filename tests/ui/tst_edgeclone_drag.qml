@@ -469,7 +469,7 @@ Item {
             var ids = tileIds()
             var b = tileById(ids[1])
             // The document as it stands WITH b - exactly what an undo would restore.
-            var withB = JSON.stringify(store.data)
+            var withB = JSON.stringify(store.document)
 
             store.removeTile(0, ids[1])
             verify(tileById(ids[1]) === b, "precondition: the ghost is mid-fade")

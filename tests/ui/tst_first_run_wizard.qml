@@ -66,6 +66,9 @@ Item {
             root._screens = "[]"
             wizardBridge.calls = 0
             wizardBridge.nextResult = true
+            // Layout visibility changes are polished on the next event-loop
+            // turn. Wait before hit-testing the newly visible step controls.
+            wait(16)
         }
 
         // ── Screens parsing ──────────────────────────────────────────────────
@@ -130,6 +133,21 @@ Item {
             wiz.selectedScreen = null
             compare(wiz.canAdvance, true,
                     "with no displays detected the user can continue (no hard dead-end)")
+        }
+
+        function test_layout_selection_previews_purpose_setup_and_tiles() {
+            wiz.currentStep = 2
+            wiz.selectedLayout = "gaming"
+            wait(30)
+            var preview = findPred(wiz, function (n) {
+                return n && n.objectName === "wizardPresetPreview"
+            })
+            verify(preview !== null, "the starter-layout step contains the shared preview")
+            compare(preview.titleItem.text, "Gaming Cockpit")
+            verify(preview.purposeItem.text.indexOf("graphics card") >= 0)
+            verify(preview.setupItem.text.indexOf("Linux telemetry") >= 0)
+            compare(preview.previewTileCount, 3)
+            compare(preview.passive, true)
         }
 
         // ── Completion path ──────────────────────────────────────────────────

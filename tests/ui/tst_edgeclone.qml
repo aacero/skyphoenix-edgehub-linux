@@ -2,12 +2,12 @@ import QtQuick
 import QtTest
 import "../../ui/qml" as App
 
-// COVERS: fn:EdgeClone.injectInto, fn:EdgeClone.targetAt, fn:EdgeClone.wsrc
+// COVERS: fn:EdgeClone.targetAt, fn:EdgeClone.wsrc
 //
 // manager/qml/EdgeClone.qml -
 //   • wsrc(type): rewrites the hub qrc path to the manager alias; "" for unknown
-//   • injectInto: sets instanceId/store/expanded/active + binds titleOverride/
-//     accentName/cardBackdrop/metrics/tick; null item is safe
+//   • WidgetHost: injects the shared store/render contract while keeping every
+//     Manager copy passive and pointer-shielded
 //   • targetAt(gx,gy): hit-tests placed tiles (in-bounds → the hit delegate's STORE
 //     tile index, outside → -1)
 //   • resize handle drag → snaps to a size the TYPE declares → store.setTileSize
@@ -27,9 +27,6 @@ Item {
     App.DashboardStore { id: store }
     App.WidgetCatalog { id: catalog }
     App.WidgetSizes { id: hubSizes }   // the HUB's copy - the parity reference
-    // Drives the live-binding test below. A real QML property, so a Qt.binding over
-    // it genuinely re-evaluates (a closure over a JS local would not).
-    property string previewSize: "1x1"
     MockMedia { id: media }
 
     QtObject {
@@ -37,22 +34,6 @@ Item {
         property bool hubConnected: false
         function imageUrl(n) { return "file:///imgs/" + n }
         function metricsJson() { return "{}" }
-    }
-
-    Component {
-        id: fakeWidget
-        QtObject {
-            property string instanceId: ""
-            property var store: null
-            property bool expanded: true
-            property bool active: false
-            property string sizeClass: "unset"
-            property var metrics: ({})
-            property string titleOverride: "unset"
-            property string accentName: "unset"
-            property string cardBackdrop: "unset"
-            property int tick: -1
-        }
     }
 
     Loader {
@@ -73,6 +54,10 @@ Item {
         var out = []
         eachItem(n, function (x) { if (pred(x)) out.push(x) })
         return out
+    }
+    function findByObjectName(name) {
+        var found = findAll(ld.item, function (x) { return x && x.objectName === name })
+        return found.length > 0 ? found[0] : null
     }
     function tileDelegates() {
         return findAll(ld.item, function (x) {
@@ -102,9 +87,8 @@ Item {
     }
 
     // The widget instance the clone ACTUALLY loaded for a tile, reached through the
-    // delegate's own Loader (`wId`). Going through the real Loader is the point: a
-    // test that supplies its own sizeFn to injectInto proves only that injectInto
-    // binds what it is handed - it cannot see the clone passing the WRONG thing,
+    // delegate's own WidgetHost (`wId`). Going through the real host is the point:
+    // a synthetic binding test cannot see the clone passing the wrong size class,
     // which is precisely how the hardcoded-portrait size class survived.
     // Ghosts are skipped for the SAME reason tileAtIdx skips them: a dying row is
     // held open for its exit fade, and since this suite re-seeds per case the store
@@ -158,28 +142,48 @@ Item {
             compare(c.wsrc("does-not-exist"), "", "unknown type yields empty source")
         }
 
-        // ── injectInto ────────────────────────────────────────────────────────
-        function test_injectInto_sets_props_and_binds() {
+        function test_preview_includes_the_hubs_accent_wash() {
+            var wash = findByObjectName("cloneAccentWash")
+            verify(wash !== null, "the WYSIWYG preview includes the Hub accent layer")
+            compare(wash.opacity, 0.10)
+
+            theme.applyAccent("blue")
+            var before = theme.accent.toString()
+            compare(wash.startColor.toString(), before)
+            theme.applyAccent("red")
+            verify(theme.accent.toString() !== before, "precondition: accent changed")
+            compare(wash.startColor.toString(), theme.accent.toString(),
+                    "the preview wash tracks the stored/live accent")
+            compare(wash.opacity, 0.10, "the same live layer remains active after an accent change")
+            theme.applyAccent("blue")
+        }
+
+        // ── shared host contract ──────────────────────────────────────────────
+        function test_widget_host_sets_props_binds_and_stays_passive() {
             var c = ld.item
-            var w = fakeWidget.createObject(root)
-            c.injectInto(w, "e1", "cpu")
-            compare(w.instanceId, "e1", "instanceId set")
+            root.seed([ { type: "cpu" } ])
+            var id = tile0().id
+            var w = null
+            tryVerify(function () { w = loadedWidget(id); return w !== null }, 3000)
+            compare(w.instanceId, id, "instanceId set")
             compare(w.store, store, "store injected")
             compare(w.expanded, false, "clone always renders the compact (non-expanded) form")
-            compare(w.active, true, "active forced on for the live preview")
+            compare(w.active, false, "Manager clone never becomes a state driver")
 
-            store.setSetting("e1", "title", "Rig")
+            store.setSetting(id, "title", "Rig")
             compare(w.titleOverride, "Rig", "titleOverride binding tracks the store")
-            store.setSetting("e1", "accent", "teal")
+            store.setSetting(id, "accent", "teal")
             compare(w.accentName, "teal", "accentName binding tracks the store")
-            store.setSetting("e1", "cardBackdrop", "orbs")
+            store.setSetting(id, "cardBackdrop", "orbs")
             compare(w.cardBackdrop, "orbs", "cardBackdrop binding tracks the store")
 
             c.metricsObj = ({ q: 9 })
             compare(w.metrics.q, 9, "metrics binding tracks clone.metricsObj")
-            c.tick = 13
-            compare(w.tick, 13, "tick binding tracks clone.tick")
-            w.destroy()
+
+            var shields = findAll(c, function (x) {
+                return x && x.objectName === "passiveWidgetShield" && x.visible
+            })
+            verify(shields.length >= 1, "Manager widget is pointer-shielded")
         }
 
         // COVERS: fn:WidgetSizes.classFor
@@ -267,37 +271,68 @@ Item {
                     "EdgeClone must call WidgetSizes.classFor, never own a copy")
         }
 
-        // The injected class is BOUND, not read once - on BOTH its inputs. A live
-        // resize PREVIEW (pvSize) must reflow the widget exactly as committing the
-        // size would on the hub, and a rotation must re-class it in place.
-        //
-        // `previewSize` is a real QML property, not a JS local: a Qt.binding tracks
-        // QML properties, so a closure over a plain `var` would silently never
-        // re-evaluate and the test would be asserting nothing.
-        function test_injected_size_class_is_live_on_size_and_rotation() {
+        // Standard and Immersive are not just a settings label. The clone must
+        // reserve exactly the same control footprint that the Hub does, then give
+        // it back to the live widget viewport when Immersive is selected.
+        function test_hub_controls_mode_changes_preview_geometry() {
             var c = ld.item
             store.setAppearance("orientation", "portrait")
-            root.previewSize = "1x1.5"
-            var w = fakeWidget.createObject(root)
-            c.injectInto(w, "e_live", "cpu",
-                         function () { return hubSizes.classFor(root.previewSize, c.landscape) })
-            compare(w.sizeClass, "tall", "the loaded widget gets the real class")
+            store.setAppearance("hubControlsMode", "standard")
 
-            root.previewSize = "1x1"
-            compare(w.sizeClass, "compact", "and it follows the previewed size")
+            var bar = findByObjectName("cloneHubBottomBar")
+            var area = findByObjectName("cloneDashboardArea")
+            var screenItem = findByObjectName("cloneDashboardScreen")
+            verify(bar !== null, "the preview contains the Hub control bar")
+            verify(area !== null, "the preview exposes the widget viewport")
+            verify(screenItem !== null, "the preview exposes the panel geometry")
+            verify(c.showHubBar, "Standard mode shows the Hub controls")
+            verify(bar.visible, "the control footprint is visible")
+            var standardHeight = area.height
 
-            root.previewSize = "1x0.5"
+            store.setAppearance("hubControlsMode", "immersive")
+            tryCompare(c, "showHubBar", false)
+            verify(!bar.visible, "Immersive mode hides the Hub controls")
+            verify(area.height > standardHeight, "Immersive mode gives the space back to widgets")
+            fuzzyCompare(area.height - standardHeight,
+                         screenItem.barHeight + screenItem.barGap, 0.01,
+                         "the reclaimed space equals the real bar and layout gap")
+
+            store.setAppearance("hubControlsMode", "standard")
+            tryCompare(c, "showHubBar", true)
+        }
+
+        function test_clone_uses_hub_pixel_geometry_for_widget_breakpoints() {
+            var c = ld.item
+            store.setAppearance("orientation", "portrait")
+            root.seed([ { type: "cpu" } ])
+            var id = tile0().id
+            var screenItem = findByObjectName("cloneDashboardScreen")
+            compare(screenItem._shortPx, 720, "clone lays out at the Edge's real logical short axis")
+
+            var widget = null
+            tryVerify(function () { widget = loadedWidget(id); return widget !== null }, 3000,
+                      "the real CPU widget loaded")
+            compare(tile0().size, "1x1")
+            compare(widget.sizeClass, "compact")
+            verify(!widget.micro, "1x1 remains the full compact design, as on the Hub")
+
+            store.setTileSize(0, id, "0.5x0.5")
+            tryVerify(function () { return widget.micro }, 1000,
+                      "the true 1/12 tile selects the micro design")
+        }
+
+        function test_host_size_class_is_live_on_size_and_rotation() {
+            var c = ld.item
+            store.setAppearance("orientation", "portrait")
+            root.seed([ { type: "cpu" } ])
+            var id = tile0().id
+            var w = null
+            tryVerify(function () { w = loadedWidget(id); return w !== null }, 3000)
+            store.setTileSize(0, id, "1x0.5")
             compare(w.sizeClass, "wide", "portrait: a full-width sliver is wide")
             store.setAppearance("orientation", "landscape")
             compare(w.sizeClass, "tall", "and rotating the panel re-classes it in place")
-
             store.setAppearance("orientation", "auto")
-            w.destroy()
-        }
-
-        function test_injectInto_null_is_safe() {
-            ld.item.injectInto(null, "x", "cpu")
-            verify(true, "injectInto(null) is a no-op")
         }
 
         // ── targetAt ──────────────────────────────────────────────────────────

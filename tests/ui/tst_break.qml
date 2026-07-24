@@ -11,7 +11,16 @@ Item {
         name: "BreakWidget"
         when: windowShown
 
-        function init() { tryVerify(function () { return h.ready }, 3000) }
+        function init() {
+            tryVerify(function () { return h.ready }, 3000)
+            // These lifecycle cases test timer actions, not office-hours policy.
+            // Pin an all-day, all-week schedule so wall-clock test execution does
+            // not change whether reset/resume owns a live deadline.
+            h.storeCtl.patchSettings("test-instance", {
+                workStartHour: 0, workEndHour: 0, workDays: "0,1,2,3,4,5,6",
+                scheduleSuspended: false
+            })
+        }
         function cfg() { return h.storeCtl.settingsFor("test-instance") }
 
         function test_reset_clears_due_and_restarts() {

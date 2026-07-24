@@ -46,6 +46,30 @@ Item {
     property var fAction:   ({ type: "action", actionLabel: "ACTIONLBL", action: "geocode" })
     property var fUnknown:  ({ type: "weird", text: "FALLBACK" })
     property var fTasks:    ({ key: "items", label: "", type: "tasks" })
+    property var fConditional: ({
+        key: "manualValue", label: "Manual value", type: "text",
+        visibleWhen: { key: "mode", equals: "manual", dflt: "auto" }
+    })
+    property var fReorder: ({
+        key: "rowOrder", label: "Row order", type: "reorder", dflt: [],
+        options: [
+            { value: "cpu", label: "CPU load" },
+            { value: "gpu", label: "GPU load" },
+            { value: "ram", label: "Memory" }
+        ]
+    })
+    property var fDatePattern: ({
+        key: "datePattern", label: "Custom date pattern", type: "text",
+        dflt: "ddd, d MMM", validator: "qtDatePattern", preview: "qtDatePattern"
+    })
+    property var fZoneList: ({
+        key: "secondaryZones", label: "Additional zones", type: "timezoneList", dflt: ""
+    })
+    property var fakeZones: ({
+        ids: function() {
+            return ["America/New_York", "Asia/Tokyo", "Europe/London"]
+        }
+    })
 
     // ── Recursive helpers ─────────────────────────────────────────────────────
     function findAll(node, pred, acc) {
@@ -84,7 +108,7 @@ Item {
         for (var i = 0; i < mas.length; i++) {
             var p = mas[i].parent
             if (p && p.hasOwnProperty("radius") && p.radius === 6
-                && p.width === p.height && p.width < 50)
+                && p.width === p.height && p.width <= 64)
                 out.push(p)
         }
         return out
@@ -128,6 +152,18 @@ Item {
         Widgets.ConfigField { id: cfSlider;  width: 380; field: root.fSlider;  st: cstore; instanceId: "cf"; col: root.edgeCol }
         Widgets.ConfigField { id: cfInfo;    width: 380; field: root.fInfo;    st: cstore; instanceId: "cf"; col: root.edgeCol }
         Widgets.ConfigField { id: cfUnknown; width: 380; field: root.fUnknown; st: cstore; instanceId: "cf"; col: root.edgeCol }
+        Widgets.ConfigField { id: cfConditional; width: 380; field: root.fConditional; st: cstore; instanceId: "cf"; col: root.edgeCol }
+        Widgets.ConfigField { id: cfDatePattern; width: 380; field: root.fDatePattern; st: cstore; instanceId: "clock-fields"; col: root.edgeCol }
+        Widgets.ConfigField { id: cfZoneList; width: 380; field: root.fZoneList; st: cstore; instanceId: "clock-fields"; col: root.edgeCol
+            timeZoneBridge: root.fakeZones }
+    }
+    Widgets.ConfigField {
+        id: cfReorder
+        x: 400; y: 1180; width: 380
+        field: root.fReorder
+        st: cstore
+        instanceId: "reorder"
+        col: root.edgeCol
     }
 
     // ── WidgetConfigPanel instances ───────────────────────────────────────────
@@ -155,6 +191,52 @@ Item {
     }
 
     // ══════════════════════════════════════════════════════════════════════════
+    TestCase {
+        name: "ReorderField"
+        when: windowShown
+
+        function init() { root.resetInstance("reorder") }
+
+        function test_large_accessible_buttons_persist_stable_ids() {
+            var buttons = root.findAll(cfReorder, function (n) {
+                return n.objectName === "move-down-cpu"
+            }, [])
+            compare(buttons.length, 1)
+            tryVerify(function () {
+                return buttons[0].width >= 52 && buttons[0].height >= 52
+            }, 1000, "reorder arrows meet the touch target")
+            mouseClick(buttons[0])
+            var stored = cstore.settingsFor("reorder").rowOrder
+            verify(Array.isArray(stored))
+            compare(stored[0], "gpu")
+            compare(stored[1], "cpu")
+            compare(stored[2], "ram")
+        }
+
+        function test_legacy_labels_are_canonicalized_when_moved() {
+            cstore.setSetting("reorder", "rowOrder", "Memory,CPU load,GPU load")
+            tryVerify(function () {
+                var found = root.findAll(cfReorder, function (n) {
+                    return n.objectName === "move-down-ram"
+                }, [])
+                return found.length === 1 && found[0].enabled
+            }, 1000)
+            var buttons = root.findAll(cfReorder, function (n) {
+                return n.objectName === "move-down-ram"
+            }, [])
+            compare(buttons.length, 1)
+            buttons[0].click()
+            tryVerify(function () {
+                var value = cstore.settingsFor("reorder").rowOrder
+                return Array.isArray(value) && value[0] === "cpu"
+            }, 1000)
+            var stored = cstore.settingsFor("reorder").rowOrder
+            compare(stored[0], "cpu")
+            compare(stored[1], "ram")
+            compare(stored[2], "gpu")
+        }
+    }
+
     TestCase {
         name: "NumberHourFields"
         when: windowShown
@@ -273,6 +355,69 @@ Item {
 
     // ══════════════════════════════════════════════════════════════════════════
     TestCase {
+        name: "ClockStructuredFields"
+        when: windowShown
+        function init() { root.resetInstance("clock-fields") }
+
+        function named(node, value) {
+            var matches = root.findAll(node, function (item) {
+                return item.hasOwnProperty("objectName") && item.objectName === value
+            }, [])
+            return matches.length ? matches[matches.length - 1] : null
+        }
+
+        function test_date_pattern_previews_before_commit_and_rejects_invalid_input() {
+            var input = named(cfDatePattern, "control")
+            var preview = named(cfDatePattern, "field-preview")
+            verify(input && preview, "date pattern editor and preview are rendered")
+
+            input.forceActiveFocus()
+            input.text = "yyyy-MM-dd"
+            verify(String(preview.text).indexOf("Preview:") === 0,
+                   "a valid pattern previews while it is still being edited")
+            verify(cstore.settingsFor("clock-fields").datePattern === undefined,
+                   "previewing does not persist before commit")
+            input.editingFinished()
+            compare(cstore.settingsFor("clock-fields").datePattern, "yyyy-MM-dd")
+
+            input.forceActiveFocus()
+            input.text = "'unterminated"
+            verify(String(preview.text).indexOf("Enter a date pattern") === 0,
+                   "invalid input has an actionable validation message")
+            input.editingFinished()
+            compare(cstore.settingsFor("clock-fields").datePattern, "yyyy-MM-dd",
+                    "invalid input cannot replace the last valid persisted pattern")
+        }
+
+        function test_timezone_list_adds_searchable_rows_and_persists_bounded_csv() {
+            var first = named(cfZoneList, "timezone-list-entry-0")
+            verify(first, "the structured zone editor starts with one searchable row")
+            first.editText = "Europe/London"
+            first.accepted()
+            compare(cstore.settingsFor("clock-fields").secondaryZones, "Europe/London")
+
+            var add = named(cfZoneList, "timezone-list-add")
+            verify(add && add.visible && add.height >= 48, "Add zone is a visible touch target")
+            mouseClick(add)
+            var second = named(cfZoneList, "timezone-list-entry-1")
+            verify(second, "Add zone creates a second searchable row")
+            second.editText = "Asia/Tokyo"
+            second.accepted()
+            compare(cstore.settingsFor("clock-fields").secondaryZones,
+                    "Europe/London, Asia/Tokyo")
+
+            var remove = named(cfZoneList, "timezone-list-remove-0")
+            verify(remove && remove.height >= 48 && remove.width >= 48,
+                   "remove action is touch-sized")
+            var control = named(cfZoneList, "timezone-list-control")
+            verify(control, "structured zone controller is available")
+            control.commit(0, "")
+            compare(cstore.settingsFor("clock-fields").secondaryZones, "Asia/Tokyo")
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    TestCase {
         name: "Toggles"
         when: windowShown
         function init() { root.resetInstance("cf") }
@@ -374,8 +519,16 @@ Item {
 
         function test_action_emits_action_requested() {
             root.lastAction = ""
+            var action = findChild(cfAction, "action-geocode")
+            verify(action !== null, "action has a stable semantic test hook")
+            verify(action.activeFocusOnTab, "action participates in keyboard focus")
+            verify(action.height >= 48, "action keeps a touch-safe hit target")
             mouseClick(root.mouseAreasIn(cfAction)[0])
             compare(root.lastAction, "geocode", "action button emits actionRequested(action)")
+            root.lastAction = ""
+            action.forceActiveFocus()
+            keyClick(Qt.Key_Space)
+            compare(root.lastAction, "geocode", "Space activates the action")
         }
     }
 
@@ -388,18 +541,18 @@ Item {
             cstore.setSetting("cf", "items", [ { text: "a", done: false } ])
         }
         function init() {
-            tryVerify(function () { return root.squareButtons(taskPanel).length >= 2 }, 2000,
+            tryVerify(function () { return root.squareButtons(cfTasks).length >= 2 }, 2000,
                       "task row rendered with its toggle + delete buttons")
         }
 
         // Bug: task toggle (30px) and delete (34px) hit areas are hardcoded and
-        // do NOT scale with ctlH (58 on the Edge) → far below the 44px touch min.
+        // do NOT scale with ctlH, so they must keep the shared 48px touch minimum.
         function test_task_buttons_meet_touch_minimum() {
-            var btns = root.squareButtons(taskPanel)
+            var btns = root.squareButtons(cfTasks)
             verify(btns.length >= 2, "found toggle + delete (" + btns.length + ")")
             for (var i = 0; i < btns.length; i++)
-                verify(btns[i].height >= 44 && btns[i].width >= 44,
-                       "task control " + btns[i].width + "×" + btns[i].height + " must be >= 44px on the Edge")
+                verify(btns[i].height >= 48 && btns[i].width >= 48,
+                       "task control " + btns[i].width + "×" + btns[i].height + " must be >= 48px on the Edge")
         }
 
         // Steppers and chips DO scale with the col tokens - assert they pass.
@@ -407,12 +560,12 @@ Item {
             var steppers = root.mouseAreasIn(cfNumber)
             verify(steppers.length >= 2, "number steppers present")
             for (var i = 0; i < steppers.length; i++)
-                verify(steppers[i].parent.height >= 44, "stepper >= 44px (got " + steppers[i].parent.height + ")")
+                verify(steppers[i].parent.height >= 48, "stepper >= 48px (got " + steppers[i].parent.height + ")")
             // Segmented + accent chips.
             var chips = root.mouseAreasIn(cfSeg)
             verify(chips.length >= 1, "segmented chips present")
             for (var j = 0; j < chips.length; j++)
-                verify(chips[j].parent.height >= 44, "segmented chip >= 44px (got " + chips[j].parent.height + ")")
+                verify(chips[j].parent.height >= 48, "segmented chip >= 48px (got " + chips[j].parent.height + ")")
         }
     }
 
@@ -428,6 +581,26 @@ Item {
                    "the About section is not rendered in the panel")
             verify(root.hasTextNode(clkPanel, "General"), "General section renders")
             verify(root.hasTextNode(clkPanel, "Widget appearance"), "appearance section renders")
+        }
+
+        function test_clock_timezone_fields_disclose_only_relevant_controls() {
+            root.resetInstance("clk")
+            var offsets = root.findAll(clkPanel, function (item) {
+                return item.objectName === "field-utcOffset"
+            }, [])
+            compare(offsets.length, 1, "clock panel has one fixed-offset field")
+            var offset = offsets[0]
+            verify(offset.field.visibleWhen !== undefined,
+                   "fixed offset carries its conditional-disclosure rules")
+            compare(offset.conditionVisible, false,
+                    "fixed offset condition is false in local-clock mode")
+            compare(offset.visible, false, "fixed offset is hidden in local-clock mode")
+
+            cstore.patchSettings("clk", { customZone: true, zoneId: "" })
+            compare(offset.visible, true, "fixed offset appears when fixed-offset mode is selected")
+
+            cstore.setSetting("clk", "zoneId", "Europe/Vienna")
+            compare(offset.visible, false, "fixed offset hides when an IANA zone is selected")
         }
 
         // schema=null is guarded → empty form, no crash; assigning a real schema
@@ -481,12 +654,12 @@ Item {
         // Bug: setV()/cur() don't guard instanceId==='' → edits create and persist
         // an orphan settings[''] bucket.
         function test_empty_instance_id_no_phantom_bucket() {
-            delete cstore.data.settings[""]
+            delete cstore.document.settings[""]
             var sw = findChild(cfEmpty, "control")
             verify(sw, "empty-id toggle rendered")
             mouseClick(sw)   // write a setting through a ''-instanceId field
-            verify(!cstore.data.settings.hasOwnProperty("") ||
-                   Object.keys(cstore.data.settings[""]).length === 0,
+            verify(!cstore.document.settings.hasOwnProperty("") ||
+                   Object.keys(cstore.document.settings[""]).length === 0,
                    "editing must not create/persist a settings[''] bucket")
         }
     }
@@ -582,6 +755,25 @@ Item {
             e.text = "abc"              // parseFloat → NaN
             e.editingFinished()
             compare(Number(cfNumber.cur()), 12.34, "abc (NaN) rejected, value unchanged")
+        }
+    }
+
+    TestCase {
+        name: "ConditionalDisclosure"
+        when: windowShown
+        function init() { root.resetInstance("cf") }
+
+        function test_field_reacts_to_dependency_without_recreation() {
+            compare(cfConditional.visible, false,
+                    "the dependent field starts hidden from the default mode")
+            cstore.setSetting("cf", "mode", "manual")
+            compare(cfConditional.visible, true,
+                    "the field appears when its dependency matches")
+            verify(cfConditional.implicitHeight > 0)
+            cstore.setSetting("cf", "mode", "auto")
+            compare(cfConditional.visible, false)
+            compare(cfConditional.implicitHeight, 0,
+                    "a hidden field leaves no blank form row")
         }
     }
 

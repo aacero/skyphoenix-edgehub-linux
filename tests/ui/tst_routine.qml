@@ -1,7 +1,6 @@
 import QtQuick
 import QtTest
 
-// COVERS: schema:steps
 
 // ─────────────────────────────────────────────────────────────────────────
 // tst_routine - ui/qml/widgets/RoutineWidget.qml.
@@ -79,6 +78,49 @@ Item {
             compare(h.item.stepList.length, 0)
             compare(h.item.doneCount, 0)
             compare(h.item.allDone, false, "an empty routine is not 'all done'")
+        }
+
+        function test_structured_step_keeps_completion_after_rename_and_reorder() {
+            h.storeCtl.patchSettings("test-instance", {
+                routineFormat: "structured",
+                routineItems: [
+                    { id: "pack", text: "Pack bag" },
+                    { id: "water", text: "Water plants" }
+                ]
+            })
+            h.item.toggle(h.item.stepItems[0])
+            compare(h.storeCtl.settingsFor("test-instance").done[0], "pack")
+            h.storeCtl.patchSettings("test-instance", {
+                routineItems: [
+                    { id: "water", text: "Water plants" },
+                    { id: "pack", text: "Pack work bag" }
+                ]
+            })
+            compare(h.item.stepItems[1].text, "Pack work bag")
+            compare(h.item.stepItems[1].key, "pack")
+            compare(h.item.isDone(h.item.stepItems[1]), true,
+                    "completion follows immutable ID through rename and reorder")
+            compare(h.item.doneCount, 1)
+        }
+
+        function test_cleared_structured_steps_do_not_fall_back_to_legacy_text() {
+            h.storeCtl.patchSettings("test-instance", {
+                steps: "Old step",
+                routineItems: [],
+                routineFormat: "structured"
+            })
+            compare(h.item.stepItems.length, 0)
+            compare(h.item.stepList.length, 0)
+        }
+
+        function test_duplicate_steps_have_independent_identity() {
+            h.storeCtl.patchSettings("test-instance", { steps: "Stretch\nStretch" })
+            var w = h.item
+            compare(w.stepItems.length, 2)
+            verify(w.stepItems[0].key !== w.stepItems[1].key)
+            w.toggle(w.stepItems[0])
+            compare(w.isDone(w.stepItems[0]), true)
+            compare(w.isDone(w.stepItems[1]), false)
         }
     }
 
@@ -177,6 +219,21 @@ Item {
             compare(saved.done[0], "Meds")
             compare(h.item.doneCount, 1, "and only today's tick counts")
         }
+
+        function test_inactive_weekday_is_a_rest_day_and_cannot_be_ticked() {
+            var w = h.item
+            w.dayOfWeekOverride = 0
+            h.storeCtl.patchSettings("test-instance", { steps: "Work", activeDays: "1,2,3,4,5" })
+            compare(w.isActiveToday(), false)
+            w.toggle("Work")
+            compare(w.doneCount, 0)
+            compare(h.storeCtl.settingsFor("test-instance").done, undefined)
+            w.dayOfWeekOverride = 1
+            compare(w.isActiveToday(), true)
+            w.toggle("Work")
+            compare(w.doneCount, 1)
+            w.dayOfWeekOverride = -1
+        }
     }
 
     // ── No shaming ───────────────────────────────────────────────────────
@@ -258,16 +315,37 @@ Item {
         when: windowShown
         function init() { tryVerify(function () { return hc.ready }, 3000); clearSettings(hc) }
 
-        function test_tapping_a_row_ticks_it_and_persists() {
+        function test_tapping_the_explicit_checkbox_ticks_and_persists() {
             hc.storeCtl.patchSettings("test-instance", { steps: "Meds\nPack bag" })
             wait(32)
             var rows = root.findAll(hc.item, function (n) {
                 return n.hasOwnProperty("done") && n.hasOwnProperty("modelData")
             }, [])
+            var actions = root.findAll(hc.item, function (n) {
+                return String(n.objectName).indexOf("routineStepAction-") === 0
+            }, [])
             verify(rows.length >= 1, "step rows are rendered on the tile (" + rows.length + ")")
-            mouseClick(rows[0])
-            compare(hc.item.isDone("Meds"), true, "a tap on the row ticks the step")
+            verify(actions.length >= 1, "each row has an explicit completion action")
+            verify(actions[0].width >= hc.theme.touchTertiary
+                   && actions[0].height >= hc.theme.touchTertiary,
+                   "the completion action is a full touch target")
+            compare(actions[0].Accessible.role, Accessible.CheckBox)
+            verify(String(actions[0].Accessible.name).indexOf("Meds") >= 0,
+                   "the action names the affected step")
+            mouseClick(actions[0])
+            compare(hc.item.isDone("Meds"), true, "a tap on the checkbox ticks the step")
             compare(hc.storeCtl.settingsFor("test-instance").done[0], "Meds", "and it persisted")
+        }
+
+        function test_step_text_is_not_a_completion_control() {
+            hc.storeCtl.patchSettings("test-instance", { steps: "Meds" })
+            wait(16)
+            var labels = root.findAll(hc.item, function (n) {
+                return String(n.objectName).indexOf("routineStepLabel-") === 0
+            }, [])
+            compare(labels.length, 1)
+            compare(labels[0].children.length, 0,
+                    "the descriptive text does not carry a whole-row pointer handler")
         }
     }
 
@@ -364,6 +442,22 @@ Item {
             for (var i = 0; i < banned.length; i++)
                 verify(texts.indexOf(banned[i]) < 0,
                        "the earned summary never says '" + banned[i] + "'")
+        }
+
+        function test_hidden_steps_are_disclosed_and_text_is_legible() {
+            tryVerify(function () { return rWide.ready }, 3000)
+            var r = rWide.item
+            r.sizeClass = "wide"
+            var lines = []
+            for (var i = 0; i < 30; i++) lines.push("step " + i)
+            rWide.storeCtl.setSetting(rWide.instanceId, "steps", lines.join("\n"))
+            wait(32)
+            verify(r.rowFont >= 17)
+            var overflow = root.findAll(r, function(n) {
+                return n.objectName === "routineOverflow"
+            }, [])[0]
+            verify(overflow !== null && overflow.visible)
+            verify(overflow.Accessible.name.indexOf("more routine steps") >= 0)
         }
     }
 }

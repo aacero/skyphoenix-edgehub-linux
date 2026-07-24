@@ -40,6 +40,7 @@ USE
 pointer and only interposes on the emitting calls.
 """
 import os
+import time
 
 import desktop_target as dt
 
@@ -100,6 +101,69 @@ def is_in_front(rect, work):
     except OSError:
         pass
     return ok
+
+
+def _manager_accessible():
+    """Return the live Manager application from AT-SPI, or None.
+
+    Semantic accessibility actions are safer than screen coordinates: the action
+    is delivered to the named Manager control itself, even after layout changes,
+    and can never land in an unrelated window covering the same pixels.
+    """
+    try:
+        import gi
+        gi.require_version("Atspi", "2.0")
+        from gi.repository import Atspi
+        Atspi.init()
+        desktop = Atspi.get_desktop(0)
+        for i in range(desktop.get_child_count()):
+            app = desktop.get_child_at_index(i)
+            if app and app.get_name() == "Xeneon Edge Manager":
+                return app, Atspi
+    except Exception:
+        return None, None
+    return None, None
+
+
+def _find_accessible(node, name, atspi):
+    try:
+        if node.get_name() == name:
+            states = node.get_state_set()
+            if (states.contains(atspi.StateType.SHOWING)
+                    and states.contains(atspi.StateType.ENABLED)):
+                return node
+        for i in range(node.get_child_count()):
+            found = _find_accessible(node.get_child_at_index(i), name, atspi)
+            if found:
+                return found
+    except Exception:
+        return None
+    return None
+
+
+def invoke_accessible(name, timeout=3.0):
+    """Invoke one exact, visible, enabled Manager control by accessible name."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        app, atspi = _manager_accessible()
+        target = _find_accessible(app, name, atspi) if app else None
+        if target:
+            try:
+                action = target.get_action_iface()
+                if action and action.get_n_actions() > 0:
+                    # Custom QML controls expose SetFocus first and Press second,
+                    # while native Qt buttons may expose Press as their first action.
+                    # Invoking index 0 blindly therefore focused tabs and screen
+                    # chips without activating them. Resolve the semantic Press
+                    # action by name so both control types behave identically.
+                    for index in range(action.get_n_actions()):
+                        if action.get_action_name(index).lower() == "press":
+                            return bool(action.do_action(index))
+                    return False
+            except Exception:
+                return False
+        time.sleep(0.1)
+    return False
 
 
 class GuardedPointer:

@@ -3,7 +3,6 @@ import QtTest
 import "../../ui/qml" as App
 import "../../ui/qml/widgets" as Widgets
 
-// COVERS: schema:endHour, schema:progressStyle, schema:showPercent, schema:startHour
 
 // ─────────────────────────────────────────────────────────────────────────
 // Comprehensive tests for widget:eod - ui/qml/widgets/EndOfDayWidget.qml
@@ -167,7 +166,8 @@ Item {
             patch({ startHour: 9, endHour: 17 })
             w.nowOverride = at(18, 30)
             compare(w.frac, 1, "after the end, frac clamps to 1")
-            compare(w.remaining, "Done! 🎉", "past the end shows the completion string")
+            compare(w.remaining, "Complete", "past the end shows the completion string")
+            compare(w.phase, "complete")
         }
 
         function test_within_window_frac_and_live_remaining() {
@@ -176,6 +176,45 @@ Item {
             w.nowOverride = at(13)
             fuzzyCompare(w.frac, 0.5, 0.001, "13:00 is halfway through 09:00–17:00")
             compare(w.remaining, "4h 0m", "within the window shows the exact live duration")
+        }
+
+        function test_quarter_hour_precision_and_scheduled_day() {
+            var w = hEod.item
+            patch({ startHour: 9, startMinute: 15, endHour: 17, endMinute: 45,
+                    workDays: "1,2,3,4,5" })
+            w.nowOverride = new Date(2026, 0, 15, 13, 30, 0, 0)
+            compare(w.activeOn(w.nowOverride), true)
+            fuzzyCompare(w.frac, 0.5, 0.001)
+            compare(w.remaining, "4h 15m")
+            w.nowOverride = new Date(2026, 0, 18, 13, 30, 0, 0)
+            compare(w.activeOn(w.nowOverride), false)
+            compare(w.remaining, "Off today")
+            compare(w.frac, 0)
+            w.nowOverride = null
+        }
+
+        function test_overnight_window_uses_its_start_weekday() {
+            var w = hEod.item
+            patch({
+                startHour: 22, endHour: 6, allowOvernight: true,
+                workDays: "1"
+            })
+            w.nowOverride = new Date(2026, 0, 5, 23, 0, 0, 0)
+            verify(w.activeOn(w.windowBounds(w.nowOverride)[0]),
+                   "Monday night is active")
+            fuzzyCompare(w.frac, 1 / 8, 0.001)
+            compare(w.remaining, "7h 0m")
+
+            w.nowOverride = new Date(2026, 0, 6, 3, 0, 0, 0)
+            verify(w.activeOn(w.windowBounds(w.nowOverride)[0]),
+                   "Tuesday morning still belongs to Monday's shift")
+            fuzzyCompare(w.frac, 5 / 8, 0.001)
+            compare(w.remaining, "3h 0m")
+
+            patch({ workDays: "2" })
+            compare(w.frac, 0,
+                    "enabling Tuesday alone does not retroactively enable Monday's shift")
+            compare(w.remaining, "Off today")
         }
 
         function test_tick_recomputes_frac_and_remaining() {
@@ -227,13 +266,16 @@ Item {
             var w = hEod.item
             patch({ startHour: 17, endHour: 9 })
             compare(w.frac, 0, "inverted window has frac 0")
-            compare(w.remaining, "Set hours", "inverted window prompts to set hours")
+            compare(w.remaining, "Enable overnight mode",
+                    "inverted window explains how to enable a night shift")
+            compare(w.phase, "invalid")
         }
         function test_equal_hours_is_set_hours() {
             var w = hEod.item
             patch({ startHour: 10, endHour: 10 })
             compare(w.frac, 0, "zero-length window has frac 0")
-            compare(w.remaining, "Set hours", "zero-length window prompts to set hours")
+            compare(w.remaining, "Start and end must differ",
+                    "zero-length window explains the invalid schedule")
         }
         function test_validHours_flag_tracks_comparison() {
             var w = hEod.item
@@ -241,6 +283,24 @@ Item {
             compare(w.validHours, true, "9→17 is valid")
             patch({ startHour: 17, endHour: 9 })
             compare(w.validHours, false, "17→9 is invalid")
+            patch({ startHour: 22, endHour: 6, allowOvernight: true })
+            compare(w.validHours, true, "22→06 is a valid eight-hour overnight shift")
+        }
+        function test_minute_precision_participates_in_validation() {
+            var w = hEod.item
+            patch({ startHour: 9, startMinute: 0, endHour: 9, endMinute: 30 })
+            compare(w.validHours, true, "09:00 to 09:30 is a valid same-day window")
+            patch({ startMinute: 30, endMinute: 0, allowOvernight: true })
+            compare(w.validHours, false, "a 23.5-hour wrap is rejected")
+            compare(w.remaining, "Overnight window exceeds 12 hours")
+        }
+        function test_empty_weekday_selection_is_explicit() {
+            var w = hEod.item
+            patch({ startHour: 9, endHour: 17, workDays: "" })
+            compare(w.hasActiveDays, false)
+            compare(w.phase, "no-days")
+            compare(w.remaining, "No active weekdays")
+            compare(w.stateLabel, "Schedule paused")
         }
     }
 
@@ -262,6 +322,14 @@ Item {
             patch({ startHour: 9, endHour: 17 })
             w.setHours(w.startHour, w.startHour - 2)
             verify(w.endHour > w.startHour, "end can't drop to/under start")
+        }
+
+        function test_explicit_overnight_mode_allows_direct_controls_to_wrap() {
+            var w = hEod.item
+            patch({ startHour: 9, endHour: 17, allowOvernight: true })
+            w.setHours(22, 6)
+            compare(w.startHour, 22)
+            compare(w.endHour, 6)
         }
         function test_one_hour_min_span_start_yields() {
             var w = hEod.item
@@ -314,7 +382,7 @@ Item {
             patch({ startHour: 0, endHour: 24 })
             verify(w.frac > 0 && w.frac < 1,
                    "a 00:00–24:00 window produces a mid-day frac in (0,1) (got " + w.frac + ")")
-            verify(w.remaining !== "Set hours" && w.remaining !== "Done! 🎉",
+            verify(w.remaining !== "Start and end must differ" && w.remaining !== "Complete",
                    "full-day window shows a live remaining (got '" + w.remaining + "')")
         }
     }
@@ -411,9 +479,11 @@ Item {
         function test_showPercent_toggles_caption_node() {
             var w = hEod.item
             patch({ startHour: 9, endHour: 17, progressStyle: "bar", showPercent: true })
-            verify(visibleTextContains(w, "% of ") !== null, "percent caption visible when showPercent on")
+            verify(visibleTextContains(w, "% elapsed") !== null,
+                   "elapsed and remaining caption visible when showPercent on")
             patch({ showPercent: false })
-            verify(visibleTextContains(w, "% of ") === null, "percent caption hidden when showPercent off")
+            verify(visibleTextContains(w, "% elapsed") === null,
+                   "elapsed and remaining caption hidden when showPercent off")
         }
 
         function test_progressStyle_switches_bar_and_ring() {
@@ -449,7 +519,7 @@ Item {
         function test_caption_hours_match_editor_zero_padding() {
             var w = hEod.item
             patch({ startHour: 9, endHour: 17, progressStyle: "bar", showPercent: true })
-            var cap = visibleTextContains(w, "% of ")
+            var cap = visibleTextContains(w, "% elapsed")
             verify(cap !== null, "percent caption present")
             // What the on-device config editor renders for the same startHour:
             cfStore.setSetting("cf-inst", "startHour", 9)
@@ -485,12 +555,12 @@ Item {
         }
         function test_set_hours_string_fits_collapsed_tile() {
             var w = hCollapsed.item
-            patch({ startHour: 17, endHour: 9 })   // invalid → "Set hours"
-            compare(w.remaining, "Set hours")
-            var t = visibleTextEq(w, "Set hours")
-            verify(t !== null, "found the 'Set hours' text")
+            patch({ startHour: 17, endHour: 9 })
+            compare(w.remaining, "Enable overnight mode")
+            var t = visibleTextEq(w, "Enable overnight mode")
+            verify(t !== null, "found the overnight guidance")
             verify(t.paintedWidth <= hCollapsed.width,
-                   "'Set hours' must fit the " + hCollapsed.width + "px tile (painted "
+                   "overnight guidance must fit the " + hCollapsed.width + "px tile (painted "
                    + Math.round(t.paintedWidth) + "px)")
         }
     }
@@ -537,11 +607,10 @@ Item {
         function test_overnight_window_is_representable_or_signposted() {
             var w = hEod.item
             patch({ startHour: 22, endHour: 6 })   // 22:00 → 06:00 overnight shift
-            // Either the window works (non-zero frac / real remaining) or the UI
-            // communicates something clearer than the generic invalid 'Set hours'.
-            verify(w.frac > 0 || w.remaining !== "Set hours",
-                   "overnight window must work or be clearly signposted (frac=" + w.frac
-                   + " remaining='" + w.remaining + "')")
+            compare(w.frac, 0)
+            compare(w.remaining, "Enable overnight mode",
+                    "a disabled overnight window gives an actionable explanation")
+            compare(w.stateLabel, "Invalid schedule")
         }
     }
 
@@ -574,7 +643,7 @@ Item {
         // Pre-midnight half of the overnight shift: in-window, ~7h left.
         function test_overnight_23h_is_in_window_seven_hours_left() {
             var w = hEod.item
-            patch({ startHour: 22, endHour: 6 })
+            patch({ startHour: 22, endHour: 6, allowOvernight: true })
             w.nowOverride = at(2026, 0, 15, 23)            // 23:00 → [today22, tmrw06]
             fuzzyCompare(w.frac, 1 / 8, 0.001)             // 1h of an 8h window
             compare(w.remaining, "7h 0m", "23:00 → 7h until 06:00")
@@ -585,7 +654,7 @@ Item {
         // (03:00 < today-22:00) → "Starts in 19h" + 0%. Correct: [yest22, today06].
         function test_overnight_03h_after_midnight_is_in_window() {
             var w = hEod.item
-            patch({ startHour: 22, endHour: 6 })
+            patch({ startHour: 22, endHour: 6, allowOvernight: true })
             w.nowOverride = at(2026, 0, 15, 3)             // 03:00 → [yest22, today06]
             fuzzyCompare(w.frac, 5 / 8, 0.001)             // 5h of an 8h window ≈ 62%
             compare(w.remaining, "3h 0m", "03:00 → 3h until 06:00")
@@ -596,7 +665,7 @@ Item {
         // After the shift ends: next window is [today22, tmrw06] → "Starts in".
         function test_overnight_07h_after_shift_counts_down_to_next() {
             var w = hEod.item
-            patch({ startHour: 22, endHour: 6 })
+            patch({ startHour: 22, endHour: 6, allowOvernight: true })
             w.nowOverride = at(2026, 0, 15, 7)             // 07:00, shift ended at 06:00
             compare(w.frac, 0, "outside the window frac is 0")
             compare(w.remaining, "Starts in 15h 0m", "07:00 → 15h until the next 22:00 start")
@@ -605,7 +674,7 @@ Item {
         // Just before the shift: "Starts in ~1h".
         function test_overnight_21h_before_shift_counts_down() {
             var w = hEod.item
-            patch({ startHour: 22, endHour: 6 })
+            patch({ startHour: 22, endHour: 6, allowOvernight: true })
             w.nowOverride = at(2026, 0, 15, 21)            // 21:00, 1h before start
             compare(w.frac, 0, "before the window frac is 0")
             compare(w.remaining, "Starts in 1h 0m", "21:00 → 1h until 22:00")
@@ -697,6 +766,18 @@ Item {
                     keys.push(s.sections[j].fields[k].key)
             verify(keys.indexOf("progressStyle") >= 0, "schema exposes progressStyle")
             verify(keys.indexOf("showPercent") >= 0, "schema exposes showPercent")
+            verify(keys.indexOf("startMinute") >= 0, "schema exposes startMinute")
+            verify(keys.indexOf("endMinute") >= 0, "schema exposes endMinute")
+            verify(keys.indexOf("allowOvernight") >= 0, "schema exposes allowOvernight")
+            verify(keys.indexOf("workDays") >= 0, "schema exposes workDays")
+            var workDays = null
+            for (var n = 0; n < s.sections.length; n++)
+                for (var m = 0; m < (s.sections[n].fields || []).length; m++)
+                    if (s.sections[n].fields[m].key === "workDays")
+                        workDays = s.sections[n].fields[m]
+            verify(workDays !== null)
+            compare(workDays.type, "weekdays",
+                    "active weekdays use explicit touch controls instead of CSV")
         }
         // BUG (medium): the hour fields omit min/max, so the stepper can drive
         // startHour/endHour out of 0..24 and corrupt the window.
@@ -752,8 +833,8 @@ Item {
             compare(w.micro, true, "a 344x416 compact box is the micro tile")
             compare(w.showHeader, false, "micro hides the header")
             verify(visibleTextEq(w, w.remaining) !== null, "the remaining time is the tile")
-            verify(visibleTextContains(w, "% of ") === null, "micro drops the caption")
-            verify(visibleTextEq(w, "Started") === null, "micro has no detail column")
+            verify(visibleTextContains(w, "% elapsed") === null, "micro drops the caption")
+            verify(visibleTextEq(w, "Start") === null, "micro has no detail column")
         }
 
         // wide - remaining/caption beside the progress; the ring style is
@@ -765,7 +846,7 @@ Item {
             w.sizeClass = "wide"
             compare(w.horiz, true, "wide goes side-by-side")
             verify(visibleRing(w) === null, "bar style: no ring")
-            verify(visibleTextContains(w, "% of ") !== null, "wide keeps the caption")
+            verify(visibleTextContains(w, "% elapsed") !== null, "wide keeps the caption")
             hWide.storeCtl.setSetting("test-instance", "progressStyle", "ring")
             compare(w.useRing, true, "ring style is honoured on a wide TILE")
             verify(visibleRing(w) !== null, "the ring renders")
@@ -783,11 +864,12 @@ Item {
             var w = hTall.item
             w.sizeClass = "tall"
             compare(w.tallish, true, "tall is the roomy class")
-            verify(visibleTextEq(w, "Started") !== null, "Started row rendered")
-            verify(visibleTextEq(w, "Ends") !== null, "Ends row rendered")
+            verify(visibleTextEq(w, "Start") !== null, "Start row rendered")
+            verify(visibleTextEq(w, "End") !== null, "End row rendered")
             verify(visibleTextEq(w, "Elapsed") !== null, "Elapsed row rendered")
+            verify(visibleTextEq(w, "Remaining") !== null, "Remaining row rendered")
             verify(visibleTextEq(w, "09:00") !== null, "start hour spelled out, editor-padded")
-            verify(visibleTextContains(w, "% of ") === null, "the detail column replaces the caption")
+            verify(visibleTextContains(w, "% elapsed") === null, "the detail column replaces the caption")
             // Done row honours showPercent.
             verify(visibleTextEq(w, "Done") !== null, "Done row rendered while showPercent on")
             hTall.storeCtl.setSetting("test-instance", "showPercent", false)
@@ -898,8 +980,8 @@ Item {
                     "the rendered hero is the derived size, not a re-frozen literal")
 
             // And the caption follows the hero it annotates rather than the mode.
-            var capL = visibleTextContains(land, "% of ")
-            var capP = visibleTextContains(port, "% of ")
+            var capL = visibleTextContains(land, "% elapsed")
+            var capP = visibleTextContains(port, "% elapsed")
             verify(capL && capP, "both panes render the caption")
             verify(capP.font.pixelSize > capL.font.pixelSize,
                    "the caption is sized by the pane too (" + capP.font.pixelSize
@@ -919,8 +1001,8 @@ Item {
             var w = hTall.item
             w.sizeClass = "tall"
             hTall.storeCtl.patchSettings("test-instance", { startHour: 17, endHour: 9 })
-            compare(w.remaining, "Set hours", "invalid window shows the hint")
-            verify(visibleTextEq(w, "Started") === null, "no detail rows for an invalid window")
+            compare(w.remaining, "Enable overnight mode", "invalid window shows the hint")
+            verify(visibleTextEq(w, "Start") === null, "no detail rows for an invalid window")
         }
     }
 

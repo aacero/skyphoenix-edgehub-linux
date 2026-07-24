@@ -2,7 +2,6 @@ import QtQuick
 import QtTest
 import "../../ui/qml" as App
 
-// COVERS: schema:showNumerals
 
 // ─────────────────────────────────────────────────────────────────────────
 // widget:analog - comprehensive coverage for AnalogClockWidget.qml plus its
@@ -116,6 +115,26 @@ Item {
                 seen[display.fields[j].key] = display.fields[j].dflt
             compare(seen.showSeconds, true, "schema default showSeconds=true")
             compare(seen.showNumerals, false, "schema default showNumerals=false")
+            compare(seen.faceStyle, "classic", "schema default faceStyle=classic")
+            compare(seen.handStyle, "round", "schema default handStyle=round")
+            var all = {}
+            for (var si = 0; si < s.sections.length; si++)
+                for (var fi = 0; fi < (s.sections[si].fields || []).length; fi++)
+                    all[s.sections[si].fields[fi].key] = true
+            verify(all.customZone && all.zoneId && all.zoneLabel && all.utcOffset,
+                   "world-clock configuration is complete")
+            var zoneIdField = null, offsetField = null
+            for (var zi = 0; zi < s.sections.length; zi++)
+                for (var zj = 0; zj < (s.sections[zi].fields || []).length; zj++) {
+                    var field = s.sections[zi].fields[zj]
+                    if (field.key === "zoneId") zoneIdField = field
+                    if (field.key === "utcOffset") offsetField = field
+                }
+            verify(zoneIdField.visibleWhen !== undefined,
+                   "IANA selection is hidden until world-clock mode is enabled")
+            verify(Array.isArray(offsetField.visibleWhen)
+                   || typeof offsetField.visibleWhen.length === "number",
+                   "fixed offset has both world-clock and empty-IANA visibility rules")
         }
 
         function test_showSeconds_honored() {
@@ -132,6 +151,89 @@ Item {
             compare(w.showNumerals, true, "showNumerals=true honored")
             set("showNumerals", false)
             compare(w.showNumerals, false, "showNumerals=false honored")
+        }
+
+        function test_style_and_world_clock_settings() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { faceStyle: "minimal", handStyle: "slender",
+                customZone: true, zoneId: "", utcOffset: 5.5, zoneLabel: "Mumbai" })
+            compare(w.faceStyle, "minimal")
+            compare(w.handStyle, "slender")
+            compare(w.displayZoneLabel(), "Mumbai")
+        }
+
+        function test_named_zone_uses_timezone_bridge() {
+            var w = h.item
+            w.timeZones = ({ isValid: function (id) { return id === "Asia/Tokyo" },
+                             offsetSecsAt: function () { return 9 * 3600 },
+                             format: function (id, ms, fmt) { return "TOKYO-" + fmt } })
+            h.storeCtl.patchSettings("test-instance", { customZone: true, zoneId: "Asia/Tokyo", zoneLabel: "" })
+            compare(w.zoneResolvable(), true)
+            compare(w.displayZoneLabel(), "Tokyo")
+            compare(w.formatAt("HH:mm"), "TOKYO-HH:mm")
+            w.timeZones = null
+        }
+
+        function test_named_zone_clock_parts_use_bridge_wall_time() {
+            var w = h.item
+            w.timeZones = ({
+                isValid: function (id) { return id === "Asia/Tokyo" },
+                offsetSecsAt: function () { return 9 * 3600 },
+                format: function (id, ms, fmt) {
+                    return fmt === "H|m|s|z" ? "21|34|56|789" : "TOKYO-" + fmt
+                }
+            })
+            h.storeCtl.patchSettings("test-instance", {
+                customZone: true, zoneId: "Asia/Tokyo"
+            })
+            var parts = w.clockPartsAt(new Date(Date.UTC(2026, 6, 15, 12)))
+            compare(parts.hour, 21)
+            compare(parts.minute, 34)
+            compare(parts.second, 56)
+            compare(parts.millisecond, 789)
+            w.timeZones = null
+        }
+
+        function test_invalid_named_zone_is_disclosed() {
+            var w = h.item
+            w.timeZones = ({
+                isValid: function () { return false },
+                offsetSecsAt: function () { return 0 },
+                format: function () { return "" }
+            })
+            h.storeCtl.patchSettings("test-instance", {
+                customZone: true, zoneId: "Mars/Olympus_Mons",
+                utcOffset: 2, zoneLabel: ""
+            })
+            compare(w.invalidZone, true)
+            compare(w.status, "Invalid time zone")
+            compare(w.displayZoneLabel(), "Invalid zone · UTC+2",
+                    "the face discloses both the invalid zone and active fallback")
+            w.timeZones = null
+        }
+
+        function test_fixed_offset_label_formats_fractional_offsets() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", {
+                customZone: true, zoneId: "", utcOffset: 5.5, zoneLabel: ""
+            })
+            compare(w.displayZoneLabel(), "UTC+5:30")
+            set("utcOffset", -3.5)
+            compare(w.displayZoneLabel(), "UTC-3:30")
+        }
+
+        function test_reduce_motion_suppresses_second_hand() {
+            var w = h.item
+            set("showSeconds", true)
+            settle()
+            h.theme.reduceMotionPreference = "on"
+            compare(w.effectiveShowSeconds, false)
+            waitPaint(0, "turning Reduce Motion on repaints to remove the second hand")
+            settle()
+            h.theme.reduceMotionPreference = "off"
+            compare(w.effectiveShowSeconds, true)
+            waitPaint(0, "turning Reduce Motion off repaints to restore the second hand")
+            h.theme.reduceMotionPreference = "auto"
         }
 
         function test_cfg_reacts_to_store_revision() {

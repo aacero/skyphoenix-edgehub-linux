@@ -40,6 +40,8 @@ Item {
         // Prepare a case: (re)load the widget file, wipe + seed its store bucket,
         // pin geometry + sizeClass + expanded, then settle.
         function prep(file, sc, w, h, exp, seedObj) {
+            root.width = Math.max(1400, w)
+            root.height = Math.max(1360, h)
             wh.expanded = (exp === true)
             if (wh.widgetFile !== file) {
                 wh.widgetFile = file
@@ -59,6 +61,7 @@ Item {
             // Clear any lingering celebration banner text from a prior case (the
             // item is reused across cases; a fresh Dashboard instance starts blank).
             if (wh.item.hasOwnProperty("celebrateMsg")) wh.item.celebrateMsg = ""
+            if (wh.item.hasOwnProperty("foreground")) wh.item.foreground = true
             wait(140)
         }
         function stg() { return wh.storeCtl.settingsFor(wh.instanceId) }
@@ -136,20 +139,41 @@ Item {
         // ══════════════════════════════════════════════════════════════════════
         function test_focus_sizes_data() {
             return [
-                { tag: "1x1-compact-land", sc: "compact", w: 846, h: 612 },
-                { tag: "1x1-compact-port", sc: "compact", w: 696, h: 819 },
-                { tag: "1x1.5-tall",       sc: "tall",    w: 696, h: 1229 },
-                { tag: "1x1.5-wide",       sc: "wide",    w: 1269, h: 612 }
+                { tag: "landscape-1x1",   sc: "compact", w: 846,  h: 612 },
+                { tag: "portrait-1x1",    sc: "compact", w: 696,  h: 818 },
+                { tag: "portrait-1x1.5",  sc: "tall",    w: 696,  h: 1226 },
+                { tag: "landscape-1x1.5", sc: "wide",    w: 1268, h: 612 }
             ]
         }
         function test_focus_sizes(d) {
-            prep("FocusWidget.qml", d.sc, d.w, d.h, false, { preset: "classic", phase: "work", running: false })
+            prep("FocusWidget.qml", d.sc, d.w, d.h, false,
+                 { preset: "classic", phase: "work", running: false,
+                   pausedRemaining: 1500, dailyGoal: 4, doneToday: 2,
+                   day: todayKey(), points: 20 })
             compare(wh.item.width, d.w, "cell width")
             compare(wh.item.height, d.h, "cell height")
             var img = snap(wh, "focus_size_" + d.tag)
             verify(G.looksRendered(img), "focus rendered content")
             verify(clockText() !== "", "clock readout present (" + clockText() + ")")
-            verify(G.byText(wh.item, "Focus") !== null, "phase label 'Focus' visible")
+            var phaseLabel = G.byText(wh.item, "Focus")
+            verify(phaseLabel !== null, "phase label 'Focus' visible")
+            verify(phaseLabel.font.pixelSize >= wh.theme.fontTitle,
+                   "phase label meets the arm-length title floor")
+            var runway = G.byObjName(wh.item, "focusRunway")
+            verify(runway !== null, "focus session runway exists")
+            compare(runway.visible, d.sc === "wide" || d.sc === "tall",
+                    "1x1.5 earns now, next, cycle, goal and points context")
+            var controls = G.byObjName(wh.item, "focusTileControls")
+            verify(controls !== null && controls.visible,
+                   "focus primary controls are visible at " + d.tag)
+            var p = controls.mapToItem(wh.item, 0, 0)
+            verify(p.x >= -0.5 && p.y >= -0.5
+                   && p.x + controls.width <= wh.item.width + 0.5
+                   && p.y + controls.height <= wh.item.height + 0.5,
+                   "focus controls stay inside " + d.tag + " ("
+                   + Math.round(p.x) + "," + Math.round(p.y) + " "
+                   + Math.round(controls.width) + "x" + Math.round(controls.height)
+                   + " in " + d.w + "x" + d.h + ")")
         }
 
         // FOCUS - config fields (drive store, assert visible output)
@@ -237,6 +261,11 @@ Item {
                  { preset: "classic", running: false, phase: "work", doneToday: 0, day: todayKey() })
             var p = pill("Skip"); verify(p, "Skip pill present")
             clickItem(p); wait(150)
+            compare(stg().phase, "work", "first Skip tap does not advance")
+            var confirm = pill("Confirm")
+            verify(confirm !== null, "first tap changes the same control to Confirm")
+            snap(wh, "focus_skip_armed")
+            clickItem(confirm); wait(150)
             verify(G.byText(wh.item, "Short Break") !== null, "advanced to a break phase")
             verify((stg().doneToday || 0) === 0, "manual Skip did NOT count a session")
             snap(wh, "focus_skip")
@@ -389,20 +418,61 @@ Item {
         // ══════════════════════════════════════════════════════════════════════
         function test_rightnow_sizes_data() {
             return [
-                { tag: "0.5x0.5", sc: "compact", w: 348, h: 409 },
-                { tag: "0.5x1",   sc: "tall",    w: 348, h: 760 },
-                { tag: "1x0.5",   sc: "wide",    w: 846, h: 306 },
-                { tag: "1x1",     sc: "compact", w: 696, h: 819 },
-                { tag: "1x1.5",   sc: "tall",    w: 696, h: 1229 }
+                { tag: "portrait-0.5x0.5",  sc: "compact", w: 348,  h: 409 },
+                { tag: "landscape-0.5x0.5", sc: "compact", w: 423,  h: 306 },
+                { tag: "portrait-0.5x1",    sc: "tall",    w: 348,  h: 818 },
+                { tag: "landscape-0.5x1",   sc: "wide",    w: 846,  h: 306 },
+                { tag: "portrait-1x0.5",    sc: "wide",    w: 696,  h: 409 },
+                { tag: "landscape-1x0.5",   sc: "tall",    w: 423,  h: 612 },
+                { tag: "portrait-1x1",      sc: "compact", w: 696,  h: 818 },
+                { tag: "landscape-1x1",     sc: "compact", w: 846,  h: 612 },
+                { tag: "portrait-1x1.5",    sc: "tall",    w: 696,  h: 1226 },
+                { tag: "landscape-1x1.5",   sc: "wide",    w: 1268, h: 612 }
             ]
         }
         function test_rightnow_sizes(d) {
-            prep("RightNowWidget.qml", d.sc, d.w, d.h, false, { text: "focus text" })
+            prep("RightNowWidget.qml", d.sc, d.w, d.h, false,
+                 { text: "Finish the release notes", startedAt: Date.now() - 17 * 60000,
+                   finishedToday: 2, day: todayKey() })
             compare(wh.item.width, d.w, "cell width")
             compare(wh.item.height, d.h, "cell height")
             var img = snap(wh, "rn_size_" + d.tag)
             verify(G.looksRendered(img), "right-now rendered content")
-            verify(G.byText(wh.item, "focus text") !== null, "focus text hero visible")
+            verify(G.byText(wh.item, "Finish the release notes") !== null, "focus text hero visible")
+            var hero = G.byObjName(wh.item, "rightNowHero")
+            verify(hero !== null && hero.font.pixelSize >= wh.theme.fontTitle,
+                   "focus remains at the title legibility floor")
+            var context = G.byObjName(wh.item, "rightNowFocusContext")
+            verify(context !== null, "focus context card exists")
+            var rich = d.tag.indexOf("1x1.5") >= 0
+            compare(context.visible, rich,
+                    "1x1.5 earns started, elapsed and finished context")
+            compare(pill("Done") !== null, d.tag.indexOf("0.5x0.5") < 0,
+                    "every non-micro tile exposes the primary completion action")
+            var elapsed = G.byObjName(wh.item, "rightNowElapsed")
+            compare(elapsed !== null && elapsed.visible,
+                    d.tag.indexOf("0.5x0.5") < 0 && !rich,
+                    "non-micro tiles report elapsed context without duplicating the rich panel")
+            if (elapsed && elapsed.visible)
+                verify(elapsed.font.pixelSize >= wh.theme.fontLabel,
+                       "elapsed context uses the readable label floor")
+            if (rich)
+                verify(G.byText(context, "17 min") !== null,
+                       "the rich panel owns the elapsed context")
+        }
+
+        function test_rightnow_long_focus_wraps_before_eliding() {
+            prep("RightNowWidget.qml", "compact", 696, 819, false, {
+                text: "Prepare the release notes and verify every package checksum",
+                startedAt: Date.now() - 8 * 60000
+            })
+            wait(150)
+            var hero = G.byObjName(wh.item, "rightNowHero")
+            verify(hero !== null)
+            verify(hero.lineCount > 1, "long focus wraps onto multiple lines")
+            verify(hero.lineCount <= hero.maximumLineCount)
+            verify(hero.font.pixelSize >= wh.theme.fontTitle)
+            snap(wh, "rn_long_wrapped")
         }
 
         // RIGHT NOW - config
@@ -455,6 +525,20 @@ Item {
             verify(G.byText(wh.item, "finished today") !== null, "finished-count line shows")
             verify((stg().finishedToday || 0) >= 1, "finishedToday incremented")
             snap(wh, "rn_done_expanded")
+        }
+        function test_rightnow_clear_requires_confirmation() {
+            prep("RightNowWidget.qml", "full", 700, 680, true,
+                 { text: "Keep this focus", startedAt: Date.now() })
+            var p = pill("Clear"); verify(p, "Clear pill present")
+            clickItem(p); wait(120)
+            compare(stg().text, "Keep this focus",
+                    "first Clear tap changes no data")
+            var confirm = pill("Confirm")
+            verify(confirm !== null && wh.item.clearArmed,
+                   "Clear enters an explicit confirmation state")
+            snap(wh, "rn_clear_armed")
+            clickItem(confirm); wait(180)
+            compare(stg().text, "", "confirmed Clear removes the focus")
         }
 
         // RIGHT NOW - states
@@ -516,21 +600,48 @@ Item {
         // ══════════════════════════════════════════════════════════════════════
         function test_tasks_sizes_data() {
             return [
-                { tag: "0.5x1", sc: "tall",  w: 348, h: 760 },
-                { tag: "1x0.5", sc: "wide",  w: 846, h: 306 },
-                { tag: "1x1",   sc: "compact", w: 696, h: 819 },
-                { tag: "1x1.5", sc: "tall",  w: 696, h: 1229 },
-                { tag: "1x2",   sc: "large", w: 696, h: 1300 },
-                { tag: "1x3",   sc: "large", w: 720, h: 2560 }
+                { tag: "portrait-0.5x1",    sc: "tall",    w: 348,  h: 818 },
+                { tag: "landscape-0.5x1",   sc: "wide",    w: 846,  h: 306 },
+                { tag: "portrait-1x0.5",    sc: "wide",    w: 696,  h: 409 },
+                { tag: "landscape-1x0.5",   sc: "tall",    w: 423,  h: 612 },
+                { tag: "portrait-1x1",      sc: "compact", w: 696,  h: 818 },
+                { tag: "landscape-1x1",     sc: "compact", w: 846,  h: 612 },
+                { tag: "portrait-1x1.5",    sc: "tall",    w: 696,  h: 1226 },
+                { tag: "landscape-1x1.5",   sc: "wide",    w: 1268, h: 612 },
+                { tag: "portrait-1x2",      sc: "large",   w: 696,  h: 1635 },
+                { tag: "landscape-1x2",     sc: "large",   w: 1691, h: 612 },
+                { tag: "portrait-1x3",      sc: "large",   w: 696,  h: 2452 },
+                { tag: "landscape-1x3",     sc: "large",   w: 2536, h: 612 }
             ]
         }
         function test_tasks_sizes(d) {
-            prep("TasksWidget.qml", d.sc, d.w, d.h, false, { items: [{ text: "sample task", done: false }] })
+            var items = []
+            for (var i = 1; i <= 48; i++)
+                items.push({ id: "visual-" + i,
+                             text: "Task " + (i < 10 ? "0" : "") + i,
+                             done: i % 4 === 0 })
+            prep("TasksWidget.qml", d.sc, d.w, d.h, false, { items: items })
             compare(wh.item.width, d.w, "cell width")
             compare(wh.item.height, d.h, "cell height")
             var img = snap(wh, "tasks_size_" + d.tag)
             verify(G.looksRendered(img), "tasks rendered content")
-            verify(G.byText(wh.item, "sample task") !== null, "task row visible")
+            verify(G.byText(wh.item, "Task 01") !== null, "first task row visible")
+            var list = G.byObjName(wh.item, "tasksList")
+            verify(list !== null && list.height >= wh.item.rowH, "at least one complete touch row fits")
+            var overflow = G.byObjName(wh.item, "tasksOverflowFooter")
+            verify(overflow !== null && overflow.visible,
+                   "the tile reports tasks that do not fit")
+            verify(String(overflow.Accessible.name).indexOf("more tasks") >= 0,
+                   "overflow disclosure is accessible")
+            var summary = G.byObjName(wh.item, "tasksProgressSummary")
+            verify(summary !== null, "task progress summary exists")
+            var largest = d.tag.indexOf("1x1.5") >= 0 || d.tag.indexOf("1x2") >= 0
+                          || d.tag.indexOf("1x3") >= 0
+            compare(summary.visible, largest,
+                    "roomy task sizes earn open, completed and percent context")
+            if (d.sc === "large")
+                compare(wh.item.horiz, d.tag.indexOf("landscape") === 0,
+                        "large task layouts follow their physical orientation")
         }
 
         // TASKS - config / display
@@ -593,8 +704,9 @@ Item {
         function test_tasks_check_toggle() {
             prep("TasksWidget.qml", "compact", 846, 612, false, { items: [{ text: "read book", done: false }] })
             wait(120)
-            var t = G.byText(wh.item, "read book"); verify(t, "task row present")
-            mouseClick(t, Math.round(t.width / 2), Math.round(t.height / 2)); wait(200)
+            verify(G.byText(wh.item, "read book"), "task row present")
+            var toggle = G.byObjName(wh.item, "taskToggle-0"); verify(toggle, "explicit task toggle present")
+            mouseClick(toggle, Math.round(toggle.width / 2), Math.round(toggle.height / 2)); wait(200)
             compare(stg().items[0].done, true, "task marked done")
             verify(G.findPred(wh.item, function (n) {
                 try { return n && n.text === "✓" && n.visible } catch (e) { return false } }) !== null,
@@ -604,15 +716,16 @@ Item {
         function test_tasks_check_expanded() {
             prep("TasksWidget.qml", "full", 800, 680, true, { items: [{ text: "task x", done: false }] })
             wait(120)
-            var t = G.byText(wh.item, "task x"); verify(t, "row present")
-            mouseClick(t, Math.round(t.width / 2), Math.round(t.height / 2)); wait(200)
+            var toggle = G.byObjName(wh.item, "taskToggle-0"); verify(toggle, "task toggle present")
+            mouseClick(toggle, Math.round(toggle.width / 2), Math.round(toggle.height / 2)); wait(200)
             compare(stg().items[0].done, true, "toggled done in expanded view")
         }
         function test_tasks_uncheck() {
             prep("TasksWidget.qml", "compact", 846, 612, false, { items: [{ text: "old task", done: true }] })
             wait(120)
-            var t = G.byText(wh.item, "old task"); verify(t, "row present")
-            mouseClick(t, Math.round(t.width / 2), Math.round(t.height / 2)); wait(200)
+            verify(G.byText(wh.item, "old task"), "row present")
+            var toggle = G.byObjName(wh.item, "taskToggle-0"); verify(toggle, "explicit task toggle present")
+            mouseClick(toggle, Math.round(toggle.width / 2), Math.round(toggle.height / 2)); wait(200)
             compare(stg().items[0].done, false, "task un-checked")
         }
         function test_tasks_delete_expanded() {
@@ -624,9 +737,15 @@ Item {
             verify(x, "remove ✕ present (expanded)")
             mouseClick(x, Math.round(x.width / 2), Math.round(x.height / 2)); wait(250)
             compare((stg().items || []).length, 1, "one row removed")
-            verify(G.byText(wh.item, "first") === null, "first row removed")
+            compare(stg().items[0].text, "second",
+                    "the intended first row was removed")
             verify(G.byText(wh.item, "second") !== null, "second row remains")
+            var undo = pill("Undo")
+            verify(undo !== null, "removal offers immediate undo")
             snap(wh, "tasks_delete")
+            clickItem(undo); wait(200)
+            compare((stg().items || []).length, 2, "undo restores the removed task")
+            verify(G.byText(wh.item, "first") !== null, "restored task is visible")
         }
         function test_tasks_remove_hidden_on_tile() {
             prep("TasksWidget.qml", "compact", 696, 819, false, { items: [{ text: "keepme", done: false }] })
@@ -641,6 +760,8 @@ Item {
             wait(150)
             var p = pill("Clear 1 completed"); verify(p, "clear-completed pill present")
             clickItem(p); wait(250)
+            verify(wh.item.clearArmed, "first tap arms the destructive clear")
+            clickItem(p); wait(250)
             compare((stg().items || []).length, 1, "completed cleared")
             verify(G.byText(wh.item, "pending") !== null, "pending task remains")
             verify(G.byText(wh.item, "finished") === null, "finished task removed")
@@ -650,8 +771,9 @@ Item {
             prep("TasksWidget.qml", "compact", 846, 612, false,
                  { items: [{ text: "last one", done: false }], celebrate: true })
             wait(120)
-            var t = G.byText(wh.item, "last one"); verify(t, "row present")
-            mouseClick(t, Math.round(t.width / 2), Math.round(t.height / 2))
+            verify(G.byText(wh.item, "last one"), "row present")
+            var toggle = G.byObjName(wh.item, "taskToggle-0"); verify(toggle, "explicit task toggle present")
+            mouseClick(toggle, Math.round(toggle.width / 2), Math.round(toggle.height / 2))
             tryVerify(function () { return G.byText(wh.item, "All done") !== null }, 2000,
                       "all-done celebration banner shows")
             snap(wh, "tasks_celebrate")
@@ -687,7 +809,10 @@ Item {
         function test_tasks_states_data() {
             return [
                 { tag: "empty-tile", sc: "compact", w: 696, h: 819, exp: false, seed: { items: [] }, sub: "No tasks", present: true },
-                { tag: "empty-expanded", sc: "full", w: 800, h: 680, exp: true, seed: { items: [] }, sub: "No tasks yet", present: true },
+                { tag: "empty-expanded", sc: "full", w: 800, h: 680, exp: true, seed: { items: [] }, sub: "Make the next move obvious", present: true },
+                { tag: "completed-hidden", sc: "compact", w: 696, h: 819, exp: false,
+                  seed: { items: [{ text: "done", done: true }], hideCompleted: true },
+                  sub: "All 1 task completed", present: true },
                 { tag: "populated", sc: "compact", w: 696, h: 819, exp: false, seed: { items: [{ text: "alpha", done: false }, { text: "beta", done: false }] }, sub: "alpha", present: true }
             ]
         }

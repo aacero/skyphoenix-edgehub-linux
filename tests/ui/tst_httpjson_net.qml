@@ -2,7 +2,6 @@ import QtQuick
 import QtTest
 import "../../ui/qml" as App
 
-// COVERS: schema:jsonPath, schema:pollSec, schema:mode, schema:gaugeMax, schema:listMax, schema:authToken, schema:warnAt, schema:critAt
 //
 // Network + parsing path of ui/qml/widgets/HttpJsonWidget.qml, driven offline via
 // the xhrFactory seam (passed through NetHub inside the widget). Asserts URL +
@@ -49,6 +48,14 @@ Item {
 
     App.WidgetConfigSchema { id: sc }
 
+    QtObject {
+        id: blockedHub
+        function request(options) {
+            options.onError("blocked")
+            return null
+        }
+    }
+
     function findAllNodes(node, pred, acc) {
         if (!node) return acc
         if (pred(node)) acc.push(node)
@@ -62,7 +69,13 @@ Item {
     }
     function iid() { return h.instanceId }
     function clearSettings() {
-        var s = h.storeCtl.settingsFor(iid()); for (var k in s) delete s[k]; h.storeCtl._touchSettings()
+        // Replace the test bucket instead of repeatedly deleting and re-adding
+        // properties on the same QV4 object. Qt 6.11 can crash in
+        // QV4::Object::insertMember after enough shape mutations, which made
+        // this offline test process fail before reporting its totals.
+        if (!h.storeCtl.document.settings) h.storeCtl.document.settings = {}
+        h.storeCtl.document.settings[iid()] = {}
+        h.storeCtl._touchSettings()
     }
 
     TestCase {
@@ -72,6 +85,7 @@ Item {
         function init() {
             tryVerify(function () { return h.ready }, 3000)
             clearSettings(); h.active = false
+            h.item.netHub = null
             h.item.xhrFactory = function () { lastFake = root.makeFake(); return lastFake }
         }
         function drive(url, path, status, body) {
@@ -90,6 +104,13 @@ Item {
             verify(lastFake.headers["Authorization"] === undefined, "no auth header when no token")
         }
 
+        function test_pending_request_is_loading() {
+            h.storeCtl.patchSettings(iid(), { url: "https://api.example.com/loading", jsonPath: "v" })
+            h.item.refresh()
+            compare(h.item.providerState, "loading")
+            compare(h.item.status, "Loading")
+        }
+
         function test_bearer_token_becomes_auth_header() {
             h.storeCtl.patchSettings(iid(), { url: "https://api.example.com/s", authToken: "SECRET" })
             h.item.refresh()
@@ -101,6 +122,8 @@ Item {
             lastFake = null
             h.item.refresh()
             verify(lastFake === null, "no request without a URL")
+            compare(h.item.providerState, "unconfigured")
+            compare(h.item.status, "Setup")
         }
 
         // ── JSON path extraction → value ─────────────────────────────────────
@@ -109,6 +132,8 @@ Item {
             compare(h.item.valNum, 42, "numeric value extracted")
             compare(h.item.valText, "42", "formatted as an integer")
             compare(h.item.errText, "", "no error on success")
+            compare(h.item.providerState, "fresh")
+            compare(h.item.status, "")
         }
 
         function test_bracket_index_path() {
@@ -121,6 +146,28 @@ Item {
             compare(h.item.valText, "3.1", "small float shown to one decimal")
         }
 
+        function test_decimal_formatting_is_configurable() {
+            h.storeCtl.patchSettings(iid(), { decimals: 3 })
+            drive("https://x/y", "v", 200, '{"v":3.14159}')
+            compare(h.item.valText, "3.142")
+            h.storeCtl.patchSettings(iid(), { decimals: 0 })
+            drive("https://x/y", "v", 200, '{"v":3.8}')
+            compare(h.item.valText, "4")
+        }
+
+        function test_success_records_real_freshness_and_stale_age() {
+            h.item.nowMsOverride = 1000000
+            drive("https://status.example.com/y", "v", 200, '{"v":7}')
+            compare(h.item.lastSuccessAt, 1000000)
+            compare(h.item.sourceHost(), "status.example.com")
+            compare(h.item.stale, false)
+            h.item.nowMsOverride = 1000000 + h.item.staleAfterSec * 1000
+            compare(h.item.stale, true)
+            compare(h.item.providerState, "stale")
+            compare(h.item.status, "Stale")
+            h.item.nowMsOverride = -1
+        }
+
         function test_blank_path_uses_whole_body_scalar() {
             drive("https://x/y", "", 200, '99')
             compare(h.item.valNum, 99, "a bare JSON number is taken whole")
@@ -129,6 +176,36 @@ Item {
         function test_missing_path_is_no_match() {
             drive("https://x/y", "nope.here", 200, '{"data":1}')
             compare(h.item.errText, "No match", "an unresolved path is a clear error")
+            verify(h.item.errorHelp.indexOf("JSON path") >= 0,
+                   "the error explains what to correct")
+        }
+
+        function test_connection_preview() {
+            h.storeCtl.patchSettings(iid(), {
+                url: "https://x/y", jsonPath: "data.value",
+                httpText: "17", httpVal: 17, httpErr: ""
+            })
+            h.item.testConnection()
+            verify(h.item.testingConnection)
+            lastFake.resolveWith(200, '{"data":{"value":42}}')
+            compare(h.item.testingConnection, false)
+            verify(h.item.connectionStatus.indexOf("HTTP 200") >= 0)
+            verify(h.item.connectionStatus.indexOf("42") >= 0,
+                   "test result includes a representative value")
+            compare(h.item.valNum, 17,
+                    "a connection test does not replace the last live reading")
+        }
+
+        function test_connection_reports_path_and_policy_corrections() {
+            h.storeCtl.patchSettings(iid(), { url: "https://x/y", jsonPath: "missing" })
+            h.item.testConnection()
+            lastFake.resolveWith(200, '{"value":42}')
+            verify(h.item.connectionStatus.indexOf("did not match") >= 0)
+
+            h.item.netHub = blockedHub
+            h.item.testConnection()
+            verify(h.item.connectionStatus.indexOf("not allowed") >= 0)
+            h.item.netHub = null
         }
 
         // ── list mode ────────────────────────────────────────────────────────
@@ -139,31 +216,81 @@ Item {
             compare(h.item.valText, "3 items", "count summarised as text")
         }
 
+        function test_expanded_list_respects_user_maximum() {
+            h.storeCtl.patchSettings(iid(), {
+                url: "https://x/y", mode: "list", listMax: 3
+            })
+            h.item._apply(["one", "two", "three", "four", "five"])
+            compare(h.item.expanded, true, "precondition: overlay host")
+            compare(h.item.listShown, 3,
+                    "the overlay does not override the configured list maximum")
+        }
+
+        function test_runtime_clamps_poll_and_list_to_schema_bounds() {
+            h.storeCtl.patchSettings(iid(), {
+                url: "https://x/y", pollSec: 2, listMax: 99
+            })
+            compare(h.item.pollSec, 5,
+                    "runtime polling matches the schema minimum")
+            compare(h.item.listMax, 12,
+                    "crafted list limits cannot exceed the schema maximum")
+        }
+
+        function test_bearer_token_is_refused_on_plain_http() {
+            h.storeCtl.patchSettings(iid(), {
+                url: "http://api.example.com/private", authToken: "SECRET"
+            })
+            lastFake = null
+            h.item.refresh()
+            compare(lastFake, null, "no XHR is created for insecure bearer auth")
+            compare(h.item.errText, "Blocked")
+        }
+
         // ── thresholds → colour ──────────────────────────────────────────────
         function test_threshold_colours() {
             h.storeCtl.patchSettings(iid(), { warnAt: "80", critAt: "95" })
             drive("https://x/y", "v", 200, '{"v":50}')
             compare(h.item.valColor, h.item.effAccent, "below warn → accent")
+            compare(h.item.thresholdState, "Normal")
             drive("https://x/y", "v", 200, '{"v":85}')
             compare(h.item.valColor, h.theme.warning, "≥ warn → amber")
+            compare(h.item.thresholdState, "Warning")
             drive("https://x/y", "v", 200, '{"v":99}')
             compare(h.item.valColor, h.theme.error, "≥ crit → red")
+            compare(h.item.thresholdState, "Critical")
         }
 
         // ── error states ─────────────────────────────────────────────────────
         function test_non_200_is_unavailable() {
+            drive("https://x/y", "v", 200, '{"v":12}')
             drive("https://x/y", "v", 500, "")
-            compare(h.item.errText, "Unavailable", "http error → Unavailable")
+            compare(h.item.errText, "HTTP 500", "HTTP status remains actionable")
+            verify(h.item.errorHelp.indexOf("server rejected") >= 0)
+            compare(h.item.valText, "12", "the last successful value remains visible")
+            compare(h.item.providerState, "error", "failed refresh keeps data and reports its state")
         }
         function test_malformed_json_is_parse_error() {
             drive("https://x/y", "v", 200, "not json{")
             compare(h.item.errText, "Parse error")
+            verify(h.item.errorHelp.indexOf("valid JSON") >= 0)
+            compare(h.item.providerState, "error")
         }
         function test_timeout_state() {
             h.storeCtl.patchSettings(iid(), { url: "https://x/y", jsonPath: "v" })
             h.item.refresh()
             lastFake.fireTimeout()
             compare(h.item.errText, "Timed out")
+            compare(h.item.providerState, "disconnected")
+            compare(h.item.status, "Offline")
+        }
+
+        function test_policy_block_has_its_own_state() {
+            h.item.netHub = blockedHub
+            h.storeCtl.patchSettings(iid(), { url: "http://blocked.example/x", jsonPath: "v" })
+            h.item.refresh()
+            compare(h.item.errText, "Blocked")
+            compare(h.item.providerState, "blocked")
+            compare(h.item.status, "Blocked")
         }
 
         // ── ephemeral persistence (the flash-wear guarantee) ─────────────────
@@ -198,8 +325,25 @@ Item {
             verify(k["gaugeMax"] === true, "httpjson schema exposes gaugeMax")
             verify(k["listMax"] === true, "httpjson schema exposes listMax")
             verify(k["authToken"] === true, "httpjson schema exposes authToken")
+            verify(k["decimals"] === true, "httpjson schema exposes decimals")
             verify(k["warnAt"] === true, "httpjson schema exposes warnAt")
             verify(k["critAt"] === true, "httpjson schema exposes critAt")
+        }
+
+        function test_schema_exposes_connection_action_and_conditional_fields() {
+            var s = sc.schemaFor("httpjson")
+            var action = null, unit = null, warn = null
+            for (var i = 0; i < s.sections.length; i++) {
+                for (var j = 0; j < (s.sections[i].fields || []).length; j++) {
+                    var field = s.sections[i].fields[j]
+                    if (field.action === "testConnection") action = field
+                    if (field.key === "unit") unit = field
+                    if (field.key === "warnAt") warn = field
+                }
+            }
+            verify(action !== null, "schema offers Test connection")
+            compare(unit.visibleWhen.notEquals, "list")
+            compare(warn.visibleWhen.notEquals, "list")
         }
     }
 

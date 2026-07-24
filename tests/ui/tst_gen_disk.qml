@@ -1,7 +1,7 @@
 import QtQuick
 import QtTest
+import "../../ui/qml" as App
 
-// COVERS: schema:warnPercent
 
 // Comprehensive coverage for the Disk widget (ui/qml/widgets/DiskWidget.qml).
 //
@@ -36,6 +36,8 @@ Item {
         widgetFile: "DiskWidget.qml"
         expanded: true
     }
+    App.WidgetCatalog { id: catalog }
+    App.WidgetConfigSchema { id: schema }
 
     // Fixed-size hosts for the per-sizeClass structure tests - real projected
     // cell footprints (half-cell ≈ 344x416 portrait, full cell ≈ 696x840).
@@ -79,12 +81,44 @@ Item {
         return found
     }
     // Feed the Rust metrics JSON. Fields default to 0 when omitted.
-    function feed(percent, used, total) {
+    function feed(percent, used, total, available, reserved, metricsAvailable) {
         var m = {}
         if (percent !== undefined) m.disk_usage_percent = percent
         if (used !== undefined) m.disk_used_bytes = used
         if (total !== undefined) m.disk_total_bytes = total
+        if (available !== undefined) m.disk_available_bytes = available
+        if (reserved !== undefined) m.disk_reserved_bytes = reserved
+        if (metricsAvailable !== undefined) m.disk_metrics_available = metricsAvailable
         h.metricsJson = JSON.stringify(m)
+    }
+    function feedMountCatalog(includeData, ioReady) {
+        var rootMount = {
+            path: "/", source: "/dev/nvme0n1p2", fs_type: "ext4",
+            device: "nvme0n1p2", metrics_available: true,
+            total_bytes: 100 * gib, used_bytes: 20 * gib,
+            available_bytes: 75 * gib, reserved_bytes: 5 * gib,
+            usage_percent: 21.1, io_rate_available: true,
+            read_bytes_per_sec: 4 * 1048576, write_bytes_per_sec: 2 * 1048576
+        }
+        var mounts = [rootMount]
+        if (includeData) mounts.push({
+            path: "/data", source: "/dev/sdb1", fs_type: "btrfs",
+            device: "sdb1", metrics_available: true,
+            total_bytes: 200 * gib, used_bytes: 150 * gib,
+            available_bytes: 50 * gib, reserved_bytes: 0,
+            usage_percent: 75, io_rate_available: ioReady,
+            read_bytes_per_sec: 12 * 1048576, write_bytes_per_sec: 3 * 1048576
+        })
+        h.metricsJson = JSON.stringify({
+            disk_metrics_available: true,
+            disk_sample_unix_ms: Date.now(),
+            disk_total_bytes: rootMount.total_bytes,
+            disk_used_bytes: rootMount.used_bytes,
+            disk_available_bytes: rootMount.available_bytes,
+            disk_reserved_bytes: rootMount.reserved_bytes,
+            disk_usage_percent: rootMount.usage_percent,
+            disk_mounts: mounts
+        })
     }
 
     // Byte constants.
@@ -143,9 +177,13 @@ Item {
         function test_amber_reachable_above_high_warn() {
             var w = h.item
             set("warnPercent", 99)
-            // 99.5 is above the warn line → the schema promises amber here.
-            verify(Qt.colorEqual(w.col(99.5), h.theme.warning),
+            // 99.4 displays as 99, so the schema promises amber here.
+            verify(Qt.colorEqual(w.col(99.4), h.theme.warning),
                    "just over a warnPercent=99 line the ring should be amber, not red")
+            verify(Qt.colorEqual(w.col(99.5), h.theme.error),
+                   "a reading displayed as 100% uses the critical state")
+            verify(Qt.colorEqual(w.col(100), h.theme.error),
+                   "a completely full disk still reaches the critical state")
         }
 
         // BUG (audit, high): the critical (red) threshold must always sit at or
@@ -193,31 +231,118 @@ Item {
             verify(findText("N/A") !== null, "the centre reads N/A")
         }
 
-        // ── Ring vs text accounting mismatch ─────────────────────────────────
-        // BUG (audit, medium): the ring % comes from disk_usage_percent (excludes
-        // root-reserved blocks) but the sub text prints raw used/total (includes
-        // them). The two figures disagree.
-        function test_ring_and_text_same_accounting() {
+        // The percentage follows df while the byte labels retain the exact
+        // statvfs counters, including separately reported reserved space.
+        function test_ring_and_text_keep_truthful_statvfs_accounting() {
             var w = h.item
-            // Root-reserved case: core percent 94.7, raw used/total 90/100.
-            feed(94.7, 90 * gib, 100 * gib)
-            // Fix keeps the df-correct ring % (root-reservation aware) and derives the
-            // shown used/free from it, so the sub-line matches the ring - not raw bytes.
-            var shownPct = 100 * (100 * gib - w.freeBytes) / (100 * gib)
-            verify(Math.abs(w.v - shownPct) < 1.5,
-                   "the ring % (" + w.v + ") and the used/free shown (" + shownPct
-                   + "%) must represent the same accounting")
+            feed(94.7, 90 * gib, 100 * gib, 5 * gib, 5 * gib, true)
+            compare(w.v, 94.7)
+            compare(w.usedBytes, 90 * gib, "used bytes come from the real counter")
+            compare(w.availableBytes, 5 * gib, "available bytes are not reconstructed")
+            compare(w.reservedBytes, 5 * gib, "root-reserved bytes remain explicit")
         }
 
         // BUG (audit, medium): freeBytes = total - used includes root-reserved
         // space, so a disk the core calls 100% full can still print "N GB free".
         function test_full_disk_does_not_show_free() {
             var w = h.item
-            feed(100, 95 * gib, 100 * gib)   // core says full, 5 gib reserved-free
+            feed(100, 95 * gib, 100 * gib, 0, 5 * gib, true)
             compare(w.v, 100, "ring reads 100%")
             verify(!(w.v >= 100 && w.freeBytes > gib),
                    "a 100%-full ring must not simultaneously report free space (got "
                    + w.human(w.freeBytes) + " free)")
+        }
+
+        function test_explicit_failure_and_freshness_are_truthful() {
+            var w = h.item
+            h.metricsJson = JSON.stringify({
+                disk_metrics_available: false,
+                disk_unavailable_reason: "statvfs failed"
+            })
+            compare(w.avail, false)
+            compare(w.freshness, "unavailable")
+            compare(w.unavailableReason, "statvfs failed")
+            h.metricsJson = JSON.stringify({
+                disk_metrics_available: true,
+                disk_sample_unix_ms: Date.now(),
+                disk_total_bytes: 100 * gib,
+                disk_used_bytes: 20 * gib,
+                disk_available_bytes: 75 * gib,
+                disk_reserved_bytes: 5 * gib,
+                disk_usage_percent: 21.1
+            })
+            compare(w.freshness, "updated now")
+        }
+
+        function test_discovered_mount_selection_uses_only_the_selected_filesystem() {
+            var w = h.item
+            set("mountPath", "/data")
+            feedMountCatalog(true, true)
+            compare(w.mountPath, "/data")
+            compare(w.v, 75)
+            compare(w.usedBytes, 150 * gib)
+            compare(w.totalBytes, 200 * gib)
+            compare(w.filesystemIdentity, "/data · btrfs · /dev/sdb1")
+            verify(w.accessibleSummary.indexOf("/data") >= 0)
+            verify(w.accessibleSummary.indexOf("75 percent used") >= 0)
+        }
+
+        function test_unplugged_selected_mount_is_explicitly_offline() {
+            var w = h.item
+            set("mountPath", "/data")
+            feedMountCatalog(false, true)
+            compare(w.selectedMountMissing, true)
+            compare(w.avail, false)
+            compare(w.capacityState, "Unavailable")
+            compare(w.unavailableReason, "Selected mount /data is offline")
+        }
+
+        function test_activity_has_non_color_direction_labels_and_real_rates() {
+            var w = h.item
+            set("mountPath", "/data")
+            set("showActivity", true)
+            feedMountCatalog(true, true)
+            compare(w.ioAvailable, true)
+            compare(w.readRate, 12 * 1048576)
+            compare(w.writeRate, 3 * 1048576)
+            verify(findText("↓ Read  12.0 MiB/s") !== null)
+            verify(findText("↑ Write  3.0 MiB/s") !== null)
+        }
+
+        function test_activity_reports_sampling_or_unsupported_instead_of_fake_zero() {
+            var w = h.item
+            set("mountPath", "/data")
+            feedMountCatalog(true, false)
+            compare(w.ioAvailable, false)
+            verify(findText("↓ Read  Sampling or unsupported") !== null)
+            verify(findText("↑ Write  Sampling or unsupported") !== null)
+        }
+
+        function test_capacity_state_and_thresholds_are_not_color_only() {
+            var w = h.item
+            set("warnPercent", 70)
+            feedMountCatalog(true, true)
+            set("mountPath", "/data")
+            compare(w.capacityState, "Warning")
+            verify(findText("Warning · warn 70% · crit 97%") !== null)
+        }
+
+        function test_schema_discovers_mounts_and_retains_an_offline_selection() {
+            var metrics = {
+                disk_mounts: [
+                    { path: "/", fs_type: "ext4", source: "/dev/nvme0n1p2" },
+                    { path: "/data", fs_type: "btrfs", source: "/dev/sdb1" }
+                ]
+            }
+            var s = schema.schemaFor("disk", metrics, "/offline")
+            var fields = s.sections[0].fields
+            var byKey = ({})
+            for (var i = 0; i < fields.length; i++) byKey[fields[i].key] = fields[i]
+            compare(byKey.mountPath.type, "select")
+            compare(byKey.mountPath.options.length, 3)
+            compare(byKey.mountPath.options[1].label, "/data · btrfs · /dev/sdb1")
+            compare(byKey.mountPath.options[2].label, "Offline mount (/offline)")
+            compare(byKey.showActivity.dflt, true)
         }
 
         // ── Rounding boundary: label rounded, colour raw ─────────────────────
@@ -382,6 +507,14 @@ Item {
             compare(w.showHeader, true, "the baseline keeps the header")
             compare(w.showInlineSub, true, "the baseline shows used/total inside the ring")
             compare(w.showDetails, false, "no detail column at 1x1")
+            var inlineValue = null
+            eachItem(w, function (n) {
+                if (!inlineValue && n.text !== undefined
+                        && String(n.text).indexOf("GiB /") >= 0) inlineValue = n
+            })
+            verify(inlineValue !== null)
+            verify(Qt.colorEqual(inlineValue.color, hBase.theme.textPrimary),
+                   "the baseline capacity line uses primary contrast")
         }
 
         // wide - ring beside a Used/Free/Total detail column. The SAME class is
@@ -416,9 +549,9 @@ Item {
             compare(w.horiz, false, "tall stacks vertically")
             compare(w.showDetails, true, "tall earns the Used/Free/Total column")
             compare(w.showHeader, true, "tall keeps the header")
-            var free = null
-            eachItem(w, function (n) { if (!free && n.text === "Free") free = n })
-            verify(free !== null && free.visible, "the Free row is rendered")
+            var available = null
+            eachItem(w, function (n) { if (!available && n.text === "Available") available = n })
+            verify(available !== null && available.visible, "the Available row is rendered")
         }
 
         // full (the overlay) - same rich layout as tall, never the micro one.
@@ -428,6 +561,16 @@ Item {
             compare(w.micro, false, "full is never micro")
             compare(w.showDetails, true, "the overlay shows the detail column")
             compare(w.showHeader, true, "the overlay keeps the header")
+        }
+
+        function test_catalog_exposes_rich_tall_size() {
+            var item = null
+            for (var i = 0; i < catalog.items.length; i++)
+                if (catalog.items[i].type === "disk") item = catalog.items[i]
+            verify(item !== null)
+            verify(item.sizes.indexOf("1x1.5") >= 0,
+                   "the tall size is supported now that filesystem identity and I/O fill it")
+            verify(item.sizes.indexOf("1x1") >= 0)
         }
 
         // ── The dead `active` gate ───────────────────────────────────────────

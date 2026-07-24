@@ -2,7 +2,6 @@ import QtQuick
 import QtTest
 import "../../ui/qml" as App
 
-// COVERS: schema:ageUnit, schema:showDate
 
 // SinceInstallWidget - how long the system has been installed.
 //
@@ -19,6 +18,10 @@ Item {
     function agedInfo(days) {
         return { id: "arch", name: "Arch Linux", family: "arch", packageCount: 1461,
                  unsupportedReason: null, updates: null,
+                 installSource: "package-log-estimate",
+                 installEvidence: "/var/log/pacman.log",
+                 installEvidenceNote: "Earliest record in visible pacman history. Deleted logs may make this younger than the system.",
+                 installReason: null,
                  // Push the epoch 60s FURTHER back, so elapsed time is a hair OVER
                  // days*86400 and floor() lands on `days`. Landing exactly on the
                  // boundary would floor to days-1 the moment the clock ticked
@@ -28,6 +31,7 @@ Item {
 
     WidgetHarness { id: h; anchors.fill: parent; widgetFile: "SinceInstallWidget.qml" }
     App.WidgetConfigSchema { id: sc }
+    App.WidgetCatalog { id: catalog }
 
     TestCase {
         name: "SinceInstallWidget"
@@ -35,6 +39,8 @@ Item {
 
         function init() {
             tryVerify(function () { return h.ready }, 3000)
+            root.width = 420
+            root.height = 320
             var s = h.storeCtl.settingsFor("test-instance")
             for (var k in s) delete s[k]
             h.storeCtl._touchSettings()
@@ -59,13 +65,16 @@ Item {
             w.distroOverride = fakeDistro({
                 id: "fedora", name: "Fedora Linux 40", family: "rpm",
                 packageCount: null, updates: null, installEpoch: null,
-                unsupportedReason: "RPM systems need librpm to read the package database; this build does not shell out to rpm."
+                unsupportedReason: "RPM package count is unavailable.",
+                installReason: "System age is unavailable because no safe RPM install-history provider is configured."
             })
             compare(w.known, false)
             compare(w.loading, false, "we got an answer; it has no date")
             compare(w.valueText, "-")
             compare(w.dateText, "", "no date rendered at all")
-            verify(w.unitText.indexOf("unavailable") >= 0)
+            compare(w.unitText, "System age unavailable")
+            verify(w.reason.indexOf("install-history") >= 0,
+                   "System Age uses its own reason, not the package-count error")
         }
 
         function test_days_for_a_fresh_system() {
@@ -74,7 +83,8 @@ Item {
             compare(w.known, true)
             compare(w.days, 4)
             compare(w.valueText, "4")
-            compare(w.unitText, "days since install")
+            compare(w.unitText, "days since earliest record")
+            compare(w.estimated, true)
         }
 
         // A clock skew that puts the install slightly in the future must read
@@ -90,7 +100,7 @@ Item {
             var w = h.item
             w.distroOverride = fakeDistro(agedInfo(1))
             compare(w.days, 1)
-            compare(w.unitText, "day since install", "singular at exactly 1")
+            compare(w.unitText, "day since earliest record", "singular at exactly 1")
         }
 
         // "auto" promotes days -> months -> years as the smaller unit stops being
@@ -102,22 +112,24 @@ Item {
 
             w.distroOverride = fakeDistro(agedInfo(59))
             compare(w.valueText, "59", "under 60 days -> days")
-            compare(w.unitText, "days since install")
+            compare(w.unitText, "days since earliest record")
 
             w.distroOverride = fakeDistro(agedInfo(60))
-            compare(w.valueText, "1", "at 60 days -> months (60/30.44 = 1)")
-            compare(w.unitText, "month since install", "singular month")
+            compare(w.valueText, "" + w.completedMonths,
+                    "at 60 days automatic mode uses completed calendar months")
+            verify(w.unitText.indexOf("since earliest record") >= 0)
 
             w.distroOverride = fakeDistro(agedInfo(365))
-            compare(w.valueText, "11", "365/30.44 = 11 months")
-            compare(w.unitText, "months since install")
+            compare(w.valueText, "" + w.completedMonths)
+            compare(w.displayUnit, "months")
 
             w.distroOverride = fakeDistro(agedInfo(730))
-            compare(w.valueText, "2.0", "at 730 days -> years, one decimal")
-            compare(w.unitText, "years since install")
+            compare(w.displayUnit, "years")
+            compare(w.valueText, (w.completedMonths / 12).toFixed(1))
+            compare(w.unitText, "years since earliest record")
 
             w.distroOverride = fakeDistro(agedInfo(1461))
-            compare(w.valueText, "4.0", "1461/365.25 = exactly 4.0 - leap years counted")
+            compare(w.valueText, (w.completedMonths / 12).toFixed(1))
         }
 
         // "days" pins the unit: 1461 days IS the flex for some people.
@@ -127,7 +139,18 @@ Item {
             compare(w.ageUnit, "days")
             w.distroOverride = fakeDistro(agedInfo(1461))
             compare(w.valueText, "1461", "no promotion to years")
-            compare(w.unitText, "days since install")
+            compare(w.unitText, "days since earliest record")
+        }
+
+        function test_explicit_month_and_year_units_use_completed_calendar_months() {
+            var w = h.item
+            w.distroOverride = fakeDistro(agedInfo(500))
+            set("ageUnit", "months")
+            compare(w.displayUnit, "months")
+            compare(w.valueText, "" + w.completedMonths)
+            set("ageUnit", "years")
+            compare(w.displayUnit, "years")
+            compare(w.valueText, (w.completedMonths / 12).toFixed(1))
         }
 
         // The option must actually change what's rendered.
@@ -137,7 +160,8 @@ Item {
             set("showDate", true)
             compare(w.showDate, true)
             verify(w.status.length > 0, "the install date rides in the header")
-            compare(w.status, w.dateText)
+            compare(w.status, "Est. " + w.dateText,
+                    "estimated evidence is never presented as a confirmed date")
             set("showDate", false)
             compare(w.showDate, false)
             compare(w.status, "", "toggled off -> no date in the header")
@@ -157,6 +181,7 @@ Item {
             var fields = sc.schemaFor("sinceinstall").sections[0].fields
             compare(fields[0].key, "ageUnit")
             compare(fields[0].dflt, "auto")
+            compare(fields[0].options.length, 4)
             compare(fields[1].key, "showDate")
             compare(fields[1].dflt, true)
         }
@@ -168,6 +193,39 @@ Item {
             wait(0)
             compare(w.days, 4, "age survives the expanded relayout")
             compare(w.status, "", "expanded hides the header status")
+        }
+
+        function test_installer_record_is_confirmed_not_estimated() {
+            var info = agedInfo(10)
+            info.installSource = "installer-record"
+            info.installEvidence = "/var/log/installer"
+            info.installEvidenceNote = "Distribution installer record. High-confidence installation evidence."
+            h.item.distroOverride = fakeDistro(info)
+            compare(h.item.estimated, false)
+            compare(h.item.sourceLabel, "Installer record")
+            compare(h.item.unitText, "days since install")
+        }
+
+        function test_detailed_size_shows_exact_evidence_and_confidence() {
+            var w = h.item
+            w.distroOverride = fakeDistro(agedInfo(500))
+            root.width = 696
+            root.height = 818
+            wait(0)
+            verify(w.richTile)
+            compare(w.evidencePath, "/var/log/pacman.log")
+            verify(w.evidenceNote.indexOf("Deleted logs") >= 0)
+            verify(w.status.indexOf("Est.") === 0,
+                   "estimated evidence is labelled even in the header")
+        }
+
+        function test_catalog_caps_system_age_at_one_by_one() {
+            var item = null
+            for (var i = 0; i < catalog.items.length; i++)
+                if (catalog.items[i].type === "sinceinstall") item = catalog.items[i]
+            verify(item !== null)
+            compare(item.sizes.indexOf("1x1.5"), -1)
+            verify(item.sizes.indexOf("1x1") >= 0)
         }
     }
 }

@@ -2,7 +2,6 @@ import QtQuick
 import QtTest
 import "../../ui/qml" as App
 
-// COVERS: schema:maxEvents, schema:url
 
 // ─────────────────────────────────────────────────────────────────────────
 // tst_gen_calendar - COMPREHENSIVE coverage for area "widget:calendar"
@@ -175,6 +174,17 @@ Item {
             var ds = w.dayStart(new Date(2026, 6, 12, 15, 30, 0))
             compare(ds.getHours(), 0)
             compare(ds.getMinutes(), 0)
+        }
+
+        function test_tomorrow_uses_the_next_calendar_day_across_dst() {
+            var w = h.item
+            var now = new Date()
+            var tomorrow = new Date(now)
+            tomorrow.setDate(tomorrow.getDate() + 1)
+            tomorrow.setHours(9, 0, 0, 0)
+            var ev = { start: tomorrow, allDay: false }
+            verify(w.fmtWhen(ev).indexOf("Tomorrow") === 0,
+                   "tomorrow is labelled by local calendar date")
         }
     }
 

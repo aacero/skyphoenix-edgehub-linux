@@ -401,8 +401,7 @@ Item {
             mouseClick(thumb, thumb.width / 2, thumb.height / 2); wait(150)
             verify(thumb.sel === true, "the selected thumbnail reports sel")
             // The check badge Rectangle is the delegate child that is visible only when sel.
-            var badge = G.findPred(thumb, function (n) {
-                return n && n.radius === 9 && n.width === 18 && n.height === 18 })
+            var badge = G.byObjName(thumb, "wallpaperCheckBadge")
             verify(badge !== null && badge.visible, "the check badge is shown on the selection")
         }
         function test_style_chip_selected_state() {
@@ -669,16 +668,25 @@ Item {
         function clickCard(pp, name) {
             var target = G.byObjName(pp, name)
             verify(target !== null, "card present: " + name)
-            var scroll = G.findPred(pp, function (n) {
-                return n && n.contentHeight !== undefined && n.contentY !== undefined
-                         && n.boundsBehavior !== undefined })
+            var scroll = G.byObjName(pp, "presetListScroll")
             if (scroll) {
                 var p = target.mapToItem(scroll.contentItem, 0, 0)
                 var maxY = Math.max(0, scroll.contentHeight - scroll.height)
                 scroll.contentY = Math.max(0, Math.min(maxY, p.y - 40))
-                wait(60)
+                wait(150)
             }
-            mouseClick(target, target.width / 2, target.height / 2)
+            var id = name.slice("presetCard-".length)
+            var tap = G.byObjName(target, "presetCardTap-" + id)
+            verify(tap !== null && G.isLive(tap), "card tap target is live: " + id)
+            // Dispatch through the stable viewport after scrolling. Qt 6.11 can
+            // otherwise retain the delegate's pre-scroll scene coordinate and
+            // send the synthetic click outside the clipped list.
+            var hit = tap.mapToItem(scroll, tap.width / 2, tap.height / 2)
+            verify(hit.x >= 0 && hit.x <= scroll.width
+                   && hit.y >= 0 && hit.y <= scroll.height,
+                   "card centre is inside the visible preset viewport: " + id)
+            mouseClick(scroll, hit.x, hit.y)
+            tryCompare(pp, "pendingId", id, 2000)
         }
 
         function test_picker_opens_and_lists_all_presets() {

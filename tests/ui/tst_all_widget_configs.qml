@@ -17,11 +17,7 @@ Item {
     App.WidgetConfigSchema { id: sc }
     App.WidgetCatalog { id: catalog }
 
-    readonly property var types: [
-        "analog","break","calendar","clock","countdown","cpu","disk","eod","focus",
-        "gpu","habit","hydration","media","moon","net","notes","quote","ram",
-        "rightnow","sensors","tasks","weather"
-    ]
+    readonly property var types: catalog.items.map(function(item) { return item.type })
 
     property string curType: ""
     property bool ready: false
@@ -60,6 +56,8 @@ Item {
         name: "AllWidgetConfigs"; when: windowShown
 
         function test_every_type_renders_its_schema() {
+            compare(root.types.length, catalog.items.length,
+                    "the config smoke follows every catalog widget")
             for (var i=0; i<root.types.length; i++) {
                 var type = root.types[i]
                 root.curType = ""; wait(0)

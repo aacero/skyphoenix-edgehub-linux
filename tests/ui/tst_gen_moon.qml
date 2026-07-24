@@ -1,8 +1,8 @@
 import QtQuick
 import QtTest
 import "../../ui/qml" as App
+import "fixtures.js" as Fx
 
-// COVERS: schema:hemisphere
 
 // ─────────────────────────────────────────────────────────────────────────
 // Comprehensive tests for area "widget:moon" (ui/qml/widgets/MoonWidget.qml)
@@ -57,6 +57,13 @@ Item {
         }
         return null
     }
+    function findByObjectName(node, name) {
+        var found = findAll(node, function(candidate) {
+            try { return candidate.objectName === name } catch (e) { return false }
+        }, [])
+        return found.length ? found[0] : null
+    }
+    function disc(host) { return findByObjectName(host.item, "moonDisc") }
 
     function clearSettings(h) {
         var s = h.storeCtl.settingsFor("test-instance")
@@ -82,7 +89,7 @@ Item {
         function test_idx_in_range() {
             var w = hMoon.item
             verify(w.idx >= 0 && w.idx <= 7, "idx is a valid phase bucket 0..7 (got " + w.idx + ")")
-            verify(w.idx < w.phases.length && w.idx < w.names.length, "idx indexes phases/names arrays")
+            verify(w.idx < w.names.length, "idx indexes the phase-name array")
         }
 
         function test_illum_in_range() {
@@ -108,6 +115,12 @@ Item {
             verify(w.ageDays >= 0 && w.ageDays <= syn + 0.001,
                    "lunar age is 0..~29.53 days (got " + w.ageDays + ")")
             fuzzyCompare(w.ageDays, w._cyclePos * syn, 1e-6, "ageDays = cyclePos · synodicDays")
+        }
+
+        function test_model_discloses_direction_and_accuracy() {
+            var w = hMoon.item
+            verify(w.phaseDirection === "Waxing" || w.phaseDirection === "Waning")
+            compare(w.modelLabel, "Approximate geocentric phase")
         }
 
         // The phase-name bucket and the illum% are computed by DIFFERENT maths
@@ -193,7 +206,7 @@ Item {
         }
     }
 
-    // ── Hemisphere config: default, reactivity, glyph mirroring ─────────────
+    // ── Hemisphere config: default, reactivity, deterministic-disc mirroring ─
     TestCase {
         name: "MoonHemisphere"
         when: windowShown
@@ -201,31 +214,131 @@ Item {
             tryVerify(function () { return hMoon.ready }, 3000)
             clearSettings(hMoon)
         }
-        function glyph() { return findByText(hMoon.item, hMoon.item.phases[hMoon.item.idx]) }
-
         function test_defaults_to_north_when_empty() {
             compare(hMoon.item.hemisphere, "north", "empty instance settings default hemisphere to north")
         }
 
-        function test_north_glyph_not_mirrored() {
-            var g = glyph()
-            verify(g !== null, "phase glyph Text is reachable")
-            compare(g.transform[0].xScale, 1, "northern hemisphere renders the glyph un-mirrored")
+        function test_north_disc_not_mirrored() {
+            var d = disc(hMoon)
+            verify(d !== null, "deterministic phase disc is reachable")
+            compare(d.mirrored, false, "northern hemisphere keeps the standard lit side")
         }
 
-        function test_south_config_mirrors_glyph_live() {
+        function test_south_config_mirrors_disc_live() {
             hMoon.storeCtl.setSetting("test-instance", "hemisphere", "south")
             compare(hMoon.item.hemisphere, "south", "hemisphere follows config live (revision bump)")
-            var g = glyph()
-            compare(g.transform[0].xScale, -1, "southern hemisphere mirrors the lit side (xScale -1)")
+            compare(disc(hMoon).mirrored, true, "southern hemisphere mirrors the lit side")
         }
 
         function test_flip_back_to_north_live() {
             hMoon.storeCtl.setSetting("test-instance", "hemisphere", "south")
-            compare(glyph().transform[0].xScale, -1, "south first")
+            compare(disc(hMoon).mirrored, true, "south first")
             hMoon.storeCtl.setSetting("test-instance", "hemisphere", "north")
             compare(hMoon.item.hemisphere, "north", "back to north live")
-            compare(glyph().transform[0].xScale, 1, "glyph un-mirrors again")
+            compare(disc(hMoon).mirrored, false, "disc un-mirrors again")
+        }
+
+        function test_invalid_hemisphere_falls_back_to_north() {
+            hMoon.storeCtl.setSetting("test-instance", "hemisphere", "sideways")
+            compare(hMoon.item.hemisphere, "north")
+        }
+    }
+
+    TestCase {
+        name: "MoonLocalEvents"
+        when: windowShown
+        function init() {
+            tryVerify(function() { return hMoon.ready }, 3000)
+            clearSettings(hMoon)
+        }
+
+        function test_altitude_is_a_physical_angle() {
+            var altitude = hMoon.item._moonAltitude(new Date(Date.UTC(2026, 6, 23, 12, 0)),
+                                                     48.2082, 16.3738)
+            verify(isFinite(altitude), "lunar altitude is finite")
+            verify(altitude >= -90 && altitude <= 90,
+                   "lunar altitude stays within the physical range")
+        }
+
+        function test_midlatitude_location_has_bounded_next_events() {
+            hMoon.storeCtl.patchSettings("test-instance", {
+                showLocalEvents: true, lat: 48.2082, lon: 16.3738, place: "Vienna, AT"
+            })
+            var start = new Date(Date.UTC(2026, 6, 23, 0, 0))
+            var events = hMoon.item.calculateLocalEvents(start)
+            verify(events.rise !== null, "a next moonrise is found for the fixed midlatitude case")
+            verify(events.set !== null, "a next moonset is found for the fixed midlatitude case")
+            verify(events.rise.getTime() > start.getTime(), "rise is in the future")
+            verify(events.set.getTime() > start.getTime(), "set is in the future")
+            verify(events.rise.getTime() <= start.getTime() + 36 * 3600000,
+                   "rise stays inside the disclosed 36-hour window")
+            verify(events.set.getTime() <= start.getTime() + 36 * 3600000,
+                   "set stays inside the disclosed 36-hour window")
+        }
+
+        function test_unconfigured_location_is_explicit() {
+            hMoon.storeCtl.setSetting("test-instance", "showLocalEvents", true)
+            hMoon.item.sizeClass = "tall"
+            wait(16)
+            var panel = findByObjectName(hMoon.item, "moonLocalEvents")
+            verify(panel !== null && panel.visible, "local-events panel is shown when requested")
+            var message = findByText(panel, "Location needed for local sky events")
+            verify(message !== null && message.visible, "missing coordinates have an explicit reason")
+        }
+
+        function test_configured_location_labels_local_time() {
+            hMoon.storeCtl.patchSettings("test-instance", {
+                showLocalEvents: true, lat: 48.2082, lon: 16.3738, place: "Vienna, AT"
+            })
+            hMoon.item.sizeClass = "tall"
+            wait(16)
+            var panel = findByObjectName(hMoon.item, "moonLocalEvents")
+            verify(findByText(panel, "Vienna, AT") !== null, "selected place is visible")
+            verify(findByText(panel, "NEXT RISE") !== null, "rise result is labelled")
+            verify(findByText(panel, "NEXT SET") !== null, "set result is labelled")
+            verify(findByText(panel, "Approximate times in this device's local time") !== null,
+                   "time basis is disclosed instead of implying the remote timezone")
+        }
+    }
+
+    TestCase {
+        name: "MoonGeocode"
+        when: windowShown
+        property var lastFake: null
+        function init() {
+            tryVerify(function() { return hMoon.ready }, 3000)
+            clearSettings(hMoon)
+            hMoon.item.netHub = null
+            var tc = this
+            hMoon.item.xhrFactory = function() {
+                tc.lastFake = Fx.makeFakeXHR()
+                return tc.lastFake
+            }
+        }
+
+        function test_lookup_is_explicit_and_uses_the_shared_gate() {
+            hMoon.item.geocode("New York")
+            verify(lastFake !== null && lastFake.sent, "an explicit lookup sends through NetHub")
+            verify(lastFake.url.indexOf("https://geocoding-api.open-meteo.com/v1/search") === 0)
+            verify(lastFake.url.indexOf("name=New%20York") >= 0, "place is URL encoded")
+        }
+
+        function test_valid_result_persists_only_selected_location() {
+            hMoon.item.geocode("Tokyo")
+            lastFake.resolveWith(200, Fx.GEOCODE_VALID)
+            var settings = hMoon.storeCtl.settingsFor("test-instance")
+            fuzzyCompare(settings.lat, 35.6895, 0.0001)
+            fuzzyCompare(settings.lon, 139.6917, 0.0001)
+            compare(settings.place, "Tokyo, JP")
+            compare(hMoon.item.geocodeError, "")
+            compare(hMoon.item.geocodeStatus, "Set to Tokyo, JP")
+        }
+
+        function test_failed_lookup_is_actionable() {
+            hMoon.item.geocode("Nowhere")
+            lastFake.resolveWith(200, Fx.GEOCODE_EMPTY)
+            compare(hMoon.item.geocodeError, "City not found")
+            compare(hMoon.item.geocodeStatus, "City not found")
         }
     }
 
@@ -308,10 +421,9 @@ Item {
             hTile.width = 150
             hTile.height = 96
             var w = hTile.item
-            var col = findByText(w, w.phases[w.idx])   // the glyph
-            verify(col !== null, "glyph present in collapsed tile")
-            // The glyph itself must not be taller than the tile body.
-            verify(col.height <= hTile.height, "glyph height (" + col.height +
+            var col = disc(hTile)
+            verify(col !== null, "deterministic disc present in collapsed tile")
+            verify(col.height <= hTile.height, "disc height (" + col.height +
                    ") fits the tile height (" + hTile.height + ")")
         }
     }
@@ -348,8 +460,8 @@ Item {
             compare(w.showHeader, false, "micro stays headerless")
             var name = findByText(w, w.names[w.idx])
             verify(name === null || !name.visible, "micro drops the phase name - the glyph IS the tile")
-            var glyph = findByText(w, w.phases[w.idx])
-            verify(glyph !== null && glyph.visible, "the glyph is there")
+            var glyph = disc(hMicro)
+            verify(glyph !== null && glyph.visible, "the deterministic disc is there")
             verify(w.glyphPx > 58, "and it scales past the old 58px cap")
         }
 
@@ -363,7 +475,7 @@ Item {
             verify(name !== null && name.visible, "the phase name is shown")
             verify(w.illumLine.indexOf("% illuminated") > 0, "the baseline adds the illumination line")
             verify(w.illumLine.indexOf("days old") < 0, "but not the age (that needs more room)")
-            var next = findByText(w, "🌑 New")
+            var next = findByText(w, "NEXT NEW")
             verify(next === null || !next.visible, "next new/full stays behind tall/overlay")
         }
 
@@ -385,9 +497,13 @@ Item {
             var w = hTall.item
             w.sizeClass = "tall"
             compare(w.tallish, true, "tall is the roomy class")
-            var next = findByText(w, "🌑 New")
+            var next = findByText(w, "NEXT NEW")
             verify(next !== null && next.visible, "tall shows the next new/full dates")
             verify(w.illumLine.indexOf("days old") > 0, "tall earns the lunar age too")
+            var note = findByText(w, w.phaseDirection + " · " + w.modelLabel)
+            verify(note !== null && note.visible, "tall view discloses the approximate model")
+            hTall.storeCtl.setSetting("test-instance", "showAccuracyNote", false)
+            compare(note.visible, false, "calculation note can be hidden")
             w.sizeClass = "full"
             compare(w.micro, false, "full is never micro")
         }
@@ -462,10 +578,10 @@ Item {
                    + " > " + land.illumPx.toFixed(1) + ")")
 
             // RENDERED, not merely derived: the Texts actually carry it.
-            var g = findByText(port, port.phases[port.idx])
-            verify(g !== null, "the portrait pane's glyph resolves")
-            compare(g.font.pixelSize, Math.round(Math.max(12, port.glyphPx)),
-                    "the rendered glyph is the derived size, not a re-frozen literal")
+            var g = disc(hOvlP)
+            verify(g !== null, "the portrait pane's deterministic disc resolves")
+            compare(g.width, Math.max(hOvlP.theme.fontMinimum * 3, port.glyphPx),
+                    "the rendered disc is the derived size, not a re-frozen literal")
             var nm = findByText(port, port.names[port.idx])
             verify(nm !== null, "the portrait pane's phase name resolves")
             compare(nm.font.pixelSize, Math.round(port.namePx),
@@ -504,6 +620,29 @@ Item {
             var vals = f.options.map(function (o) { return o.value })
             verify(vals.indexOf("north") >= 0 && vals.indexOf("south") >= 0,
                    "hemisphere offers north + south")
+        }
+
+        function test_accuracy_disclosure_field_present() {
+            var f = fieldByKey(schema(), "showAccuracyNote")
+            verify(f !== null)
+            compare(f.type, "toggle")
+            compare(f.dflt, true)
+        }
+
+        function test_local_events_fields_are_opt_in_and_conditional() {
+            var toggle = fieldByKey(schema(), "showLocalEvents")
+            verify(toggle !== null)
+            compare(toggle.type, "toggle")
+            compare(toggle.dflt, false, "location use is opt-in")
+            var mode = fieldByKey(schema(), "locationMode")
+            verify(mode !== null && mode.visibleWhen !== undefined,
+                   "location setup stays hidden until local events are enabled")
+            var lat = fieldByKey(schema(), "lat")
+            var lon = fieldByKey(schema(), "lon")
+            verify(lat !== null && lon !== null)
+            verify(lat.visibleWhen.length === 2 && lon.visibleWhen.length === 2,
+                   "manual coordinates require both enabled events and manual mode")
+            verify(fieldByKey(schema(), "place") !== null, "search mode has a place field")
         }
 
         function test_universal_title_and_accent_present() {

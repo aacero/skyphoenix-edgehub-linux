@@ -20,7 +20,8 @@ QT=/usr/lib/qt6/bin/qmltestrunner; command -v qmltestrunner >/dev/null 2>&1 && Q
 export QT_QUICK_CONTROLS_STYLE=Fusion
 TMP="$(mktemp -d)"; EVID="$TMP/evid"; mkdir -p "$EVID"
 SOCK="wayland-val$$"; XDISP=":$(( 60 + $$ % 30 ))"
-kwin_wayland --virtual --xwayland --xwayland-display "$XDISP" --width 2560 --height 720 \
+kwin_wayland --virtual --xwayland --xwayland-display "$XDISP" \
+  --width "${XENEON_GUI_WIDTH:-2560}" --height "${XENEON_GUI_HEIGHT:-1600}" \
   --no-lockscreen --no-global-shortcuts --socket "$SOCK" > "$TMP/kwin.log" 2>&1 &
 KWIN=$!
 trap 'kill -9 "$KWIN" 2>/dev/null; rm -rf "$TMP"' EXIT INT TERM

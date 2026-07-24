@@ -266,9 +266,14 @@ class TestGeometry(unittest.TestCase):
     def test_live_layout_matches_this_box(self):
         for var in ("XENEON_EDGE_GEOM", "XENEON_CANVAS"):
             os.environ.pop(var, None)
+        live = u._live_outputs()
+        self.assertTrue(live, "live KScreen layout could not be read")
         name, ex, ey, ew, eh, cw, ch = u.detect_edge_ex()
-        self.assertEqual((name, ex, ey, ew, eh), ("DP-3",) + EDGE_RECT)
-        self.assertEqual((cw, ch), CANVAS)
+        self.assertIn((name, ex, ey, ew, eh), live)
+        self.assertEqual(name, "DP-3")
+        self.assertEqual((ew, eh), (720, 2560))
+        self.assertEqual(cw, max(x + width for _, x, _, width, _ in live))
+        self.assertEqual(ch, max(y + height for _, _, y, _, height in live))
 
     @unittest.skipUnless(shutil.which("kscreen-doctor"), "kscreen-doctor not present")
     def test_stale_override_rejected(self):

@@ -112,6 +112,7 @@ add_qt_test(autostart       SOURCES "${APP_SRC}/autostart.cpp")
 # Offline licence FFI. No extra sources: it calls the Rust core directly, which
 # is the whole surface the app uses. Qt6::Test already brings QJson*.
 add_qt_test(license)
+add_qt_test(notification_bridge SOURCES "${APP_SRC}/notification_bridge.h" LINK Qt6::DBus)
 
 # ── Unit (event loop) ──
 # The Q_OBJECT header is listed as a source so AUTOMOC generates its moc.

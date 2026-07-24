@@ -42,6 +42,9 @@ Item {
             hub.requests = 0
             hub.blocked = 0
             hub.byHost = ({})
+            hub.secretResolver = null
+            hub._sharedProviders = ({})
+            hub.sharedRevision = 0
             var tc = this
             hub.xhrFactory = function () { tc.lastFake = root.makeFake(); return tc.lastFake }
         }
@@ -230,6 +233,74 @@ Item {
             hub.secretResolver = null
         }
 
+        function test_capability_url_ref_is_resolved_only_inside_request() {
+            hub.secretResolver = _resolver({ "${env:CAL_URL}": "webcal://private.example/a.ics" })
+            var stored = "${env:CAL_URL}"
+            hub.request({
+                url: stored,
+                urlIsSecretRef: true,
+                normalizeWebcal: true,
+                onDone: function () {}
+            })
+            compare(lastFake.url, "https://private.example/a.ics")
+            compare(stored, "${env:CAL_URL}", "the caller retains only the stored reference")
+            hub.secretResolver = null
+        }
+
+        function test_missing_capability_url_ref_fails_before_xhr() {
+            hub.secretResolver = _resolver({})
+            var err = ""
+            var xhr = hub.request({
+                url: "${env:MISSING_CAL_URL}",
+                urlIsSecretRef: true,
+                onError: function (reason) { err = reason }
+            })
+            compare(xhr, null)
+            verify(err.indexOf("url-secret:") === 0)
+            compare(hub.requests, 0)
+            compare(hub.blocked, 1)
+            hub.secretResolver = null
+        }
+
+        // COVERS: fn:NetHub._sharedId, fn:NetHub.sharedProvider
+        // COVERS: fn:NetHub.claimSharedProvider, fn:NetHub.publishSharedProvider
+        // COVERS: fn:NetHub.releaseSharedProvider
+        function test_shared_provider_lease_coalesces_reuses_and_releases() {
+            var ownerA = ({ name: "a" })
+            var ownerB = ({ name: "b" })
+            compare(hub._sharedId("calendar", "${env:C}"),
+                    "calendar\n${env:C}", "provider identity includes kind and stored key")
+            compare(hub.claimSharedProvider("calendar", "${env:C}", ownerA, 3000), true)
+            compare(hub.claimSharedProvider("calendar", "${env:C}", ownerB, 3000), false,
+                    "a second consumer cannot duplicate an in-flight fetch")
+            compare(hub.publishSharedProvider("calendar", "${env:C}", ownerA, {
+                events: ["one"], lastSuccessAt: Date.now(), errorText: ""
+            }), true)
+            compare(hub.claimSharedProvider("calendar", "${env:C}", ownerB, 3000), false,
+                    "a just-published result is reused")
+            compare(hub.sharedProvider("calendar", "${env:C}").events[0], "one")
+            compare(hub.claimSharedProvider("calendar", "${env:C}", ownerB, 0), true,
+                    "an explicit refresh can bypass the short reuse window")
+            compare(hub.releaseSharedProvider("calendar", "${env:C}", ownerA, "wrong"), false,
+                    "only the lease owner can release an in-flight request")
+            compare(hub.releaseSharedProvider("calendar", "${env:C}", ownerB, "offline"), true)
+            compare(hub.sharedProvider("calendar", "${env:C}").loading, false)
+            compare(hub.sharedProvider("calendar", "${env:C}").errorText, "offline")
+        }
+
+        // COVERS: fn:NetHub._resolveUrl
+        function test_resolveUrl_keeps_literals_and_resolves_capability_refs() {
+            compare(hub._resolveUrl("https://public.example/x").value,
+                    "https://public.example/x")
+            hub.secretResolver = _resolver({ "${env:PRIVATE_URL}": "https://private.example/x" })
+            var resolved = hub._resolveUrl("${env:PRIVATE_URL}")
+            compare(resolved.ok, true)
+            compare(resolved.value, "https://private.example/x")
+            hub.secretResolver = null
+            compare(hub._resolveUrl("${env:PRIVATE_URL}").ok, false,
+                    "a private reference fails closed without a resolver")
+        }
+
         // COVERS: fn:NetHub._looksLikeRef
         // The ref/literal split decides whether a value may be sent verbatim, so
         // pin it directly: a literal that merely resembles a scheme must stay a
@@ -335,6 +406,19 @@ Item {
             compare(lastFake.headers["Authorization"], "Bearer ghp_legacy")
         }
 
+        function test_bearer_token_is_never_sent_over_plain_http() {
+            var err = null
+            var xhr = hub.request({
+                url: "http://api.example.com/s",
+                authToken: "ghp_legacy",
+                onError: function (r) { err = r }
+            })
+            compare(xhr, null, "plain HTTP bearer request is refused before XHR")
+            compare(err, "insecure-auth")
+            compare(hub.requests, 0, "the insecure request is not counted as sent")
+            compare(hub.blocked, 1, "the refusal is attested")
+        }
+
         function test_empty_token_sends_no_auth_header() {
             hub.secretResolver = null
             hub.request({ url: "https://api.example.com/s", authToken: "", onDone: function () {} })
@@ -360,6 +444,20 @@ Item {
             hub.request({ url: "https://api.example.com/s", onError: function (r) { err = r } })
             lastFake.fireTimeout()
             compare(err, "timeout")
+        }
+
+        function test_response_size_is_bounded_before_callback() {
+            var err = null
+            var done = false
+            hub.request({
+                url: "https://api.example.com/s",
+                maxResponseBytes: 1024,
+                onDone: function () { done = true },
+                onError: function (r) { err = r }
+            })
+            lastFake.resolveWith(200, new Array(1026).join("x"))
+            compare(done, false, "oversized content never reaches the parser")
+            compare(err, "response-too-large")
         }
 
         function test_open_failure_is_reported() {

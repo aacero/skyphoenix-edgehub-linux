@@ -25,6 +25,11 @@ Item {
         id: h; anchors.fill: parent
         widgetFile: "WeatherWidget.qml"; expanded: true
     }
+    WidgetHarness {
+        id: hShared
+        width: 1; height: 1; visible: false; active: false
+        widgetFile: "WeatherWidget.qml"; expanded: false
+    }
 
     // Stands in for the app-global gate Dashboard injects, so the tests can drive
     // `offline` / `allowHosts` the way managed config does.
@@ -44,35 +49,92 @@ Item {
         function init() {
             tryVerify(function () { return h.ready }, 3000)
             clearSettings(h); h.active = false
+            h.item.netHub = null
+            h.item._hub()._sharedProviders = ({})
+            h.item._hub().sharedRevision = 0
             var tc = this
             h.item.xhrFactory = function () { tc.lastFake = Fx.makeFakeXHR(); return tc.lastFake }
         }
 
-        function test_default_forecast_url_carries_all_inputs() {
+        function test_unconfigured_location_makes_no_request() {
             var w = h.item
+            lastFake = null
             w.refresh()
-            verify(lastFake !== null, "factory was used instead of a real XHR")
-            compare(lastFake.method, "GET", "forecast is a GET")
-            verify(lastFake.sent, "send() was called")
-            var u = lastFake.url
-            verify(u.indexOf("https://api.open-meteo.com/v1/forecast") === 0, "hits the Open-Meteo forecast API")
-            verify(u.indexOf("latitude=52.52") >= 0, "default Berlin latitude in the query (" + u + ")")
-            verify(u.indexOf("longitude=13.405") >= 0, "default Berlin longitude in the query")
-            // forecastDays defaults to 4 → the request asks for forecast_days=5.
-            verify(u.indexOf("forecast_days=5") >= 0, "forecast_days = forecastDays+1")
-            verify(u.indexOf("temperature_unit=fahrenheit") < 0, "celsius default omits the unit override")
+            compare(lastFake, null, "setup-required weather does not send a default-city request")
+            compare(w.locationConfigured, false)
+            compare(w.errorText, "Set a location")
+            compare(w.providerState, "unconfigured")
+            compare(w.status, "Setup")
         }
 
         function test_config_flows_into_forecast_url() {
             var w = h.item
             h.storeCtl.patchSettings("test-instance",
-                { lat: 35.68, lon: 139.69, units: "fahrenheit", forecastDays: 7 })
+                { lat: 35.68, lon: 139.69, units: "fahrenheit",
+                  windUnits: "mph", precipitationUnits: "inch", forecastDays: 7 })
             w.refresh()
+            compare(w.providerState, "loading")
+            compare(w.status, "Loading")
             var u = lastFake.url
             verify(u.indexOf("latitude=35.68") >= 0, "configured latitude used")
             verify(u.indexOf("longitude=139.69") >= 0, "configured longitude used")
             verify(u.indexOf("temperature_unit=fahrenheit") >= 0, "fahrenheit adds the unit override")
+            verify(u.indexOf("wind_speed_unit=mph") >= 0, "wind units reach the provider")
+            verify(u.indexOf("precipitation_unit=inch") >= 0, "precipitation units reach the provider")
             verify(u.indexOf("forecast_days=8") >= 0, "7 forecast days → forecast_days=8")
+        }
+    }
+
+    TestCase {
+        name: "WeatherSharedProvider"
+        when: windowShown
+        property var firstFake: null
+        property int secondFactoryCalls: 0
+
+        function init() {
+            tryVerify(function () { return h.ready && hShared.ready }, 3000)
+            clearSettings(h)
+            clearSettings(hShared)
+            h.active = false
+            hShared.active = false
+            gate.offline = false
+            gate.allowHosts = []
+            gate.requests = 0
+            gate.blocked = 0
+            gate._sharedProviders = ({})
+            gate.sharedRevision = 0
+            h.storeCtl.patchSettings("test-instance",
+                { lat: 48.2, lon: 16.37, place: "Vienna" })
+            hShared.storeCtl.patchSettings("test-instance",
+                { lat: 48.2, lon: 16.37, place: "Vienna" })
+            h.item.netHub = gate
+            hShared.item.netHub = gate
+            var tc = this
+            h.item.xhrFactory = function () {
+                tc.firstFake = Fx.makeFakeXHR()
+                return tc.firstFake
+            }
+            hShared.item.xhrFactory = function () {
+                tc.secondFactoryCalls++
+                return Fx.makeFakeXHR()
+            }
+        }
+        function cleanup() {
+            h.item.netHub = null
+            hShared.item.netHub = null
+        }
+
+        function test_two_hosts_share_one_inflight_and_result() {
+            h.item.refresh(false)
+            verify(firstFake !== null && firstFake.sent)
+            hShared.item.refresh(false)
+            compare(secondFactoryCalls, 0, "second host does not duplicate the request")
+            compare(hShared.item.providerState, "loading")
+            firstFake.resolveWith(200, Fx.FORECAST_VALID)
+            compare(h.item.loaded, true)
+            compare(hShared.item.loaded, true, "second host receives the shared result")
+            fuzzyCompare(hShared.item.curTemp, 21.4, 0.001)
+            compare(gate.requests, 1)
         }
     }
 
@@ -84,6 +146,10 @@ Item {
         function init() {
             tryVerify(function () { return h.ready }, 3000)
             clearSettings(h); h.active = false
+            h.item.netHub = null
+            h.item._hub()._sharedProviders = ({})
+            h.item._hub().sharedRevision = 0
+            h.storeCtl.patchSettings("test-instance", { lat: 48.2, lon: 16.37, place: "Vienna" })
             h.item.loaded = false; h.item.errorText = ""   // reset render state between cases
             var tc = this
             h.item.xhrFactory = function () { tc.lastFake = Fx.makeFakeXHR(); return tc.lastFake }
@@ -92,6 +158,7 @@ Item {
 
         function test_valid_forecast_renders() {
             var w = h.item
+            w.nowMsOverride = 800000
             drive(200, Fx.FORECAST_VALID)
             compare(w.loaded, true, "valid payload marks the tile loaded")
             compare(w.errorText, "", "no error on success")
@@ -101,13 +168,24 @@ Item {
             compare(w.days.length, 5, "five daily rows parsed")
             compare(w.days[0].day, "Today", "first row labelled Today")
             compare(w.days[1].max, 23, "day-2 max rounded from 22.6")
+            compare(w.lastSuccessAt, 800000)
+            compare(w.stale, false)
+            compare(w.providerState, "fresh")
+            w.nowMsOverride = 800000 + w.refreshSec * 2000
+            compare(w.stale, true)
+            compare(w.providerState, "stale")
+            compare(w.status, "Stale")
+            w.nowMsOverride = -1
         }
 
         function test_non_200_goes_offline() {
             var w = h.item
+            drive(200, Fx.FORECAST_VALID)
             drive(503, "")
-            compare(w.loaded, false, "a server error clears loaded (no stale reading shown as live)")
-            compare(w.errorText, "Offline", "non-200 → Offline")
+            compare(w.loaded, true, "a server error preserves the last useful reading")
+            compare(w.errorText, "Unavailable", "server rejection is distinct from offline")
+            compare(w.providerState, "error")
+            compare(w.status, "Error")
         }
 
         function test_missing_daily_yields_no_forecast() {
@@ -115,6 +193,7 @@ Item {
             drive(200, Fx.FORECAST_MISSING_DAILY)
             compare(w.loaded, false, "missing daily.time is not a valid render")
             compare(w.errorText, "No data", "missing fields → No data")
+            compare(w.providerState, "error")
         }
 
         function test_malformed_body_is_parse_error() {
@@ -130,6 +209,8 @@ Item {
             compare(w.loaded, false, "no data yet")
             lastFake.fireTimeout()
             compare(w.errorText, "Timed out", "an unresolved socket times out")
+            compare(w.providerState, "disconnected")
+            compare(w.status, "Offline")
         }
 
         // A superseded (aborted) request must not clobber the newer one's result.
@@ -146,6 +227,19 @@ Item {
             compare(w.loaded, true, "the stale late callback is ignored (loaded stays true)")
             compare(w.errorText, "", "stale callback did not overwrite the good result")
         }
+
+        function test_success_after_failure_reports_recovery() {
+            var w = h.item
+            w.nowMsOverride = 900000
+            drive(503, "")
+            compare(w.errorText, "Unavailable")
+            drive(200, Fx.FORECAST_VALID)
+            compare(w.errorText, "")
+            compare(w.recentlyRecovered, true)
+            compare(w.status, "Recovered")
+            verify(w.stateHelp.indexOf("restored") >= 0)
+            w.nowMsOverride = -1
+        }
     }
 
     // ── geocode path ─────────────────────────────────────────────────────
@@ -156,6 +250,7 @@ Item {
         function init() {
             tryVerify(function () { return h.ready }, 3000)
             clearSettings(h); h.active = false
+            h.item.netHub = null
             var tc = this
             h.item.xhrFactory = function () { tc.lastFake = Fx.makeFakeXHR(); return tc.lastFake }
         }
@@ -210,9 +305,12 @@ Item {
         function init() {
             tryVerify(function () { return h.ready }, 3000)
             clearSettings(h); h.active = false; lastFake = null
+            h.storeCtl.patchSettings("test-instance", { lat: 48.2, lon: 16.37, place: "Vienna" })
             h.item.loaded = false; h.item.errorText = ""
             gate.offline = false; gate.allowHosts = []
             gate.requests = 0; gate.blocked = 0
+            gate._sharedProviders = ({})
+            gate.sharedRevision = 0
             h.item.netHub = gate
             var tc = this
             h.item.xhrFactory = function () { tc.lastFake = Fx.makeFakeXHR(); return tc.lastFake }
@@ -228,6 +326,8 @@ Item {
             compare(gate.blocked, 1, "the gate counted the refusal (attestation)")
             compare(w.loaded, false, "no stale reading is presented as live")
             compare(w.errorText, "Offline", "the tile says why it has no data")
+            compare(w.providerState, "disconnected")
+            compare(w.status, "Offline")
         }
 
         // The city lookup is egress too - it was the second raw XHR in this file.
@@ -249,6 +349,8 @@ Item {
             compare(gate.requests, 0, "not counted as sent")
             compare(gate.blocked, 1, "counted as blocked")
             compare(w.errorText, "Blocked", "the tile distinguishes policy from failure")
+            compare(w.providerState, "blocked")
+            compare(w.status, "Blocked")
         }
 
         // The allowlist is per-host: the forecast and the geocode live on

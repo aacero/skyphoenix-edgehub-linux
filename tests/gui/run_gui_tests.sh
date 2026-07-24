@@ -76,8 +76,13 @@ if [ "${1:-}" = "__slot" ]; then
   xdisp=":$(( 70 + SLOT_N ))"
   slot_kwin_args=()
   [ "${SLOT_VIRTUAL:-1}" = "1" ] && slot_kwin_args+=(--virtual)
+  # The widgets are tested at both physical Edge orientations. A 720px-tall
+  # virtual output silently clips portrait cases such as 696x818 and 696x1226,
+  # even when the QML root requests the correct height.
+  slot_width="${XENEON_GUI_WIDTH:-2560}"
+  slot_height="${XENEON_GUI_HEIGHT:-1600}"
   kwin_wayland "${slot_kwin_args[@]}" --xwayland --xwayland-display "$xdisp" \
-    --width 2560 --height 720 --no-lockscreen --no-global-shortcuts \
+    --width "$slot_width" --height "$slot_height" --no-lockscreen --no-global-shortcuts \
     --socket "$sock" > "$SLOT_LOGDIR/kwin-$base.log" 2>&1 &
   kpid=$!
   slot_ffpid=""
@@ -100,7 +105,7 @@ if [ "${1:-}" = "__slot" ]; then
   if [ "${SLOT_RECORD:-0}" = "1" ]; then
     mkdir -p "$SLOT_EVID"
     DISPLAY="$xdisp" ffmpeg -hide_banner -loglevel error -y -f x11grab \
-      -video_size 2560x720 -framerate 8 -i "$xdisp" \
+      -video_size "${slot_width}x${slot_height}" -framerate 8 -i "$xdisp" \
       "$SLOT_EVID/${base}-continuous.mp4" 2>/dev/null &
     slot_ffpid=$!
   fi

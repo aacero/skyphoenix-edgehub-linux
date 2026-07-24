@@ -110,6 +110,16 @@ private slots:
                  QStringLiteral("07:00"));
     }
 
+    void formatLocaleUsesTheRequestedLocale() {
+        const qint64 instant = utcMs(2026, 7, 15, 12);
+        const QDateTime tokyo = QDateTime::fromMSecsSinceEpoch(
+                instant, QTimeZone("Asia/Tokyo"));
+        QCOMPARE(tz.formatLocale("Asia/Tokyo", double(instant), "dddd MMMM", "de_DE"),
+                 QLocale("de_DE").toString(tokyo, "dddd MMMM"));
+        QCOMPARE(tz.formatLocale("Asia/Tokyo", double(instant), "dddd MMMM", "en_GB"),
+                 QLocale("en_GB").toString(tokyo, "dddd MMMM"));
+    }
+
     // The bug this design exists to kill: the old QML trick shifted a Date and
     // formatted it LOCALLY, so an instant whose target wall clock lands in the
     // HOST's spring-forward gap could not be represented (a Berlin host showed

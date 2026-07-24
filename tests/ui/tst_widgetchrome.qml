@@ -120,7 +120,7 @@ Item {
         function test_big_derives_from_height_and_scales_header() {
             // host is 400px tall → the default sizeClass is "tall" → big (>240).
             compare(chrome.big, true, "height > 240 makes the chrome 'big'")
-            compare(chrome.headerHeight, 42, "big header height")
+            compare(chrome.headerHeight, 46, "big header height")
         }
 
         // ── size vs expanded ─────────────────────────────────────────────────
@@ -130,7 +130,7 @@ Item {
         function test_big_is_driven_by_sizeClass_not_by_the_overlay_mode() {
             chrome.sizeClass = "compact"
             compare(chrome.big, false, "a 1x1 tile is not big")
-            compare(chrome.headerHeight, 36, "and gets the compact header")
+            compare(chrome.headerHeight, 42, "and gets the compact header")
 
             chrome.sizeClass = "wide"
             compare(chrome.big, false, "2x1 is wide but SHORT - no vertical room, not big")
@@ -138,7 +138,7 @@ Item {
             chrome.sizeClass = "tall"
             compare(chrome.big, true, "a 1x2 tile HAS vertical room - this is the fix: " +
                                       "it used to render the compact layout stretched")
-            compare(chrome.headerHeight, 42, "and now earns the big header")
+            compare(chrome.headerHeight, 46, "and now earns the big header")
 
             chrome.sizeClass = "large"
             compare(chrome.big, true, "2x2 is big")

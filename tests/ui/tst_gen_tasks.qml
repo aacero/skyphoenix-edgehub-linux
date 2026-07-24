@@ -2,7 +2,6 @@ import QtQuick
 import QtTest
 import "../../ui/qml" as App
 
-// COVERS: schema:hideCompleted, schema:items
 
 // ─────────────────────────────────────────────────────────────────────────
 // Comprehensive coverage for area "widget:tasks" (ui/qml/widgets/TasksWidget.qml).
@@ -52,6 +51,16 @@ Item {
         }
         return null
     }
+    function findObject(node, name) {
+        if (!node) return null
+        if (node.objectName === name) return node
+        var kids = node.children || []
+        for (var i = 0; i < kids.length; i++) {
+            var found = findObject(kids[i], name)
+            if (found) return found
+        }
+        return null
+    }
     // Find a schema field by key across all sections of a schema.
     function fieldByKey(schema, key) {
         for (var j = 0; j < schema.sections.length; j++) {
@@ -91,7 +100,8 @@ Item {
             var s = sc.schemaFor("tasks")
             compare(fieldByKey(s, "hideCompleted").dflt, false, "schema hideCompleted dflt false")
             compare(fieldByKey(s, "celebrate").dflt, true, "schema celebrate dflt true")
-            verify(fieldByKey(s, "items") !== null, "schema exposes the tasks items field")
+            compare(fieldByKey(s, "items"), null,
+                    "content editing is not duplicated in the settings form")
         }
 
         // ---- add() -------------------------------------------------------
@@ -103,6 +113,7 @@ Item {
             compare(cfg().items.length, 2, "add persists through the store")
             compare(w.items[1].text, "Email team")
             compare(w.items[1].done, false, "new tasks start not-done")
+            verify(String(w.items[1].id).indexOf("task-") === 0, "new tasks receive a stable id")
         }
         function test_add_rejects_empty_whitespace_null_and_trims() {
             var w = hTasks.item
@@ -111,6 +122,44 @@ Item {
             w.add("  spaced  ")
             compare(w.items.length, 1)
             compare(w.items[0].text, "spaced", "surrounding whitespace trimmed")
+        }
+
+        function test_edit_and_reorder_preserve_identity() {
+            var w = hTasks.item
+            setItems([{ id: "a", text: "First", done: false }, { id: "b", text: "Second", done: false }])
+            w.edit(0, "Renamed")
+            compare(w.items[0].text, "Renamed"); compare(w.items[0].id, "a")
+            w.move(0, 1)
+            compare(w.items[1].id, "a"); compare(w.items[0].id, "b")
+        }
+
+        function test_top3_and_calm_profile() {
+            var w = hTasks.item
+            hTasks.storeCtl.patchSettings("test-instance", { displayMode: "top3", behaviorProfile: "calm",
+                items: [{text:"1"},{text:"2"},{text:"3"},{text:"4"}] })
+            compare(w.visibleItems.length, 3)
+            compare(w.celebrate, false)
+        }
+
+        function test_clear_completed_requires_two_requests() {
+            var w = hTasks.item
+            setItems([{ text: "done", done: true }, { text: "open", done: false }])
+            w.requestClearCompleted(); compare(w.items.length, 2); compare(w.clearArmed, true)
+            w.requestClearCompleted(); compare(w.items.length, 1); compare(w.clearArmed, false)
+        }
+
+        function test_clear_completed_can_be_undone_once() {
+            var w = hTasks.item
+            setItems([{ id: "done", text: "done", done: true },
+                      { id: "open", text: "open", done: false }])
+            w.clearCompleted()
+            compare(w.items.length, 1)
+            verify(w.canUndo)
+            verify(w.undoMessage.indexOf("Cleared 1 completed task") >= 0)
+            verify(w.undoLast())
+            compare(w.items.length, 2)
+            compare(w.items[0].id, "done", "undo restores stable identity")
+            compare(w.undoLast(), false, "the undo is one-shot")
         }
 
         // ---- toggle() ----------------------------------------------------
@@ -125,6 +174,19 @@ Item {
             compare(w.doneCount, 1)
         }
 
+        function test_completion_can_be_undone_with_stable_identity() {
+            var w = hTasks.item
+            setItems([{ id: "keep-id", text: "Write report", done: false }])
+            w.toggle(0)
+            verify(w.canUndo)
+            compare(w.items[0].done, true)
+            verify(w.undoMessage.indexOf("Completed Write report") >= 0)
+            verify(w.undoLast())
+            compare(w.items[0].id, "keep-id")
+            compare(w.items[0].done, false)
+            compare(w.canUndo, false)
+        }
+
         // ---- remove() ----------------------------------------------------
         function test_remove_deletes_correct_index() {
             var w = hTasks.item
@@ -133,6 +195,19 @@ Item {
             compare(w.items.length, 2)
             compare(w.items[0].text, "b")
             compare(w.items[1].text, "c")
+        }
+        function test_remove_can_be_undone_with_original_order() {
+            var w = hTasks.item
+            setItems([{ id: "a", text: "a", done: false },
+                      { id: "b", text: "b", done: false },
+                      { id: "c", text: "c", done: false }])
+            w.remove(1)
+            compare(w.items.length, 2)
+            verify(w.canUndo)
+            verify(w.undoMessage.indexOf("Removed b") >= 0)
+            verify(w.undoLast())
+            compare(w.items.length, 3)
+            compare(w.items[1].id, "b")
         }
         function test_remove_out_of_range_is_safe_noop() {
             var w = hTasks.item
@@ -248,6 +323,27 @@ Item {
             verify(ph !== null, "placeholder element exists")
             compare(ph.visible, false,
                     "must NOT claim 'no tasks' while 3 completed tasks exist")
+            var filtered = findObject(hTasks.item, "tasksFilteredState")
+            verify(filtered !== null && filtered.visible,
+                   "a completed-and-hidden list explains why it is empty")
+            verify(findText(filtered, "All 3 tasks completed") !== null)
+        }
+
+        function test_expanded_task_actions_have_explicit_accessibility() {
+            var w = hTasks.item
+            setItems([{ id: "a", text: "First", done: false },
+                      { id: "b", text: "Second", done: false }])
+            wait(16)
+            var toggle = findObject(w, "taskToggle-0")
+            var down = findObject(w, "taskMoveDown-0")
+            var remove = findObject(w, "taskRemove-0")
+            verify(toggle && down && remove)
+            compare(toggle.Accessible.role, Accessible.CheckBox)
+            verify(String(toggle.Accessible.name).indexOf("First") >= 0)
+            compare(down.Accessible.role, Accessible.Button)
+            verify(String(down.Accessible.name).indexOf("Move First down") >= 0)
+            compare(remove.Accessible.role, Accessible.Button)
+            verify(String(remove.Accessible.name).indexOf("Remove task: First") >= 0)
         }
 
         // ---- celebration -------------------------------------------------
@@ -374,12 +470,27 @@ Item {
                 "items", [{ text: "a", done: true }, { text: "b", done: false }])
             compare(w.status, "1/2", "compact tile still shows the count summary")
         }
+
+        function test_task_text_is_not_a_completion_control() {
+            hCompact.storeCtl.setSetting("test-instance",
+                "items", [{ text: "Read the specification", done: false }])
+            wait(16)
+            var label = root.findObject(hCompact.item, "taskLabel-0")
+            var toggle = root.findObject(hCompact.item, "taskToggle-0")
+            verify(label !== null && toggle !== null, "label and explicit checkbox render")
+            compare(label.children.length, 0,
+                    "the task label has no whole-row pointer handler")
+            compare(toggle.Accessible.role, Accessible.CheckBox,
+                    "the explicit control exposes checkbox semantics")
+            verify(String(toggle.Accessible.name).indexOf("Read the specification") >= 0,
+                   "the completion control names its task")
+        }
     }
 
     // ── Per-sizeClass structure (W1 wave 2b) ────────────────────────────────
     // Fixed-size hosts at the real projected cell footprints. tasks declares no
     // 0.5x0.5, so there is no micro case.
-    Item { width: 348; height: 819
+    Item { id: tTallWrap; width: 348; height: 819
         WidgetHarness { id: tTall; anchors.fill: parent; widgetFile: "TasksWidget.qml"; expanded: false } }
     Item { id: tWideWrap; width: 696; height: 409
         WidgetHarness { id: tWide; anchors.fill: parent; widgetFile: "TasksWidget.qml"; expanded: false } }
@@ -418,7 +529,8 @@ Item {
         }
         function rows(host) {
             return findAll(host.item, function (n) {
-                return n.hasOwnProperty("modelData") && n.hasOwnProperty("index") }, [])
+                return n.objectName !== undefined
+                       && String(n.objectName).indexOf("taskRow-") === 0 }, [])
         }
         function listOf(host) {
             return findAll(host.item, function (n) {
@@ -426,7 +538,45 @@ Item {
         }
         function field(host) {
             return findAll(host.item, function (n) {
-                return n.hasOwnProperty("placeholderText") }, [])[0]
+                return n.objectName === "tasksAddField" }, [])[0]
+        }
+
+        function test_hero_tile_turns_empty_space_into_guidance_and_progress() {
+            tryVerify(function () { return tTall.ready }, 3000)
+            tTallWrap.width = 696; tTallWrap.height = 1228
+            tTall.item.sizeClass = "tall"
+            tTall.storeCtl.setSetting(tTall.instanceId, "items", [])
+            wait(32)
+            compare(tTall.item.roomy, true, "the real 1x1.5 portrait footprint is roomy")
+            var empty = findAll(tTall.item, function (n) {
+                return n.objectName === "tasksEmptyState" && n.visible
+            }, [])
+            compare(empty.length, 1, "the hero empty state is visible")
+            var prompts = findAll(empty[0], function (n) {
+                return String(n.objectName).indexOf("taskPrompt-") === 0 && n.visible
+            }, [])
+            compare(prompts.length, 3, "the unused space offers three useful starting prompts")
+            verify(prompts[0].width >= 120 && prompts[0].height >= tTall.theme.touchTertiary,
+                   "the starting prompt is a real touch target (" + prompts[0].width
+                   + "x" + prompts[0].height + ")")
+            // This size host shares the test scene with the full-screen editor,
+            // which owns the physical mouse position. Invoke the prompt's same
+            // activation path after asserting its rendered touch geometry.
+            prompts[0].activate()
+            compare(tTall.item.items.length, 1, "a prompt creates a real task")
+            compare(tTall.item.items[0].text, "Plan today")
+
+            var summary = findAll(tTall.item, function (n) {
+                return n.objectName === "tasksProgressSummary" && n.visible
+            }, [])
+            compare(summary.length, 1, "the populated hero card replaces guidance with progress")
+            compare(tTall.item.openCount, 1)
+            compare(tTall.item.completionPercent, 0)
+
+            tTallWrap.width = 348; tTallWrap.height = 819
+            tTall.item.sizeClass = "tall"
+            wait(16)
+            compare(tTall.item.roomy, false, "the narrow tile keeps the restrained empty state")
         }
 
         // The row AND its checkbox cell are real touch targets at every size.
@@ -453,6 +603,45 @@ Item {
                            + cell.width + "x" + cell.height + ") - it was 18x24")
                 }
             }
+        }
+
+        function test_task_rows_use_the_readable_label_floor() {
+            tryVerify(function () { return tTall.ready && tWide.ready }, 3000)
+            var hosts = [tTall, tWide]
+            var classes = ["tall", "wide"]
+            for (var i = 0; i < hosts.length; i++) {
+                hosts[i].item.sizeClass = classes[i]
+                seed(hosts[i])
+                wait(16)
+                var label = rowTextOf(hosts[i])
+                verify(label !== null)
+                verify(label.font.pixelSize >= hosts[i].theme.fontLabel,
+                       classes[i] + " task text uses at least fontLabel")
+            }
+        }
+
+        function test_tile_reports_tasks_hidden_by_height_or_first3() {
+            tryVerify(function () { return tTall.ready }, 3000)
+            tTallWrap.width = 348
+            tTallWrap.height = 819
+            tTall.item.sizeClass = "tall"
+            var many = []
+            for (var i = 0; i < 20; i++)
+                many.push({ id: "t" + i, text: "Task " + i, done: false })
+            tTall.storeCtl.patchSettings(tTall.instanceId, {
+                items: many, displayMode: "all"
+            })
+            wait(32)
+            var footer = findAll(tTall.item, function (n) {
+                return n.objectName === "tasksOverflowFooter"
+            }, [])[0]
+            verify(footer && footer.visible, "clipped tile reports hidden tasks")
+            verify(String(footer.Accessible.name).indexOf("more tasks") >= 0)
+
+            tTall.storeCtl.setSetting(tTall.instanceId, "displayMode", "top3")
+            wait(16)
+            verify(footer.visible, "First 3 reports tasks outside the focused view")
+            verify(tTall.item.modeHiddenCount > 0)
         }
 
         // The add field is a real target too (it was a fixed 40px on tiles).
@@ -547,11 +736,12 @@ Item {
 
             var lf = field(tOvlL), pf = field(tOvlP)
             verify(lf && pf, "both add fields resolve")
-            // The RENDERED font, not the property behind it.
-            verify(lf.font.pixelSize > pf.font.pixelSize,
-                   "the add field's text is sized by the pane it is given, not by one "
-                   + "literal for 'the overlay' (941x456 -> " + lf.font.pixelSize
-                   + ", 656x980 -> " + pf.font.pixelSize + ")")
+            // Both panes may now land on the shared legibility floor. The rendered
+            // controls must never shrink beneath it merely to create a difference.
+            verify(lf.font.pixelSize >= tOvlL.theme.fontMinimum
+                   && pf.font.pixelSize >= tOvlP.theme.fontMinimum,
+                   "both add fields keep the legibility floor ("
+                   + lf.font.pixelSize + " and " + pf.font.pixelSize + ")")
             // The field is a constant touchSecondary tall at BOTH panes: the room
             // moves the text, never the target.
             compare(lf.height, pf.height,

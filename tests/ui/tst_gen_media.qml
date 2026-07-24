@@ -116,8 +116,8 @@ Item {
         for (var i = 0; kids && i < kids.length; i++) if (isRect(kids[i])) return kids[i]
         return null
     }
-    // Effectively-visible circular transport MouseAreas (excludes the invisible
-    // compact play when expanded and the NoButton hover ring).
+    // Effectively-visible transport MouseAreas. The seek surface is also a
+    // MouseArea now, so require the parent button's semantic control property.
     function transport(harness) {
         var all = findAll(harness.item, isMouseArea, [])
         var out = []
@@ -125,6 +125,7 @@ Item {
             var ma = all[i]
             if (ma.acceptedButtons === Qt.NoButton) continue
             if (!effVisible(ma)) continue
+            if (!ma.parent || ma.parent.accessibleName === undefined) continue
             out.push(ma)
         }
         return out
@@ -309,14 +310,14 @@ Item {
 
         function test_placeholder_visible_when_unavailable() {
             compare(h.item.avail, false)
-            var node = textContaining(h, "Nothing playing")
+            var node = textContaining(h, "No track loaded")
             verify(node !== null, "placeholder text present")
             verify(effVisible(node), "placeholder shows when nothing is playing")
         }
         function test_placeholder_hidden_when_available() {
             seed(h, "Song", "Artist", "Album")
             compare(h.item.avail, true)
-            var node = textContaining(h, "Nothing playing")
+            var node = textContaining(h, "No track loaded")
             verify(node !== null, "placeholder node still exists")
             verify(!effVisible(node), "placeholder hides once a track is available")
         }
@@ -352,21 +353,33 @@ Item {
             verify(shown, "album-art ♪ fallback visible when the art image is not Ready")
         }
         function test_art_image_source_tracks_arturl() {
-            // The art <Image> source must reactively follow media.artUrl (and the
-            // ♪ fallback is gated on Image.status, not shown once Ready). We assert
-            // the reactive binding, not offscreen decode (which is environment
-            // dependent).
+            // A local art source may be rendered directly. Remote URLs must not be
+            // assigned to QML Image because that would bypass the shared NetHub
+            // offline and host-allowlist policy.
             seed(h, "Song", "Artist", "Album")
-            var url = "https://example.com/cover-abc.png"
+            var url = "qrc:/icons/media.svg"
             h.mediaCtl.artUrl = url
             var imgs = findAll(h.item, isImage, [])
             var art = null
             for (var i = 0; i < imgs.length; i++)
                 if (String(imgs[i].source) === url) art = imgs[i]
-            verify(art !== null, "album-art Image source reactively tracks media.artUrl")
+            verify(art !== null, "album-art Image source tracks a local media.artUrl")
             // Its ♪ sibling is gated on status (not shown when the image is Ready).
             var sib = art.parent
             verify(sib !== null && sib.hasOwnProperty("radius"), "art sits in the art tile")
+        }
+        function test_remote_art_never_bypasses_network_gate() {
+            seed(h, "Song", "Artist", "Album")
+            var remote = "https://example.com/cover-abc.png"
+            h.mediaCtl.artUrl = remote
+            compare(h.item.artworkSource, "",
+                    "remote artwork is withheld from the raw QML Image loader")
+            compare(h.item.remoteArtworkBlocked, true,
+                    "the widget exposes the blocked-art state")
+            var imgs = findAll(h.item, isImage, [])
+            for (var i = 0; i < imgs.length; i++)
+                verify(String(imgs[i].source) !== remote,
+                       "no album-art Image receives the remote URL")
         }
     }
 
@@ -382,11 +395,13 @@ Item {
             h.mediaCtl.clearTrack()
         }
         function test_status_empty_when_unavailable() {
-            compare(h.item.status, "", "no header status when nothing plays")
+            compare(h.item.status, "No track loaded",
+                    "the header distinguishes an idle player from a disconnected bus")
         }
         function test_status_shows_player_when_available() {
             seed(h, "Song", "Artist", "Album")
-            compare(h.item.status, "MockPlayer", "header shows the player name when available")
+            compare(h.item.status, "MockPlayer · Playing",
+                    "the header shows both the player and playback state")
         }
     }
 
@@ -496,6 +511,7 @@ Item {
             verify(keys["title"] === true, "schema exposes a custom title")
             verify(keys["accent"] === true, "schema exposes a per-widget accent")
             verify(keys["cardBackdrop"] === true, "schema exposes a per-widget card backdrop")
+            verify(keys["preferredPlayer"] === true, "schema exposes preferred player selection")
         }
         function test_accent_default_is_empty() {
             var s = sc.schemaFor("media")

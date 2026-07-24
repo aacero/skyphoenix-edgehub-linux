@@ -123,9 +123,21 @@ Item {
         function test_endOf_gives_an_allday_event_its_whole_day() {
             var midnight = new Date(); midnight.setHours(0, 0, 0, 0)
             var e = { title: "X", allDay: true, start: midnight, end: midnight }
-            compare(h.item.endOf(e), midnight.getTime() + 86400000, "all-day spans 24 h")
+            var nextMidnight = new Date(midnight)
+            nextMidnight.setDate(nextMidnight.getDate() + 1)
+            compare(h.item.endOf(e), nextMidnight.getTime(),
+                    "all-day spans the complete local calendar day")
             var timed = root.ev("Y", 0, 30)
             compare(h.item.endOf(timed), timed.end.getTime(), "a timed event keeps its real end")
+        }
+
+        function test_endOf_is_calendar_based_at_dst_boundary() {
+            var midnight = new Date(2026, 2, 29, 0, 0, 0, 0)
+            var expected = new Date(midnight)
+            expected.setDate(expected.getDate() + 1)
+            var e = { title: "DST day", allDay: true, start: midnight, end: midnight }
+            compare(h.item.endOf(e), expected.getTime(),
+                    "all-day end is next local midnight, including a short or long DST day")
         }
 
         function test_no_events_means_no_now_and_no_next() {
@@ -174,6 +186,37 @@ Item {
             var t = h.item.whenText(e)
             compare(t.indexOf(Qt.formatTime(e.start, "HH:mm")) >= 0, true, "shows the start time")
             compare(t.indexOf("in 45 min") >= 0, true, "and how long until it")
+        }
+
+        function test_buffer_window_and_meeting_link_are_useful() {
+            var w = h.item
+            var soon = root.ev("Review", 5, 30)
+            soon.location = "Video https://meet.example.com/abc"
+            compare(w.whenText(soon).indexOf("starts soon") >= 0, true)
+            compare(w.meetingUrl(soon), "https://meet.example.com/abc")
+            soon.url = "https://teams.example.com/join"
+            compare(w.meetingUrl(soon), "https://teams.example.com/join")
+        }
+
+        function test_meeting_link_strips_calendar_punctuation() {
+            var e = root.ev("Review", 5, 30)
+            e.location = "Join at https://meet.example.com/abc)."
+            compare(h.item.meetingUrl(e), "https://meet.example.com/abc")
+        }
+
+        function test_join_requires_a_second_confirming_action() {
+            var w = h.item
+            var opened = []
+            w.externalOpener = function (url) { opened.push(url); return true }
+            var target = "https://meet.example.com/room"
+            w.requestJoin(target)
+            compare(opened.length, 0, "first action only arms confirmation")
+            compare(w.pendingJoinUrl, target)
+            compare(w.joinLabel(target), "Open meet.example.com?")
+            w.requestJoin(target)
+            compare(opened.length, 1, "second action opens the destination")
+            compare(opened[0], target)
+            compare(w.pendingJoinUrl, "")
         }
     }
 
@@ -226,11 +269,18 @@ Item {
             h.storeCtl.patchSettings("test-instance", { url: "https://example.com/cal.ics" })
             gate.offline = false; gate.allowHosts = []
             gate.requests = 0; gate.blocked = 0
+            gate._sharedProviders = ({})
+            gate.sharedRevision = 0
             h.item.netHub = gate
             var tc = this
             h.item.xhrFactory = function () { tc.lastFake = Fx.makeFakeXHR(); return tc.lastFake }
         }
-        function cleanup() { gate.offline = false; gate.allowHosts = [] }
+        function cleanup() {
+            gate.offline = false; gate.allowHosts = []
+            gate._sharedProviders = ({})
+            gate.sharedRevision = 0
+            h.item.netHub = null
+        }
 
         function test_offline_refuses_the_agenda_fetch() {
             gate.offline = true
@@ -295,7 +345,11 @@ Item {
         }
         function seed(host) {
             host.storeCtl.patchSettings(host.instanceId, { url: "https://example.invalid/a.ics" })
-            agendaOf(host).events = [ root.ev("Standup", -10, 30), root.ev("Design review", 55, 60) ]
+            var current = root.ev("Standup", -10, 30)
+            var next = root.ev("Design review", 55, 60)
+            current.url = "https://meet.example.com/current"
+            next.url = "https://meet.example.com/next"
+            agendaOf(host).events = [ current, next ]
         }
         // The content GridLayout: the "NOW" label's grandparent.
         function layOf(host) {
@@ -319,6 +373,28 @@ Item {
                    "…and bigger than a 348x819 sliver's (" + n.titlePx.toFixed(0)
                    + " vs " + nTall.item.titlePx.toFixed(0) + ")")
             verify(n.nextTitlePx < n.titlePx, "NEXT stays quieter than NOW")
+            verify(n.metaPx >= nBase.theme.fontLabel,
+                   "metadata never drops below the shared legibility floor")
+        }
+
+        function test_join_is_available_at_each_supported_shape() {
+            var hosts = [
+                { host: nTall, cls: "tall" },
+                { host: nBase, cls: "compact" },
+                { host: nWide, cls: "wide" }
+            ]
+            for (var i = 0; i < hosts.length; i++) {
+                tryVerify((function (entry) { return function () { return entry.host.ready } })(hosts[i]), 3000)
+                hosts[i].host.item.sizeClass = hosts[i].cls
+                seed(hosts[i].host)
+                wait(32)
+                var buttons = root.findAll(hosts[i].host.item, function (n) {
+                    return n.hasOwnProperty("label") && n.hasOwnProperty("clicked")
+                           && n.visible && String(n.label).indexOf("Join ") === 0
+                }, [])
+                verify(buttons.length > 0, hosts[i].cls + " exposes a Join action")
+                verify(buttons[0].height >= 48, hosts[i].cls + " Join is touch sized")
+            }
         }
 
         // wide - the two blocks sit side by side rather than splitting 306px.

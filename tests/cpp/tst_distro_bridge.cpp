@@ -73,8 +73,14 @@ private slots:
         QCOMPARE(b.info().value("family").toString(), QStringLiteral("arch"));
         QCOMPARE(b.info().value("id").toString(), QStringLiteral("arch"));
         QCOMPARE(b.info().value("name").toString(), QStringLiteral("Arch Linux"));
+        QVERIFY(!b.refreshing());
+        QVERIFY(b.refreshedAtMs() > 0);
         // 2024-03-01T00:00:00Z
         QCOMPARE(b.info().value("installEpoch").toLongLong(), 1709251200LL);
+        QCOMPARE(b.info().value("installSource").toString(), QStringLiteral("package-log-estimate"));
+        QCOMPARE(b.info().value("installEvidence").toString(), QStringLiteral("/var/log/pacman.log"));
+        QVERIFY(b.info().value("installEvidenceNote").toString().contains("visible pacman history"));
+        QVERIFY(b.info().value("installReason").isNull());
     }
 
     // ID_LIKE=arch must reach the pacman reader. This is the dev box's own file.
@@ -136,6 +142,7 @@ private slots:
         QVERIFY(b.info().value("packageCount").isNull());
         QVERIFY(b.info().value("installEpoch").isNull());
         QVERIFY(!b.info().value("unsupportedReason").toString().isEmpty());
+        QVERIFY(!b.info().value("installReason").toString().isEmpty());
     }
 
     // "Updates available" is never claimed - see core/src/distro.rs. If someone
@@ -148,6 +155,8 @@ private slots:
         QVERIFY(probeAt(b, d.path()));
         QTRY_VERIFY(b.ready());
         QVERIFY(b.info().value("updates").isNull());
+        QVERIFY(b.info().value("securityUpdates").isNull());
+        QVERIFY(!b.info().value("updatesReason").toString().isEmpty());
     }
 
     // Before the first probe lands there is no data - and an empty map must not

@@ -44,7 +44,7 @@ Item {
             store.removeTile(0, id)
             compare(tiles().length, 0)
             // settingsFor lazily recreates, so assert the map no longer carried it
-            verify(store.data.settings[id] === undefined || Object.keys(store.data.settings[id]).length === 0)
+            verify(store.document.settings[id] === undefined || Object.keys(store.document.settings[id]).length === 0)
         }
 
         function test_remove_unknown_tile_is_noop() {

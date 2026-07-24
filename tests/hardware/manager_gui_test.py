@@ -128,7 +128,7 @@ class ManagerGui:
         import hashlib
         return hashlib.md5(Image.open(path).convert("RGB").tobytes()).hexdigest()
 
-    def verify_owns_its_rect(self, settle=1.2):
+    def verify_owns_its_rect(self, settle=1.5):
         """Prove the MANAGER is the window actually showing in its own rect,
         before a single event is emitted. Returns True/False.
 
@@ -148,7 +148,9 @@ class ManagerGui:
         The technique is the one e2e_harness already uses for the Edge: change
         the app's state from OUTSIDE and require the pixels to move. The Manager
         is live-connected to the hub, so pushing an appearance change through
-        the hub repaints its Edge preview. If those pixels do not move, either
+        the hub repaints its Edge preview. The connected Manager pulls the local
+        socket twice per second, so this probe spans multiple pull intervals.
+        If those pixels do not move, either
         the Manager is occluded, or it is not connected, or it is not rendering
         - and in all three cases injecting would be firing blind. Refuse.
         """
@@ -283,28 +285,22 @@ def main():
                 "the Manager repaints in its own rect")
 
         # ── drive the five tabs, screenshotting each ─────────────────────────
-        # The sidebar is the left ~12% of the window; the five entries are
-        # evenly spaced down its upper half.
         # ASSERT THE SCREEN CHANGED, not merely that a grab succeeded. The
         # first version of this checked `p is not None`, which passed for three
         # tabs whose clicks missed the sidebar entirely and produced byte-
         # identical frames. A GUI test that cannot tell "the UI changed" from
         # "I took a picture of the same UI" is worse than no test.
-        # Fractions MEASURED from a real 1440x1300 capture (not guessed): the
-        # five sidebar rows sit at y = 164/220/276/332/388 px, i.e. 0.126 with a
-        # 0.043 step, at x = 85 px (0.059). The first version used
-        # 0.18 + i*0.07, which put entries 2-4 BELOW the menu entirely - they
-        # clicked dead space, the screen never changed, and the frames came back
-        # byte-identical. Derive coordinates from a capture; do not estimate.
+        # Invoke exact AT-SPI identities instead of coordinates. This remains
+        # stable when rows, scaling, or the Manager window size change and can
+        # never deliver an event to an unrelated overlapping window.
         tabs = ["Screens", "Look", "Images", "Device", "About"]
-        SIDEBAR_X = 0.059
-        SIDEBAR_Y0, SIDEBAR_DY = 0.126, 0.043
         sigs = {}
         for i, name in enumerate(tabs):
-            if not gui.click_rel(SIDEBAR_X, SIDEBAR_Y0 + i * SIDEBAR_DY):
+            if not mw.invoke_accessible(name):
                 h.check("manager-window-stayed-in-front", False,
-                        "lost the window before clicking '%s' - no event emitted" % name)
+                        "accessible tab '%s' was unavailable - no event emitted" % name)
                 break
+            time.sleep(0.8)
             p = gui.shot("tab-%d-%s" % (i, name.lower()))
             if not p:
                 h.check("manager-tab-%s" % name.lower(), False, "no grab")
@@ -353,7 +349,7 @@ def main():
         # widget lands at a specific pixel (that is what the offscreen suite is
         # for); we assert that driving the real Manager mutates the real hub.
         before = h.get_state() or {}
-        gui.click_rel(0.06, 0.18)          # back to Screens
+        mw.invoke_accessible("Screens")
         gui.shot("integration-before")
         time.sleep(1.0)
         after = h.get_state() or {}

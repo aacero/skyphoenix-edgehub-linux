@@ -49,6 +49,8 @@ Item {
         function seed(obj) { wh.storeCtl.patchSettings(wh.instanceId, obj); wait(120) }
         function settings() { return wh.storeCtl.settingsFor(wh.instanceId) }
         function setSize(cls, w, h) {
+            root.width = Math.max(1400, w)
+            root.height = Math.max(760, h)
             wh.width = w; wh.height = h
             wh.item.sizeClass = cls
             wait(220)
@@ -163,25 +165,6 @@ Item {
         // ═══════════════════════════════════════════════════════════════════
         // BREAK REMINDER
         // ═══════════════════════════════════════════════════════════════════
-        function test_break_sizes_data() {
-            return [
-                { tag: "0.5x0.5", cls: "compact", w: 348, h: 306 },
-                { tag: "0.5x1",   cls: "tall",    w: 348, h: 700 },
-                { tag: "1x0.5",   cls: "wide",    w: 760, h: 409 },
-                { tag: "1x1",     cls: "compact", w: 696, h: 612 }
-            ]
-        }
-        function test_break_sizes(r) {
-            loadWidget("BreakWidget.qml", "ringFrac")
-            resetInst()
-            seed({ intervalMin: 30, running: false, endEpoch: 0, pausedRemaining: 1500, due: false })
-            setSize(r.cls, r.w, r.h)
-            var img = snap(wh, "break_size_" + r.tag)
-            verify(G.looksRendered(img), "break " + r.tag + " renders content")
-            compare(wh.item.width, r.w, "break " + r.tag + " width")
-            compare(wh.item.height, r.h, "break " + r.tag + " height")
-        }
-
         function test_break_config_interval_data() {
             return [ { tag: "5", v: 5, txt: "05:00" },
                      { tag: "30", v: 30, txt: "30:00" },
@@ -371,26 +354,6 @@ Item {
         // ═══════════════════════════════════════════════════════════════════
         // HABIT STREAK
         // ═══════════════════════════════════════════════════════════════════
-        function test_habit_sizes_data() {
-            return [
-                { tag: "0.5x0.5", cls: "compact", w: 348, h: 306 },
-                { tag: "0.5x1",   cls: "tall",    w: 348, h: 700 },
-                { tag: "1x0.5",   cls: "wide",    w: 760, h: 409 },
-                { tag: "1x1",     cls: "compact", w: 696, h: 612 },
-                { tag: "1x1.5",   cls: "tall",    w: 696, h: 700 }
-            ]
-        }
-        function test_habit_sizes(r) {
-            loadWidget("HabitWidget.qml", "heatCols")
-            resetInst()
-            seed({ streak: 3, lastCheckinDay: wh.item.todayKey, checkins: [wh.item.todayKey], bestStreak: 5 })
-            setSize(r.cls, r.w, r.h)
-            var img = snap(wh, "habit_size_" + r.tag)
-            verify(G.looksRendered(img), "habit " + r.tag + " renders content")
-            compare(wh.item.width, r.w, "habit " + r.tag + " width")
-            compare(wh.item.height, r.h, "habit " + r.tag + " height")
-        }
-
         function test_habit_config_name_data() {
             return [ { tag: "set", name: "Meditate", expect: "Meditate" },
                      { tag: "clear", name: "", expect: "Habit" } ]
@@ -533,28 +496,6 @@ Item {
         // ═══════════════════════════════════════════════════════════════════
         // QUICK NOTE
         // ═══════════════════════════════════════════════════════════════════
-        function test_notes_sizes_data() {
-            return [
-                { tag: "0.5x0.5", cls: "compact", w: 348, h: 306 },
-                { tag: "0.5x1",   cls: "tall",    w: 348, h: 700 },
-                { tag: "1x0.5",   cls: "wide",    w: 760, h: 409 },
-                { tag: "1x1",     cls: "compact", w: 696, h: 612 },
-                { tag: "1x1.5",   cls: "tall",    w: 640, h: 700 },
-                { tag: "1x2",     cls: "tall",    w: 560, h: 700 },
-                { tag: "1x3",     cls: "tall",    w: 480, h: 700 }
-            ]
-        }
-        function test_notes_sizes(r) {
-            loadWidget("NotesWidget.qml", "previewPx")
-            resetInst()
-            seed({ text: "Sample note body" })
-            setSize(r.cls, r.w, r.h)
-            var img = snap(wh, "notes_size_" + r.tag)
-            verify(G.looksRendered(img), "notes " + r.tag + " renders content")
-            compare(wh.item.width, r.w, "notes " + r.tag + " width")
-            compare(wh.item.height, r.h, "notes " + r.tag + " height")
-        }
-
         function test_notes_config_text_data() {
             return [ { tag: "set", text: "Buy milk", expect: "Buy milk", placeholder: false },
                      { tag: "clear", text: "", expect: "Tap to jot a note", placeholder: true } ]

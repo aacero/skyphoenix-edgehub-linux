@@ -2,6 +2,7 @@ import QtQuick
 import QtTest
 import "../../ui/qml" as App
 
+
 // Comprehensive coverage for the Memory (RAM) metric widget
 // (ui/qml/widgets/RamWidget.qml) plus its shared config schema.
 //
@@ -9,8 +10,8 @@ import "../../ui/qml" as App
 // on the widget's own derived state (v/unit/showHistory/hist/col()/gb()/effAccent)
 // as well as the rendered MetricGauge (centre "big" text, "sub" line, ring).
 //
-// Some assertions target the audited bugs and are EXPECTED to fail against the
-// current code - those are marked in the report as likely-real-bug.
+// Regression checks cover truthful availability, binary unit labels, detailed
+// memory categories, pressure, freshness, retained statistics and layout.
 Item {
     id: root
     width: 460; height: 640
@@ -55,6 +56,9 @@ Item {
     }
 
     function gaugeOf(w) { return findOne(w, isGauge) }
+    function hasText(rootObj, text) {
+        return findOne(rootObj, function (o) { return isText(o) && o.text === text }) !== null
+    }
 
     function clearCfg(h) {
         var s = h.storeCtl.settingsFor("test-instance")
@@ -79,11 +83,32 @@ Item {
                 }
             verify(keys["unit"], "exposes 'unit'")
             verify(keys["showHistory"], "exposes 'showHistory'")
+            verify(keys["historyWindow"], "exposes 'historyWindow'")
+            verify(keys["showDetails"], "exposes 'showDetails'")
+            verify(keys["warnPercent"], "exposes 'warnPercent'")
             verify(keys["title"], "exposes custom title")
             verify(keys["accent"], "exposes per-widget accent")
             verify(keys["cardBackdrop"], "exposes per-widget backdrop")
             compare(types["unit"], "segmented", "unit is a segmented control")
             compare(types["showHistory"], "toggle", "showHistory is a toggle")
+            compare(types["historyWindow"], "segmented", "historyWindow is segmented")
+            compare(types["showDetails"], "toggle", "showDetails is a toggle")
+            compare(types["warnPercent"], "slider", "warnPercent is a slider")
+        }
+
+        function test_history_window_is_conditional_and_names_each_duration() {
+            var s = schema.schemaFor("ram")
+            var historyWindow = null
+            for (var j = 0; j < s.sections.length; j++)
+                for (var k = 0; k < (s.sections[j].fields || []).length; k++)
+                    if (s.sections[j].fields[k].key === "historyWindow")
+                        historyWindow = s.sections[j].fields[k]
+            verify(historyWindow !== null)
+            compare(historyWindow.dflt, "2m")
+            compare(historyWindow.visibleWhen.key, "showHistory")
+            compare(historyWindow.visibleWhen.equals, true)
+            compare(historyWindow.options.map(function(o) { return o.value }).join(","),
+                    "1m,2m,5m")
         }
 
         function test_unit_options_are_percent_and_gb() {
@@ -109,6 +134,9 @@ Item {
             var w = hRam.item
             compare(w.unit, "percent", "unit defaults to percent")
             compare(w.showHistory, true, "showHistory defaults to true")
+            compare(w.historyWindow, "2m", "history defaults to two minutes")
+            compare(w.showDetails, true, "showDetails defaults to true")
+            compare(w.warnPercent, 75, "warning threshold defaults to 75%")
         }
 
         function test_v_reads_ram_usage_percent() {
@@ -123,11 +151,21 @@ Item {
             var w = hRam.item
             var th = hRam.theme
             compare(String(w.col(50)), String(w.effAccent), "50% → accent")
-            compare(String(w.col(75)), String(w.effAccent), "75% (boundary, not >75) → accent")
-            compare(String(w.col(75.5)), String(th.warning), "just above 75% → warning")
-            compare(String(w.col(90)), String(th.warning), "90% (boundary, not >90) → warning")
-            compare(String(w.col(90.5)), String(th.error), "just above 90% → error")
+            compare(String(w.col(74.9)), String(w.effAccent), "below 75% → accent")
+            compare(String(w.col(75)), String(th.warning), "75% boundary → warning")
+            compare(String(w.col(89.9)), String(th.warning), "below critical → warning")
+            compare(String(w.col(90)), String(th.error), "90% boundary → error")
             compare(String(w.col(99)), String(th.error), "99% → error")
+        }
+
+        function test_warning_threshold_is_configurable_and_clamped() {
+            var w = hRam.item
+            hRam.storeCtl.setSetting("test-instance", "warnPercent", 85)
+            compare(w.warnPercent, 85)
+            compare(String(w.col(80)), String(w.effAccent))
+            compare(String(w.col(85)), String(hRam.theme.warning))
+            hRam.storeCtl.setSetting("test-instance", "warnPercent", 200)
+            compare(w.warnPercent, 95)
         }
 
         function test_effAccent_recolours_ring_and_number() {
@@ -147,14 +185,13 @@ Item {
             compare(w.gb(1073741824), "1.0", "1 GiB → 1.0")
         }
 
-        function test_gb_labelled_gb_matches_decimal_hardware_size() {
-            // Corrected: memory is measured in binary units - a "32 GB" module is
-            // 32 GiB (34359738368 bytes, exactly what ram_total_bytes reports), so
-            // the 2^30 divisor is right and a 32 GiB stick reads 32.0 GB. The old
+        function test_gib_label_matches_binary_hardware_size() {
+            // Memory is measured in binary units. A 32 GiB value is exactly
+            // 34359738368 bytes, so the 2^30 divisor is correct. The old
             // 32e9-byte (decimal) premise contradicted test_gb_uses_gibibyte_divisor.
             var w = hRam.item
             compare(w.gb(34359738368), "32.0",
-                    "a 32 GiB stick should read 32.0 GB")
+                    "a 32 GiB value should read 32.0 GiB")
         }
     }
 
@@ -182,7 +219,7 @@ Item {
             var w = hRam.item; feed(w)
             var g = gaugeOf(w)
             hRam.storeCtl.setSetting("test-instance", "unit", "gb")
-            compare(g.big, w.gb(23200000000) + " GB", "gb mode shows used-GB in the centre")
+            compare(g.big, w.gb(23200000000) + " GiB", "binary mode shows used GiB in the centre")
         }
 
         function test_unit_toggles_live_on_revision_bump() {
@@ -191,7 +228,7 @@ Item {
             hRam.storeCtl.setSetting("test-instance", "unit", "percent")
             compare(g.big, "63%", "starts as percent")
             hRam.storeCtl.setSetting("test-instance", "unit", "gb")
-            verify(g.big.indexOf("GB") >= 0, "flips to GB live (store.revision bump)")
+            verify(g.big.indexOf("GiB") >= 0, "flips to GiB live (store.revision bump)")
             hRam.storeCtl.setSetting("test-instance", "unit", "percent")
             compare(g.big, "63%", "flips back to percent live")
         }
@@ -264,14 +301,20 @@ Item {
             fuzzyCompare(w.hist[w.hist.length - 1], 0.63, 1e-9, "sample is percent/100")
         }
 
-        function test_fifo_cap_at_48() {
+        function test_history_cap_follows_the_named_window() {
             var w = hRam.item
             w.hist = []
-            for (var i = 1; i <= 55; i++) w.metrics = { ram_usage_percent: i }
-            compare(w.hist.length, 48, "buffer capped at 48 samples (FIFO)")
-            verify(w.hist[0] < w.hist[47], "oldest samples were dropped, newest retained")
+            hRam.storeCtl.setSetting("test-instance", "historyWindow", "1m")
+            for (var i = 1; i <= 40; i++) w.metrics = { ram_usage_percent: i }
+            compare(w.historyLimit, 30)
+            compare(w.historyLabel, "1 minute")
+            compare(w.hist.length, 30, "one-minute buffer is capped at 30 samples")
+            verify(w.hist[0] < w.hist[29], "oldest samples were dropped, newest retained")
             for (var j = 0; j < w.hist.length; j++)
                 verify(w.hist[j] >= 0 && w.hist[j] <= 1, "every sample is normalised 0..1")
+            hRam.storeCtl.setSetting("test-instance", "historyWindow", "5m")
+            compare(w.historyLimit, 150)
+            compare(w.historyLabel, "5 minutes")
         }
 
         function test_partial_frame_should_not_seed_a_false_zero() {
@@ -289,6 +332,108 @@ Item {
             w.metrics = { ram_total_bytes: 3e10 }
             verify(w.hist[w.hist.length - 1] !== 0,
                    "a frame with no ram_usage_percent must not append a spurious 0")
+        }
+    }
+
+    // ── Detailed memory categories, freshness and truthful state ────────────
+    TestCase {
+        name: "RamDetails"
+        when: windowShown
+        function init() {
+            tryVerify(function () { return hRam.ready }, 3000)
+            clearCfg(hRam)
+            hRam.item.hist = []
+        }
+
+        function detailFrame() {
+            return {
+                ram_metrics_available: true,
+                ram_sample_unix_ms: Date.now(),
+                ram_unavailable_reason: "",
+                ram_usage_percent: 50,
+                ram_total_bytes: 17179869184,
+                ram_used_bytes: 8589934592,
+                ram_available_bytes: 8589934592,
+                ram_cached_bytes: 4294967296,
+                ram_buffers_bytes: 536870912,
+                swap_total_bytes: 8589934592,
+                swap_used_bytes: 2147483648,
+                ram_pressure_some_avg10: 0.25
+            }
+        }
+
+        function test_expanded_details_fill_supported_memory_categories() {
+            var w = hRam.item
+            w.metrics = detailFrame()
+            compare(w.freshness, "updated now")
+            compare(w.status, "updated now", "freshness appears in the header")
+            compare(w.swapText, "2.0 / 8.0 GiB")
+            compare(w.pressureText, "0.25%")
+            compare(w.pressureSummary, "0.25% tasks stalled, 10s")
+            verify(hasText(w, "8.0 GiB"), "available memory is shown")
+            verify(hasText(w, "4.0 GiB"), "cache is shown")
+            verify(hasText(w, "0.5 GiB"), "buffers are shown")
+            verify(hasText(w, "2.0 / 8.0 GiB"), "swap use and capacity are shown")
+            verify(hasText(w, "0.25%"), "Linux memory pressure is shown")
+            verify(hasText(w, "STALLS, 10S"),
+                   "pressure is labelled as task stalls rather than utilization")
+        }
+
+        function test_explicit_read_failure_is_not_a_real_zero() {
+            var w = hRam.item
+            w.metrics = { ram_metrics_available: false, ram_usage_percent: 0,
+                          ram_unavailable_reason: "The kernel memory summary could not be read" }
+            compare(w.avail, false)
+            compare(gaugeOf(w).big, "N/A", "read failure is not rendered as 0%")
+            compare(w.status, "unavailable")
+            compare(w.unavailableReason, "The kernel memory summary could not be read")
+            compare(w.hist.length, 0, "unavailable samples do not enter history")
+        }
+
+        function test_warning_and_critical_states_do_not_depend_on_colour() {
+            var w = hRam.item
+            w.metrics = { ram_metrics_available: true, ram_usage_percent: 80,
+                          ram_total_bytes: 17179869184, ram_used_bytes: 13743895347,
+                          ram_available_bytes: 3435973837 }
+            compare(w.alertLevel, "warning")
+            compare(w.alertText, "High memory use")
+            verify(w.status.indexOf("High memory use") >= 0)
+            verify(w.accessibleSummary.indexOf("High memory use") >= 0)
+            w.metrics = { ram_metrics_available: true, ram_usage_percent: 95,
+                          ram_total_bytes: 17179869184, ram_used_bytes: 16320875725,
+                          ram_available_bytes: 858993459 }
+            compare(w.alertLevel, "critical")
+            compare(w.alertText, "Critical memory use")
+            verify(w.status.indexOf("Critical memory use") >= 0)
+            verify(w.accessibleSummary.indexOf("Critical memory use") >= 0)
+        }
+
+        function test_pressure_is_context_not_memory_utilization() {
+            var w = hRam.item
+            w.metrics = { ram_metrics_available: true, ram_usage_percent: 40,
+                          ram_total_bytes: 17179869184, ram_used_bytes: 6871947674,
+                          ram_available_bytes: 10307921510,
+                          ram_pressure_some_avg10: 12.5 }
+            compare(w.v, 40, "PSI never replaces the utilization reading")
+            compare(w.alertLevel, "normal", "utilization warning remains independent")
+            compare(w.pressureSummary, "12.50% tasks stalled, 10s")
+        }
+
+        function test_history_reports_min_average_and_peak() {
+            var w = hRam.item
+            w.hist = [0.2, 0.5, 0.8]
+            compare(w.histStats, "min 20% · avg 50% · peak 80%")
+            compare(w.historyLabel, "2 minutes")
+            compare(gaugeOf(w).historyCaption, "2 MINUTES UTILIZATION")
+            compare(gaugeOf(w).sub, "min 20% · avg 50% · peak 80%",
+                    "expanded gauge uses the retained statistics")
+        }
+
+        function test_showDetails_reacts_live() {
+            var w = hRam.item
+            compare(w.showDetails, true)
+            hRam.storeCtl.setSetting("test-instance", "showDetails", false)
+            compare(w.showDetails, false, "detail visibility follows the shared configuration")
         }
     }
 
@@ -415,6 +560,8 @@ Item {
             compare(g.horizontal, true, "wide lays ring and sparkline side by side")
             compare(g.showSpark, true, "the sparkline is the point of going wide")
             verify(g.sub.length > 0, "wide keeps the used/total context inside the ring")
+            compare(g.detailLabelPixelSize, hWide.theme.fontLabel,
+                    "supporting labels meet the arm-length legibility floor")
             wideWrap.width = 840; wideWrap.height = 344
             compare(g.horizontal, true, "the landscape projection stays side-by-side")
             wideWrap.width = 696; wideWrap.height = 416
@@ -429,6 +576,8 @@ Item {
             var g = gaugeOf(w)
             compare(g.sparkFills, true, "tall hands the sparkline all the height below the ring")
             verify(g.sub.length > 0, "tall keeps the used/total context")
+            compare(g.stackedRingMaxFraction, 0.52,
+                    "the taller card gives context more room instead of inflating the ring")
             w.sizeClass = "full"
             compare(g.sparkFills, false, "the overlay keeps the classic expanded gauge")
             compare(w.micro, false, "full is never micro")

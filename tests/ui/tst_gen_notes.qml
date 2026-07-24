@@ -2,7 +2,6 @@ import QtQuick
 import QtTest
 import "../../ui/qml" as App
 
-// COVERS: schema:text
 
 // ─────────────────────────────────────────────────────────────────────────
 // Comprehensive coverage for area "widget:notes" (ui/qml/widgets/NotesWidget.qml).
@@ -71,6 +70,7 @@ Item {
     // never hits.
     property alias theme: rootTheme
     App.Theme { id: rootTheme }
+    App.WidgetConfigSchema { id: schemaReg }
 
     Item {
         id: destroyHost
@@ -150,7 +150,15 @@ Item {
     // MouseAreas have containsMouse + acceptedButtons.
     function mouseAreas(w) {
         return collect(w, function (n) {
-            return n.hasOwnProperty("containsMouse") && n.hasOwnProperty("acceptedButtons")
+            if (!n.hasOwnProperty("containsMouse") || !n.hasOwnProperty("acceptedButtons"))
+                return false
+            var cur = n
+            while (cur) {
+                if (cur.visible !== undefined && !cur.visible)
+                    return false
+                cur = cur.parent
+            }
+            return true
         })
     }
     function clearStore(h) {
@@ -170,6 +178,17 @@ Item {
             compare(w.current, "", "a fresh note is empty")
             compare(w.title, "Quick Note", "default title")
             compare(w.iconName, "notes", "notes icon")
+        }
+        function test_settings_form_does_not_duplicate_the_note_editor() {
+            var schema = schemaReg.schemaFor("notes")
+            var textFields = 0
+            for (var s = 0; s < schema.sections.length; s++) {
+                var fields = schema.sections[s].fields || []
+                for (var f = 0; f < fields.length; f++)
+                    if (fields[f].key === "text") textFields++
+            }
+            compare(textFields, 0,
+                    "the expanded live widget is the single note editor")
         }
         function test_text_config_honored() {
             var w = hNotes.item
@@ -221,6 +240,46 @@ Item {
             ed.text = "idle save"
             tryVerify(function () { return w.current === "idle save" }, 2000,
                       "the 400ms debounce eventually persists the text")
+        }
+        function test_save_state_tracks_debounce() {
+            var w = hNotes.item, ed = findEditor(w)
+            ed.text = "status check"
+            compare(w.saveState, "saving")
+            w.flush()
+            compare(w.saveState, "saved")
+            compare(w.current, "status check")
+        }
+        function test_history_and_undo_restore_prior_text() {
+            var w = hNotes.item
+            w.save("first"); w.save("second")
+            compare(w.history.length, 1)
+            w.undoLast()
+            compare(w.current, "first")
+            compare(w.history.length, 0)
+        }
+        function test_manager_text_edit_enters_the_same_undo_history() {
+            var w = hNotes.item
+            w.save("before Manager")
+            hNotes.storeCtl.setSetting("test-instance", "text", "after Manager")
+            tryVerify(function () {
+                var hist = hNotes.storeCtl.settingsFor("test-instance").history || []
+                return hist.length > 0 && hist[hist.length - 1] === "before Manager"
+            }, 1000)
+            w.undoLast()
+            compare(w.current, "before Manager")
+        }
+        function test_note_size_is_bounded_and_disclosed() {
+            var w = hNotes.item
+            var body = new Array(w.maxNoteLength + 12).join("x")
+            w.save(body)
+            compare(w.current.length, w.maxNoteLength)
+            verify(w.noteNotice.indexOf("" + w.maxNoteLength) >= 0)
+        }
+        function test_clear_requires_confirmation() {
+            var w = hNotes.item, ed = findEditor(w)
+            w.save("keep me"); ed.text = "keep me"
+            w.requestClear(); compare(w.current, "keep me"); compare(w.clearArmed, true)
+            w.requestClear(); compare(w.current, ""); compare(w.clearArmed, false)
         }
     }
 
@@ -362,6 +421,22 @@ Item {
             // A whitespace-only note has 0 words; the counter should not claim content.
             verify(!c || !c.visible,
                    "the counter should be hidden for a whitespace-only note (0 words)")
+        }
+
+        function test_editor_footer_never_overlaps_the_note() {
+            var w = hNotes.item
+            var ed = findEditor(w)
+            var flick = findFlickable(w)
+            var footer = findOne(w, function (n) {
+                return n.objectName === "notesEditorFooter"
+            })
+            verify(ed && flick && footer && footer.visible)
+            verify(ed.font.pixelSize >= hNotes.theme.fontTitle,
+                   "editor uses at least title-size reading text")
+            verify(flick.y + flick.height <= footer.y + 0.51,
+                   "the editor viewport ends before the footer begins")
+            verify(footer.height >= hNotes.theme.touchTertiary,
+                   "the consolidated footer preserves touch targets")
         }
     }
 
@@ -549,6 +624,8 @@ Item {
             compare(q.micro, true, "a 348x409 compact box is the micro tile")
             compare(q.showHeader, false, "micro drops the chrome header")
             verify(preview(qMicro) !== null, "the note still renders")
+            verify(preview(qMicro).font.pixelSize >= qMicro.theme.fontTitle,
+                   "micro preview keeps the reading-size floor")
         }
 
         // The preview is sized off the BOX, not off `expanded` - the wave-2b bug.
@@ -565,6 +642,53 @@ Item {
             verify(q.previewPx > qMicro.item.previewPx,
                    "…and bigger than a 348x409 tile's (" + q.previewPx.toFixed(0)
                    + " vs " + qMicro.item.previewPx.toFixed(0) + ")")
+            verify(preview(qBase).font.pixelSize >= qBase.theme.fontTitle,
+                   "baseline preview keeps the reading-size floor")
+        }
+
+        function test_roomy_preview_adds_context_and_a_designed_empty_state() {
+            tryVerify(function () { return qBase.ready }, 3000)
+            var q = qBase.item
+            q.sizeClass = "compact"
+            seed(qBase)
+            wait(32)
+            compare(q.roomyPreview, true, "the real 1x1 card earns preview context")
+            var meta = findAll(q, function (n) {
+                return n.objectName === "notesPreviewMeta" && n.visible
+            }, [])
+            compare(meta.length, 1, "the note preview uses its footer for useful metadata")
+            var previewItem = findAll(q, function (n) {
+                return n.objectName === "notesPreviewText"
+            }, [])[0]
+            verify(previewItem !== null)
+            verify(findAll(meta[0], function (n) {
+                return n.hasOwnProperty("text") && String(n.text).indexOf("words") >= 0
+            }, []).length === 1, "word count is visible")
+            verify(findAll(meta[0], function (n) {
+                return n.hasOwnProperty("text")
+                    && String(n.text).indexOf("Tap anywhere to edit") >= 0
+            }, []).length === 1, "the short-note footer makes edit mode discoverable")
+            verify(String(meta[0].Accessible.name).indexOf("Tap anywhere to edit") >= 0)
+
+            var longNote = ""
+            for (var n = 0; n < 90; n++) longNote += "important detail " + n + " "
+            qBase.storeCtl.setSetting(qBase.instanceId, "text", longNote)
+            wait(16)
+            compare(meta[0].visible, false,
+                    "long notes spend the footer space on reading content")
+            compare(previewItem.anchors.bottomMargin, qBase.theme.spacingSm,
+                    "a hidden footer reserves no blank line")
+
+            qBase.storeCtl.setSetting(qBase.instanceId, "text", "")
+            wait(16)
+            var empty = findAll(q, function (n) {
+                return n.objectName === "notesRichEmptyState" && n.visible
+            }, [])
+            compare(empty.length, 1, "an empty roomy note gets a designed capture prompt")
+            verify(findAll(empty[0], function (n) {
+                return n.hasOwnProperty("text")
+                    && String(n.text) === "Capture it before it disappears"
+            }, []).length === 1, "the empty state explains the widget's purpose")
         }
 
         // 1x3 earns more LINES, not bigger type: a note is one body of text.

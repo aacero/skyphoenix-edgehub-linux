@@ -37,16 +37,6 @@ import manager_window as mw          # noqa: E402
 from e2e_harness import (E2E, MANAGER, assert_binaries_current,  # noqa: E402
                          doc, page, tile)
 
-SIDEBAR_SCREENS = (0.059, 0.126)
-# Screen chips sit in a row near the top of the Screens tab. The first chip
-# ("Home") is at ~x=300px in a 1440-wide window; each chip is ~64px wide.
-CHIP_Y = 0.09
-CHIP_X0 = 0.208            # first chip centre, fraction of window width
-CHIP_DX = 0.051           # spacing between chips (measured on a 1440-wide window)
-ADD_CHIP_X = 0.403        # the "+" add-screen chip, just right of the last chip
-ADD_SCREEN_CHIP = None    # computed from the number of screens
-
-
 def main():
     for gate in (u.require_gate, dt.require_desktop_gate):
         try:
@@ -129,28 +119,27 @@ def main():
                 time.sleep(0.2)
             return False, last
 
-        click(*SIDEBAR_SCREENS)   # ensure Screens tab
         grab("screens-tab")
 
         # ── select each screen chip; the hub must follow ────────────────────
         # Visit out of order so a pass cannot be "it was already there".
         for label, idx in [("Three", 2), ("Home", 0), ("Four", 3), ("Two", 1)]:
-            click(CHIP_X0 + idx * CHIP_DX, CHIP_Y)
-            ok, got = wait_page(idx)
+            invoked = mw.invoke_accessible("Screen: " + label)
+            ok, got = wait_page(idx) if invoked else (False, h.hub_current_page())
             grab("select-%d-%s" % (idx, label))
             h.check("mirror-select-%s" % label, ok,
-                    "clicked chip #%d (%s); hub currentPage = %s" % (idx, label, got))
+                    "invoked screen #%d (%s); hub currentPage = %s" % (idx, label, got))
 
         # ── add a screen via the Manager; the hub must follow to the NEW one ─
         # Select the last screen first so the add is unambiguous, then click the
         # "+" chip (just right of the last screen chip).
-        click(CHIP_X0 + 3 * CHIP_DX, CHIP_Y)
+        mw.invoke_accessible("Screen: Four")
         wait_page(3)
         n_before = len(h.get_state().get("pages", []))
-        click(ADD_CHIP_X, CHIP_Y)                 # the "+" add-screen chip
+        invoked = mw.invoke_accessible("Add screen")
         time.sleep(1.0)
         n_after = len(h.get_state().get("pages", []))
-        added = n_after > n_before
+        added = invoked and n_after > n_before
         ok, got = wait_page(n_after - 1) if added else (False, h.hub_current_page())
         grab("after-add-screen")
         h.check("mirror-add-lands-on-new-screen", added and ok,

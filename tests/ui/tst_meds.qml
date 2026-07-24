@@ -1,7 +1,6 @@
 import QtQuick
 import QtTest
 
-// COVERS: schema:schedule, schema:dueWindowMin
 
 // ─────────────────────────────────────────────────────────────────────────
 // tst_meds - ui/qml/widgets/MedsWidget.qml.
@@ -25,6 +24,19 @@ import QtTest
 Item {
     id: root
     width: 1000; height: 720
+    property int notificationCalls: 0
+    property string notificationSummary: ""
+    property string notificationBody: ""
+
+    QtObject {
+        id: fakeNotifications
+        function send(summary, body) {
+            root.notificationCalls++
+            root.notificationSummary = summary
+            root.notificationBody = body
+            return true
+        }
+    }
 
     // Side by side rather than stacked: `hc` is clicked for real, and an
     // overlapping sibling would swallow the press.
@@ -33,7 +45,7 @@ Item {
         widgetFile: "MedsWidget.qml"; expanded: true
     }
     WidgetHarness {
-        id: hc; x: 640; y: 0; width: 340; height: 380
+        id: hc; x: 640; y: 0; width: 340; height: 380; z: 100
         widgetFile: "MedsWidget.qml"; expanded: false
     }
 
@@ -112,12 +124,140 @@ Item {
             compare(d.length, 2)
             compare(d[0].mins, -1, "hour 25 is not a time")
             compare(d[1].mins, -1, "minute 99 is not a time")
+            compare(h.item.scheduleIssues.length, 2, "both lines are surfaced for review")
+        }
+
+        function test_duplicate_lines_have_independent_identity() {
+            h.storeCtl.patchSettings("test-instance",
+                { schedule: "08:00 Vitamin D\n08:00 Vitamin D" })
+            var w = h.item
+            compare(w.doses.length, 2)
+            verify(w.doses[0].key !== w.doses[1].key, "identical lines have distinct keys")
+            compare(w.scheduleIssues.length, 1, "the repeated line is surfaced for review")
+            w.toggleTaken(w.doses[0].key)
+            compare(w.isTaken(w.doses[0].key), true)
+            compare(w.isTaken(w.doses[1].key), false, "marking one duplicate leaves the other open")
+        }
+
+        function test_due_window_is_clamped_to_the_supported_range() {
+            h.storeCtl.patchSettings("test-instance", { dueWindowMin: -5 })
+            compare(h.item.dueWindowMin, 15)
+            h.storeCtl.patchSettings("test-instance", { dueWindowMin: 999 })
+            compare(h.item.dueWindowMin, 240)
         }
 
         function test_empty_schedule_yields_no_doses() {
             h.storeCtl.patchSettings("test-instance", { schedule: "" })
             compare(h.item.doses.length, 0)
             compare(h.item.focusDose, null, "and no dose to focus on")
+        }
+
+        function test_structured_schedule_filters_each_dose_by_weekday() {
+            h.item.todayWeekdayOverride = 1
+            h.storeCtl.patchSettings("test-instance", {
+                scheduleItems: [
+                    { id: "daily-a", time: "08:00", name: "Monday dose", days: "1,3" },
+                    { id: "daily-b", time: "09:00", name: "Tuesday dose", days: "2" }
+                ]
+            })
+            compare(h.item.allDoses.length, 2)
+            compare(h.item.doses.length, 1)
+            compare(h.item.doses[0].name, "Monday dose")
+            compare(h.item.doses[0].key, "daily-a")
+            h.item.todayWeekdayOverride = 2
+            compare(h.item.doses.length, 1)
+            compare(h.item.doses[0].name, "Tuesday dose")
+        }
+
+        function test_empty_recurrence_never_schedules_the_dose() {
+            h.item.todayWeekdayOverride = 4
+            h.storeCtl.patchSettings("test-instance", {
+                scheduleItems: [
+                    { id: "disabled", time: "08:00", name: "Paused dose", days: "" }
+                ]
+            })
+            compare(h.item.allDoses.length, 1)
+            compare(h.item.doses.length, 0)
+        }
+
+        function test_cleared_structured_schedule_does_not_fall_back_to_legacy_text() {
+            h.storeCtl.patchSettings("test-instance", {
+                schedule: "08:00 Old dose",
+                scheduleItems: [],
+                scheduleFormat: "structured"
+            })
+            compare(h.item.allDoses.length, 0)
+            compare(h.item.doses.length, 0)
+        }
+    }
+
+    TestCase {
+        name: "MedsNotifications"
+        when: windowShown
+        function init() {
+            tryVerify(function () { return h.ready }, 3000)
+            clearSettings(h)
+            root.notificationCalls = 0
+            root.notificationSummary = ""
+            root.notificationBody = ""
+            h.item.notificationBridge = fakeNotifications
+            h.item.foreground = false
+            h.item.active = true
+            h.item.todayWeekdayOverride = 1
+            h.item.nowMinsOverride = 8 * 60 + 10
+        }
+
+        function seed(extra) {
+            var settings = {
+                scheduleItems: [
+                    { id: "morning", time: "08:00", name: "Private name", days: "1" }
+                ],
+                dueWindowMin: 60,
+                notifyWhenHidden: true,
+                notificationDetails: false,
+                notifiedDay: "",
+                notified: []
+            }
+            for (var key in extra) settings[key] = extra[key]
+            h.storeCtl.patchSettings("test-instance", settings)
+        }
+
+        function test_hidden_due_notification_is_private_and_fires_once() {
+            seed({})
+            compare(h.item.checkNotifications(), true)
+            compare(root.notificationCalls, 1)
+            compare(root.notificationSummary, "Medication reminder")
+            compare(root.notificationBody, "A scheduled dose is due now.")
+            verify(root.notificationBody.indexOf("Private name") < 0)
+            compare(h.item.checkNotifications(), false)
+            compare(root.notificationCalls, 1, "the same dose is not announced twice")
+        }
+
+        function test_dose_name_is_only_included_after_explicit_opt_in() {
+            seed({ notificationDetails: true })
+            compare(h.item.checkNotifications(), true)
+            compare(root.notificationBody, "Private name is due now.")
+        }
+
+        function test_visible_or_opted_out_widget_does_not_notify() {
+            seed({})
+            h.item.foreground = true
+            compare(h.item.checkNotifications(), false)
+            compare(root.notificationCalls, 0)
+            h.item.foreground = false
+            h.storeCtl.patchSettings("test-instance", { notifyWhenHidden: false })
+            compare(h.item.checkNotifications(), false)
+            compare(root.notificationCalls, 0)
+        }
+
+        function test_inactive_weekday_and_taken_dose_do_not_notify() {
+            seed({})
+            h.item.todayWeekdayOverride = 2
+            compare(h.item.checkNotifications(), false)
+            h.item.todayWeekdayOverride = 1
+            h.item.toggleTaken("morning")
+            compare(h.item.checkNotifications(), false)
+            compare(root.notificationCalls, 0)
         }
     }
 
@@ -272,6 +412,14 @@ Item {
             verify(String(w.colorOf("due")) !== String(w.colorOf("open")),
                    "due stands out from a quiet dose")
         }
+
+        function test_active_surface_explains_record_and_plaintext_limits() {
+            var copy = (h.item.recordMeaningText + " " + h.item.privacyText).toLowerCase()
+            verify(copy.indexOf("tap") >= 0)
+            verify(copy.indexOf("cannot confirm") >= 0)
+            verify(copy.indexOf("plaintext") >= 0)
+            verify(copy.indexOf("medical advice") < 0, "the copy does not imply clinical guidance")
+        }
     }
 
     // ── Persistence - the point of the widget ────────────────────────────
@@ -381,6 +529,7 @@ Item {
             // TODAY - so this asserted "due" on a dose 23h50m away and failed
             // every night between 00:00 and 00:10.
             var w = hc.item
+            w.sizeClass = "wide"
             w.nowMinsOverride = 13 * 60 + 10          // 13:10, ten past the dose
             hc.storeCtl.patchSettings("test-instance",
                 { schedule: "13:00 Ritalin", dueWindowMin: 60 })
@@ -397,6 +546,36 @@ Item {
             mouseClick(mark)
             compare(w.isTaken(w.focusDose.key), true, "one tap on the tile logs the dose")
             compare(hc.storeCtl.settingsFor("test-instance").taken.length, 1, "and it persisted")
+        }
+    }
+
+    TestCase {
+        name: "MedsExplicitDoseAction"
+        when: windowShown
+        function init() {
+            tryVerify(function () { return h.ready }, 3000)
+            clearSettings(h)
+            h.storeCtl.patchSettings("test-instance", { schedule: "08:00 Vitamin D" })
+            wait(16)
+        }
+
+        function test_schedule_row_has_a_separate_named_action() {
+            var rows = root.findAll(h.item, function (n) {
+                return String(n.objectName).indexOf("medsDoseRow-") === 0
+            }, [])
+            var actions = root.findAll(h.item, function (n) {
+                return String(n.objectName).indexOf("medsDoseAction-") === 0
+            }, [])
+            compare(rows.length, 1, "the dose row renders")
+            compare(actions.length, 1, "the row exposes one explicit taken action")
+            verify(actions[0].width >= h.theme.touchTertiary
+                   && actions[0].height >= h.theme.touchTertiary,
+                   "the explicit action is a full touch target")
+            compare(actions[0].Accessible.role, Accessible.CheckBox)
+            verify(String(actions[0].Accessible.name).indexOf("Vitamin D") >= 0,
+                   "the action names the affected dose")
+            compare(rows[0].children.length, 1,
+                    "the row itself has layout content only, not a whole-row pointer handler")
         }
     }
 

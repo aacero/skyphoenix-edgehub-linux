@@ -2,7 +2,6 @@ import QtQuick
 import QtTest
 import "../../ui/qml" as App
 
-// COVERS: schema:showDistro
 
 // PackagesWidget - the installed-package count.
 //
@@ -14,16 +13,30 @@ import "../../ui/qml" as App
 Item {
     id: root
     width: 420; height: 320
+    property int refreshCalls: 0
 
     // The shape the real DistroBridge exposes: `ready` + `info`.
     function fakeDistro(info) { return { ready: true, info: info } }
     function archInfo(count) {
         return { id: "arch", name: "Arch Linux", family: "arch", packageCount: count,
-                 unsupportedReason: null, updates: null, installEpoch: 1709251200 }
+                 unsupportedReason: null, updates: null, securityUpdates: null,
+                 updatesReason: "Local package metadata may be stale.",
+                 installEpoch: 1709251200 }
+    }
+    function findObjectName(node, name) {
+        if (!node) return null
+        if (node.objectName === name) return node
+        var children = node.children || []
+        for (var i = 0; i < children.length; i++) {
+            var found = findObjectName(children[i], name)
+            if (found) return found
+        }
+        return null
     }
 
     WidgetHarness { id: h; anchors.fill: parent; widgetFile: "PackagesWidget.qml" }
     App.WidgetConfigSchema { id: sc }
+    App.WidgetCatalog { id: catalog }
 
     TestCase {
         name: "PackagesWidget"
@@ -36,6 +49,9 @@ Item {
             h.storeCtl._touchSettings()
             h.item.distroOverride = null
             h.expanded = false
+            root.height = 320
+            h.item.sizeClass = "compact"
+            root.refreshCalls = 0
         }
         function set(k, v) { h.storeCtl.setSetting("test-instance", k, v) }
 
@@ -64,6 +80,8 @@ Item {
             compare(w.counted, true)
             compare(w.count, 1461)
             compare(w.distroName, "Arch Linux")
+            compare(w.packageSource, "/var/lib/pacman/local")
+            verify(w.countScope.indexOf("one package directory") >= 0)
         }
 
         // Zero is a REAL answer (a scratch chroot) and must not be confused with
@@ -89,6 +107,8 @@ Item {
             compare(w.loading, false, "we DID get an answer; it just isn't a number")
             verify(w.reason.indexOf("librpm") >= 0, "the reason is shown verbatim")
             compare(w.distroName, "Fedora Linux 40")
+            compare(w.packageSource, "RPM family detected · database count unavailable")
+            verify(w.countScope.indexOf("no package process") >= 0)
         }
 
         // Grouped with a THIN SPACE (U+2009) - a comma or a point means different
@@ -138,6 +158,57 @@ Item {
             wait(0)
             compare(w.count, 1461, "count survives the expanded relayout")
             compare(w.status, "", "expanded hides the header status")
+        }
+
+        function test_catalog_caps_packages_at_one_by_one() {
+            var item = null
+            for (var i = 0; i < catalog.items.length; i++)
+                if (catalog.items[i].type === "packages") item = catalog.items[i]
+            verify(item !== null)
+            compare(item.sizes.indexOf("1x1.5"), -1)
+            verify(item.sizes.indexOf("1x1") >= 0)
+        }
+
+        function test_manual_refresh_is_read_only_visible_and_touch_safe() {
+            var w = h.item
+            root.height = 640
+            w.sizeClass = "tall"
+            w.distroOverride = {
+                ready: true,
+                info: archInfo(1461),
+                refreshing: false,
+                refreshedAtMs: Date.now(),
+                refresh: function () { root.refreshCalls++ }
+            }
+            verify(w.shapedTile)
+            verify(w.refreshLabel.indexOf("Refreshed") === 0)
+            w.refreshNow()
+            compare(root.refreshCalls, 1)
+            var card = findObjectName(w, "packageDetailCard")
+            verify(card !== null && card.visible)
+            var touchTargets = []
+            function scan(node) {
+                if (!node) return
+                if (node.objectName === "packageRefreshAction")
+                    touchTargets.push(node)
+                var children = node.children || []
+                for (var i = 0; i < children.length; i++) scan(children[i])
+            }
+            scan(w)
+            compare(touchTargets.length, 1)
+            verify(touchTargets[0].width >= 52 && touchTargets[0].height >= 52)
+        }
+
+        function test_large_layout_explains_unknown_update_and_security_counts() {
+            var w = h.item
+            root.height = 640
+            w.sizeClass = "tall"
+            w.distroOverride = fakeDistro(archInfo(1461))
+            compare(w.updateSummary, "Not checked")
+            compare(w.securitySummary, "Not checked")
+            verify(w.updatesReason.indexOf("stale") >= 0)
+            var card = findObjectName(w, "packageUpdateContext")
+            verify(card !== null && card.visible)
         }
     }
 }

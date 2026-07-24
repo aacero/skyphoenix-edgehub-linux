@@ -73,7 +73,9 @@ Item {
     }
     function configFields() {
         return findAll(cfg, function (n) {
-            return typeof n.objectName === "string" && n.objectName.indexOf("field-") === 0
+            return typeof n.objectName === "string"
+                   && n.objectName.indexOf("field-") === 0
+                   && n.objectName !== "field-preview"
         })
     }
 

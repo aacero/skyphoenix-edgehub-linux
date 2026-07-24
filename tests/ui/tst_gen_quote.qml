@@ -1,7 +1,7 @@
 import QtQuick
 import QtTest
+import "../../ui/qml" as App
 
-// COVERS: schema:category, schema:customText
 
 // ─────────────────────────────────────────────────────────────────────────
 // Comprehensive tests for widget:quote - ui/qml/widgets/QuoteWidget.qml
@@ -12,12 +12,6 @@ import QtTest
 // widget's derived properties + functions (cfg, category, customText,
 // parseCustom(), pool, dailyIdx, manualIdx, idx, q, shuffle(), effAccent).
 //
-// Some assertions encode the INTENDED behaviour and currently FAIL because of
-// real bugs in the widget:
-//   • parseCustom does not split on the common " - " ASCII-hyphen form.
-//   • editing customText after a manual shuffle silently repoints the pinned
-//     quote (manualIdx is a bare index, never revalidated against identity).
-// Those failing assertions are the point - they are left in.
 // ─────────────────────────────────────────────────────────────────────────
 Item {
     id: root
@@ -26,6 +20,13 @@ Item {
     WidgetHarness {
         id: hQuote; anchors.fill: parent
         widgetFile: "QuoteWidget.qml"; expanded: true
+    }
+    App.WidgetConfigSchema { id: schema }
+    WidgetHarness {
+        id: hQuoteMirror
+        x: 0; y: 0; width: 320; height: 320
+        widgetFile: "QuoteWidget.qml"; expanded: false; active: false
+        visible: false
     }
 
     // Wipe per-instance settings and reset transient widget state so each test
@@ -81,24 +82,42 @@ Item {
             compare(w.pool[0].t, w.library["kindness"][0].t, "kindness library selected")
         }
 
+        function test_every_bundled_quote_has_provenance_and_rights() {
+            var w = hQuote.item
+            for (var category in w.library) {
+                var entries = w.library[category]
+                verify(entries.length > 0, category + " has bundled entries")
+                for (var i = 0; i < entries.length; i++) {
+                    verify(entries[i].t.length > 0, category + " entry " + i + " has text")
+                    verify(entries[i].a.length > 0, category + " entry " + i + " has attribution")
+                    verify(entries[i].s.length > 0, category + " entry " + i + " has a source")
+                    verify(entries[i].r.length > 0, category + " entry " + i + " has rights status")
+                }
+            }
+        }
+
         function test_unknown_category_falls_back_to_focus() {
             var w = hQuote.item
             set("category", "does-not-exist")
             compare(w.pool[0].t, w.library["focus"][0].t, "unknown category → focus fallback")
         }
 
-        function test_custom_empty_falls_back_to_focus() {
+        function test_custom_empty_is_explicit_and_never_changes_source() {
             var w = hQuote.item
             patch({ category: "custom", customText: "" })
-            compare(w.pool[0].t, w.library["focus"][0].t, "empty custom → focus library")
+            compare(w.pool.length, 0, "empty custom mode has no bundled fallback")
+            compare(w.customLibraryEmpty, true)
+            compare(w.customIssue, "Add at least one custom quote in settings")
+            compare(w.displayQuoteText, w.customIssue)
+            compare(w.showGlyph, false, "empty state does not decorate guidance as a quote")
         }
 
-        function test_custom_whitespace_falls_back_to_focus() {
+        function test_custom_whitespace_is_explicit() {
             var w = hQuote.item
             patch({ category: "custom", customText: "   \n  \n\t" })
-            compare(w.pool.length, w.library["focus"].length,
-                    "whitespace-only custom → focus library (no empty pool)")
-            compare(w.pool[0].t, w.library["focus"][0].t)
+            compare(w.pool.length, 0)
+            compare(w.customLibraryEmpty, true)
+            compare(w.customIssue, "Add at least one custom quote in settings")
         }
 
         function test_custom_valid_lines_used() {
@@ -107,6 +126,26 @@ Item {
             compare(w.pool.length, 2, "two custom quotes")
             compare(w.pool[0].t, "Alpha")
             compare(w.pool[1].t, "Beta")
+            compare(w.pool[0].s, "Custom text")
+            compare(w.pool[0].r, "User supplied")
+        }
+
+        function test_bundled_categories_are_large_enough_to_avoid_repetition() {
+            var w = hQuote.item
+            for (var category in w.library)
+                verify(w.library[category].length >= 8,
+                       category + " has at least eight locally authored entries")
+        }
+
+        function test_author_display_modes_are_reactive() {
+            var w = hQuote.item
+            patch({ category: "custom", customText: "Words without a named author" })
+            compare(w.showAuthor, false, "auto hides a missing attribution")
+            set("authorDisplay", "always")
+            compare(w.showAuthor, true)
+            compare(w.authorText, "Unknown author")
+            set("authorDisplay", "hide")
+            compare(w.showAuthor, false)
         }
 
         // cfg re-reads on store.revision, so editing category/customText in the
@@ -130,9 +169,10 @@ Item {
 
         function test_emdash_separator() {
             var w = hQuote.item
-            patch({ category: "custom", customText: "Stay hungry - Steve Jobs" })
-            compare(w.pool[0].t, "Stay hungry", "text before em-dash")
-            compare(w.pool[0].a, "Steve Jobs", "author after em-dash")
+            var separator = String.fromCharCode(0x2014)
+            patch({ category: "custom", customText: "Stay hungry " + separator + " Steve Jobs" })
+            compare(w.pool[0].t, "Stay hungry", "text before typographic separator")
+            compare(w.pool[0].a, "Steve Jobs", "author after typographic separator")
         }
 
         function test_double_hyphen_separator() {
@@ -149,8 +189,6 @@ Item {
             compare(w.pool[0].a, "Captain")
         }
 
-        // BUG (low): parseCustom recognizes " - ", " -- ", " | " but NOT the very
-        // common single ASCII-hyphen " - " form that on-device keyboards produce.
         function test_ascii_hyphen_separator() {
             var w = hQuote.item
             patch({ category: "custom", customText: "Stay hungry - Steve Jobs" })
@@ -181,6 +219,31 @@ Item {
             compare(w.pool.length, 3, "CRLF-separated lines parse into three quotes")
             compare(w.pool[0].t, "One", "no stray carriage return on the text")
             compare(w.pool[2].t, "Three")
+        }
+
+        function test_empty_quote_before_separator_reports_line_number() {
+            var w = hQuote.item
+            patch({ category: "custom", customText: " | Nobody" })
+            compare(w.pool.length, 0)
+            compare(w.customErrors, ["Line 1: quote text is empty"])
+            compare(w.customIssue, "Line 1: quote text is empty")
+        }
+
+        function test_empty_author_after_separator_reports_line_number() {
+            var w = hQuote.item
+            patch({ category: "custom", customText: "Useful words | " })
+            compare(w.pool.length, 0)
+            compare(w.customErrors, ["Line 1: author is empty"])
+        }
+
+        function test_valid_lines_survive_beside_reported_invalid_lines() {
+            var w = hQuote.item
+            patch({ category: "custom", customText: "Good words | Author\nBroken | \nPlain" })
+            compare(w.pool.length, 2)
+            compare(w.pool[0].a, "Author")
+            compare(w.pool[1].t, "Plain")
+            compare(w.customErrors, ["Line 2: author is empty"])
+            compare(w.customIssue, "1 custom line was skipped")
         }
     }
 
@@ -266,10 +329,6 @@ Item {
             compare(w.idx, w.dailyIdx, "daily rotation resumes after category switch")
         }
 
-        // BUG (low): manualIdx is a bare index into pool and is not revalidated
-        // against the quote's identity when customText is edited. Editing the
-        // list after a shuffle silently repoints the pinned quote to whatever now
-        // sits at that index (here: line 5 shifts into index 3).
         function test_edit_after_shuffle_keeps_pinned_quote() {
             var w = hQuote.item
             patch({ category: "custom", customText: "L1\nL2\nL3\nL4\nL5" })
@@ -280,6 +339,49 @@ Item {
             set("customText", "L2\nL3\nL4\nL5")
             compare(w.q.t, pinned,
                     "editing the list must not silently repoint the pinned quote")
+        }
+
+        function test_shuffle_is_shared_with_a_second_widget_host() {
+            var w = hQuote.item
+            tryVerify(function () { return hQuoteMirror.ready }, 3000)
+            hQuoteMirror.item.store = hQuote.storeCtl
+            hQuoteMirror.item.instanceId = "test-instance"
+            hQuoteMirror.item.active = false
+            var before = w.q.t
+            w.shuffle()
+            verify(w.q.t !== before)
+            wait(1)
+            hQuoteMirror.item._restoreManual()
+            compare(hQuoteMirror.item.q.t, w.q.t,
+                    "tile, overlay, and Manager resolve the same shuffled quote")
+            compare(cfg().quotePinnedText, w.q.t,
+                    "the shared state stores quote identity, not only a fragile index")
+        }
+    }
+
+    TestCase {
+        name: "QuoteRights"
+        when: windowShown
+        function init() { tryVerify(function () { return hQuote.ready }, 3000); reset() }
+
+        function test_expanded_bundled_quote_discloses_source_and_rights() {
+            var w = hQuote.item
+            compare(w.provenanceText, "Source: EdgeHub built-in library")
+            compare(w.rightsText, "Rights: Bundled project copy")
+            var source = findByProp(w, "objectName", "quoteProvenance")
+            verify(source !== null && source.visible)
+            verify(source.text.indexOf(w.provenanceText) >= 0)
+            verify(source.text.indexOf(w.rightsText) >= 0)
+        }
+
+        function test_custom_mode_discloses_user_responsibility() {
+            var w = hQuote.item
+            patch({ category: "custom", customText: "My permitted words" })
+            compare(w.provenanceText, "Source: Custom text")
+            compare(w.rightsText, "Rights: User supplied")
+            var notice = findByProp(w, "objectName", "quoteCustomRightsNotice")
+            verify(notice !== null && notice.visible)
+            verify(notice.text.indexOf("permission") >= 0)
         }
     }
 
@@ -310,10 +412,11 @@ Item {
         function test_effAccent_tints_shuffle_button() {
             var w = hQuote.item
             w.accentName = "gold"
-            var pill = findByProp(w, "label", "Shuffle")
-            verify(pill !== null, "the Shuffle button exists when expanded")
+            var pill = findByProp(w, "objectName", "quoteExpandedShuffle")
+            verify(pill !== null, "the quote action exists when expanded")
             compare(pill.tint.toString(), w.effAccent.toString(),
-                    "the Shuffle button is tinted with the custom accent")
+                    "the quote action is tinted with the custom accent")
+            compare(pill.accessibleName, "Show another quote")
         }
 
         function test_title_override_honored() {
@@ -338,8 +441,8 @@ Item {
 
         function test_shuffle_hidden_when_collapsed() {
             var w = hQuote.item
-            var pill = findByProp(w, "label", "Shuffle")
-            verify(pill !== null, "Shuffle button object exists")
+            var pill = findByProp(w, "objectName", "quoteExpandedShuffle")
+            verify(pill !== null, "expanded quote action object exists")
             hQuote.expanded = true
             compare(pill.visible, true, "Shuffle is visible when expanded (multi-quote pool)")
             hQuote.expanded = false
@@ -390,20 +493,14 @@ Item {
             verify(w.q.a.length > 0, "the built-in pool always carries an author")
             compare(w.showAuthor, true, "the baseline shows the author")
             compare(w.showShuffleTile, true, "the baseline has the tile shuffle")
-            // The tile shuffle is a real touch target (>= the tertiary token).
-            // (The expanded pill ALSO carries a 🔀 glyph - the tile control is
-            // the 🔀 whose direct parent is the circular Rectangle.)
-            var icon = null
-            function scan(n) {
-                if (!n) return
-                if (!icon && n.text === "🔀" && n.parent && n.parent.radius !== undefined) icon = n
-                for (var i = 0; n.children && i < n.children.length; i++) scan(n.children[i])
-            }
-            scan(w)
-            verify(icon !== null, "the tile shuffle control exists")
-            verify(icon.parent.width >= hQBase.theme.touchTertiary - 1,
-                   "the tile shuffle is touch-token sized (got " + icon.parent.width + ")")
-            verify(icon.parent.visible, "and visible")
+            var action = findByProp(w, "objectName", "quoteTileShuffle")
+            verify(action !== null, "the tile quote action exists")
+            verify(action.width >= hQBase.theme.touchTertiary - 1,
+                   "the tile action is touch-token sized (got " + action.width + ")")
+            verify(action.height >= hQBase.theme.touchTertiary - 1)
+            compare(action.accessibleName, "Show another quote")
+            verify(action.activeFocusOnTab, "the action supports keyboard focus")
+            verify(action.visible, "and is visible")
         }
 
         // wide - glyph beside a left-aligned quote column, in BOTH projections
@@ -418,7 +515,7 @@ Item {
             verify(w.quoteLines <= 3, "a short wide box caps the line count")
             qWideWrap.width = 840; qWideWrap.height = 344
             compare(w.showGlyph, true, "the landscape projection keeps the layout")
-            qWideWrap.width = 1264; qWideWrap.height = 696   // 1x1.5 in landscape
+            qWideWrap.width = 1100; qWideWrap.height = 696
             verify(w.quoteLines >= 5, "the big wide box earns more lines")
             qWideWrap.width = 696; qWideWrap.height = 416
         }
@@ -434,6 +531,28 @@ Item {
             hQMicro.item.sizeClass = "compact"
             verify(w.quotePx > hQMicro.item.quotePx,
                    "tall type is larger than micro type (" + w.quotePx + " vs " + hQMicro.item.quotePx + ")")
+        }
+    }
+
+    TestCase {
+        name: "QuoteSchema"
+        when: windowShown
+
+        function field(key) {
+            var s = schema.schemaFor("quote")
+            for (var i = 0; i < s.sections.length; i++)
+                for (var j = 0; j < (s.sections[i].fields || []).length; j++)
+                    if (s.sections[i].fields[j].key === key)
+                        return s.sections[i].fields[j]
+            return null
+        }
+
+        function test_author_display_has_three_explicit_modes() {
+            var f = field("authorDisplay")
+            verify(f !== null)
+            compare(f.type, "segmented")
+            compare(f.options.map(function(option) { return option.value }),
+                    ["auto", "always", "hide"])
         }
     }
 }

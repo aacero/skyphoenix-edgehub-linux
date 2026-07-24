@@ -1,7 +1,7 @@
 import QtQuick
 import QtTest
+import "../../ui/qml" as App
 
-// COVERS: schema:showCpu, schema:showDisk, schema:showGpu, schema:showRam, schema:showTemps
 
 // Comprehensive coverage for area "widget:sensors" (ui/qml/widgets/SensorsWidget.qml).
 //
@@ -19,6 +19,8 @@ Item {
         id: h; anchors.fill: parent
         widgetFile: "SensorsWidget.qml"; expanded: true
     }
+    App.WidgetCatalog { id: catalog }
+    App.WidgetConfigSchema { id: schema }
     // A compact 1x1-ish tile pinned to the 120px minimum height, for the
     // overflow/clipping geometry test.
     WidgetHarness {
@@ -61,8 +63,16 @@ Item {
     }
 
     readonly property string fullMetrics: JSON.stringify({
-        cpu_usage_percent: 45, gpu_usage_percent: 30, ram_usage_percent: 60,
-        disk_usage_percent: 55, disk_total_bytes: 1000000000,
+        cpu_usage_percent: 45, cpu_usage_available: true,
+        gpu_usage_percent: 30, gpu_primary_id: "card1",
+        gpu_devices: [{
+            id: "card1", name: "Radeon Test", usage_percent: 30,
+            temperature_celsius: 55, power_watts: 120, power_cap_watts: 220,
+            fan_rpm: 1450, fan_max_rpm: 3200,
+            temperature_critical_celsius: 105
+        }],
+        ram_usage_percent: 60, ram_metrics_available: true,
+        disk_usage_percent: 55, disk_total_bytes: 1000000000, disk_metrics_available: true,
         cpu_temp_celsius: 50, gpu_temp_celsius: 55
     })
 
@@ -91,23 +101,25 @@ Item {
         }
 
         // ---- all rows visible with a full metrics payload ----
-        function test_all_six_rows_with_full_metrics() {
+        function test_all_eight_rows_with_full_metrics() {
             var w = h.item
             feed(JSON.parse(root.fullMetrics))
-            compare(w.rows.length, 6, "CPU/GPU/RAM/DISK/CPU°/GPU° all present")
+            compare(w.rows.length, 8, "all configured load, temperature, power and fan rows are present")
             verify(rowFor(w, "CPU") !== null)
             verify(rowFor(w, "GPU") !== null)
             verify(rowFor(w, "RAM") !== null)
             verify(rowFor(w, "DISK") !== null)
             verify(rowFor(w, "CPU °") !== null)
             verify(rowFor(w, "GPU °") !== null)
+            verify(rowFor(w, "GPU W").available)
+            verify(rowFor(w, "GPU RPM").available)
         }
 
         // ---- each show* toggle honoured after a revision bump ----
         function test_toggle_each_row() {
             var w = h.item
             feed(JSON.parse(root.fullMetrics))
-            compare(w.rows.length, 6)
+            compare(w.rows.length, 8)
 
             h.storeCtl.setSetting("test-instance", "showCpu", false)
             compare(rowFor(w, "CPU"), null, "showCpu:false hides CPU")
@@ -126,37 +138,40 @@ Item {
             h.storeCtl.setSetting("test-instance", "showTemps", false)
             compare(rowFor(w, "CPU °"), null, "showTemps:false hides CPU°")
             compare(rowFor(w, "GPU °"), null, "showTemps:false hides GPU°")
+            h.storeCtl.setSetting("test-instance", "showGpuPower", false)
+            compare(rowFor(w, "GPU W"), null)
+            h.storeCtl.setSetting("test-instance", "showGpuFan", false)
+            compare(rowFor(w, "GPU RPM"), null)
         }
 
-        // ---- GPU absent (null) hides both GPU rows even with toggles on ----
-        function test_gpu_null_hides_gpu_rows() {
+        // Enabled but unavailable sources stay visible and explicitly say N/A.
+        function test_gpu_null_marks_gpu_rows_unavailable() {
             var w = h.item
             feed({ cpu_usage_percent: 10, ram_usage_percent: 20, disk_usage_percent: 30,
                    disk_total_bytes: 5, gpu_usage_percent: null, gpu_temp_celsius: null,
                    cpu_temp_celsius: 40 })
-            compare(rowFor(w, "GPU"), null, "gpu_usage null → GPU hidden")
-            compare(rowFor(w, "GPU °"), null, "gpu_temp null → GPU° hidden")
+            compare(rowFor(w, "GPU").available, false)
+            compare(rowFor(w, "GPU °").available, false)
+            verify(rowFor(w, "GPU").reason.length > 0)
             verify(rowFor(w, "CPU") !== null, "CPU still shown")
         }
 
-        // ---- disk with zero total is hidden even when showDisk is true ----
-        function test_disk_zero_total_hidden() {
+        function test_disk_zero_total_is_unavailable_not_disabled() {
             var w = h.item
             feed({ cpu_usage_percent: 10, ram_usage_percent: 20,
                    disk_usage_percent: 88, disk_total_bytes: 0 })
-            compare(rowFor(w, "DISK"), null, "disk_total_bytes:0 hides DISK")
+            compare(rowFor(w, "DISK").available, false)
             // ...and non-zero brings it back.
             feed({ cpu_usage_percent: 10, ram_usage_percent: 20,
                    disk_usage_percent: 88, disk_total_bytes: 123 })
-            verify(rowFor(w, "DISK") !== null, "non-zero total shows DISK")
+            verify(rowFor(w, "DISK").available, "non-zero total provides DISK")
         }
 
-        // ---- CPU/RAM hidden when their metric is absent (no fabricated 0%, S4) ----
-        function test_cpu_ram_hidden_when_metric_absent() {
+        function test_cpu_ram_are_unavailable_when_metric_absent() {
             var w = h.item
             feed({ gpu_usage_percent: 40, disk_usage_percent: 30, disk_total_bytes: 5 })  // no cpu/ram keys
-            compare(rowFor(w, "CPU"), null, "absent cpu_usage → CPU hidden, not a fabricated 0%")
-            compare(rowFor(w, "RAM"), null, "absent ram_usage → RAM hidden, not a fabricated 0%")
+            compare(rowFor(w, "CPU").available, false)
+            compare(rowFor(w, "RAM").available, false)
             // a real 0 (idle machine) still shows the row, at value 0.
             feed({ cpu_usage_percent: 0, ram_usage_percent: 0 })
             var cpu = rowFor(w, "CPU"), ram = rowFor(w, "RAM")
@@ -164,17 +179,19 @@ Item {
             verify(ram !== null && ram.val === 0, "real ram 0% shows the RAM row at 0")
         }
 
-        // ---- temperature colour thresholds at the 70 / 85 boundaries ----
+        // ---- temperature warning thresholds are configurable ----
         function test_temp_colour_thresholds() {
             var w = h.item
             function cpuTempCol(t) {
                 feed({ cpu_usage_percent: 5, ram_usage_percent: 5, cpu_temp_celsius: t })
                 return rowFor(w, "CPU °").col
             }
-            verify(colEq(cpuTempCol(70), h.theme.catSystem), "t=70 → base (catSystem)")
-            verify(colEq(cpuTempCol(71), h.theme.warning),   "t=71 → warning")
-            verify(colEq(cpuTempCol(85), h.theme.warning),   "t=85 → warning (boundary)")
-            verify(colEq(cpuTempCol(86), h.theme.error),     "t=86 → error")
+            verify(colEq(cpuTempCol(79), h.theme.catSystem))
+            verify(colEq(cpuTempCol(80), h.theme.warning))
+            verify(colEq(cpuTempCol(89), h.theme.warning))
+            verify(colEq(cpuTempCol(90), h.theme.error))
+            h.storeCtl.setSetting("test-instance", "warnCpuTemp", 70)
+            verify(colEq(cpuTempCol(70), h.theme.warning), "configured threshold is applied live")
         }
 
         // ---- load bars follow a valid per-widget accent; hot temp stays error ----
@@ -224,7 +241,7 @@ Item {
         function test_reactivity() {
             var w = h.item
             feed(JSON.parse(root.fullMetrics))
-            compare(w.rows.length, 6)
+            compare(w.rows.length, 8)
             // store.revision (config) reactivity
             h.storeCtl.setSetting("test-instance", "showGpu", false)
             compare(rowFor(w, "GPU"), null, "revision bump recomputes rows")
@@ -232,6 +249,7 @@ Item {
             feed({ cpu_usage_percent: 99, ram_usage_percent: 1 })
             compare(rowFor(w, "CPU").val, 99, "new metrics value flows through")
             // accent reactivity (no metrics/config change)
+            feed({ cpu_usage_percent: 40, ram_usage_percent: 1 })
             w.accentName = "green"
             verify(colEq(rowFor(w, "CPU").col, w.effAccent), "accent change recolours")
         }
@@ -246,7 +264,8 @@ Item {
             compare(rowFor(w, "GPU °").unit, "°C")
             var rs = w.rows
             for (var i = 0; i < rs.length; i++)
-                verify(rs[i].val !== -1, "no visible row carries the -1 sentinel (" + rs[i].lbl + ")")
+                if (rs[i].available)
+                    verify(rs[i].val !== -1, "available row has a real value (" + rs[i].lbl + ")")
         }
 
         // ---- rendered label text formats as toFixed(0)+unit ----
@@ -352,30 +371,26 @@ Item {
             h.theme.reduceMotion = false
         }
 
-        // ---- GPU hotplug shifts the ROWS index (behaviour note) ----
-        // w.rows is still rebuilt as a fresh array, so inserting the GPU row
-        // shifts what rows[1] holds from RAM to GPU. The rendered DELEGATES no
-        // longer care (they are keyed by their own static label), but the
-        // derived-model semantics are pinned here so they don't drift silently.
-        function test_gpu_insert_shifts_index() {
+        function test_gpu_hotplug_preserves_row_identity_and_changes_availability() {
             var w = h.item
             feed({ cpu_usage_percent: 10, ram_usage_percent: 20,
                    disk_usage_percent: 30, disk_total_bytes: 4 })
-            compare(w.rows[1].lbl, "RAM", "no GPU: index 1 is RAM")
+            compare(w.rows[1].lbl, "GPU")
+            compare(w.rows[1].available, false)
             feed({ cpu_usage_percent: 10, gpu_usage_percent: 77, ram_usage_percent: 20,
                    disk_usage_percent: 30, disk_total_bytes: 4 })
-            compare(w.rows[1].lbl, "GPU", "GPU appears: index 1 is now GPU (delegate reused)")
+            compare(w.rows[1].lbl, "GPU")
+            compare(w.rows[1].available, true)
+            compare(w.rows[1].val, 77)
         }
 
-        // ---- empty metrics still shows CPU/RAM as a solid 0% (documents bug #7) ----
-        // Empty metrics no longer fabricate a confident 0% for CPU/RAM (S4). The
-        // rows are hidden until real data arrives - matching CpuWidget/RamWidget and
-        // this widget's own GPU/disk/temp rows (was previously a documented bug).
-        function test_empty_metrics_hides_cpu_ram() {
+        function test_empty_metrics_keep_enabled_rows_as_unavailable() {
             var w = h.item
             h.metricsJson = "{}"
-            compare(rowFor(w, "CPU"), null, "no metrics → CPU hidden, not a fabricated 0%")
-            compare(rowFor(w, "RAM"), null, "no metrics → RAM hidden, not a fabricated 0%")
+            compare(rowFor(w, "CPU").available, false)
+            compare(rowFor(w, "RAM").available, false)
+            compare(w.status, "unavailable")
+            verify(findText(w, "N/A") !== null)
         }
 
         // ---- 'active' contract is ignored: rows keep computing when inactive ----
@@ -385,7 +400,7 @@ Item {
             feed(JSON.parse(root.fullMetrics))
             h.active = false
             compare(w.active, false, "active propagates to the widget")
-            compare(w.rows.length, 6, "rows keep evaluating despite active=false")
+            compare(w.rows.length, 8, "rows keep evaluating despite active=false")
             h.active = true
         }
 
@@ -395,7 +410,7 @@ Item {
             feed(JSON.parse(root.fullMetrics))
             h.storeCtl.patchSettings("test-instance", {
                 showCpu: false, showGpu: false, showRam: false,
-                showDisk: false, showTemps: false
+                showDisk: false, showTemps: false, showGpuPower: false, showGpuFan: false
             })
             compare(w.rows.length, 0, "no rows remain")
             // A well-behaved widget shows a 'nothing to show' placeholder; only the
@@ -404,6 +419,103 @@ Item {
             verify(texts.length >= 1,
                    "expected a placeholder when all rows are disabled, found none: "
                    + JSON.stringify(texts))
+        }
+
+        function test_row_order_sources_and_gpu_telemetry() {
+            var w = h.item
+            feed(JSON.parse(root.fullMetrics))
+            h.storeCtl.setSetting("test-instance", "rowOrder", "GPU RPM,CPU,RAM")
+            compare(w.rows[0].lbl, "GPU RPM")
+            compare(w.rows[0].val, 1450)
+            compare(w.rows[1].lbl, "CPU")
+            compare(rowFor(w, "GPU W").val, 120)
+            verify(rowFor(w, "GPU W").source.indexOf("power") >= 0)
+            verify(rowFor(w, "CPU").source.length > 0)
+        }
+
+        function test_stable_row_ids_are_persisted_and_legacy_labels_still_migrate() {
+            var w = h.item
+            feed(JSON.parse(root.fullMetrics))
+            h.storeCtl.setSetting("test-instance", "rowOrder",
+                                  ["gpu_fan", "cpu", "ram", "gpu"])
+            compare(w.rows[0].id, "gpu_fan")
+            compare(w.rows[1].id, "cpu")
+            compare(w.rows[2].id, "ram")
+            h.storeCtl.setSetting("test-instance", "rowOrder", "GPU RPM,CPU,RAM")
+            compare(w.rows[0].id, "gpu_fan",
+                    "legacy label strings migrate to the same stable ID order")
+        }
+
+        function test_selected_gpu_drives_all_gpu_rows_and_offline_is_explicit() {
+            var w = h.item
+            h.storeCtl.setSetting("test-instance", "gpuDevice", "card1")
+            feed({
+                gpu_primary_id: "card0",
+                gpu_devices: [
+                    { id: "card0", name: "Integrated", usage_percent: 10,
+                      temperature_celsius: 40, power_watts: 8, fan_rpm: 0 },
+                    { id: "card1", name: "Discrete", usage_percent: 77,
+                      temperature_celsius: 66, power_watts: 180,
+                      power_cap_watts: 220, fan_rpm: 2100, fan_max_rpm: 3200 }
+                ]
+            })
+            compare(w.primaryGpu.id, "card1")
+            compare(rowFor(w, "GPU").val, 77)
+            compare(rowFor(w, "GPU °").val, 66)
+            compare(rowFor(w, "GPU W").val, 180)
+            verify(rowFor(w, "GPU RPM").source.indexOf("Discrete") >= 0)
+            h.storeCtl.setSetting("test-instance", "gpuDevice", "card9")
+            compare(w.selectedGpuMissing, true)
+            compare(rowFor(w, "GPU").state, "Unavailable")
+            compare(rowFor(w, "GPU W").reason, "Selected GPU is offline")
+        }
+
+        function test_capability_ranges_and_text_states_are_source_aware() {
+            var w = h.item
+            feed({
+                cpu_usage_percent: 90, cpu_usage_available: true,
+                gpu_primary_id: "card1",
+                gpu_devices: [{
+                    id: "card1", name: "Discrete", usage_percent: 40,
+                    temperature_celsius: 104, temperature_critical_celsius: 105,
+                    power_watts: 190, power_cap_watts: 200,
+                    fan_rpm: 3100, fan_max_rpm: 3000
+                }]
+            })
+            compare(rowFor(w, "CPU").state, "Warning")
+            compare(rowFor(w, "CPU").stateLabel, "WARN")
+            compare(rowFor(w, "GPU °").max, 110)
+            compare(rowFor(w, "GPU °").state, "Warning")
+            compare(rowFor(w, "GPU W").max, 200)
+            compare(rowFor(w, "GPU W").state, "Warning")
+            compare(rowFor(w, "GPU RPM").max, 3000)
+            compare(rowFor(w, "GPU RPM").state, "Critical")
+            verify(findText(w, "WARN") !== null,
+                   "warning meaning is printed instead of relying on amber alone")
+            verify(findText(w, "CRIT") !== null,
+                   "critical meaning is printed instead of relying on red alone")
+        }
+
+        function test_schema_exposes_order_thresholds_and_gpu_rows() {
+            var definition = schema.schemaFor("sensors", {
+                gpu_primary_id: "card0",
+                gpu_devices: [{ id: "card0", name: "Integrated" },
+                              { id: "card1", name: "Discrete" }]
+            }, "card1")
+            var fieldsByKey = ({})
+            for (var i = 0; i < definition.sections.length; i++) {
+                var fields = definition.sections[i].fields || []
+                for (var j = 0; j < fields.length; j++)
+                    fieldsByKey[fields[j].key] = fields[j]
+            }
+            var expected = ["gpuDevice", "rowOrder", "showGpuPower", "showGpuFan", "warnCpu",
+                            "warnGpu", "warnRam", "warnDisk", "warnCpuTemp", "warnGpuTemp"]
+            for (var k = 0; k < expected.length; k++)
+                verify(fieldsByKey[expected[k]], expected[k])
+            compare(fieldsByKey.gpuDevice.type, "select")
+            compare(fieldsByKey.gpuDevice.options[2].label, "Discrete (card1)")
+            compare(fieldsByKey.rowOrder.type, "reorder")
+            compare(fieldsByKey.rowOrder.options[0].value, "cpu")
         }
     }
 
@@ -431,16 +543,13 @@ Item {
             return cpu ? cpu.parent.parent : null   // delegate RowLayout → the Grid/ColumnLayout
         }
 
-        // 0.5x0.5 - headerless; the six slim rows are the tile.
-        function test_micro_headerless_rows() {
-            tryVerify(function () { return hMicro.ready }, 3000)
-            var w = hMicro.item
-            w.sizeClass = "compact"
-            feedTo(hMicro)
-            compare(w.micro, true, "a 344x416 compact box is the micro tile")
-            compare(w.showHeader, false, "micro hides the header - the rows are the tile")
-            compare(gridOf(hMicro).columns, 1, "micro keeps a single column")
-            verify(w.rowFont >= 12, "row type stays legible")
+        function test_catalog_removes_unreadable_micro_size() {
+            var item = null
+            for (var i = 0; i < catalog.items.length; i++)
+                if (catalog.items[i].type === "sensors") item = catalog.items[i]
+            verify(item !== null)
+            compare(item.sizes.indexOf("0.5x0.5"), -1)
+            verify(item.sizes.indexOf("0.5x1") >= 0)
         }
 
         // wide - the SAME delegates reflow into two columns; identity survives
@@ -465,18 +574,34 @@ Item {
             w.sizeClass = "compact"
         }
 
-        // tall - single column, thicker bars + larger type than micro.
+        function test_short_supported_size_prioritizes_rows_and_discloses_hidden_count() {
+            tryVerify(function () { return hWide.ready }, 3000)
+            wideWrap.width = 840
+            wideWrap.height = 306
+            var w = hWide.item
+            w.sizeClass = "wide"
+            hWide.metricsJson = root.fullMetrics
+            compare(w.smallFootprint, true)
+            compare(w.visibleRowIds.length, 4)
+            compare(w.hiddenRowCount, 4)
+            verify(findText(w, "+4 sensors hidden in this size") !== null)
+            wideWrap.width = 696
+            wideWrap.height = 416
+            w.sizeClass = "compact"
+        }
+
+        // tall - single column, thicker bars + larger type than wide.
         function test_tall_scales_rows_up() {
             tryVerify(function () { return hTall.ready }, 3000)
-            tryVerify(function () { return hMicro.ready }, 3000)
+            tryVerify(function () { return hWide.ready }, 3000)
             var w = hTall.item
             w.sizeClass = "tall"
             feedTo(hTall)
-            hMicro.item.sizeClass = "compact"
-            feedTo(hMicro)
+            hWide.item.sizeClass = "wide"
+            feedTo(hWide)
             compare(gridOf(hTall).columns, 1, "tall keeps a single column")
-            verify(w.barH > hMicro.item.barH, "tall bars are thicker than micro bars ("
-                   + w.barH.toFixed(1) + " vs " + hMicro.item.barH.toFixed(1) + ")")
+            verify(w.barH > hWide.item.barH, "tall bars are thicker than wide bars ("
+                   + w.barH.toFixed(1) + " vs " + hWide.item.barH.toFixed(1) + ")")
             w.sizeClass = "full"
             compare(w.micro, false, "full is never micro")
         }
@@ -486,45 +611,12 @@ Item {
         name: "SensorsOverflow"
         when: windowShown
 
-        function init() {
-            tryVerify(function () { return hSmall.ready }, 3000)
-            var s = hSmall.storeCtl.settingsFor("test-instance")
-            for (var k in s) delete s[k]
-            hSmall.storeCtl._touchSettings()
-            hSmall.metricsJson = root.fullMetrics
-        }
-
-        function test_six_rows_fit_in_120px_tile() {
-            var w = hSmall.item
-            tryVerify(function () { return w.rows.length === 6 }, 2000,
-                      "all 6 rows are enabled/present in the compact tile")
-            // Locate the content ColumnLayout via a known row label:
-            //   DISK Text → RowLayout → content ColumnLayout → body Item.
-            var disk = findText(w, "DISK")
-            verify(disk !== null, "DISK label found")
-            var contentCol = disk.parent.parent       // ColumnLayout that lays out the rows
-            var body = contentCol.parent               // WidgetChrome body (clip:true)
-            verify(contentCol.implicitHeight !== undefined, "resolved the content ColumnLayout")
-            // Force the layout so positions/implicit sizes are real, then let the
-            // polish settle (offscreen defers layout otherwise).
-            if (contentCol.forceLayout) contentCol.forceLayout()
-            wait(50)
-
-            var bodyH = body.height
-            // Every enabled row must render fully inside the clipped body. Rows whose
-            // bottom edge falls past bodyH are silently clipped and unreadable.
-            var labels = ["CPU", "GPU", "RAM", "DISK", "CPU °", "GPU °"]
-            var clipped = []
-            for (var i = 0; i < labels.length; i++) {
-                var t = findText(w, labels[i])
-                if (!t) continue
-                var p = t.mapToItem(body, 0, t.height)   // bottom edge in body coords
-                if (p.y > bodyH + 0.5) clipped.push(labels[i] + "@" + Math.round(p.y))
-            }
-            verify(clipped.length === 0,
-                   "no row may be clipped in a 120px tile; body=" + Math.round(bodyH)
-                   + "px, content=" + Math.round(contentCol.implicitHeight)
-                   + "px, clipped rows: " + JSON.stringify(clipped))
+        function test_smallest_supported_layout_keeps_readable_type() {
+            tryVerify(function () { return hWide.ready }, 3000)
+            hWide.item.sizeClass = "wide"
+            hWide.metricsJson = root.fullMetrics
+            verify(hWide.item.rowFont >= 12)
+            verify(hWide.item.barH >= 6)
         }
     }
 }

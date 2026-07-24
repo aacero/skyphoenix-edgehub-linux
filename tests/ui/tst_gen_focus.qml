@@ -1,8 +1,7 @@
 import QtQuick
 import QtTest
+import "../../ui/qml" as App
 
-// COVERS: schema:autoStartBreak, schema:breakMin, schema:breakSuggestions, schema:celebrate, schema:dailyGoal, schema:rewardPoints
-// COVERS: schema:showNudges, schema:workMin
 
 // ─────────────────────────────────────────────────────────────────────────
 // Comprehensive tests for widget:focus - ui/qml/widgets/FocusWidget.qml
@@ -31,6 +30,20 @@ import QtTest
 Item {
     id: root
     width: 480; height: 820
+    property int notificationCalls: 0
+    property string notificationSummary: ""
+    property string notificationBody: ""
+
+    QtObject {
+        id: fakeNotifier
+        function send(summary, body) {
+            root.notificationCalls++
+            root.notificationSummary = summary
+            root.notificationBody = body
+            return true
+        }
+    }
+    App.WidgetConfigSchema { id: schemaRegistry }
 
     WidgetHarness {
         id: hFocus; anchors.fill: parent
@@ -99,11 +112,40 @@ Item {
 
         // Fresh, known state before every test.
         function init() {
-            var s = hFocus.storeCtl.settingsFor("test-instance")
-            for (var k in s) delete s[k]
-            hFocus.storeCtl._touchSettings()
+            // Replace the settings bucket instead of repeatedly deleting and
+            // reinserting differently shaped members on one QV4 object. Keep
+            // the full production shape stable too: Qt 6.11 corrupts its
+            // property cache after enough differently shaped replacements.
+            hFocus.storeCtl.resetSettings("test-instance", {
+                preset: "classic",
+                workMin: 25,
+                breakMin: 5,
+                longBreakMin: 15,
+                longBreakEvery: 4,
+                behaviorProfile: "custom",
+                autoStartBreak: false,
+                autoStartFocus: false,
+                notifyWhenHidden: false,
+                dailyGoal: 4,
+                celebrate: true,
+                rewardPoints: true,
+                showNudges: true,
+                breakSuggestions: true,
+                phase: "work",
+                running: false,
+                endEpoch: 0,
+                pausedRemaining: 1500,
+                doneToday: 0,
+                day: "",
+                points: 0
+            })
             hFocus.item.accentName = ""
             hFocus.item.celebrateMsg = ""
+            hFocus.item.foreground = true
+            hFocus.item.notificationBridge = fakeNotifier
+            root.notificationCalls = 0
+            root.notificationSummary = ""
+            root.notificationBody = ""
         }
 
         // ── Per-sizeClass structure (W1 wave 3) ────────────────────────────
@@ -270,6 +312,29 @@ Item {
             compare(stats.length, 1, "the sessions/goal line is on the TILE, not only the overlay")
         }
 
+        function test_1x1_5_adds_a_session_runway_not_only_empty_space() {
+            hSize.storeCtl.patchSettings("test-instance",
+                { phase: "work", doneToday: 0, day: root.todayStr(), preset: "classic",
+                  running: false, pausedRemaining: 1500 })
+            var w = shape(696, 1228, "tall")
+            var runway = root.findAll(w, function (n) {
+                return n.objectName === "focusRunway" && n.visible
+            }, [])
+            compare(runway.length, 1, "the hero tile uses its extra room for a visible session runway")
+            verify(root.findAll(runway[0], function (n) {
+                return n.hasOwnProperty("text") && String(n.text) === "Short break"
+            }, []).length === 1, "the runway previews what comes next")
+            verify(root.findAll(runway[0], function (n) {
+                return n.hasOwnProperty("text") && String(n.text) === "Session 1 / 4"
+            }, []).length === 1, "the runway places this focus inside its Pomodoro cycle")
+
+            w = shape(696, 819, "compact")
+            runway = root.findAll(w, function (n) {
+                return n.objectName === "focusRunway" && n.visible
+            }, [])
+            compare(runway.length, 0, "the baseline tile keeps the simpler ring and controls")
+        }
+
         // The stats must stay ATTACHED to the ring they describe: the tall box
         // has ~450px the width-bound ring cannot spend, and that slack belongs
         // above/below the group, not between the ring and its own caption.
@@ -345,6 +410,16 @@ Item {
             compare(cfg().doneToday, 0, "Skip must NOT increment the completed-session count")
             compare(cfg().points || 0, 0, "Skip must NOT award points")
             compare(w.celebrateMsg, "", "Skip must NOT fire a celebration")
+        }
+        function test_skip_requires_a_second_tap() {
+            var w = hFocus.item
+            patch({ phase: "work", day: todayStr(), doneToday: 0 })
+            w.requestSkip()
+            compare(w.skipArmed, true, "first tap arms the guarded action")
+            compare(cfg().phase, "work", "first tap does not change phase")
+            w.requestSkip()
+            compare(w.skipArmed, false, "confirmation disarms the action")
+            compare(cfg().phase, "short", "second tap advances to the break")
         }
         // Natural completion of a focus phase (advance(true)) is the correct path.
         function test_natural_focus_completion_counts_once() {
@@ -455,6 +530,31 @@ Item {
             compare(cfg().points || 0, 0, "no points accrue when rewards are disabled")
             compare(w.rewardPoints, false, "points display is gated off too")
         }
+
+        function test_calm_profile_disables_momentum_features() {
+            var w = hFocus.item
+            patch({ behaviorProfile: "calm", celebrate: true, rewardPoints: true, showNudges: true })
+            compare(w.celebrate, false)
+            compare(w.rewardPoints, false)
+            compare(w.showNudges, false)
+        }
+
+        function test_momentum_profile_enables_momentum_features() {
+            var w = hFocus.item
+            patch({ behaviorProfile: "momentum", celebrate: false, rewardPoints: false, showNudges: false })
+            compare(w.celebrate, true)
+            compare(w.rewardPoints, true)
+            compare(w.showNudges, true)
+        }
+
+        function test_effective_reduce_motion_disables_celebration_motion() {
+            var w = hFocus.item
+            hFocus.theme.reduceMotionPreference = "on"
+            compare(w.celebrationMotionEnabled, false)
+            compare(hFocus.theme.motionFast, 0)
+            compare(hFocus.theme.motionPage, 0)
+            hFocus.theme.reduceMotionPreference = "auto"
+        }
         // celebrate=false → no celebration message on completion.
         function test_celebrate_off_suppresses_message() {
             var w = hFocus.item
@@ -462,6 +562,39 @@ Item {
             w.celebrateMsg = ""
             w.advance(true)
             compare(w.celebrateMsg, "", "no celebration when celebrate is disabled")
+        }
+
+        function test_hidden_focus_completion_notifies_when_enabled() {
+            var w = hFocus.item
+            patch({ phase: "work", notifyWhenHidden: true, day: todayStr(), doneToday: 0 })
+            w.foreground = false
+            w.advance(true)
+            compare(root.notificationCalls, 1)
+            compare(root.notificationSummary, "Focus session complete")
+            compare(root.notificationBody, "Your short break is ready.")
+        }
+        function test_visible_completion_does_not_notify() {
+            var w = hFocus.item
+            patch({ phase: "work", notifyWhenHidden: true, day: todayStr(), doneToday: 0 })
+            w.foreground = true
+            w.advance(true)
+            compare(root.notificationCalls, 0, "visible Hub screen does not duplicate feedback")
+        }
+        function test_hidden_notification_is_opt_in() {
+            var w = hFocus.item
+            patch({ phase: "work", notifyWhenHidden: false, day: todayStr(), doneToday: 0 })
+            w.foreground = false
+            w.advance(true)
+            compare(root.notificationCalls, 0)
+        }
+        function test_hidden_break_completion_announces_focus() {
+            var w = hFocus.item
+            patch({ phase: "short", notifyWhenHidden: true, day: todayStr(), doneToday: 1 })
+            w.foreground = false
+            w.advance(true)
+            compare(root.notificationCalls, 1)
+            compare(root.notificationSummary, "Break complete")
+            compare(root.notificationBody, "Ready for another focus session.")
         }
 
         // ── Per-instance accent override reaches the content ────────────────
@@ -549,6 +682,23 @@ Item {
             w.advance(true)
             compare(cfg().phase, "long", "4th session leads into a long break")
         }
+
+        function test_custom_long_break_duration_and_cadence() {
+            var w = hFocus.item
+            patch({ preset: "custom", workMin: 20, breakMin: 4, longBreakMin: 12,
+                    longBreakEvery: 2, phase: "work", day: todayStr(), doneToday: 1 })
+            compare(w.phaseSeconds("long"), 12 * 60)
+            w.advance(true)
+            compare(cfg().phase, "long")
+        }
+
+        function test_autostart_focus_is_independent() {
+            var w = hFocus.item
+            patch({ phase: "short", autoStartFocus: true, running: false })
+            w.advance(true)
+            compare(cfg().phase, "work")
+            compare(cfg().running, true)
+        }
         function test_break_completion_returns_to_work_paused() {
             var w = hFocus.item
             patch({ preset: "classic", phase: "short", day: todayStr(),
@@ -564,11 +714,11 @@ Item {
             patch({ preset: "custom", workMin: 30, breakMin: 5 })
             compare(w.phaseSeconds("work"), 30 * 60)
         }
-        function test_breakMin_drives_both_breaks() {
+        function test_breakMin_and_longBreakMin_drive_custom_breaks() {
             var w = hFocus.item
-            patch({ preset: "custom", workMin: 40, breakMin: 8 })
+            patch({ preset: "custom", workMin: 40, breakMin: 8, longBreakMin: 12 })
             compare(w.phaseSeconds("short"), 8 * 60, "short break uses breakMin")
-            compare(w.phaseSeconds("long"), 8 * 60, "long break also uses breakMin")
+            compare(w.phaseSeconds("long"), 12 * 60, "long break uses longBreakMin")
             compare(w.phaseSeconds("work"), 40 * 60, "focus uses workMin")
         }
         function test_dailyGoal_honored() {
@@ -592,6 +742,21 @@ Item {
             var w = hFocus.item
             patch({ autoStartBreak: true })
             compare(w.autoStartBreak, true)
+        }
+        function test_custom_duration_schema_is_conditional() {
+            var schema = schemaRegistry.schemaFor("focus")
+            var keys = ["workMin", "breakMin", "longBreakMin", "longBreakEvery"]
+            for (var i = 0; i < keys.length; i++) {
+                var found = null
+                for (var s = 0; s < schema.sections.length; s++) {
+                    var fields = schema.sections[s].fields || []
+                    for (var f = 0; f < fields.length; f++)
+                        if (fields[f].key === keys[i]) found = fields[f]
+                }
+                verify(found !== null, keys[i] + " exists")
+                compare(found.visibleWhen.key, "preset")
+                compare(found.visibleWhen.equals, "custom")
+            }
         }
         function test_preset_selection_changes_durations() {
             var w = hFocus.item

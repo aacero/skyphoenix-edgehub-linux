@@ -41,6 +41,8 @@ Item {
                 ids[p.id] = 1
                 verify(p.title && p.title.length, p.id + " has a title")
                 verify(p.blurb && p.blurb.length, p.id + " has a blurb")
+                verify(p.purpose && p.purpose.length, p.id + " explains its intended outcome")
+                verify(p.setup && p.setup.length, p.id + " explains required setup")
                 verify(p.pages && p.pages.length >= 1, p.id + " has at least one page")
             }
         }
@@ -60,6 +62,49 @@ Item {
                                p.id + ": tile type '" + tiles[t].type + "' exists in WidgetCatalog")
                     }
                 }
+            }
+        }
+
+        // README describes these exact one-screen compositions. Keeping the full
+        // type and size signature here makes a product-copy change deliberate: a
+        // preset cannot silently gain, lose or resize a widget while the public
+        // persona promise remains unchanged.
+        function test_documented_persona_compositions_are_exact() {
+            var expected = ({
+                "calm-focus": "focus:1x1.5|rightnow:1x1.5",
+                "notes-streak": "notes:1x1.5|habit:1x1.5",
+                "home-ambient": "clock:1x1.5|weather:1x1.5",
+                "ambient": "media:1x1.5|moon:1x1",
+                "minimal": "clock:1x1.5|weather:0.5x1|moon:0.5x1",
+                "health": "hydration:1x1|break:1x1|habit:1x1",
+                "creator": "media:1x1.5|focus:1x1.5",
+                "study": "focus:1x1|tasks:1x1|countdown:1x1",
+                "productivity": "focus:1x1.5|tasks:1x1.5",
+                "remote-work": "tasks:1x1.5|eod:1x1.5",
+                "gaming": "gpu:1x1.5|cpu:0.5x1|ram:0.5x1",
+                "system-monitor": "cpu:1x1|gpu:1x1|ram:1x1",
+                "system-io": "net:1x1|disk:1x1|sensors:1x1",
+                "day-plan": "clock:1x1|calendar:1x2",
+                "developer": "httpjson:1x1.5|kpi:1x1.5",
+                "homelab": "httpjson:1x1.5|httpjson:1x1.5",
+                "trading-desk": "clock:0.5x1|clock:0.5x1|kpi:1x1.5",
+                "analyst": "kpi:1x1.5|kpi:0.5x1|httpjson:0.5x1",
+                "enterprise": "eod:1x1.5|kpi:1x1.5"
+            })
+            var list = presets.list()
+            compare(list.length, Object.keys(expected).length,
+                    "every shipped preset has an explicit persona contract")
+            for (var i = 0; i < list.length; i++) {
+                var preset = list[i]
+                verify(expected[preset.id] !== undefined,
+                       preset.id + " has a documented persona contract")
+                var signature = []
+                for (var t = 0; t < preset.pages[0].tiles.length; t++) {
+                    var tile = preset.pages[0].tiles[t]
+                    signature.push(tile.type + ":" + (tile.size || catalog.defaultSize(tile.type)))
+                }
+                compare(signature.join("|"), expected[preset.id],
+                        preset.id + " keeps its documented widget composition and density")
             }
         }
 
@@ -238,6 +283,14 @@ Item {
             var list = presets.list()
             for (var i = 0; i < list.length; i++)
                 compare(list[i].pages.length, 1, list[i].id + " is a single-page screen")
+        }
+
+        function test_screen_presets_never_set_accessibility_preferences() {
+            for (var i = 0; i < presets.items.length; i++) {
+                var p = presets.items[i]
+                verify(p.appearance.reduceMotion === undefined,
+                       p.id + ": reduced motion must remain an explicit user or OS preference")
+            }
         }
 
         // buildBundle composes several single-page screens into one document - the

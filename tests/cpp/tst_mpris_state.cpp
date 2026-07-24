@@ -136,6 +136,16 @@ private slots:
         QCOMPARE(mpris::choosePlayer(order, st, QString()), QString("a"));
     }
 
+    void chooseHonoursPreferredPlayerIdentity() {
+        const QStringList order{"org.mpris.MediaPlayer2.vlc",
+                                "org.mpris.MediaPlayer2.spotify"};
+        QMap<QString, QString> st{{order[0], "Playing"}, {order[1], "Paused"}};
+        QCOMPARE(mpris::choosePlayer(order, st, order[0], "spotify"), order[1]);
+        QCOMPARE(mpris::choosePlayer(order, st, order[0],
+                                     "ORG.MPRIS.MEDIAPLAYER2.SPOTIFY"), order[1]);
+        QCOMPARE(mpris::choosePlayer(order, st, order[0], "missing"), order[0]);
+    }
+
     // ── resolveTrack: artist list-or-string ─────────────────────────────────
 
     // The spec shape: xesam:artist is "as", which Qt demarshals to a QStringList.
@@ -321,6 +331,25 @@ private slots:
         QCOMPARE(s.title, QString());
     }
 
+    void transportCapabilitiesAreResolved() {
+        QVariantMap meta{{"xesam:title", "Stream"}};
+        QVariantMap props = propsWith("Playing", meta);
+        props.insert("CanControl", true);
+        props.insert("CanPlay", false);
+        props.insert("CanPause", false);
+        props.insert("CanGoNext", false);
+        props.insert("CanGoPrevious", true);
+        props.insert("CanSeek", true);
+        const TrackState s = mpris::resolveTrack(props, "org.mpris.MediaPlayer2.radio");
+        QVERIFY(!s.canPlayPause);
+        QVERIFY(!s.canGoNext);
+        QVERIFY(s.canGoPrevious);
+        QVERIFY(s.canSeek);
+
+        props.insert("CanControl", false);
+        QVERIFY(!mpris::resolveTrack(props, "org.mpris.MediaPlayer2.radio").canSeek);
+    }
+
     // ── visiblyDiffers: the dirty-check policy ──────────────────────────────
 
     void identicalStatesDoNotDiffer() {
@@ -350,19 +379,23 @@ private slots:
         t = base; t.album = "Al2";       QVERIFY2(mpris::visiblyDiffers(base, t), "album");
         t = base; t.artUrl = "U2";       QVERIFY2(mpris::visiblyDiffers(base, t), "artUrl");
         t = base; t.playerName = "P2";   QVERIFY2(mpris::visiblyDiffers(base, t), "playerName");
+        t = base; t.canPlayPause = false; QVERIFY2(mpris::visiblyDiffers(base, t), "canPlayPause");
+        t = base; t.canGoNext = false;    QVERIFY2(mpris::visiblyDiffers(base, t), "canGoNext");
+        t = base; t.canGoPrevious = false;
+        QVERIFY2(mpris::visiblyDiffers(base, t), "canGoPrevious");
+        t = base; t.canSeek = true;       QVERIFY2(mpris::visiblyDiffers(base, t), "canSeek");
+        t = base; t.lengthUs = 1000;      QVERIFY2(mpris::visiblyDiffers(base, t), "lengthUs");
     }
 
-    // lengthUs is deliberately NOT a trigger: it is not rendered on its own, and
-    // position has its own NOTIFY. Pinning this stops someone "fixing" the
-    // dirty-check into firing on every length jitter.
-    void lengthAloneIsNotVisible() {
+    // Duration is rendered as elapsed/total and therefore must notify QML.
+    void lengthChangeIsVisible() {
         TrackState a;
         a.available = true;
         a.title = "T";
         a.lengthUs = 1000;
         TrackState b = a;
         b.lengthUs = 2000;
-        QVERIFY(!mpris::visiblyDiffers(a, b));
+        QVERIFY(mpris::visiblyDiffers(a, b));
     }
 
     // ── The member-state fold (MprisBridge::applyProps) ─────────────────────
@@ -413,9 +446,8 @@ private slots:
         QCOMPARE(spy.count(), 1);
     }
 
-    // A length-only move is invisible - and must stay silent - but the new value
-    // must still be stored (position() is computed from it).
-    void applyPropsStoresLengthWithoutNotifying() {
+    // A duration move updates the visible total time and must notify.
+    void applyPropsStoresLengthAndNotifies() {
         MprisBridge bridge;
         QSignalSpy spy(&bridge, &MprisBridge::changed);
 
@@ -425,8 +457,9 @@ private slots:
 
         QVariantMap meta2{{"xesam:title", "Song"}, {"mpris:length", qlonglong(200)}};
         bridge.applyProps(propsWith("Playing", meta2));
-        QCOMPARE(spy.count(), 1);                      // still silent
-        QCOMPARE(bridge.currentTrack().lengthUs, qlonglong(200));  // but stored
+        QCOMPARE(spy.count(), 2);
+        QCOMPARE(bridge.currentTrack().lengthUs, qlonglong(200));
+        QCOMPARE(bridge.durationMs(), qlonglong(0));
     }
 
     // Every property QML binds to must reflect the applied reply - this is the
@@ -451,6 +484,20 @@ private slots:
         // playerName is derived from the service, which is empty with no bus -
         // resolveTrack's prefix-strip is pinned by playerNameStripsPrefix above.
         QCOMPARE(bridge.playerName(), QString());
+        QCOMPARE(bridge.durationMs(), qlonglong(0));
+        QVERIFY(!bridge.canSeek());
+    }
+
+    void bridgeStoresPreferenceWithoutABus() {
+        MprisBridge bridge;
+        QSignalSpy spy(&bridge, &MprisBridge::preferredPlayerChanged);
+        bridge.setPreferredPlayer(" spotify ");
+        QCOMPARE(bridge.preferredPlayer(), QString("spotify"));
+        QCOMPARE(spy.count(), 1);
+        bridge.setPreferredPlayer("SPOTIFY");
+        QCOMPARE(spy.count(), 1);
+        bridge.setPreferredPlayer(QString());
+        QCOMPARE(spy.count(), 2);
     }
 
     // position() is a fraction of the track length. Nothing here can move

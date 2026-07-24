@@ -206,6 +206,18 @@ Item {
             compare(store.appearance().updateCheck === true, false, "…and back off")
         }
 
+        function test_hub_navigation_switch_controls_immersive_mode() {
+            store.setAppearance("hubControlsMode", "standard")
+            var sw = switchForLabel("Show Hub navigation bar")
+            verify(sw !== null, "the Hub exposes its immersive-mode control")
+            compare(sw.checked, true, "the navigation bar is on by default")
+            clickTarget(sw)
+            compare(store.appearance().hubControlsMode, "immersive",
+                    "turning it off persists immersive Hub mode")
+            clickTarget(sw)
+            compare(store.appearance().hubControlsMode, "standard", "the bar can be restored")
+        }
+
         // ── Toggles: glow / animated background / reduce motion ──────────────
         function switchForLabel(labelText) {
             var t = findText(panel, labelText)

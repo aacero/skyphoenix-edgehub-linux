@@ -189,6 +189,91 @@ private slots:
                  QStringLiteral("manifest.json is not readable"));
     }
 
+    void metricFileReaderAcceptsOnlyBoundedRegularFiles() {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QString metric = root.filePath(QStringLiteral("metric.txt"));
+        QFile good(metric);
+        QVERIFY(good.open(QIODevice::WriteOnly));
+        QCOMPARE(good.write("42\n"), qint64(3));
+        good.close();
+
+        const QVariantMap ok =
+            ConfigBridge::readMetricFileFromRoots(metric, {root.path()});
+        QVERIFY(ok.value(QStringLiteral("ok")).toBool());
+        QCOMPARE(ok.value(QStringLiteral("body")).toString(), QStringLiteral("42\n"));
+        QVERIFY(ok.value(QStringLiteral("error")).toString().isEmpty());
+
+        const QString tooLarge = root.filePath(QStringLiteral("large"));
+        QFile large(tooLarge);
+        QVERIFY(large.open(QIODevice::WriteOnly));
+        QVERIFY(large.resize(1024 * 1024 + 1));
+        large.close();
+        const QVariantMap largeResult =
+            ConfigBridge::readMetricFileFromRoots(tooLarge, {root.path()});
+        QVERIFY(!largeResult.value(QStringLiteral("ok")).toBool());
+        QCOMPARE(largeResult.value(QStringLiteral("error")).toString(),
+                 QStringLiteral("too-large"));
+
+        const QVariantMap directory =
+            ConfigBridge::readMetricFileFromRoots(root.path(), {root.path()});
+        QVERIFY(!directory.value(QStringLiteral("ok")).toBool());
+        QCOMPARE(directory.value(QStringLiteral("error")).toString(),
+                 QStringLiteral("not-regular-file"));
+    }
+
+    void metricFileReaderRejectsEscapeTraversalAndLinks() {
+        QTemporaryDir allowed;
+        QTemporaryDir outside;
+        QVERIFY(allowed.isValid());
+        QVERIFY(outside.isValid());
+        const QString secret = outside.filePath(QStringLiteral("secret"));
+        QFile file(secret);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("private");
+        file.close();
+
+        const QVariantMap escaped =
+            ConfigBridge::readMetricFileFromRoots(secret, {allowed.path()});
+        QCOMPARE(escaped.value(QStringLiteral("error")).toString(),
+                 QStringLiteral("outside-approved-roots"));
+
+        const QString link = allowed.filePath(QStringLiteral("linked"));
+        QVERIFY(QFile::link(secret, link));
+        const QVariantMap linked =
+            ConfigBridge::readMetricFileFromRoots(link, {allowed.path()});
+        QVERIFY(!linked.value(QStringLiteral("ok")).toBool());
+        QVERIFY(linked.value(QStringLiteral("error")).toString() ==
+                    QStringLiteral("outside-approved-roots") ||
+                linked.value(QStringLiteral("error")).toString() ==
+                    QStringLiteral("symlink"));
+
+        QVERIFY(QDir().mkpath(allowed.filePath(QStringLiteral("nested"))));
+        const QString traversal =
+            allowed.filePath(QStringLiteral("nested/../nested/value"));
+        const QVariantMap traversed =
+            ConfigBridge::readMetricFileFromRoots(traversal, {allowed.path()});
+        QCOMPARE(traversed.value(QStringLiteral("error")).toString(),
+                 QStringLiteral("traversal"));
+    }
+
+    void metricFileReaderRejectsMissingAndSpecialFiles() {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QVariantMap missing =
+            ConfigBridge::readMetricFileFromRoots(root.filePath(QStringLiteral("missing")),
+                                                  {root.path()});
+        QCOMPARE(missing.value(QStringLiteral("error")).toString(),
+                 QStringLiteral("not-found"));
+
+        const QString fifoPath = root.filePath(QStringLiteral("pipe"));
+        QCOMPARE(::mkfifo(QFile::encodeName(fifoPath).constData(), 0600), 0);
+        const QVariantMap fifo =
+            ConfigBridge::readMetricFileFromRoots(fifoPath, {root.path()});
+        QCOMPARE(fifo.value(QStringLiteral("error")).toString(),
+                 QStringLiteral("not-regular-file"));
+    }
+
     // --- E7 Phase A: credential-reference resolution -------------------------
     // The bridge is what QML calls, so it owns the FFI's two-allocation contract
     // (value AND error must be freed). These run under the same ctest as the rest,

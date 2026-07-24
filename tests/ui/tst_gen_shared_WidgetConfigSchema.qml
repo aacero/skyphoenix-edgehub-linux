@@ -3,7 +3,6 @@ import QtTest
 import "../../ui/qml" as App
 import "../../ui/qml/widgets" as W
 
-// COVERS: schema:accent, schema:cardBackdrop
 
 // ─────────────────────────────────────────────────────────────────────────
 // Comprehensive coverage for the SHARED config plumbing:
@@ -57,6 +56,9 @@ Item {
     W.ConfigField { id: cfHour;   width: 720; x: 0; y: 0;   st: cfStore; instanceId: "eod-cf";  col: root.colTokens }
     W.ConfigField { id: cfSeg;    width: 720; x: 0; y: 240; st: cfStore; instanceId: "seg-cf";  col: root.colTokens }
     W.ConfigField { id: cfAccent; width: 720; x: 0; y: 380; st: cfStore; instanceId: "acc-cf";  col: root.colTokens }
+    W.ConfigField { id: cfWeekdays; width: 720; x: 0; y: 520; st: cfStore; instanceId: "habit-cf"; col: root.colTokens }
+    W.ConfigField { id: cfMeds; width: 720; x: 0; y: 690; st: cfStore; instanceId: "meds-cf"; col: root.colTokens }
+    W.ConfigField { id: cfRoutine; width: 720; x: 0; y: 900; st: cfStore; instanceId: "routine-cf"; col: root.colTokens }
 
     // ── helpers ──────────────────────────────────────────────────────────────
     function fieldByKey(schema, key) {
@@ -363,8 +365,11 @@ Item {
         when: windowShown
 
         function test_schema_emits_only_configfield_supported_types() {
-            var supported = ["accent", "action", "date", "hour", "info", "number",
-                             "segmented", "slider", "tasks", "text", "textarea", "toggle"]
+            var supported = ["accent", "action", "date", "hour", "info",
+                             "medSchedule", "number", "reorder", "routineSteps", "secret",
+                             "segmented", "select", "slider",
+                             "text", "textarea", "timezone", "timezoneList",
+                             "toggle", "weekdays"]
             var emitted = {}
             for (var i = 0; i < catalog.items.length; i++) {
                 var sections = sc.schemaFor(catalog.items[i].type).sections
@@ -395,6 +400,9 @@ Item {
             cfHour.field = fieldByKey(sc.schemaFor("eod"), "startHour")
             cfSeg.field = fieldByKey(sc.schemaFor("eod"), "cardBackdrop")
             cfAccent.field = fieldByKey(sc.schemaFor("eod"), "accent")
+            cfWeekdays.field = fieldByKey(sc.schemaFor("habit"), "activeDays")
+            cfMeds.field = fieldByKey(sc.schemaFor("meds"), "scheduleItems")
+            cfRoutine.field = fieldByKey(sc.schemaFor("routine"), "routineItems")
             wait(0)
         }
 
@@ -428,6 +436,69 @@ Item {
             for (var i = 0; i < chips.length; i++)
                 if (chips[i].height < 44) tooShort.push(Math.round(chips[i].height))
             compare(tooShort, [], "every accent swatch is at least 44px tall")
+        }
+
+        function test_habit_weekdays_are_structured_touch_controls() {
+            compare(cfWeekdays.field.type, "weekdays",
+                    "custom weekdays use the structured weekday renderer")
+            var control = findByProp(cfWeekdays, "selectedValues")
+            verify(control !== null, "the weekday control renders")
+            var chips = collectByProp(cfWeekdays, "sel", [])
+            compare(chips.length, 7, "all seven weekdays are explicit choices")
+            for (var i = 0; i < chips.length; i++)
+                verify(chips[i].height >= 44, "weekday chip " + i + " is touch-sized")
+
+            cfStore.setSetting("habit-cf", "activeDays", "1,3,5")
+            compare(control.selectedValues(), ["1", "3", "5"])
+            control.toggle("3")
+            compare(cfStore.settingsFor("habit-cf").activeDays, "1,5",
+                    "toggling a selected weekday removes it and persists canonical CSV")
+            control.toggle("0")
+            compare(cfStore.settingsFor("habit-cf").activeDays, "0,1,5",
+                    "adding a weekday persists sorted values")
+        }
+
+        function test_medication_schedule_is_structured_and_migrates_legacy_text() {
+            compare(cfMeds.field.type, "medSchedule")
+            cfStore.setSetting("meds-cf", "schedule", "08:00 Vitamin D")
+            var control = findByProp(cfMeds, "addDose")
+            verify(control !== null, "the structured medication schedule renders")
+            compare(control.entries().length, 1, "legacy schedule remains visible before migration")
+            compare(control.entries()[0].name, "Vitamin D")
+            compare(control.entries()[0].time, "08:00")
+            control.toggleDay(0, "0")
+            var saved = cfStore.settingsFor("meds-cf").scheduleItems
+            compare(saved.length, 1)
+            compare(saved[0].days, "1,2,3,4,5,6",
+                    "the first structured edit migrates and persists recurrence")
+            control.addDose()
+            compare(cfStore.settingsFor("meds-cf").scheduleItems.length, 2)
+            control.commit([])
+            compare(cfStore.settingsFor("meds-cf").scheduleItems.length, 0)
+            compare(cfStore.settingsFor("meds-cf").scheduleFormat, "structured",
+                    "clearing the structured editor cannot resurrect the legacy text")
+        }
+
+        function test_routine_steps_are_structured_reorderable_and_preserve_ids() {
+            compare(cfRoutine.field.type, "routineSteps")
+            cfStore.setSetting("routine-cf", "steps", "Pack bag\nWater plants")
+            var control = findByProp(cfRoutine, "move")
+            verify(control !== null)
+            compare(control.entries().length, 2)
+            compare(control.entries()[0].id, "Pack bag")
+            control.move(1, -1)
+            var saved = cfStore.settingsFor("routine-cf")
+            compare(saved.routineFormat, "structured")
+            compare(saved.routineItems[0].text, "Water plants")
+            compare(saved.routineItems[1].id, "Pack bag",
+                    "reordering does not change immutable identity")
+            control.update(1, "Pack work bag")
+            compare(cfStore.settingsFor("routine-cf").routineItems[1].id, "Pack bag",
+                    "renaming does not change immutable identity")
+            control.commit([])
+            compare(cfStore.settingsFor("routine-cf").routineItems.length, 0)
+            compare(control.entries().length, 0,
+                    "clearing structured steps cannot resurrect legacy lines")
         }
     }
 

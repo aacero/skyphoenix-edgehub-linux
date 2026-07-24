@@ -48,25 +48,6 @@ from e2e_harness import (E2E, MANAGER, assert_binaries_current,  # noqa: E402
                          doc, page, tile)
 
 
-# Fractional positions in the Manager window, measured from a 1440x1300 capture
-# of the Screens tab (tests/hardware frames). Fractions, so they survive a
-# different window size.
-SIDEBAR_SCREENS = (0.059, 0.126)
-ADD_WIDGET_BTN = (0.74, 0.208)
-# First card in the "Add a widget" picker (a centered modal grid of 150px cards).
-# The picker's Network card (top-right of the grid). Deliberately NOT the CPU
-# card (top-LEFT): that overlaps the left-side live preview, so if the picker
-# ever failed to open, the same coordinate clicked the preview TILE and opened a
-# "Configure" dialog that then blocked every following click. Network sits over
-# the right column when the picker is closed - harmless, no modal.
-# Two Y positions for the Network card: the normal grid, and the grid shifted
-# DOWN when the "This screen is full - your next widget will start a new screen"
-# banner appears (the banner proves the no-overflow boundary AND pushes the cards
-# down ~0.035, which was silently making every post-full add miss).
-PICKER_CARD_X = 0.62
-PICKER_CARD_Y = (0.36, 0.40)
-
-
 def widgets_total(st):
     return sum(len(p.get("tiles", []) or []) for p in (st or {}).get("pages", []) or [])
 
@@ -152,21 +133,20 @@ def main():
                     pass
             return path
 
-        click(*SIDEBAR_SCREENS)         # ensure we are on the Screens tab
         grab("screens-tab")
 
         def add_one_widget():
-            """Click Add widget -> first picker card, and WAIT for the hub total
-            to actually grow. Retries once - a synthetic click can miss on real
-            hardware, and a UI boundary test must not be flaky on that. Returns
-            the new hub state, or None if both attempts missed."""
+            """Invoke exact accessible controls and wait for the Hub total.
+
+            Names are stable QML accessibility identities, so this does not
+            depend on window size, scrolling, banners, or picker grid position.
+            """
             before = widgets_total(h.get_state())
-            for cy in PICKER_CARD_Y:       # try normal grid, then banner-shifted
-                # Re-assert the Screens tab: dismisses any stray dialog and puts
-                # us in a known state before opening the picker.
-                click(*SIDEBAR_SCREENS, settle=0.3)
-                click(*ADD_WIDGET_BTN)
-                click(PICKER_CARD_X, cy, settle=0.3)
+            for _attempt in range(2):
+                if not mw.invoke_accessible("Add widget"):
+                    continue
+                if not mw.invoke_accessible("Add widget: Network"):
+                    continue
                 for _ in range(15):            # up to ~3s for propagation
                     time.sleep(0.2)
                     st = h.get_state()
@@ -180,7 +160,6 @@ def main():
         spilled_at = None
         landed = 0
 
-        click(*SIDEBAR_SCREENS)
         for i in range(1, MAX_ADDS + 1):
             st = add_one_widget()
             if st is None:

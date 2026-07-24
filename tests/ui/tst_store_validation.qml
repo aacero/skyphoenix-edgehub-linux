@@ -157,8 +157,8 @@ Item {
         function test_missing_settings_becomes_object() {
             var ok = store.applyExternal('{"pages":[{"name":"A","tiles":[{"id":"t1","type":"cpu"}]}]}')
             verify(ok, "did not throw")
-            compare(typeof store.data.settings, "object", "settings is an object")
-            verify(store.data.settings !== null, "settings not null")
+            compare(typeof store.document.settings, "object", "settings is an object")
+            verify(store.document.settings !== null, "settings not null")
             // Round-trips a normal read/write without exception.
             compare(store.settingsFor("t1").anything, undefined)
             store.setSetting("t1", "k", 1)

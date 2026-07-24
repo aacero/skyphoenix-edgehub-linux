@@ -11,7 +11,7 @@ import "../../ui/qml/widgets" as Widgets
 // is far too slow" would fail on.
 Item {
     id: root
-    width: 760; height: 1200          // tall enough that the whole form is visible
+    width: 760; height: 2200          // tall enough that the whole form is visible
 
     property var col: ({
         textPrimary: "#E6EDF3", textSecondary: "#8B949E", bg: "#0D1117",
@@ -84,12 +84,29 @@ Item {
         }
 
         function test_number_stepper_plus_minus() {
+            store.setSetting("t", "preset", "custom")
             var field = findChild(panel, "field-workMin")
             verify(field, "workMin field rendered")
+            tryVerify(function () { return field.visible }, 1000,
+                      "custom lengths become visible for the Custom preset")
+            wait(50)
+            var formScroll = findChild(panel, "cfgScroll")
+            var fieldPos = field.mapToItem(formScroll.contentItem, 0, 0)
+            formScroll.contentY = Math.max(0, Math.min(
+                formScroll.contentHeight - formScroll.height,
+                fieldPos.y - formScroll.height / 3))
+            wait(0)
             var start = Number(field.cur())
-            mouseClick(field, field.width - 20, field.height / 2)   // "+"
+            var plus = findChild(field, "numberIncrement")
+            var minus = findChild(field, "numberDecrement")
+            verify(plus && minus, "the number stepper exposes both touch targets")
+            verify(plus.visible && plus.width >= 44 && plus.height >= 44,
+                   "the increment target is visible and touch-sized")
+            mouseClick(plus, plus.width / 2, plus.height / 2)
+            wait(0)
             compare(Number(field.cur()), start + 1, "plus stepped the value up")
-            mouseClick(field, 20, field.height / 2)                 // "-"
+            mouseClick(minus, minus.width / 2, minus.height / 2)
+            wait(0)
             compare(Number(field.cur()), start, "minus stepped it back")
         }
 

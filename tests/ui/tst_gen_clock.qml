@@ -2,8 +2,6 @@ import QtQuick
 import QtTest
 import "../../ui/qml" as App
 
-// COVERS: schema:customZone, schema:dateStyle, schema:format24, schema:showDate, schema:showSeconds, schema:utcOffset
-// COVERS: schema:zoneLabel
 
 // ─────────────────────────────────────────────────────────────────────────
 // tst_gen_clock - COMPREHENSIVE coverage for area "widget:clock"
@@ -167,8 +165,16 @@ Item {
         }
         function test_date_style_short() {
             var w = h.item
+            set("localeName", "en_US")
             set("dateStyle", "short")
-            compare(w.dateFmt, "dd/MM", "short → dd/MM")
+            compare(w.dateFmt, Qt.locale("en_US").dateFormat(Locale.ShortFormat),
+                    "short date follows the selected locale")
+        }
+        function test_iso_and_custom_date_styles() {
+            var w = h.item
+            set("dateStyle", "iso"); compare(w.dateFmt, "yyyy-MM-dd")
+            set("datePattern", "yyyy/MM/dd ddd"); set("dateStyle", "custom")
+            compare(w.dateFmt, "yyyy/MM/dd ddd")
         }
         function test_date_style_full_expanded() {
             var w = h.item   // this harness is expanded
@@ -176,6 +182,28 @@ Item {
             verify(w.dateFmt.indexOf("dddd") >= 0, "full+expanded shows the full weekday")
             verify(w.dateFmt.indexOf("MMMM") >= 0, "…and full month name")
             verify(w.dateFmt.indexOf("yyyy") >= 0, "…and the year")
+        }
+    }
+
+    TestCase {
+        name: "ClockAdditionalZones"
+        when: windowShown
+        function test_parses_only_valid_first_three_zones() {
+            tryVerify(function () { return h.ready }, 3000)
+            var w = h.item
+            w.timeZones = ({ isValid: function (id) { return id !== "Bad/Zone" },
+                             format: function (id, ms, fmt) { return id + " " + fmt } })
+            h.storeCtl.setSetting("test-instance", "secondaryZones",
+                                  "Europe/London, Bad/Zone, Asia/Tokyo, UTC, Pacific/Auckland")
+            compare(w.secondaryZoneIds().join(","), "Europe/London,Asia/Tokyo,UTC")
+            compare(w.shortZoneName("America/New_York"), "New York")
+            w.timeZones = null
+        }
+        function test_fixed_offset_discloses_dst_limitation() {
+            tryVerify(function () { return h.ready }, 3000)
+            h.storeCtl.patchSettings("test-instance", { customZone: true, zoneId: "", utcOffset: 2 })
+            var warning = textEquals(h, "Fixed UTC offset. Daylight-saving changes are not applied.")
+            verify(warning !== null && warning.visible)
         }
     }
 
@@ -227,7 +255,8 @@ Item {
             var w = h.item
             set("customZone", true); set("showDate", true); set("dateStyle", "short")
             set("utcOffset", localOffsetHours() + 12)   // +12h, may cross midnight
-            var expected = Qt.formatDate(new Date(Date.now() + 12 * 3600000), "dd/MM")
+            var expected = Qt.formatDate(new Date(Date.now() + 12 * 3600000),
+                                         w.localeShortDatePattern())
             var dateNode = textEquals(h, expected)
             verify(dateNode !== null && dateNode.visible,
                    "date row reflects the ZONED date (+12h), expected " + expected)
@@ -441,14 +470,21 @@ Item {
             verify(w.dateFmt.indexOf("dddd") >= 0, "a tall TILE spells the weekday out")
             verify(w.dateFmt.indexOf("MMMM") >= 0, "…and the month")
             var n = w.zonedNow()
-            var expect = "Week " + w.isoWeek(n) + " · Day " + w.dayOfYear(n)
-            var line = textEquals(hTallSz, expect)
-            verify(line !== null && line.visible, "the calendar line renders (" + expect + ")")
-            // World clock adds the precise offset to the same line.
+            var weekLabel = textEquals(hTallSz, "WEEK")
+            var weekValue = textEquals(hTallSz, "" + w.isoWeek(n))
+            var dayLabel = textEquals(hTallSz, "DAY OF YEAR")
+            var dayValue = textEquals(hTallSz, "" + w.dayOfYear(n))
+            verify(weekLabel !== null && weekLabel.visible && weekValue !== null && weekValue.visible,
+                   "the calendar cards show the ISO week")
+            verify(dayLabel !== null && dayLabel.visible && dayValue !== null && dayValue.visible,
+                   "the calendar cards show the day of year")
+            // World clock replaces day-of-year with the precise offset card.
             hTallSz.storeCtl.patchSettings("test-instance", { customZone: true, utcOffset: 5.5 })
-            var line2 = textEquals(hTallSz, w.offsetLabel() + " · Week " + w.isoWeek(w.zonedNow())
-                                            + " · Day " + w.dayOfYear(w.zonedNow()))
-            verify(line2 !== null && line2.visible, "world clocks prefix the UTC offset")
+            var offsetLabel = textEquals(hTallSz, "OFFSET")
+            var offsetValue = textEquals(hTallSz, w.offsetLabel())
+            verify(offsetLabel !== null && offsetLabel.visible
+                   && offsetValue !== null && offsetValue.visible,
+                   "world clocks show the UTC offset card")
             // Away from tall the date drops back to the short form.
             w.sizeClass = "compact"
             verify(w.dateFmt.indexOf("dddd") < 0, "away from tall the short date returns")
@@ -462,6 +498,10 @@ Item {
             compare(w.isoWeek(new Date(2021, 0, 1)), 53, "2021-01-01 belongs to ISO week 53 of 2020")
             compare(w.dayOfYear(new Date(2026, 0, 1)), 1, "Jan 1 is day 1")
             compare(w.dayOfYear(new Date(2026, 11, 31)), 365, "2026 has 365 days")
+            compare(w.dayOfYear(new Date(2026, 2, 30)), 89,
+                    "day of year remains calendar-correct after the spring DST change")
+            compare(w.dayOfYear(new Date(2026, 9, 26)), 299,
+                    "day of year remains calendar-correct after the autumn DST change")
         }
     }
 
@@ -477,8 +517,8 @@ Item {
             for (var i = 0; i < s.sections.length; i++)
                 for (var j = 0; j < (s.sections[i].fields || []).length; j++)
                     if (s.sections[i].fields[j].key) keys[s.sections[i].fields[j].key] = true
-            var required = ["format24", "showSeconds", "showDate", "dateStyle",
-                            "customZone", "zoneLabel", "utcOffset"]
+            var required = ["format24", "showSeconds", "showDate", "dateStyle", "datePattern",
+                            "localeName", "customZone", "zoneId", "zoneLabel", "utcOffset", "secondaryZones"]
             for (var r = 0; r < required.length; r++)
                 verify(keys[required[r]] === true, "schema exposes '" + required[r] + "'")
             // Explicit per-key assertions (each names its schema key on the

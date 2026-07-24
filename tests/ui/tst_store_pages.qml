@@ -10,6 +10,7 @@ import "../../ui/qml" as App
 // COVERS: fn:DashboardStore._sizeAtShort, fn:DashboardStore._addSizeFor
 // COVERS: fn:DashboardStore.pageIsFull, fn:DashboardStore.nextAddSize, fn:DashboardStore._fitSizeFor
 // COVERS: fn:DashboardStore._appendBlankPage, fn:DashboardStore.pageIndexForTile
+// COVERS: fn:DashboardStore.resetConfiguration, fn:DashboardStore.erasePersonalData
 Item {
     width: 100; height: 100
     App.DashboardStore { id: store }
@@ -103,6 +104,44 @@ Item {
             store.resetSettings("c", { fresh: 1 })
             compare(store.settingsFor("c").fresh, 1)
             compare(store.settingsFor("c").leftover, undefined, "stale key removed")
+        }
+
+        function test_configuration_reset_preserves_personal_content() {
+            store.patchSettings("safe", {
+                goal: 99,
+                title: "Temporary title",
+                items: [ { id: "task-1", text: "Keep me", done: false } ],
+                nextId: 7,
+                staleConfig: true
+            })
+            verify(store.resetConfiguration("safe", { goal: 8, items: [] }, ["items", "nextId"]))
+            var got = store.settingsFor("safe")
+            compare(got.goal, 8, "configuration returned to its default")
+            compare(got.title, undefined, "non-default configuration was removed")
+            compare(got.staleConfig, undefined, "stale configuration was removed")
+            compare(got.items.length, 1, "personal tasks survived")
+            compare(got.items[0].text, "Keep me")
+            compare(got.nextId, 7, "personal identity state survived")
+        }
+
+        function test_personal_data_erase_preserves_configuration() {
+            store.patchSettings("erase", {
+                goal: 12,
+                accent: "gold",
+                items: [ { id: "task-1", text: "Erase me", done: false } ],
+                nextId: 4
+            })
+            compare(store.erasePersonalData("erase", ["items", "nextId"]), 2)
+            var got = store.settingsFor("erase")
+            compare(got.items, undefined, "task content was erased")
+            compare(got.nextId, undefined, "task identity state was erased")
+            compare(got.goal, 12, "widget configuration remains")
+            compare(got.accent, "gold", "widget appearance remains")
+        }
+
+        function test_personal_data_erase_does_not_create_ghost_settings() {
+            compare(store.erasePersonalData("missing", ["items"]), 0)
+            compare(store.settingsFor("missing").items, undefined)
         }
 
         // ── appendPreset: add a single-page "screen" as ONE new page, additive ──

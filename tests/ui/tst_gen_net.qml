@@ -1,7 +1,7 @@
 import QtQuick
 import QtTest
+import "../../ui/qml" as App
 
-// COVERS: schema:unit
 
 // Comprehensive coverage for the Network widget (ui/qml/widgets/NetWidget.qml).
 //
@@ -27,6 +27,7 @@ Item {
         widgetFile: "NetWidget.qml"
         expanded: true
     }
+    App.WidgetConfigSchema { id: schema }
 
     // Recurse the widget's visual tree so we can inspect the rendered Text nodes
     // (colours + formatted strings) that the widget builds internally.
@@ -46,8 +47,38 @@ Item {
         })
         return found
     }
+    function findObject(name) {
+        var found = null
+        eachItem(h.item, function (n) {
+            if (!found && n.objectName === name) found = n
+        })
+        return found
+    }
     function feed(rx, tx) {
         h.metricsJson = JSON.stringify({ net_rx_bytes_per_sec: rx, net_tx_bytes_per_sec: tx })
+    }
+    function feedCatalog(status) {
+        h.metricsJson = JSON.stringify({
+            net_metrics_available: true,
+            net_sample_status: status || "ready",
+            net_sample_unix_ms: Date.now(),
+            net_unavailable_reason: "",
+            net_rx_bytes_per_sec: 999000,
+            net_tx_bytes_per_sec: 888000,
+            net_interfaces: [
+                { name: "enp1s0", friendly_name: "Desk Ethernet",
+                  category: "physical", included_by_default: true,
+                  link_state: "up", speed_mbps: 2500, rate_available: status !== "warming",
+                  rx_bytes_per_sec: 1000, tx_bytes_per_sec: 2000,
+                  rx_total_bytes: 1000000000, tx_total_bytes: 2000000000,
+                  rx_errors: 1, tx_errors: 2, rx_dropped: 3, tx_dropped: 4 },
+                { name: "wg0", category: "vpn", included_by_default: false,
+                  link_state: "unknown", speed_mbps: null, rate_available: status !== "warming",
+                  rx_bytes_per_sec: 3000, tx_bytes_per_sec: 4000,
+                  rx_total_bytes: 3000000000, tx_total_bytes: 4000000000,
+                  rx_errors: 0, tx_errors: 0, rx_dropped: 0, tx_dropped: 0 }
+            ]
+        })
     }
 
     TestCase {
@@ -105,8 +136,8 @@ Item {
             var w = h.item
             h.storeCtl.setSetting("test-instance", "unit", "bytes")
             compare(w.unit, "bytes")
-            compare(w.fmt(1048576), "1.0 MB/s", "1 MiB → MB/s")
-            compare(w.fmt(1024), "1 KB/s", "1 KiB → KB/s")
+            compare(w.fmt(1048576), "1.0 MiB/s", "binary MiB uses an honest label")
+            compare(w.fmt(1024), "1 KiB/s", "binary KiB uses an honest label")
             compare(w.fmt(500), "500 B/s", "sub-KiB → B/s")
             compare(w.fmt(0), "0 B/s", "zero")
         }
@@ -136,7 +167,7 @@ Item {
             feed(2000000, 3000000)
             h.storeCtl.setSetting("test-instance", "unit", "bytes")
             var downBytes = findText("↓")
-            verify(downBytes.text.indexOf("MB/s") >= 0, "bytes mode shows MB/s (got '" + downBytes.text + "')")
+            verify(downBytes.text.indexOf("MiB/s") >= 0, "bytes mode shows MiB/s (got '" + downBytes.text + "')")
             h.storeCtl.setSetting("test-instance", "unit", "bits")
             var downBits = findText("↓")
             verify(downBits.text.indexOf("Mbps") >= 0, "switching to bits re-renders as Mbps (got '" + downBits.text + "')")
@@ -147,7 +178,10 @@ Item {
             var w = h.item
             // init() cleared settings - nothing set.
             compare(w.showHistory, true, "showHistory defaults true")
+            compare(w.historyWindow, "2m", "history defaults to two minutes")
             compare(w.unit, "bytes", "unit defaults to bytes")
+            compare(w.showDetails, true)
+            compare(w.scaleMode, "auto")
         }
 
         function test_showHistory_toggle_is_reactive() {
@@ -195,6 +229,18 @@ Item {
             compare(w.hist[n - 1].t, w.hist[n - 1].r * 2, "tx recorded alongside rx")
         }
 
+        function test_history_window_changes_the_retained_duration_and_label() {
+            var w = h.item
+            h.storeCtl.setSetting("test-instance", "historyWindow", "1m")
+            compare(w.historyLimit, 30)
+            compare(w.historyLabel, "1 minute")
+            for (var i = 1; i <= 40; i++) feed(i, i * 2)
+            compare(w.hist.length, 30)
+            h.storeCtl.setSetting("test-instance", "historyWindow", "5m")
+            compare(w.historyLimit, 150)
+            compare(w.historyLabel, "5 minutes")
+        }
+
         // BUG (audit, medium): peaks + history are plain instance properties, not
         // stored in the shared DashboardStore. A tile and its expanded overlay are
         // SEPARATE instances, so the overlay resets peaks to 0 / an empty graph on
@@ -217,6 +263,33 @@ Item {
                    "sparkline history should live in the shared store, not per-instance")
         }
 
+        function test_instance_change_restores_that_instances_runtime_state() {
+            var w = h.item
+            h.storeCtl.ensureSettings("net-a", {})
+            h.storeCtl.ensureSettings("net-b", {})
+            h.storeCtl.patchSettings("net-a", {
+                hist: [{ r: 10, t: 20 }], peakRx: 10, peakTx: 20
+            })
+            h.storeCtl.patchSettings("net-b", {
+                hist: [{ r: 30, t: 40 }, { r: 50, t: 60 }],
+                peakRx: 50, peakTx: 60
+            })
+            w.instanceId = "net-a"
+            compare(w.hist.length, 1)
+            compare(w.peakRx, 10)
+            w.instanceId = "net-b"
+            compare(w.hist.length, 2,
+                    "changing host identity restores the new instance history")
+            compare(w.peakRx, 50)
+            compare(w.peakTx, 60)
+            w.instanceId = "net-empty"
+            compare(w.hist.length, 0,
+                    "an instance without state does not inherit the prior graph")
+            compare(w.peakRx, 0)
+            compare(w.peakTx, 0)
+            w.instanceId = "test-instance"
+        }
+
         // ── The dead `active` gate ───────────────────────────────────────────
         // BUG (audit, low): `active` is declared but never read; hidden/off-page
         // instances keep pushing history + updating peaks every tick. Intended:
@@ -229,6 +302,151 @@ Item {
             feed(2345, 6789)
             compare(w.hist.length, 0,
                     "an inactive (off-page) instance should not accumulate history")
+        }
+
+        function test_aggregate_and_selected_interface_counters_are_mutually_exclusive() {
+            var w = h.item
+            h.metricsJson = "{}"
+            feedCatalog("ready")
+            compare(w.selectedInterfaces.length, 1)
+            compare(w.selectedInterfaces[0].name, "enp1s0")
+            compare(w.rx, 1000, "catalog aggregate does not add the top-level aggregate again")
+            compare(w.tx, 2000, "physical aggregate uses only physical catalog counters")
+            h.storeCtl.setSetting("test-instance", "interfaceName", "wg0")
+            compare(w.selectedInterfaces.length, 1)
+            compare(w.selectedLabel, "wg0")
+            compare(w.rx, 3000, "selected VPN is not added to physical aggregate")
+            compare(w.tx, 4000, "selected mode uses exactly one interface")
+        }
+
+        function test_warming_and_unavailable_are_not_fake_zero_rates() {
+            var w = h.item
+            feedCatalog("warming")
+            compare(w.rateAvailable, false)
+            compare(w.freshness, "sampling")
+            compare(w.hist.length, 0, "warming frame is not added to history")
+            compare(findText("↓").text, "↓ Download  Sampling")
+
+            h.metricsJson = JSON.stringify({
+                net_metrics_available: false,
+                net_sample_status: "unavailable",
+                net_unavailable_reason: "The kernel network counters could not be read",
+                net_interfaces: []
+            })
+            compare(w.rateAvailable, false)
+            compare(w.unavailableReason, "The kernel network counters could not be read")
+            compare(findText("↓").text, "↓ Download  N/A")
+        }
+
+        function test_details_show_identity_link_totals_and_precise_counters() {
+            var w = h.item
+            feedCatalog("ready")
+            compare(w.selectedLabel, "Desk Ethernet (enp1s0)")
+            verify(w.linkDetail.indexOf("up · physical · 2500 Mbps link") >= 0)
+            compare(w.rxTotal, 1000000000)
+            compare(w.txTotal, 2000000000)
+            compare(w.dropped, 7)
+            compare(w.errors, 3)
+            var totalLine = findText("total ↓")
+            verify(totalLine !== null)
+            verify(Qt.colorEqual(totalLine.color, h.theme.textPrimary))
+            verify(findText("drops 7  errors 3") !== null)
+            verify(w.accessibleSummary.indexOf("Desk Ethernet (enp1s0)") >= 0)
+            verify(w.accessibleSummary.indexOf("download") >= 0)
+            verify(w.accessibleSummary.indexOf("upload") >= 0)
+        }
+
+        function test_fixed_scale_and_reset_session_are_touch_safe() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", {
+                scaleMode: "fixed", fixedScaleMbps: 2500
+            })
+            compare(w.scaleMode, "fixed")
+            compare(w.fixedScaleMbps, 2500)
+            feedCatalog("ready")
+            verify(w.hist.length > 0)
+            verify(w.peakRx > 0)
+            var reset = findObject("resetNetworkSession")
+            verify(reset !== null && reset.visible)
+            verify(reset.width >= 48 && reset.height >= 48,
+                   "reset control has a touch target of at least 48 logical pixels")
+            mouseClick(reset, reset.width / 2, reset.height / 2)
+            compare(w.hist.length, 0)
+            compare(w.peakRx, 0)
+            compare(w.peakTx, 0)
+            var saved = h.storeCtl.settingsFor("test-instance")
+            compare(saved.hist.length, 0)
+            compare(saved.peakRx, 0)
+            h.metricsJson = "{}"
+            feedCatalog("ready")
+            verify(w.hist.length > 0)
+            reset.forceActiveFocus()
+            keyClick(Qt.Key_Space)
+            compare(w.hist.length, 0, "keyboard fallback resets the session")
+        }
+
+        function test_schema_exposes_discovered_selection_scale_and_details() {
+            var definition = schema.schemaFor("net")
+            verify(definition && definition.sections)
+            var sections = definition.sections
+            var keys = []
+            for (var i = 0; i < sections.length; i++) {
+                var fields = sections[i].fields || []
+                for (var j = 0; j < fields.length; j++) keys.push(fields[j].key)
+            }
+            var expected = ["showHistory", "historyWindow", "showDetails", "unit",
+                            "scaleMode", "fixedScaleMbps", "interfaceName"]
+            for (var n = 0; n < expected.length; n++)
+                verify(keys.indexOf(expected[n]) >= 0,
+                       "missing Network config field " + expected[n])
+            var interfaceField = null
+            for (var s = 0; s < sections.length; s++) {
+                var sectionFields = sections[s].fields || []
+                for (var f = 0; f < sectionFields.length; f++)
+                    if (sectionFields[f].key === "interfaceName")
+                        interfaceField = sectionFields[f]
+            }
+            verify(interfaceField !== null)
+            compare(interfaceField.type, "select")
+            compare(interfaceField.options.length, 1)
+            compare(interfaceField.options[0].label, "Aggregate physical links")
+        }
+
+        function test_schema_lists_discovered_identity_and_retains_offline_selection() {
+            var definition = schema.schemaFor("net", {
+                net_interfaces: [
+                    { name: "enp1s0", friendly_name: "Desk Ethernet",
+                      category: "physical", link_state: "up", speed_mbps: 2500 },
+                    { name: "wg0", friendly_name: "", category: "vpn",
+                      link_state: "unknown", speed_mbps: null }
+                ]
+            }, "old0")
+            var field = null
+            for (var i = 0; i < definition.sections.length; i++) {
+                var fields = definition.sections[i].fields || []
+                for (var j = 0; j < fields.length; j++)
+                    if (fields[j].key === "interfaceName") field = fields[j]
+            }
+            verify(field !== null)
+            compare(field.options.length, 4)
+            compare(field.options[1].label,
+                    "Desk Ethernet (enp1s0) · physical · up · 2500 Mbps")
+            compare(field.options[2].label, "wg0 · vpn · unknown")
+            compare(field.options[3].label, "Offline interface (old0)")
+        }
+
+        function test_history_header_names_duration_scale_and_directions() {
+            var w = h.item
+            feed(1000000, 250000)
+            feed(2000000, 500000)
+            compare(w.historyLabel, "2 minutes")
+            verify(w.graphScaleLabel.indexOf("Auto ceiling") === 0)
+            verify(findText("2 MINUTES THROUGHPUT") !== null)
+            verify(findText("↓ Download") !== null)
+            h.storeCtl.patchSettings("test-instance", {
+                scaleMode: "fixed", fixedScaleMbps: 1000
+            })
+            verify(w.graphScaleLabel.indexOf("Fixed ceiling") === 0)
         }
 
         // ── Universal appearance keys on WidgetChrome ────────────────────────
@@ -385,7 +603,9 @@ Item {
         function rateTextOf(host) { return textStarting(host, "↓ ") }
         function peakTextOf(host) { return textStarting(host, "peak ↓") }
         // The outer GridLayout: the sparkline Canvas is its direct child.
-        function outerLayOf(host) { var cv = findCanvas(host); return cv ? cv.parent : null }
+        function outerLayOf(host) {
+            return findIn(host, function (o) { return o.objectName === "netOuterLayout" })[0] || null
+        }
 
         // The overlay is a size class like any other, and its box is the one it is
         // actually given. This is the ONLY shape that catches a mode-keyed literal:

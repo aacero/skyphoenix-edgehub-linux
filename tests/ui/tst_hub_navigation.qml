@@ -12,6 +12,7 @@ import "../../ui/qml" as App
 // COVERS: fn:Dashboard.appendPreset, fn:Dashboard.goToPageExternal
 // COVERS: fn:Dashboard.goToPage, fn:Dashboard._applyWant
 // COVERS: fn:main.requestHubPage, fn:main.hubCurrentPage
+// COVERS: fn:main.applyExternalUiState
 //
 // Honest caveat: qmltestrunner runs offscreen with no Wayland compositor, so its
 // relayout timing differs from the device - this may not force the exact snap, but
@@ -116,6 +117,50 @@ Item {
             tryCompare(sw, "currentIndex", 2, 3000)
             compare(win.hubCurrentPage(), 2,
                     "hubCurrentPage reports the page reached through the shell API")
+        }
+
+        function test_external_ui_state_property_reloads_the_live_dashboard() {
+            var s = store(), sw = swipe()
+            s.load("blank")
+            var propertyPush = JSON.stringify({
+                version: 1,
+                appearance: { mode: "light", themeMode: "light" },
+                settings: {},
+                pages: [
+                    { name: "Pushed one", tiles: [
+                        { id: "pushed-clock", type: "clock", size: "1x1" }
+                    ] },
+                    { name: "Pushed two", tiles: [
+                        { id: "pushed-moon", type: "moon", size: "1x1" }
+                    ] }
+                ]
+            })
+            win.externalUiState = propertyPush
+            tryVerify(function () {
+                return s.pageCount() === 2
+                    && s.pages()[0].name === "Pushed one"
+                    && s.pages()[1].name === "Pushed two"
+                    && sw.count === 2
+            }, 3000, "the C++-facing shell property reached Dashboard.applyExternalState")
+
+            var methodPush = JSON.stringify({
+                version: 1,
+                appearance: { mode: "dark", themeMode: "midnight" },
+                settings: {},
+                pages: [
+                    { name: "Direct push", tiles: [
+                        { id: "direct-quote", type: "quote", size: "1x1" }
+                    ] }
+                ]
+            })
+            verify(win.applyExternalUiState(methodPush),
+                   "the direct C++ bridge method found the live Dashboard")
+            tryVerify(function () {
+                return s.pageCount() === 1
+                    && s.pages()[0].name === "Direct push"
+                    && s.pages()[0].tiles[0].id === "direct-quote"
+                    && sw.count === 1
+            }, 3000, "the direct C++ bridge method repainted the running dashboard")
         }
 
         // The bug: after adding pages the view must LAND on the new page and STAY -
