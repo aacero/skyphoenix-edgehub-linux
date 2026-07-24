@@ -139,6 +139,16 @@ class TestKillSwitch(unittest.TestCase):
         self.assertTrue(led.aborted)
         self.assertIn("real input-device activity", led.abort_reason)
 
+    def test_user_event_before_first_emit_has_honest_diagnostic(self):
+        led = input_guard.IdleLedger(attrib_window=input_guard.ATTRIB_WINDOW)
+        led.arm()
+        led.on_resumed(ts=1000.0)
+        self.assertTrue(led.aborted)
+        self.assertEqual(
+            led.abort_reason,
+            "real input-device activity before the first synthetic event",
+        )
+
     def test_event_just_after_attribution_window_aborts(self):
         led = input_guard.IdleLedger(attrib_window=input_guard.ATTRIB_WINDOW)
         led.arm()

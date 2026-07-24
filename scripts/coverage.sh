@@ -98,7 +98,30 @@ fi
 echo "==> C++ coverage (gcovr)"
 HAVE_GCNO=0
 FRESH_GCDA=0
-if [ -d "$CPP_BUILD_DIR" ] && find "$CPP_BUILD_DIR" -name '*.gcno' -print -quit 2>/dev/null | grep -q .; then
+CPP_INSTRUMENTED=0
+if [ -f "$CPP_BUILD_DIR/CMakeCache.txt" ] \
+        && grep -Fxq 'XENEON_COVERAGE:BOOL=ON' "$CPP_BUILD_DIR/CMakeCache.txt"; then
+    CPP_INSTRUMENTED=1
+fi
+
+# A CMake reconfigure with coverage disabled can leave old .gcno/.gcda files
+# behind. Never measure those stale counters as if they described the current
+# build. In developer mode, prepare the missing instrumented build once. Strict
+# mode is already prepared by run_release_tests.sh and must fail closed instead
+# of mutating its dedicated candidate tree here.
+if [ "$CPP_INSTRUMENTED" -eq 0 ] && [ "$STRICT_RELEASE" -eq 0 ]; then
+    echo "==> Preparing C++ coverage build (current CMake cache is not instrumented)"
+    if XENEON_COVERAGE=ON XENEON_TEST_BUILD_DIR="$CPP_BUILD_DIR" \
+            bash "$PROJECT_DIR/scripts/run_cpp_tests.sh" "$CPP_BUILD_DIR"; then
+        CPP_INSTRUMENTED=1
+    else
+        echo "    FAIL: C++ coverage build or tests failed"
+        fail=1
+    fi
+fi
+
+if [ "$CPP_INSTRUMENTED" -eq 1 ] && [ -d "$CPP_BUILD_DIR" ] \
+        && find "$CPP_BUILD_DIR" -name '*.gcno' -print -quit 2>/dev/null | grep -q .; then
     HAVE_GCNO=1
 fi
 if [ -f "$CPP_BUILD_DIR/.xeneon-release-coverage-reset" ] && \
@@ -109,7 +132,8 @@ fi
 if [ -z "$GCOVR" ]; then
     echo "    SKIP: gcovr not found (pip install --user gcovr; also checked ~/.local/bin)"
 elif [ "$HAVE_GCNO" -eq 0 ]; then
-    echo "    SKIP: no coverage build at $CPP_BUILD_DIR (run XENEON_COVERAGE=ON scripts/run_cpp_tests.sh)"
+    echo "    SKIP: no current coverage-instrumented build at $CPP_BUILD_DIR"
+    [ "$STRICT_RELEASE" -eq 1 ] && fail=1
 else
     cpp_export_rc=0
     "$GCOVR" --root "$PROJECT_DIR" \

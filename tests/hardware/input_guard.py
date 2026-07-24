@@ -70,7 +70,7 @@ class IdleLedger:
         now = time.monotonic()
         self._lock = threading.Lock()
         self.attrib_window = attrib_window
-        self.last_emit_ts = -1e9
+        self.last_emit_ts = None
         # Conservative start: assume the owner is active RIGHT NOW until the
         # compositor proves otherwise with an `idled`.
         self.last_user_activity_ts = now
@@ -92,16 +92,24 @@ class IdleLedger:
     def on_resumed(self, ts=None):
         ts = time.monotonic() if ts is None else ts
         with self._lock:
-            ours = (ts - self.last_emit_ts) <= self.attrib_window
+            ours = (
+                self.last_emit_ts is not None
+                and (ts - self.last_emit_ts) <= self.attrib_window
+            )
             self.session_active = True
             self.active_is_user = not ours
             if not ours:
                 self.last_user_activity_ts = ts
                 if self.armed and not self.aborted:
                     self.aborted = True
-                    self.abort_reason = (
-                        "real input-device activity %.3fs after the last "
-                        "synthetic event" % (ts - self.last_emit_ts))
+                    if self.last_emit_ts is None:
+                        self.abort_reason = (
+                            "real input-device activity before the first "
+                            "synthetic event")
+                    else:
+                        self.abort_reason = (
+                            "real input-device activity %.3fs after the last "
+                            "synthetic event" % (ts - self.last_emit_ts))
 
     def arm(self):
         with self._lock:
