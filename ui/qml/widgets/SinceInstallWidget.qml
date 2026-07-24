@@ -18,6 +18,15 @@ WidgetChrome {
     property int tick: 0
 
     title: "System Age"; iconName: "sinceinstall"; accentColor: theme.catSystem
+    Accessible.role: Accessible.StaticText
+    Accessible.name: {
+        if (w.loading) return "System age, reading install history"
+        if (!w.known) return "System age unavailable"
+        var summary = w.valueText + " " + w.unitText
+        if (w.showDate)
+            summary += ", " + (w.estimated ? "earliest record " : "installed ") + w.dateText
+        return summary
+    }
 
     // Resolved from CONTEXT as `distro`. NOT declared as `property var distro`:
     // an object property shadows the context property of the same name, and
@@ -124,7 +133,10 @@ WidgetChrome {
         return Qt.formatDate(new Date(w.installEpoch * 1000), Qt.DefaultLocaleShortDate)
     }
 
-    status: (w.showDate && !w.expanded && w.known)
+    // The micro header has room for the icon and title, but not a locale-dependent
+    // exact date plus the estimation prefix. The date remains in accessibility
+    // output and appears from the next supported footprint upward.
+    status: (w.showDate && !w.micro && !w.expanded && w.known)
             ? (w.estimated ? "Est. " + w.dateText : w.dateText) : ""
 
     ColumnLayout {

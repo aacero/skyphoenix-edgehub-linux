@@ -352,6 +352,13 @@ Item {
             verify(details !== null, "system-age provenance card exists")
             compare(details.visible, it.richTile,
                     "information-rich tiles earn date confidence and source context")
+            if (it.micro) {
+                compare(it.status, "",
+                        "micro omits the exact locale date instead of truncating header content")
+            } else {
+                verify(it.status.length > 0,
+                       "larger supported sizes retain the configured exact date")
+            }
         }
 
         function test_sia_b_ageunit_data() {

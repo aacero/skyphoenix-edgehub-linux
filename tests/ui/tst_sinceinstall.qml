@@ -167,6 +167,20 @@ Item {
             compare(w.status, "", "toggled off -> no date in the header")
         }
 
+        function test_micro_hides_secondary_date_without_truncation() {
+            var w = h.item
+            root.width = 348
+            root.height = 409
+            w.sizeClass = "compact"
+            w.distroOverride = fakeDistro(agedInfo(10))
+            set("showDate", true)
+            compare(w.micro, true, "test uses the supported portrait micro footprint")
+            compare(w.status, "",
+                    "micro deliberately omits the locale-dependent date instead of truncating it")
+            verify(w.Accessible.name.indexOf(w.dateText) >= 0,
+                   "the exact date remains available to assistive technology")
+        }
+
         // With no date there is nothing to put in the header, whatever the toggle.
         function test_showDate_shows_nothing_when_the_date_is_unknown() {
             var w = h.item
