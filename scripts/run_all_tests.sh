@@ -147,10 +147,11 @@ else
     run_suite "Rust (cargo test)" bash -c 'cd "'"$PROJECT_DIR"'/core" && cargo test'
 fi
 
-# 3. C++ ctest. A developer run keeps the historical fast path (reuse an
-# existing test build or report SKIP). A release run ALWAYS configures, builds,
-# and executes with QA hooks, and ctest is made verbose so an internal QSKIP is
-# visible to the strict output scanner.
+# 3. C++ ctest. Both modes configure and build before testing. Reusing an
+# existing ctest tree without rebuilding can run a Hub from an unrelated commit
+# in the runtime tier while presenting results under the current source SHA.
+# Release mode additionally uses a clean dedicated tree and makes ctest verbose
+# so an internal QSKIP is visible to the strict output scanner.
 if [ "$release_gate" -eq 1 ]; then
     # Release mode never trusts CMAKE/CTEST command overrides: `CTEST=true`
     # would otherwise turn the entire C++ tier into a zero-work success.
@@ -164,34 +165,9 @@ if [ "$release_gate" -eq 1 ]; then
             XENEON_RELEASE_GATE=1 \
             XENEON_TEST_BUILD_DIR="$test_build_dir" \
             bash "$PROJECT_DIR/scripts/run_cpp_tests.sh" "$test_build_dir"
-elif [ -d "$test_build_dir" ] && [ -f "$test_build_dir/CTestTestfile.cmake" ]; then
-    # The two smoke tests QSKIP unless the tree was configured with
-    # -DXENEON_QA_HOOKS=ON, because XENEON_GRAB is compiled out otherwise. A
-    # default build therefore reports 21/21 green having launched NEITHER real
-    # binary. Silent skips are how a suite rots, so say it out loud.
-    if ! grep -q '^XENEON_QA_HOOKS:BOOL=ON' "$test_build_dir/CMakeCache.txt" 2>/dev/null; then
-        echo ""
-        echo "!! WARNING: $test_build_dir configured WITHOUT -DXENEON_QA_HOOKS=ON."
-        echo "!! tst_smoke_hub and tst_smoke_manager will QSKIP - ctest will report"
-        echo "!! green having never launched the real hub or manager binary."
-        echo "!! Reconfigure: cmake -B '$test_build_dir' -DXENEON_BUILD_TESTS=ON -DXENEON_QA_HOOKS=ON"
-        echo ""
-        names+=("C++ smoke hooks (XENEON_QA_HOOKS)")
-        if [ "${XENEON_ALLOW_SMOKE_SKIP:-0}" = "1" ]; then
-            results+=("SKIP")
-        else
-            results+=("FAIL")
-        fi
-    else
-        names+=("C++ smoke hooks (XENEON_QA_HOOKS)")
-        results+=("PASS")
-    fi
-    run_suite "C++ (ctest)" ctest --test-dir "$test_build_dir" --output-on-failure
 else
-    echo ""
-    echo "==> C++ (ctest): SKIPPED (no test tree at $test_build_dir; run scripts/run_cpp_tests.sh)"
-    names+=("C++ (ctest)")
-    results+=("SKIP")
+    run_suite "C++ (configure + build + ctest)" \
+        bash "$PROJECT_DIR/scripts/run_cpp_tests.sh" "$test_build_dir"
 fi
 
 # 4. QML GUI tests. C++ configuration runs first so strict mode reuses the
