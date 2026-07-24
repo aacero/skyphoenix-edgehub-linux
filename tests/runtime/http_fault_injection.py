@@ -102,8 +102,26 @@ Item {{
 
 
 def main() -> int:
-    runner = shutil.which("qmltestrunner")
-    if not runner:
+    configured = os.environ.get("XENEON_QMLTESTRUNNER", "")
+    candidates = [
+        Path(configured) if configured else None,
+        REPO / "build" / "xeneon-qmltestrunner",
+        Path("/usr/lib/qt6/bin/qmltestrunner"),
+    ]
+    on_path = shutil.which("qmltestrunner")
+    if on_path:
+        candidates.append(Path(on_path))
+    runner = next(
+        (
+            str(candidate)
+            for candidate in candidates
+            if candidate is not None
+            and candidate.is_file()
+            and os.access(candidate, os.X_OK)
+        ),
+        None,
+    )
+    if runner is None:
         print("SKIP: qmltestrunner is unavailable")
         return 77
 
