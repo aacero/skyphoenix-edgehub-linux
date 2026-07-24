@@ -88,6 +88,7 @@ signals:
     void positionChanged();
     void discoveryChanged();
     void preferredPlayerChanged();
+    void transportError(const QString& action, const QString& message);
 
 private slots:
     void onPropertiesChanged(const QString& iface, const QVariantMap& changed,

@@ -290,7 +290,12 @@ void MprisBridge::poll() {
 }
 
 void MprisBridge::callPlayer(const char* method) {
-    if (m_service.isEmpty())
+    const QString methodName = QString::fromLatin1(method);
+    if (m_service.isEmpty() || !m_available)
+        return;
+    if ((methodName == QStringLiteral("PlayPause") && !m_canPlayPause) ||
+        (methodName == QStringLiteral("Next") && !m_canGoNext) ||
+        (methodName == QStringLiteral("Previous") && !m_canGoPrevious))
         return;
     // Fire-and-forget transport control (never blocks the GUI thread), but log a
     // failed call so a broken PlayPause/Next/Previous isn't entirely invisible.
@@ -298,13 +303,14 @@ void MprisBridge::callPlayer(const char* method) {
         m_service, QString::fromLatin1(kPath), QString::fromLatin1(kPlayerIface),
         QString::fromLatin1(method));
     auto* w = new QDBusPendingCallWatcher(m_bus.asyncCall(msg), this);
-    const QString methodName = QString::fromLatin1(method);
     connect(w, &QDBusPendingCallWatcher::finished, this,
-            [methodName](QDBusPendingCallWatcher* self) {
+            [this, methodName](QDBusPendingCallWatcher* self) {
         self->deleteLater();
         QDBusPendingReply<> reply = *self;
-        if (reply.isError())
+        if (reply.isError()) {
             qWarning() << "MprisBridge:" << methodName << "failed:" << reply.error().message();
+            emit transportError(methodName, reply.error().message());
+        }
     });
     // Reflect the new state promptly.
     QTimer::singleShot(200, this, [this] { refresh(); });
@@ -322,7 +328,23 @@ void MprisBridge::seekFraction(double fraction) {
         m_service, QString::fromLatin1(kPath), QString::fromLatin1(kPlayerIface),
         QStringLiteral("Seek"));
     msg << offsetUs;
-    m_bus.asyncCall(msg);
+    const QString service = m_service;
+    const qlonglong previousUs = m_positionUs;
+    auto* w = new QDBusPendingCallWatcher(m_bus.asyncCall(msg), this);
+    connect(w, &QDBusPendingCallWatcher::finished, this,
+            [this, service, previousUs, targetUs](QDBusPendingCallWatcher* self) {
+        self->deleteLater();
+        QDBusPendingReply<> reply = *self;
+        if (!reply.isError())
+            return;
+        const QString message = reply.error().message();
+        qWarning() << "MprisBridge: Seek failed:" << message;
+        emit transportError(QStringLiteral("Seek"), message);
+        if (service == m_service && m_positionUs == targetUs) {
+            m_positionUs = previousUs;
+            emit positionChanged();
+        }
+    });
     m_positionUs = targetUs;
     emit positionChanged();
     QTimer::singleShot(200, this, [this] { fetchPosition(); });

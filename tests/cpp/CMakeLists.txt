@@ -185,6 +185,12 @@ add_qt_test(mpris_state SOURCES "${APP_SRC}/mpris_state.cpp" "${APP_SRC}/mpris_b
 set_property(TEST mpris_state APPEND PROPERTY
     ENVIRONMENT "DBUS_SESSION_BUS_ADDRESS=unix:path=${SOCK_ROOT}/mpris_state/nonexistent-bus")
 
+# Real asynchronous MPRIS conversation against isolated mock players on a
+# private D-Bus. It cannot discover or control the developer's actual players.
+add_qt_test(mpris_bridge DBUS_SESSION
+            SOURCES "${APP_SRC}/mpris_state.cpp" "${APP_SRC}/mpris_bridge.cpp"
+            LINK Qt6::DBus)
+
 # ── Smoke: launch the REAL binaries offscreen (main()/screen match/thread lifecycle;
 #    doubles as the XENEON_GRAB UAF regression) ──
 add_executable(smoke_hub tst_smoke_hub.cpp)
