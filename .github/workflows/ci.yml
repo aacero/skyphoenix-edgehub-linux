@@ -340,7 +340,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake g++ kwin-wayland xwayland libxkbcommon0 \
             libgl1-mesa-dev \
-            fonts-dejavu-core fontconfig ffmpeg
+            fonts-dejavu-core fontconfig ffmpeg python3-pil
           sudo fc-cache -f
       - name: Build the resource-aware QuickTest runner
         # Stock qmltestrunner has no product QRCs, so every qrc:/ icon,
@@ -362,6 +362,8 @@ jobs:
           # can exhaust the per-file wall clock despite making forward progress.
           LP_NUM_THREADS: "1"
         run: bash tests/gui/run_gui_tests.sh -j4
+      - name: Compare reviewed visual baselines
+        run: python3 scripts/visual_baselines.py compare
       - name: Upload GUI evidence
         if: always()
         uses: actions/upload-artifact@v7

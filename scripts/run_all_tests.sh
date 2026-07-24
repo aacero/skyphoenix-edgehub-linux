@@ -348,9 +348,14 @@ else
        { [ "$release_gate" -eq 0 ] && \
             bash "$PROJECT_DIR/tests/gui/run_gui_tests.sh" -j"${XENEON_GUI_JOBS:-8}"; }; then
         results+=("PASS")
+        run_suite "Reviewed visual baselines (30 widgets + 20 presets)" \
+            python3 "$PROJECT_DIR/scripts/visual_baselines.py" compare
     else
         results+=("FAIL")
         echo "--- QML compositor suite: FAIL"
+        names+=("Reviewed visual baselines (30 widgets + 20 presets)")
+        results+=("NOT RUN")
+        echo "--- Visual baselines: NOT RUN (compositor evidence failed)"
     fi
 fi
 
