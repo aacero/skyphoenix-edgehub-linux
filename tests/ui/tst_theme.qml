@@ -441,6 +441,18 @@ Item {
         // the next applyTheme() would silently rewrite everything already stored.
         function _snap(c) { return Qt.rgba(c.r, c.g, c.b, c.a) }
 
+        function _themeModes() {
+            return theme.themeCatalog.map(function (entry) { return entry.k })
+        }
+
+        function _pageSurfaces() {
+            return [
+                { name: "backgroundColor", color: _snap(theme.backgroundColor) },
+                { name: "backgroundColor2", color: _snap(theme.backgroundColor2) },
+                { name: "backgroundColor3", color: _snap(theme.backgroundColor3) }
+            ]
+        }
+
         // Sanity-check the contrast maths itself against known-exact endpoints,
         // so a broken formula cannot silently pass every legibility test below.
         function test_contrast_helper_is_correct() {
@@ -454,6 +466,73 @@ Item {
                          "50% red over black flattens to half-intensity red")
             fuzzyCompare(_over(Qt.rgba(1, 0, 0, 0.5), _c("#000000")).a, 1.0, 0.001,
                          "…and the composite is opaque")
+        }
+
+        // Systemic numeric legibility gate. It is tied to the selectable
+        // catalogues rather than a hand-maintained theme subset, so a newly
+        // added mode or accent enters the matrix automatically.
+        function test_all_catalog_text_tokens_meet_wcag_aa() {
+            var modes = _themeModes()
+            compare(modes.length, 29, "all selectable themes enter the contrast matrix")
+            for (var m = 0; m < modes.length; m++) {
+                var mode = modes[m]
+                theme.applyTheme(mode)
+                var pages = _pageSurfaces()
+                for (var p = 0; p < pages.length; p++) {
+                    var page = pages[p]
+                    var pagePrimary = _contrast(theme.textPrimary, page.color)
+                    var pageSecondary = _contrast(theme.textSecondary, page.color)
+                    verify(pagePrimary >= 4.5,
+                           mode + "." + page.name + " primary=" + pagePrimary.toFixed(2)
+                           + ":1, needs 4.5:1")
+                    verify(pageSecondary >= 4.5,
+                           mode + "." + page.name + " secondary=" + pageSecondary.toFixed(2)
+                           + ":1, needs 4.5:1")
+                    var glassValues = [0.0, 1.0]
+                    for (var g = 0; g < glassValues.length; g++) {
+                        theme.glassOpacity = glassValues[g]
+                        var card = _over(theme.cardFill(), page.color)
+                        var cardPrimary = _contrast(theme.textPrimary, card)
+                        var cardSecondary = _contrast(theme.textSecondary, card)
+                        verify(cardPrimary >= 4.5,
+                               mode + "." + page.name + " card primary at glass="
+                               + glassValues[g] + " is " + cardPrimary.toFixed(2)
+                               + ":1, needs 4.5:1")
+                        verify(cardSecondary >= 4.5,
+                               mode + "." + page.name + " card secondary at glass="
+                               + glassValues[g] + " is " + cardSecondary.toFixed(2)
+                               + ":1, needs 4.5:1")
+                    }
+                }
+            }
+        }
+
+        function test_all_catalog_accents_meet_nontext_contrast() {
+            var modes = _themeModes()
+            var accents = Object.keys(theme.accentPresets).sort()
+            compare(accents.length, 29, "all selectable accents enter the contrast matrix")
+            for (var m = 0; m < modes.length; m++) {
+                var mode = modes[m]
+                theme.applyTheme(mode)
+                var pages = _pageSurfaces()
+                for (var a = 0; a < accents.length; a++) {
+                    var accentName = accents[a]
+                    theme.applyAccent(accentName)
+                    for (var p = 0; p < pages.length; p++) {
+                        var page = pages[p]
+                        var glassValues = [0.0, 1.0]
+                        for (var g = 0; g < glassValues.length; g++) {
+                            theme.glassOpacity = glassValues[g]
+                            var card = _over(theme.cardFill(), page.color)
+                            var ratio = _contrast(theme.accent, card)
+                            verify(ratio >= 3.0,
+                                   mode + "/" + accentName + " on " + page.name
+                                   + " at glass=" + glassValues[g] + " is "
+                                   + ratio.toFixed(2) + ":1, needs 3:1")
+                        }
+                    }
+                }
+            }
         }
 
         // Each mode must paint its OWN background - the dark default (#0D1117) is
