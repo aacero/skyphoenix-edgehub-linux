@@ -45,6 +45,7 @@ Item {
             for (var k in s) delete s[k]
             h.storeCtl._touchSettings()
             h.item.distroOverride = null
+            h.item.sizeClass = "tall"
             h.expanded = false
         }
         function set(k, v) { h.storeCtl.setSetting("test-instance", k, v) }
