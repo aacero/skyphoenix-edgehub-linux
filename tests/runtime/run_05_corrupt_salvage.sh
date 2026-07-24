@@ -13,16 +13,9 @@
 #   * first_run_complete survives salvage - the first-run wizard is NOT
 #     re-triggered by corruption;
 #   * the hub recovers to a WORKING persisted state: the post-run config.toml
-#     is valid TOML with a parseable ui_state.
-#
-# KNOWN, DELIBERATELY-NOT-ASSERTED LIMIT: salvage_partial_config() recovers the
-# `ui_state` line only when it is a double-quoted TOML string, but the hub
-# itself serializes ui_state as a SINGLE-QUOTED literal - so on today's code
-# the dashboard LAYOUT does not survive into the live config (it is re-seeded;
-# the only copy of the user's layout is the .corrupt-*.bak). That is a product
-# gap in core/src/config.rs, outside this scenario's ownership; asserting
-# layout survival here would be red on a guarantee the core never made. The
-# assertions above are the ones config.rs actually provides.
+#     is valid TOML with a parseable ui_state;
+#   * the Hub-authored single-quoted ui_state is salvaged, so the user's page
+#     and tile survive in the live recovered config, not only in the backup.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -87,6 +80,8 @@ if [ -z "$doc" ]; then
 else
     frc="$(rt_json "$doc" 'd["first_run_complete"]')"
     has_ui="$(rt_json "$doc" 'd["ui_state"] is not None')"
+    page_name="$(rt_json "$doc" 'd["ui_state"]["pages"][0]["name"] if d["ui_state"] else ""')"
+    tile_type="$(rt_json "$doc" 'd["ui_state"]["pages"][0]["tiles"][0]["type"] if d["ui_state"] else ""')"
     if [ "$frc" = "True" ]; then
         echo "  [wizard] PASS: first_run_complete survived salvage (wizard not re-triggered)"
     else
@@ -99,8 +94,14 @@ else
         echo "  [recover] FAIL: post-salvage config has no parseable ui_state"
         fail=1
     fi
+    if [ "$page_name" = "Mine" ] && [ "$tile_type" = "clock" ]; then
+        echo "  [layout] PASS: Hub-authored literal ui_state survived into the live config"
+    else
+        echo "  [layout] FAIL: salvaged layout was reseeded (page=$page_name tile=$tile_type)"
+        fail=1
+    fi
 fi
 
 echo
 if [ "$fail" -ne 0 ]; then echo "RESULT: FAILURE"; exit 1; fi
-echo "RESULT: SUCCESS - corruption is backed up, survives no data destruction, and the hub recovers"
+echo "RESULT: SUCCESS - corruption is backed up and the Hub-authored layout recovers"

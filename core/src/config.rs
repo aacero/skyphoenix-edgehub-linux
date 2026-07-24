@@ -389,15 +389,27 @@ fn salvage_partial_config(contents: &str) -> AppConfig {
                 }
             }
             "ui_state" => {
-                let v = value.trim_matches('"');
-                if !v.is_empty() {
-                    config.ui_state = Some(v.to_string());
+                // Parse the value as a standalone TOML string instead of
+                // stripping one quote style. The Hub normally serializes JSON
+                // as a single-quoted literal, while older and hand-authored
+                // configs may use a double-quoted basic string.
+                if let Some(v) = salvage_toml_string(value).filter(|v| !v.is_empty()) {
+                    config.ui_state = Some(v);
                 }
             }
             _ => {}
         }
     }
     config
+}
+
+fn salvage_toml_string(value: &str) -> Option<String> {
+    let snippet = format!("value = {value}");
+    toml::from_str::<toml::Value>(&snippet)
+        .ok()?
+        .get("value")?
+        .as_str()
+        .map(str::to_owned)
 }
 
 /// Save configuration to the default XDG config path.
@@ -824,6 +836,17 @@ broken = = toml
         let cfg = salvage_partial_config(corrupt);
         assert!(!cfg.first_run_complete);
         assert_eq!(cfg.ui_state.as_deref(), Some("LAYOUT_KEEP"));
+    }
+
+    #[test]
+    fn salvage_recovers_hub_authored_literal_ui_state() {
+        let ui_state = r#"{"pages":[{"name":"Mine","tiles":[{"type":"clock"}]}]}"#;
+        let corrupt = format!(
+            "first_run_complete = true\nui_state = '{ui_state}'\n[display\n"
+        );
+        let cfg = salvage_partial_config(&corrupt);
+        assert!(cfg.first_run_complete);
+        assert_eq!(cfg.ui_state.as_deref(), Some(ui_state));
     }
 
     #[test]

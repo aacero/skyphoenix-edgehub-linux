@@ -23,7 +23,7 @@ XENEON_HUB=/usr/bin/xeneon-edge-hub bash tests/runtime/run_04_secret_refs.sh
 | 02 | `run_02_org_policy.sh` | via `XENEON_POLICY_PATH`: a forced preset replaces the session layout **without touching the user's config.toml** (byte-identical); a pinned `net_offline` blocks all egress while the user layout demonstrably runs; editing `appearance.netOffline` on disk between launches cannot lift the pin. A no-policy control run proves both observation channels first | 33 s |
 | 03 | `run_03_update_check_off.sh` | on a default config the update check stays off: no enabled `updateCheck` key in a **hub-authored** save, no check activity in the log (proxy); runs `packaging/ci/no-egress.sh default` as the real zero-egress assertion when the box has `strace` + unprivileged userns, and prints which level ran | 10 s (+~15 s with no-egress) |
 | 04 | `run_04_secret_refs.sh` | an `${env:VAR}` Bearer-token ref is resolved and *used* (the loopback sink sees `Authorization: Bearer <value>` - the non-vacuousness guard), yet after a real save round-trip the config carries only the REFERENCE and the resolved value appears nowhere under the config dir | 9 s |
-| 05 | `run_05_corrupt_salvage.sh` | a torn-write config is preserved byte-for-byte under a timestamped `config.toml.corrupt-*.bak`, the canonical `config.toml.bak` is not clobbered, the hub stays up, `first_run_complete` survives (no wizard re-trigger), and the hub recovers to a valid persisted state | 8 s |
+| 05 | `run_05_corrupt_salvage.sh` | a torn-write config is preserved byte-for-byte under a timestamped `config.toml.corrupt-*.bak`, the canonical `config.toml.bak` is not clobbered, the hub stays up, `first_run_complete` survives, and the Hub-authored page and tile recover into a valid persisted state | 8 s |
 | 06 | `run_06_reset_flags.sh` | the destructive/non-destructive pair: `--reset-wizard` re-triggers the wizard (observed behaviorally - the user's polling tile does not run) while leaving `config.toml` byte-identical and `first_run_complete` true; `--reset` discards the user's layout. A no-flag control run proves the channel first | 26 s |
 | 07 | `run_07_live_push_single_writer.sh` | the single-writer rule (B5): over the REAL control socket the hub serves its live state, and a pushed layout is applied AND persisted *by the hub* - present in `config.toml` the instant the ack is read, and still there after a restart (SIGKILLed, so no shutdown save can fake it). A rejected (empty) push writes nothing | 12 s |
 | 08 | `run_08_page_dedup_roundtrip.sh` | duplicate page names (the real "two Page 5 tabs" bug) are reconciled on a real load→save trip: persisted names are unique + deterministic, no tile is merged or dropped, and the names round-trip UNCHANGED on a second (re-armed) launch - the rename must not creep every boot | 17 s |
@@ -87,14 +87,6 @@ egress observer: per-request JSON log incl. the Authorization header),
   what loads afterwards) rather than the mechanism - a future "back up before
   reset" would be an improvement and must not fail a test that pinned today's
   file-removal behavior.
-- **Known product gap (deliberately not asserted).** `salvage_partial_config()`
-  in `core/src/config.rs` recovers `ui_state` only from a double-quoted TOML
-  string, but the hub itself serializes it as a single-quoted *literal* - so
-  after corruption the layout is re-seeded rather than salvaged (the user's
-  layout survives only in the `.corrupt-*.bak`). Scenario 05 asserts the
-  guarantees config.rs actually makes; fixing the quote handling would let it
-  also assert layout survival.
-
 ## Gotchas (learned the hard way - see the script/helper comments)
 
 - **Config is nested TOML.** `[display]`/`[theme]`/`[startup]`/`[widgets]` are
