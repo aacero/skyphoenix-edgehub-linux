@@ -852,8 +852,9 @@ broken = = toml
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
         let ui_state = r#"{"pages":[{"name":"Mine","tiles":[{"type":"focus"}]}]}"#;
-        let truncated =
-            format!("schema_version = 1\nfirst_run_complete = true\nui_state = '{ui_state}'\n[display");
+        let truncated = format!(
+            "schema_version = 1\nfirst_run_complete = true\nui_state = '{ui_state}'\n[display"
+        );
         fs::write(&path, &truncated).unwrap();
 
         let loaded = load_config_from(&path).unwrap();
