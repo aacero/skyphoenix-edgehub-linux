@@ -567,6 +567,21 @@ Item {
                       "landed on the new page for " + d.tag)
             wait(900)                              // outlast the deferred relayout (snap-back)
             compare(swipe.currentIndex, count, "STAYED on the appended screen for " + d.tag)
+            // Enterprise and Remote Work contain End of Day. Without using its
+            // existing test clock seam, the reviewed image changes between
+            // "Starts later", active progress, and "Complete" according to the
+            // developer's wall clock. Pin it after the configured workday so a
+            // midnight audit compares the same UI state as an evening audit.
+            var eods = G.collectPred(dash, function (n) {
+                try {
+                    return n && n.nowOverride !== undefined
+                           && n.startHour !== undefined && n.endHour !== undefined
+                           && typeof n.workBounds === "function"
+                } catch (e) { return false }
+            })
+            for (var i = 0; i < eods.length; i++)
+                eods[i].nowOverride = new Date(2026, 6, 20, 18, 0, 0, 0)
+            if (eods.length) wait(60)
             snap(dash, "append_" + d.tag)
         }
 
