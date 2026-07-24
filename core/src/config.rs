@@ -841,9 +841,7 @@ broken = = toml
     #[test]
     fn salvage_recovers_hub_authored_literal_ui_state() {
         let ui_state = r#"{"pages":[{"name":"Mine","tiles":[{"type":"clock"}]}]}"#;
-        let corrupt = format!(
-            "first_run_complete = true\nui_state = '{ui_state}'\n[display\n"
-        );
+        let corrupt = format!("first_run_complete = true\nui_state = '{ui_state}'\n[display\n");
         let cfg = salvage_partial_config(&corrupt);
         assert!(cfg.first_run_complete);
         assert_eq!(cfg.ui_state.as_deref(), Some(ui_state));
