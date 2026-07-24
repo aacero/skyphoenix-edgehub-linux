@@ -153,8 +153,13 @@ def compare_images(
     changed = 0
     squared = 0.0
     pixel_count = a.width * a.height
-    for left, right in zip(a.getdata(), b.getdata()):
-        delta = tuple(abs(x - y) for x, y in zip(left, right))
+    left_bytes = a.tobytes()
+    right_bytes = b.tobytes()
+    for offset in range(0, len(left_bytes), 3):
+        delta = tuple(
+            abs(left_bytes[offset + channel] - right_bytes[offset + channel])
+            for channel in range(3)
+        )
         if max(delta) > channel_tolerance:
             changed += 1
         squared += sum(value * value for value in delta) / 3.0
