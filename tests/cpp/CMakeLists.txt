@@ -114,6 +114,15 @@ add_qt_test(autostart       SOURCES "${APP_SRC}/autostart.cpp")
 add_qt_test(license)
 add_qt_test(notification_bridge DBUS_SESSION
             SOURCES "${APP_SRC}/notification_bridge.h" LINK Qt6::DBus)
+
+# Opt-in manual smoke target. It is intentionally excluded from the default
+# build and from CTest because executing it creates a real desktop notification.
+add_executable(notification_desktop_smoke EXCLUDE_FROM_ALL
+    notification_desktop_smoke.cpp)
+set_target_properties(notification_desktop_smoke PROPERTIES AUTOMOC ON)
+target_include_directories(notification_desktop_smoke PRIVATE "${APP_SRC}")
+target_link_libraries(notification_desktop_smoke PRIVATE Qt6::Core Qt6::DBus)
+
 add_qt_test(shutdown_flush)
 
 # ── Unit (event loop) ──
