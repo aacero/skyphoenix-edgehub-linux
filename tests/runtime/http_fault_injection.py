@@ -141,7 +141,7 @@ def main() -> int:
     )
     try:
         result = subprocess.run(
-            [runner, "-input", str(test_file), "-o", "-", "txt"],
+            [runner, "-input", str(test_file), "-o", "-,txt"],
             cwd=REPO,
             env=environment,
             capture_output=True,
