@@ -115,6 +115,15 @@ Item {
         }
         return null
     }
+    function heroText(top) {
+        var all = collect(top, [])
+        for (var i = 0; i < all.length; i++) {
+            var o = all[i]
+            if (o !== top && o.objectName === "eodHeroTime" && effVisible(o, top))
+                return o
+        }
+        return null
+    }
     // All PillButton-like nodes (declare a string `label`).
     function pills(top) {
         var out = []
@@ -507,8 +516,9 @@ Item {
             var w = hEod.item
             patch({ startHour: 9, endHour: 17, progressStyle: "bar" })
             w.accentName = "pink"
-            var t = visibleTextEq(w, w.remaining)
+            var t = heroText(w)
             verify(t !== null, "found the visible remaining text (bar)")
+            compare(t.text, w.remaining, "bar hero carries the remaining-time value")
             compare(String(t.color), String(w.effAccent),
                     "bar-mode time text is recoloured by effAccent")
         }
@@ -517,8 +527,9 @@ Item {
             var w = hEod.item
             patch({ startHour: 9, endHour: 17, progressStyle: "ring" })
             w.accentName = "pink"
-            var t = visibleTextEq(w, w.remaining)
+            var t = heroText(w)
             verify(t !== null, "found the visible ring-centre remaining text")
+            compare(t.text, w.remaining, "ring hero carries the remaining-time value")
             compare(String(t.color), String(w.effAccent),
                     "ring-mode time text should also honour effAccent")
         }
@@ -926,8 +937,8 @@ Item {
             // property-only check. Both boxes are non-micro, so the old
             // `micro ? 64 : 52` else branch gives BOTH 52 - only the box-derived
             // term separates them.
-            var th = visibleTextEq(tall, tall.remaining)
-            var bh = visibleTextEq(base, base.remaining)
+            var th = heroText(tall)
+            var bh = heroText(base)
             verify(th && bh, "both hero times resolve")
             verify(th.font.pixelSize > bh.font.pixelSize,
                    "the hero time follows the room (" + th.font.pixelSize
@@ -982,8 +993,9 @@ Item {
                    + land.ringPx.toFixed(1) + ")")
 
             // RENDERED, not merely derived: the Text actually carries it.
-            var t = visibleTextEq(land, land.remaining)
+            var t = heroText(land)
             verify(t !== null, "the landscape pane's remaining time resolves")
+            compare(t.text, land.remaining, "the landscape hero carries the remaining-time value")
             compare(t.font.pixelSize, Math.round(land.remainingPx),
                     "the rendered hero is the derived size, not a re-frozen literal")
 

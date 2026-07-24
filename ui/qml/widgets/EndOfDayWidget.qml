@@ -269,6 +269,7 @@ WidgetChrome {
                 anchors.centerIn: parent; spacing: 2
                 width: Math.max(24, ringBox.width * 0.72)
                 Text { Layout.fillWidth: true
+                    objectName: w.timeInRing ? "eodHeroTime" : "eodRingPercent"
                     horizontalAlignment: Text.AlignHCenter
                     text: w.timeInRing ? w.remaining : Math.round(w.frac * 100) + "%"
                     elide: Text.ElideRight; fontSizeMode: Text.HorizontalFit
@@ -289,6 +290,7 @@ WidgetChrome {
             spacing: w.roomy ? 14 : 6        // room, not mode - see rowSpacing above
 
             Text {
+                objectName: "eodHeroTime"
                 visible: !w.timeInRing
                 Layout.fillWidth: true
                 horizontalAlignment: Text.AlignHCenter; text: w.remaining
