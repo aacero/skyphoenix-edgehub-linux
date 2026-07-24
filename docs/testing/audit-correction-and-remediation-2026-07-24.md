@@ -287,6 +287,30 @@ Coverage work must target these behaviors, not line execution. The next report
 must show line and branch coverage for each file. One real desktop notification
 and one real MPRIS transport action must also be recorded end to end.
 
+### MPRIS branch inventory before remediation
+
+The pure player-selection and metadata rules already have direct tests in
+`tst_mpris_state.cpp`. The remaining bridge branches below require observable
+transport assertions rather than additional calls to those pure helpers.
+
+| Branch or error path | Existing proof before remediation | Required observable assertion |
+|---|---|---|
+| Session bus absent | Deterministic disconnected-bus constructor test | Bridge remains unavailable, timers do not initiate discovery, and controls are no-ops |
+| ListNames succeeds or fails | Not tested | Scanning ends in both cases; a failure exposes no players and does not retain a stale selection |
+| No players, one player, and multiple players | Pure choice policy only | Available-player names and selected service follow the real asynchronous replies |
+| PlaybackStatus probe succeeds, errors, or arrives last | Pure empty-status policy only | Failed probes cannot win; selection happens only after every probe resolves |
+| Active player changes while GetAll or Position is in flight | Not tested | A late reply from the replaced service cannot overwrite metadata or position |
+| Empty service and failed GetAll | Not tested | The prior visible state is cleared once and remains unavailable without notification churn |
+| Position read succeeds or fails; poll is idle or playing | Not tested | Only a valid active-player reply updates position; idle and failed reads do not |
+| Preferred player unchanged, changed offline, or changed online | Offline storage test covers the first two | An online preference change triggers reselection and uses case-insensitive identity matching |
+| PlayPause, Next, and Previous with missing service, unavailable state, unsupported capability, success, or D-Bus error | Not tested | No unsupported call reaches D-Bus; supported calls use the exact service, path, interface, and method; errors are surfaced without blocking |
+| Seek with missing prerequisites, values below zero or above one, zero offset, success, or transport failure | Only the zero-length fraction getter is tested | Guards produce no call; bounds clamp to 0 and 1; the signed offset and optimistic position are correct; a failed call is observable |
+
+Code inspection also found a product defect: `callPlayer()` checks only whether
+a service exists. It does not enforce availability or the per-action
+capability flags exposed by the player. The bridge must enforce those guards
+even though the current QML controls are normally disabled.
+
 ## 6. Corrected remediation order
 
 ### P1A: establish a reproducible candidate
