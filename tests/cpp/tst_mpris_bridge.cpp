@@ -149,6 +149,40 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(bridge.positionMs(), 250, 2000);
     }
 
+    void samePlayerRescanRefreshesAndPlayingPollUpdatesPosition() {
+        MockPlayer player;
+        RegisteredPlayer registration(QStringLiteral("refresh"), &player);
+        QVERIFY(registration.valid());
+
+        MprisBridge bridge;
+        QTRY_VERIFY_WITH_TIMEOUT(bridge.available(), 3000);
+        QTRY_COMPARE_WITH_TIMEOUT(bridge.positionMs(), 250, 2000);
+
+        player.title = QStringLiteral("Refreshed title");
+        QVERIFY(QMetaObject::invokeMethod(&bridge, "reevaluate"));
+        QTRY_VERIFY_WITH_TIMEOUT(!bridge.scanning(), 2000);
+        QTRY_COMPARE_WITH_TIMEOUT(
+            bridge.title(), QStringLiteral("Refreshed title"), 2000);
+
+        player.positionUs = 400'000;
+        QVERIFY(QMetaObject::invokeMethod(&bridge, "poll"));
+        QTRY_COMPARE_WITH_TIMEOUT(bridge.positionMs(), qlonglong(400), 2000);
+
+        player.status = QStringLiteral("Paused");
+        QVERIFY(QMetaObject::invokeMethod(
+            &bridge, "onPropertiesChanged",
+            Q_ARG(QString, QStringLiteral("org.mpris.MediaPlayer2.Player")),
+            Q_ARG(QVariantMap, QVariantMap()),
+            Q_ARG(QStringList, QStringList())));
+        QTRY_COMPARE_WITH_TIMEOUT(bridge.status(), QStringLiteral("Paused"), 2000);
+        QTRY_COMPARE_WITH_TIMEOUT(bridge.positionMs(), qlonglong(400), 2000);
+
+        player.positionUs = 700'000;
+        QVERIFY(QMetaObject::invokeMethod(&bridge, "poll"));
+        QTest::qWait(150);
+        QCOMPARE(bridge.positionMs(), qlonglong(400));
+    }
+
     void dispatchesSupportedControlsAndClampedSeek() {
         MockPlayer player;
         RegisteredPlayer registration(QStringLiteral("controls"), &player);
@@ -296,6 +330,34 @@ private slots:
         QVERIFY(bridge.availablePlayers().isEmpty());
         QVERIFY(bridge.title().isEmpty());
         QVERIFY(changes.count() >= 2);
+    }
+
+    void invalidGetAllClearsPriorVisibleStateOnce() {
+        MockPlayer player;
+        RegisteredPlayer registration(QStringLiteral("broken"), &player);
+        QVERIFY(registration.valid());
+
+        MprisBridge bridge;
+        QSignalSpy changes(&bridge, &MprisBridge::changed);
+        QTRY_VERIFY_WITH_TIMEOUT(bridge.available(), 3000);
+        const int beforeFailure = changes.count();
+
+        registration.bus.unregisterObject(QString::fromLatin1(kPath));
+        QVERIFY(QMetaObject::invokeMethod(
+            &bridge, "onPropertiesChanged",
+            Q_ARG(QString, QStringLiteral("org.mpris.MediaPlayer2.Player")),
+            Q_ARG(QVariantMap, QVariantMap()),
+            Q_ARG(QStringList, QStringList())));
+        QTRY_VERIFY_WITH_TIMEOUT(!bridge.available(), 2000);
+        QCOMPARE(changes.count(), beforeFailure + 1);
+
+        QVERIFY(QMetaObject::invokeMethod(
+            &bridge, "onPropertiesChanged",
+            Q_ARG(QString, QStringLiteral("org.mpris.MediaPlayer2.Player")),
+            Q_ARG(QVariantMap, QVariantMap()),
+            Q_ARG(QStringList, QStringList())));
+        QTest::qWait(150);
+        QCOMPARE(changes.count(), beforeFailure + 1);
     }
 };
 
