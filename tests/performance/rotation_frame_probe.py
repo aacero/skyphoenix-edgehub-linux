@@ -46,8 +46,18 @@ WAYLAND_CALL = re.compile(
     r"->\s+(?P<surface>wl_surface[#@][0-9]+)\."
     r"(?P<call>attach|commit)\((?P<arguments>.*)\)\s*$"
 )
+WAYLAND_FRAME_REQUEST = re.compile(
+    r"^\[\s*(?P<timestamp>[0-9]+(?:\.[0-9]+)?)\].*?"
+    r"->\s+(?P<surface>wl_surface[#@][0-9]+)\.frame"
+    r"\(new id (?P<callback>wl_callback[#@][0-9]+)\)\s*$"
+)
+WAYLAND_FRAME_DONE = re.compile(
+    r"^\[\s*(?P<timestamp>[0-9]+(?:\.[0-9]+)?)\].*?"
+    r"(?<!->\s)(?P<callback>wl_callback[#@][0-9]+)\.done\(.*\)\s*$"
+)
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 ACTIVE_MODE = re.compile(r"(?P<width>[0-9]+)x(?P<height>[0-9]+)@(?P<hz>[0-9.]+)\*")
+ROTATION_OBSERVATION_MS = 700.0
 
 
 def iso_now() -> str:
@@ -84,6 +94,8 @@ class WaylandCommitObserver:
         self._events = event_path.open("x", encoding="utf-8", buffering=1)
         self._buffered: set[str] = set()
         self._commits: dict[str, list[float]] = {}
+        self._pending_callbacks: dict[str, str] = {}
+        self._frames: dict[str, list[float]] = {}
         self._error: Optional[BaseException] = None
         self._thread: Optional[threading.Thread] = None
 
@@ -106,6 +118,35 @@ class WaylandCommitObserver:
                 match = WAYLAND_CALL.match(
                     raw.decode("utf-8", errors="replace").rstrip()
                 )
+                frame_request = WAYLAND_FRAME_REQUEST.match(
+                    raw.decode("utf-8", errors="replace").rstrip()
+                )
+                frame_done = WAYLAND_FRAME_DONE.match(
+                    raw.decode("utf-8", errors="replace").rstrip()
+                )
+                if frame_request is not None:
+                    callback = frame_request.group("callback")
+                    surface = frame_request.group("surface")
+                    self._pending_callbacks[callback] = surface
+                    self._write_event(
+                        observed_ms,
+                        float(frame_request.group("timestamp")),
+                        surface,
+                        "frame_request",
+                    )
+                    continue
+                if frame_done is not None:
+                    callback = frame_done.group("callback")
+                    surface = self._pending_callbacks.pop(callback, None)
+                    if surface is not None:
+                        self._frames.setdefault(surface, []).append(observed_ms)
+                        self._write_event(
+                            observed_ms,
+                            float(frame_done.group("timestamp")),
+                            surface,
+                            "frame_done",
+                        )
+                    continue
                 if match is None:
                     continue
                 surface = match.group("surface")
@@ -118,24 +159,36 @@ class WaylandCommitObserver:
                         self._buffered.discard(surface)
                 elif surface in self._buffered:
                     self._commits.setdefault(surface, []).append(observed_ms)
-                self._events.write(
-                    json.dumps(
-                        {
-                            "observer_monotonic_ms": observed_ms,
-                            "wayland_timestamp_ms": float(match.group("timestamp")),
-                            "surface": surface,
-                            "call": call,
-                            "non_null_buffer": surface in self._buffered,
-                        },
-                        sort_keys=True,
-                    )
-                    + "\n"
+                self._write_event(
+                    observed_ms,
+                    float(match.group("timestamp")),
+                    surface,
+                    call,
+                    non_null_buffer=surface in self._buffered,
                 )
-                self._events.flush()
         except BaseException as error:
             self._error = error
 
-    def finish(self, stream) -> dict[str, list[float]]:
+    def _write_event(
+        self,
+        observed_ms: float,
+        wayland_ms: float,
+        surface: str,
+        event: str,
+        non_null_buffer: Optional[bool] = None,
+    ) -> None:
+        record = {
+            "observer_monotonic_ms": observed_ms,
+            "wayland_timestamp_ms": wayland_ms,
+            "surface": surface,
+            "event": event,
+        }
+        if non_null_buffer is not None:
+            record["non_null_buffer"] = non_null_buffer
+        self._events.write(json.dumps(record, sort_keys=True) + "\n")
+        self._events.flush()
+
+    def finish(self, stream) -> dict[str, dict[str, list[float]]]:
         if self._thread is not None:
             self._thread.join(timeout=5.0)
             if self._thread.is_alive():
@@ -148,7 +201,14 @@ class WaylandCommitObserver:
         self._events.close()
         if self._error is not None:
             raise MeasurementError(f"Wayland observer failed: {self._error}")
-        return {surface: list(values) for surface, values in self._commits.items()}
+        return {
+            "commits": {
+                surface: list(values) for surface, values in self._commits.items()
+            },
+            "frame_callbacks": {
+                surface: list(values) for surface, values in self._frames.items()
+            },
+        }
 
     def close(self) -> None:
         if not self._raw.closed:
@@ -160,7 +220,7 @@ class WaylandCommitObserver:
 def dense_commit_cluster(
     timestamps: Iterable[float],
     request_started_ms: float,
-    observation_ms: float = 900.0,
+    observation_ms: float = ROTATION_OBSERVATION_MS,
     maximum_gap_ms: float = 100.0,
 ) -> list[float]:
     """Find the first dense frame cluster following an orientation request."""
@@ -192,13 +252,13 @@ def percentile(values: list[float], fraction: float) -> float:
 
 
 def summarise_transition(
-    commits_by_surface: dict[str, list[float]],
+    frames_by_surface: dict[str, list[float]],
     request_started_ms: float,
     refresh_hz: float,
 ) -> dict:
     candidates = [
         (surface, dense_commit_cluster(timestamps, request_started_ms))
-        for surface, timestamps in commits_by_surface.items()
+        for surface, timestamps in frames_by_surface.items()
     ]
     surface, frames = max(candidates, key=lambda item: len(item[1]), default=("", []))
     if len(frames) < 3:
@@ -213,10 +273,10 @@ def summarise_transition(
     )
     return {
         "surface": surface,
-        "frame_count": len(frames),
+        "frame_callback_count": len(frames),
         "first_frame_after_request_ms": frames[0] - request_started_ms,
-        "commit_span_ms": duration,
-        "effective_commit_rate_hz": (
+        "observation_span_ms": duration,
+        "effective_callback_rate_hz": (
             (len(frames) - 1) * 1000.0 / duration if duration > 0 else None
         ),
         "interval_ms": {
@@ -229,7 +289,7 @@ def summarise_transition(
             interval > nominal_interval * 1.5 for interval in intervals
         ),
         "estimated_missed_refreshes": missed_refreshes,
-        "frame_timestamps_ms": frames,
+        "frame_callback_timestamps_ms": frames,
     }
 
 
@@ -355,11 +415,11 @@ def run(binary: Path, output_dir: Path, cycles: int) -> int:
                     os.fsync(requests.fileno())
 
         instance.stop_hub()
-        commits = observer.finish(stream)
+        protocol = observer.finish(stream)
         stream = None
         for transition in transitions:
             transition["frames"] = summarise_transition(
-                commits,
+                protocol["frame_callbacks"],
                 transition["request_started_monotonic_ms"],
                 refresh_hz,
             )
@@ -370,14 +430,14 @@ def run(binary: Path, output_dir: Path, cycles: int) -> int:
             for interval in (
                 later - earlier
                 for earlier, later in zip(
-                    transition["frames"]["frame_timestamps_ms"],
-                    transition["frames"]["frame_timestamps_ms"][1:],
+                    transition["frames"]["frame_callback_timestamps_ms"],
+                    transition["frames"]["frame_callback_timestamps_ms"][1:],
                 )
             )
         ]
         report = {
             "schema_version": 1,
-            "evidence_type": "wayland-rotation-buffer-commit-timing",
+            "evidence_type": "wayland-rotation-frame-callback-timing",
             "status": "MEASURED",
             "qualified": None,
             "qualification_note": (
@@ -398,6 +458,7 @@ def run(binary: Path, output_dir: Path, cycles: int) -> int:
                 "refresh_hz": refresh_hz,
                 "nominal_refresh_interval_ms": 1000.0 / refresh_hz,
             },
+            "rotation_observation_window_ms": ROTATION_OBSERVATION_MS,
             "load": {
                 **observed_load,
             },
@@ -414,8 +475,9 @@ def run(binary: Path, output_dir: Path, cycles: int) -> int:
                     transition["frames"]["estimated_missed_refreshes"]
                     for transition in transitions
                 ),
-                "frame_count": sum(
-                    transition["frames"]["frame_count"] for transition in transitions
+                "frame_callback_count": sum(
+                    transition["frames"]["frame_callback_count"]
+                    for transition in transitions
                 ),
             },
         }
