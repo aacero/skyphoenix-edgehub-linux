@@ -52,27 +52,31 @@ You don't start from a blank grid. Each preset is a designed layout - a small, p
 
 | Screen | For |
 |---|---|
-| **Calm Focus** | Deep work, quietly. A big timer, your one thing, and a place to dump distractions. |
+| **Calm Focus** | A large focus timer beside the single thing you are doing now. |
 | **Notes & Streak** | A scratchpad and habit streak for keeping momentum visible. |
-| **Home** | Time, weather and media in one everyday screen. |
-| **Ambient** | A quiet clock, weather and moon view. |
-| **Remote Work** | The time, your calendar, today's tasks, and how much workday is left. |
-| **Developer** | Your build and your box, side by side - CI status, a number you watch, machine health. |
-| **Homelab Ops** | Service uptime and container health beside CPU, memory, network and disk. |
-| **Gaming Cockpit** | Rig telemetry beside your game - GPU/CPU temps, memory, network. |
-| **Trading Desk** | Your time and the market's, two numbers that matter, and what's next. |
+| **Home** | A large clock and weather view for an everyday desk screen. |
+| **Ambient** | Now playing beside tonight's moon phase. |
+| **Remote Work** | Today's tasks and a live view of how much of the workday remains. |
+| **Developer** | Labelled, unconnected slots for CI status and an open pull-request KPI. |
+| **Homelab Ops** | Labelled, unconnected feeds for service uptime and container health. |
+| **Gaming Cockpit** | A large GPU view beside compact CPU and memory telemetry. |
+| **Trading Desk** | Local and New York clocks beside one unconnected P&L KPI. |
 | **Health & Routine** | Gentle nudges toward a good day - water, breaks, and a daily streak. |
-| **Creator / Media** | Now-playing front and centre, a focus timer, and a spark of inspiration. |
+| **Creator / Media** | Now playing beside a focus timer for a compact studio screen. |
 | **System Core** | CPU, GPU and memory at a glance. |
 | **System I/O** | Network, disk and sensor detail. |
-| **Day Plan** | Agenda, tasks and the shape of the workday. |
+| **Day Plan** | A clock beside an agenda that you connect with an ICS URL. |
 | **Minimalist** | Almost nothing. A clock, the weather, and the moon. |
-| **Analyst / Data** | Two headline numbers, a monitoring feed, the time and your tasks. |
-| **Student / Study** | A focus timer, your tasks, a countdown to the exam, and a streak. |
-| **Productivity** | Focus, tasks, a habit streak and your day's progress, with system stats a swipe away. |
-| **Enterprise / Locked** | A clean, managed baseline - time, agenda, workday, and one approved team number. |
+| **Analyst / Data** | Two unconnected headline numbers, including one local-file KPI, plus a monitoring feed. |
+| **Student / Study** | A focus timer, today's tasks, and an exam countdown. |
+| **Productivity** | A large focus timer beside today's tasks. |
+| **Team / Enterprise** | The workday beside one unconnected, approved team KPI. |
 
 Applying a preset keeps *your* theme and accent - it changes the screen, not your taste.
+
+Selecting a screen now opens a passive preview before anything is added. It
+shows the exact widget arrangement and sizes, the screen's intended job, its
+included widgets, and any setup or connection work it needs.
 
 The data-connected presets (Developer, Homelab Ops, Trading Desk, Analyst, Enterprise) ship their data tiles **labelled but deliberately unconnected** - "CI status → Add a URL in settings". A preset never guesses an endpoint, so a fresh install never polls a stranger's host.
 
@@ -84,7 +88,7 @@ The data-connected presets (Developer, Homelab Ops, Trading Desk, Analyst, Enter
 
 | Category | Widgets |
 |----------|---------|
-| **System** (8) | CPU load & temp, GPU (AMD Radeon utilization & temp), Memory, Network throughput, Disk usage, combined Sensors, installed Packages, System Age |
+| **System** (8) | CPU load & temp, multi-GPU telemetry for AMD, Intel and NVIDIA where exposed by Linux DRM, Memory, Network throughput, Disk usage, combined Sensors, installed Packages, System Age |
 | **Data** (2) | **HTTP / JSON** - poll any endpoint, pull a value out by path, show it as a number, gauge or list · **KPI** - one number that matters, from a URL *or a local file*, with colour-coded thresholds |
 | **Time** (3) | Clock (**real IANA time zones - daylight saving included**), Analog Clock, Moon Phase |
 | **Focus** (10) | Focus Timer (Pomodoro), Tasks, Right Now, Quick Note, Habit Streak, Hydration, Break Reminder, Meds, Braindump, Routine |
@@ -147,6 +151,10 @@ result is **FAIL**, and the required 24/48-hour evidence is still incomplete.
   aurora, bokeh, grid, Arch Peaks, Fedora Loops and Aubergine Ribbons - plus
   static wallpapers, settable globally or per page.
 - **Glass, glow, and a reduced-motion mode.** One shared design system keeps every widget consistent.
+- **Comfortable text by default.** Every widget shares a legibility floor, with
+  Compact, Comfortable, Large, and Extra large choices plus bundled Atkinson
+  Hyperlegible and Lexend typefaces.
+- **Standard or Immersive Hub controls.** Immersive mode removes the Hub navigation bar and gives that space back to widgets while keeping each widget's own configuration available. Manager can restore Standard mode at any time.
 - **Edit mode** to add, remove, move and resize tiles across multiple pages, with schema-driven per-widget configuration.
 - **First-run wizard**, on-device **Settings**, and a **Diagnostics** screen.
 
@@ -163,8 +171,8 @@ A companion desktop app (`xeneon-edge-manager`) that mirrors your Edge in real t
 
 | Tab | What it does |
 |---|---|
-| **Screens** | Add screens and widgets, then arrange and resize them on a live preview |
-| **Look** | Themes, accents, backgrounds, Manager chrome, glass and glow |
+| **Screens** | Preview real widgets before adding a screen, then arrange and resize them on the same packed geometry as the Hub |
+| **Look** | Themes, accents, backgrounds, text size, typeface, Manager chrome, glass and glow with a live Hub preview |
 | **Images** | Wallpapers and per-widget imagery |
 | **Device** | Pick and orient the target screen, control startup and update checks |
 | **About** | Version and project info |
@@ -380,7 +388,9 @@ What is deliberately not claimed for beta.1:
   display/autostart changes go over the control socket and the Hub persists them;
   the Manager writes directly only while it is the offline owner.
 - **Physical rotation** is wired and debounced from the HID sensor, but only a person can turn a panel - so it's verified by hand, not by the suite.
-- **GPU metrics are AMD Radeon only.**
+- **GPU detail depends on the Linux driver.** AMD, Intel and NVIDIA devices are
+  discovered through DRM sysfs, but a driver may not expose every utilization,
+  temperature, power, clock, fan or VRAM value.
 
 ---
 
