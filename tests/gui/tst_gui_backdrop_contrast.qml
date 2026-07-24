@@ -21,6 +21,11 @@ Item {
     }
     App.BackgroundCatalog { id: backgrounds }
 
+    Rectangle {
+        anchors.fill: parent
+        color: scanTheme.backgroundColor
+    }
+
     W.WidgetChrome {
         id: chrome
         x: 0
