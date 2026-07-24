@@ -243,6 +243,7 @@ runtime_scenarios=(
     "06 reset flags:run_06_reset_flags.sh"
     "07 live push single-writer:run_07_live_push_single_writer.sh"
     "08 page dedup roundtrip:run_08_page_dedup_roundtrip.sh"
+    "09 HTTP fault recovery:run_09_http_faults.sh"
 )
 for entry in "${runtime_scenarios[@]}"; do
     rt_name="${entry%%:*}"; rt_script="${entry#*:}"

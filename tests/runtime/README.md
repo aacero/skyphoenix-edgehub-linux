@@ -27,6 +27,7 @@ XENEON_HUB=/usr/bin/xeneon-edge-hub bash tests/runtime/run_04_secret_refs.sh
 | 06 | `run_06_reset_flags.sh` | the destructive/non-destructive pair: `--reset-wizard` re-triggers the wizard (observed behaviorally - the user's polling tile does not run) while leaving `config.toml` byte-identical and `first_run_complete` true; `--reset` discards the user's layout. A no-flag control run proves the channel first | 26 s |
 | 07 | `run_07_live_push_single_writer.sh` | the single-writer rule (B5): over the REAL control socket the hub serves its live state, and a pushed layout is applied AND persisted *by the hub* - present in `config.toml` the instant the ack is read, and still there after a restart (SIGKILLed, so no shutdown save can fake it). A rejected (empty) push writes nothing | 12 s |
 | 08 | `run_08_page_dedup_roundtrip.sh` | duplicate page names (the real "two Page 5 tabs" bug) are reconciled on a real load→save trip: persisted names are unique + deterministic, no tile is merged or dropped, and the names round-trip UNCHANGED on a second (re-armed) launch - the rename must not creep every boot | 17 s |
+| 09 | `run_09_http_faults.sh` | the exact NetHub QML rejects a real loopback XMLHttpRequest response over 1 MiB and times out a real loopback endpoint that accepts but does not answer; the existing widget suite asserts the corresponding user-facing HTTP/JSON states | 5 s |
 
 Shared plumbing: `rt_common.sh` (launching, liveness gate, loopback sink),
 `seed_config.py` (ui_state JSON on stdin → nested config.toml),
