@@ -210,6 +210,15 @@ Item {
                    "a named accent preset wins for effAccent")
         }
 
+        function test_effAccent_adapts_an_unsafe_named_preset() {
+            _theme.applyTheme("dark")
+            chrome.accentName = "oi_black"
+            verify(!Qt.colorEqual(chrome.effAccent, _theme.accentPresets["oi_black"].a),
+                   "black is adapted instead of disappearing on a dark card")
+            verify(_theme._minimumCardContrast(chrome.effAccent) >= 3.0,
+                   "the rendered named accent clears 3:1 on every card surface")
+        }
+
         function test_effAccent_falls_back_to_accentColor() {
             chrome.accentName = ""
             chrome.accentColor = "#AA5500"
