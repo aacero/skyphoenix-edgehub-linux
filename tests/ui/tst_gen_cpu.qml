@@ -617,6 +617,40 @@ Item {
             wideWrap.width = 696; wideWrap.height = 416
         }
 
+        function test_wide_supporting_values_do_not_truncate() {
+            tryVerify(function () { return hWide.ready }, 3000)
+            var w = hWide.item
+            w.sizeClass = "wide"
+            w.hist = [0.3, 0.6]
+            feedTo(hWide, { cpu_usage_percent: 60, cpu_core_count: 16,
+                            cpu_frequency_mhz: 4675, cpu_load_1: 1.34,
+                            cpu_top_process_name: "rustc",
+                            cpu_top_process_percent: 18 })
+            var g = findGauge(w)
+            compare(g.horizontalDetailColumns, 2,
+                    "wide CPU uses a 2x2 detail grid instead of four narrow cards")
+            compare(g.effectiveDetailRows, 2, "all four supporting facts remain visible")
+
+            function verifyProjection(width, height, tag) {
+                wideWrap.width = width
+                wideWrap.height = height
+                wait(50)
+                var busiest = findText(w, "BUSIEST")
+                var process = findText(w, "rustc 18%")
+                verify(busiest !== null, tag + " keeps the busiest-process label")
+                verify(process !== null, tag + " keeps the busiest-process value")
+                verify(!busiest.truncated && busiest.contentWidth <= busiest.width + 1,
+                       tag + " busiest label fits its supported footprint")
+                verify(!process.truncated && process.contentWidth <= process.width + 1,
+                       tag + " busiest value fits its supported footprint")
+            }
+
+            verifyProjection(696, 416, "portrait 1x0.5")
+            verifyProjection(840, 344, "landscape 0.5x1")
+            wideWrap.width = 696
+            wideWrap.height = 416
+        }
+
         // tall - the sparkline earns real height and the ring captions itself
         // with avg/peak (genuinely more information).
         function test_tall_earns_spark_height_and_avg_peak() {

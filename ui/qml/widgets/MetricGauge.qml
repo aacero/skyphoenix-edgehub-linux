@@ -37,6 +37,20 @@ Item {
     property color historyCaptionColor: theme.textTertiary
     property color subTextColor: theme.textSecondary
     property real historyCaptionPixelSize: theme.fontMinimum
+    // A consumer can trade one horizontal strip for a denser but wider grid.
+    // Zero keeps the legacy one-row behavior. CPU uses two columns because four
+    // narrow cards made ordinary values such as "rustc 18%" truncate.
+    property int horizontalDetailColumns: 0
+    readonly property int effectiveDetailColumns: {
+        var count = detailItems ? detailItems.length : 0
+        if (!horizontal) return 2
+        if (horizontalDetailColumns > 0)
+            return Math.max(1, Math.min(horizontalDetailColumns, count))
+        return Math.max(1, count)
+    }
+    readonly property int effectiveDetailRows:
+        Math.max(1, Math.ceil((detailItems ? detailItems.length : 0)
+                             / effectiveDetailColumns))
     readonly property real detailRowHeight:
         Math.max(52, detailLabelPixelSize + detailValuePixelSize + 19)
 
@@ -167,10 +181,11 @@ Item {
                     objectName: "metricDetailStrip"
                     visible: g.detailItems && g.detailItems.length > 0
                     Layout.fillWidth: true
-                    columns: g.horizontal ? Math.max(1, g.detailItems.length) : 2
-                    rows: g.horizontal ? 1 : Math.ceil(g.detailItems.length / 2)
+                    columns: g.effectiveDetailColumns
+                    rows: g.effectiveDetailRows
                     Layout.minimumHeight: visible
-                        ? (g.horizontal ? g.detailRowHeight : g.detailRowHeight * 2 + rowSpacing)
+                        ? g.detailRowHeight * g.effectiveDetailRows
+                          + rowSpacing * Math.max(0, g.effectiveDetailRows - 1)
                         : 0
                     Layout.preferredHeight: Layout.minimumHeight
                     Layout.maximumHeight: Layout.minimumHeight
@@ -180,6 +195,8 @@ Item {
                         model: g.detailItems || []
                         delegate: Rectangle {
                             required property var modelData
+                            required property int index
+                            objectName: "metricDetailCard_" + index
                             Layout.fillWidth: true
                             Layout.preferredHeight: g.detailRowHeight
                             radius: theme.radiusSm
@@ -193,6 +210,7 @@ Item {
                                 anchors.margins: 6
                                 spacing: 1
                                 Text {
+                                    objectName: "metricDetailLabel_" + index
                                     Layout.fillWidth: true
                                     text: modelData.label || ""
                                     color: g.detailLabelColor
@@ -202,6 +220,7 @@ Item {
                                     elide: Text.ElideRight
                                 }
                                 Text {
+                                    objectName: "metricDetailValue_" + index
                                     Layout.fillWidth: true
                                     text: modelData.value || "-"
                                     color: theme.textPrimary

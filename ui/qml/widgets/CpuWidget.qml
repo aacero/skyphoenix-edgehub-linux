@@ -289,6 +289,10 @@ WidgetChrome {
         historyCaptionColor: theme.textPrimary
         historyCaptionPixelSize: theme.fontLabel
         subTextColor: theme.textPrimary
+        // Four single-row cards gave each supporting value less than 100 px in
+        // the wide half-height footprint. A 2x2 strip keeps all four facts while
+        // giving labels and values enough width at the minimum supported size.
+        horizontalDetailColumns: w.sizeClass === "wide" ? 2 : 0
         historyCaption: w.showHistory && !w.micro ? w.historyLabel.toUpperCase() + " HISTORY" : ""
     }
 
