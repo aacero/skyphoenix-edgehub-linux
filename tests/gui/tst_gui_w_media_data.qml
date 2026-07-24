@@ -340,7 +340,6 @@ Item {
             var play = root.iconByName(it, "ui-pause")[0].parent   // solid effAccent fill
             var d = nodeMinDist(play, it.effAccent)
             snap(mh, "chrome_accent_red")
-            console.warn("DBG media accent red dist=" + d.toFixed(0) + " eff=" + it.effAccent)
             verify(d < 60, "play button is tinted the accent (dist " + d.toFixed(0) + ")")
         }
         function test_chrome_accent_auto() {
@@ -352,10 +351,6 @@ Item {
             var play = root.iconByName(it, "ui-pause")[0].parent
             var d = nodeMinDist(play, it.effAccent)
             snap(mh, "chrome_accent_auto")
-            var dimg = G.grabItem(this, play, root)
-            console.warn("DBG media accent auto dist=" + d.toFixed(0) + " eff=" + it.effAccent
-                         + " c=" + dimg.pixel(30,30) + " q=" + dimg.pixel(15,15) + " r=" + dimg.pixel(45,30)
-                         + " rgb(30,30)=" + dimg.red(30,30) + "," + dimg.green(30,30) + "," + dimg.blue(30,30))
             verify(d < 60, "play button uses the category accent (dist " + d.toFixed(0) + ")")
         }
         function test_chrome_backdrop_data() {
