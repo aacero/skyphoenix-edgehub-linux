@@ -576,9 +576,12 @@ Item {
                 try {
                     return n && n.nowOverride !== undefined
                            && n.startHour !== undefined && n.endHour !== undefined
-                           && typeof n.workBounds === "function"
+                           && typeof n.windowBounds === "function"
                 } catch (e) { return false }
             })
+            var expectedEods = d.id === "enterprise" || d.id === "remote-work" ? 1 : 0
+            compare(eods.length, expectedEods,
+                    "found every End of Day clock seam for " + d.tag)
             for (var i = 0; i < eods.length; i++)
                 eods[i].nowOverride = new Date(2026, 6, 20, 18, 0, 0, 0)
             if (eods.length) wait(60)
