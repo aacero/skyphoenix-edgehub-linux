@@ -191,6 +191,18 @@ add_qt_test(mpris_bridge DBUS_SESSION
             SOURCES "${APP_SRC}/mpris_state.cpp" "${APP_SRC}/mpris_bridge.cpp"
             LINK Qt6::DBus)
 
+# Opt-in manual smoke target. It is excluded from the default build and CTest
+# because it briefly toggles one real desktop player's playback, then restores
+# the original state with a second toggle.
+add_executable(mpris_desktop_smoke EXCLUDE_FROM_ALL
+    mpris_desktop_smoke.cpp
+    "${APP_SRC}/mpris_bridge.h"
+    "${APP_SRC}/mpris_bridge.cpp"
+    "${APP_SRC}/mpris_state.cpp")
+set_target_properties(mpris_desktop_smoke PROPERTIES AUTOMOC ON)
+target_include_directories(mpris_desktop_smoke PRIVATE "${APP_SRC}")
+target_link_libraries(mpris_desktop_smoke PRIVATE Qt6::Core Qt6::DBus)
+
 # ── Smoke: launch the REAL binaries offscreen (main()/screen match/thread lifecycle;
 #    doubles as the XENEON_GRAB UAF regression) ──
 add_executable(smoke_hub tst_smoke_hub.cpp)
