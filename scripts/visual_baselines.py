@@ -49,6 +49,24 @@ def require_clean() -> str:
     return git_output("rev-parse", "HEAD")
 
 
+def require_current_evidence(current: Path, commit: str) -> None:
+    marker = current / "source-commit.txt"
+    dirty_marker = current / "source-dirty.txt"
+    if not marker.is_file() or marker.read_text(encoding="utf-8").strip() != commit:
+        raise RuntimeError(
+            f"{current}: screenshot provenance is missing or does not match {commit[:12]}; "
+            "rerun tests/gui/run_gui_tests.sh"
+        )
+    if not dirty_marker.is_file():
+        raise RuntimeError(f"{current}: missing source-dirty.txt provenance marker")
+    dirty = dirty_marker.read_text(encoding="utf-8").strip()
+    if dirty:
+        raise RuntimeError(
+            f"{current}: screenshots came from a dirty tree and cannot become audit baselines:\n"
+            + dirty
+        )
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -126,6 +144,7 @@ def compare_images(
 
 def update(spec: dict, current: Path, baselines: Path) -> int:
     commit = require_clean()
+    require_current_evidence(current, commit)
     entries = []
     missing = []
     for case in spec["cases"]:
@@ -170,6 +189,7 @@ def update(spec: dict, current: Path, baselines: Path) -> int:
 
 def compare(spec: dict, current: Path, baselines: Path, diffs: Path) -> int:
     commit = require_clean()
+    require_current_evidence(current, commit)
     manifest_path = baselines / "manifest.json"
     if not manifest_path.is_file():
         print(f"FAIL missing baseline manifest: {manifest_path}")

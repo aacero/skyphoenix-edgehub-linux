@@ -21,7 +21,9 @@ baseline exists, dimensions match, the baseline still matches its manifest
 hash, and the blurred pixel delta stays within the declared limits. Blurring
 only removes subpixel text-rendering noise between supported Qt renderers.
 Geometry, spacing, hierarchy, surfaces, and meaningful color changes remain
-visible. Failure diffs are written below `artifacts/`.
+visible. The GUI runner also writes the source SHA and dirty-state markers into
+the evidence directory; stale or dirty screenshots are rejected. Failure diffs
+are written below `artifacts/`.
 
 Update only after a person reviews the fresh screenshots:
 

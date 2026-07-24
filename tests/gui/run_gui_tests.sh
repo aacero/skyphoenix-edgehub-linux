@@ -171,6 +171,12 @@ fi
 EVID="$ROOT/gui-evidence"
 LOGDIR="$ROOT/build/gui-logs"
 rm -rf "$EVID" "$LOGDIR"; mkdir -p "$EVID" "$LOGDIR"
+# Bind every screenshot set to the source state that produced it. The visual
+# baseline updater rejects a missing, stale, or dirty marker, so old evidence
+# cannot be relabelled as the current commit merely because the tree is clean
+# when the update command is invoked.
+git rev-parse HEAD > "$EVID/source-commit.txt"
+git status --porcelain=v1 --untracked-files=normal > "$EVID/source-dirty.txt"
 
 IMPORTS="-import ui/qml -import ui/qml/widgets -import manager/qml -import tests/ui -import tests/gui"
 FILES=$(ls tests/gui/tst_gui_*.qml 2>/dev/null | sort)
