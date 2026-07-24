@@ -138,6 +138,7 @@ add_qt_test(metrics_worker  SOURCES "${APP_SRC}/metrics_worker.h" "${APP_SRC}/di
 
 # ── Integration (real QLocalSocket) ──
 add_qt_test(control_server  SOURCES "${APP_SRC}/control_server.cpp" LINK Qt6::Network)
+add_qt_test(control_socket_path)
 # manager_backend_sync links the hub's REAL ControlServer (+ autostart) as well, so
 # the B5 two-writer-race regressions can drive an actual hub-side apply/save rather
 # than a fake that never holds a config.
