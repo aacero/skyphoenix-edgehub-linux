@@ -156,12 +156,13 @@ Item {
             verify(true, "null + bare items handled without error")
         }
 
-        function test_flushPendingUiState_routes_to_the_dashboard() {
+        function test_flushPendingUiState_is_safe_without_a_dashboard() {
             var dashboard = findPred(win.contentItem, function (n) {
                 return n && typeof n.flushPendingUiState === "function" && n !== win
             })
-            verify(dashboard !== null, "the real Dashboard exposes the shutdown flush surface")
-            verify(win.flushPendingUiState(), "main.qml routes the clean-shutdown flush successfully")
+            compare(dashboard, null, "the earlier empty-stack case removed the Dashboard")
+            verify(win.flushPendingUiState(),
+                   "a diagnostics-only or empty stack has no pending Dashboard state and exits safely")
         }
 
         function test_display_disconnect_events_are_declared_and_observable() {
