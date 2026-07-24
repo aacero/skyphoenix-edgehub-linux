@@ -57,6 +57,8 @@ Item {
             return wh.storeCtl.settingsFor(wh.instanceId)
         }
         function setSize(cls, w, h) {
+            root.width = Math.max(1400, w)
+            root.height = Math.max(760, h)
             wh.width = w
             wh.height = h
             wh.item.sizeClass = cls

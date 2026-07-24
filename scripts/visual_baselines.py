@@ -92,6 +92,15 @@ def load_spec(path: Path) -> dict:
             raise ValueError(f"{path}: duplicate case id {case_id!r}")
         if source in sources:
             raise ValueError(f"{path}: duplicate source {source!r}")
+        crop = case.get("crop")
+        if crop is not None and (
+            not isinstance(crop, list)
+            or len(crop) != 4
+            or not all(isinstance(value, int) and value >= 0 for value in crop)
+            or crop[2] < 1
+            or crop[3] < 1
+        ):
+            raise ValueError(f"{path}: invalid crop for {case_id!r}: {crop!r}")
         ids.add(case_id)
         sources.add(source)
     expected = raw.get("expected", {})
@@ -105,13 +114,25 @@ def load_spec(path: Path) -> dict:
     return raw
 
 
-def normalized_image(path: Path) -> Image.Image:
+def normalized_image(path: Path, crop: list[int] | None = None) -> Image.Image:
     with Image.open(path) as opened:
-        return opened.convert("RGB")
+        image = opened.convert("RGB")
+        if crop is not None:
+            if len(crop) != 4 or min(crop) < 0:
+                raise ValueError(f"{path}: invalid crop rectangle {crop!r}")
+            left, top, width, height = crop
+            if width < 1 or height < 1 or left + width > image.width or top + height > image.height:
+                raise ValueError(
+                    f"{path}: crop {crop!r} exceeds image dimensions {image.size}"
+                )
+            image = image.crop((left, top, left + width, top + height))
+        return image
 
 
-def write_normalized(source: Path, target: Path) -> tuple[int, int]:
-    image = normalized_image(source)
+def write_normalized(
+    source: Path, target: Path, crop: list[int] | None
+) -> tuple[int, int]:
+    image = normalized_image(source, crop)
     target.parent.mkdir(parents=True, exist_ok=True)
     image.save(target, format="PNG", optimize=False, compress_level=9)
     return image.size
@@ -153,7 +174,8 @@ def update(spec: dict, current: Path, baselines: Path) -> int:
         if not source.is_file():
             missing.append(str(source))
             continue
-        width, height = write_normalized(source, target)
+        crop = case.get("crop")
+        width, height = write_normalized(source, target, crop)
         entries.append(
             {
                 "id": case["id"],
@@ -162,6 +184,7 @@ def update(spec: dict, current: Path, baselines: Path) -> int:
                 "file": target.name,
                 "width": width,
                 "height": height,
+                "crop": crop,
                 "sha256": sha256(target),
             }
         )
@@ -218,7 +241,11 @@ def compare(spec: dict, current: Path, baselines: Path, diffs: Path) -> int:
             failures += 1
             continue
         expected = normalized_image(baseline)
-        actual = normalized_image(current_image)
+        if entry.get("crop") != case.get("crop"):
+            print(f"FAIL {case['id']}: crop rectangle differs from manifest")
+            failures += 1
+            continue
+        actual = normalized_image(current_image, case.get("crop"))
         if expected.size != (entry.get("width"), entry.get("height")):
             print(f"FAIL {case['id']}: baseline dimensions differ from manifest")
             failures += 1

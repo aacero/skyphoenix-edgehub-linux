@@ -25,6 +25,12 @@ visible. The GUI runner also writes the source SHA and dirty-state markers into
 the evidence directory; stale or dirty screenshots are rejected. Failure diffs
 are written below `artifacts/`.
 
+Some QtTest image objects save the full test window even when their pixel API is
+scoped to one offset widget. Those cases declare an explicit crop rectangle in
+`cases.json`, and the same rectangle is hash-pinned in the manifest. This keeps
+the comparison sensitive to the intended widget instead of unrelated whitespace
+or sibling harnesses.
+
 Update only after a person reviews the fresh screenshots:
 
 ```bash
