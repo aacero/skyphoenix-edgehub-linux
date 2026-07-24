@@ -48,8 +48,8 @@ Item {
                                        ? theme.accentPresets[accentName].a
                                        : (accentColor.a > 0 ? accentColor : theme.accent)
     property string status: ""          // small trailing status text (top-right)
-    property color statusColor: theme.textSecondary
-    // How much room this instance has. Dashboard.injectWidget sets it from the
+    property color statusColor: theme.textPrimary
+    // How much room this instance has. WidgetHost sets it from the
     // tile's span, or "full" for the overlay:
     //   "compact" 1 col × 1 row · "wide" 2×1 · "tall" 1×2 · "large" 2×2 · "full" overlay
     // The default derives from actual geometry so a standalone host (tests, the
@@ -84,7 +84,7 @@ Item {
     default property alias content: body.data
 
     // Convenience: header height scales with size.
-    readonly property int headerHeight: big ? 42 : 36
+    readonly property int headerHeight: Math.max(big ? 46 : 42, theme.fontTitle + 20)
 
     // --- Card surface ---
     Rectangle {
@@ -184,10 +184,10 @@ Item {
             }
             Text {
                 text: chrome.titleOverride.length ? chrome.titleOverride : chrome.title
-                font.pixelSize: chrome.big ? theme.fontTitle : 16
+                font.pixelSize: theme.fontTitle
                 font.weight: Font.DemiBold
                 font.family: theme.fontDisplay
-                color: theme.textSecondary
+                color: theme.textPrimary
                 elide: Text.ElideRight
                 Layout.fillWidth: true
             }
@@ -200,9 +200,11 @@ Item {
             Text {
                 visible: chrome.status !== ""
                 text: chrome.status
-                font.pixelSize: chrome.big ? 13 : 12
+                font.pixelSize: theme.fontMinimum
                 font.family: theme.fontMono
                 color: chrome.statusColor
+                elide: Text.ElideRight
+                Layout.maximumWidth: Math.max(72, chrome.width * 0.30)
             }
         }
 
@@ -215,4 +217,3 @@ Item {
         }
     }
 }
-

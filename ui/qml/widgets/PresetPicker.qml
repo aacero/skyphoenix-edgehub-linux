@@ -32,6 +32,9 @@ Rectangle {
     property bool locked: false
     // A PresetCatalog instance (injected by the Dashboard).
     property var catalog: null
+    // The shared widget registry gives the preview truthful titles, icons, and
+    // category colors without instantiating any live widget.
+    property var widgetCatalog: null
     // The card awaiting confirmation ("" = nothing armed).
     property string pendingId: ""
 
@@ -43,6 +46,16 @@ Rectangle {
         var d = (catalog && pendingId !== "") ? catalog.def(pendingId) : null
         return d ? "“" + d.title + "”" : ""
     }
+    readonly property var blankPreset: ({
+        id: "blank", title: "Blank dashboard",
+        purpose: "Start with an empty screen and add only the widgets you choose.",
+        setup: "Nothing is configured or connected. Add widgets after creating the screen.",
+        pages: [ { name: "Blank", tiles: [] } ]
+    })
+    readonly property var pendingPreset: pendingId === "blank" ? blankPreset
+        : ((catalog && pendingId !== "") ? catalog.def(pendingId) : null)
+
+    WidgetCatalog { id: fallbackWidgetCatalog }
 
     visible: (shown && !locked) || opacity > 0.01
     opacity: (shown && !locked) ? 1.0 : 0.0
@@ -101,86 +114,135 @@ Rectangle {
                 }
             }
 
-            // The library grid - the wizard's card design, reused.
-            Flickable {
-                Layout.fillWidth: true; Layout.fillHeight: true
-                clip: true
-                contentHeight: presetGrid.implicitHeight
-                boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            // Pick first, inspect the exact blueprint and purpose, then confirm.
+            // On a wide Edge the library and preview sit side by side. In portrait
+            // the preview moves above the list instead of becoming a thin strip.
+            GridLayout {
+                id: selectionArea
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                columns: width >= 900 ? 2 : 1
+                columnSpacing: theme.spacingMd
+                rowSpacing: theme.spacingMd
 
-                GridLayout {
-                    id: presetGrid
-                    width: parent.width
-                    columns: width > 1360 ? 3 : (width > 700 ? 2 : 1)
-                    columnSpacing: theme.spacingMd; rowSpacing: theme.spacingMd
+                PresetPreview {
+                    id: selectedPreview
+                    Layout.row: 0
+                    Layout.column: selectionArea.columns === 2 ? 1 : 0
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: selectionArea.columns === 2 ? 520 : -1
+                    Layout.preferredHeight: selectionArea.columns === 1 ? 420 : -1
+                    Layout.minimumHeight: 300
+                    preset: picker.pendingPreset
+                    widgetCatalog: picker.widgetCatalog || fallbackWidgetCatalog
+                    landscape: selectionArea.columns === 2
+                }
 
-                    Repeater {
-                        model: picker.catalog ? picker.catalog.list() : []
-                        delegate: Rectangle {
-                            id: presetCard
-                            required property var modelData
-                            objectName: "presetCard-" + modelData.id
-                            property bool sel: picker.pendingId === modelData.id
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: Math.max(120, cardCol.implicitHeight + 28)
-                            radius: theme.radiusLg
-                            color: sel ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.14)
-                                       : (cardMA.pressed ? theme.cardBackgroundAlt : theme.cardBackground)
-                            border.width: sel ? 2 : 1
-                            border.color: sel ? theme.accent : theme.cardBorder
+                Flickable {
+                    objectName: "presetListScroll"
+                    Layout.row: selectionArea.columns === 2 ? 0 : 1
+                    Layout.column: 0
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: selectionArea.columns === 2 ? 720 : -1
+                    Layout.minimumWidth: selectionArea.columns === 2 ? 360 : 0
+                    Layout.minimumHeight: 280
+                    clip: true
+                    contentHeight: presetGrid.implicitHeight
+                    boundsBehavior: Flickable.StopAtBounds
+                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-                            ColumnLayout {
-                                id: cardCol
-                                anchors.fill: parent
-                                anchors.margins: 14
-                                spacing: 6
-                                RowLayout {
-                                    Layout.fillWidth: true; spacing: 10
-                                    AppIcon { name: presetCard.modelData.icon || "ui-layout"
-                                        size: 22; color: theme.accent; Layout.alignment: Qt.AlignVCenter }
+                    GridLayout {
+                        id: presetGrid
+                        width: parent.width
+                        columns: width > 700 ? 2 : 1
+                        columnSpacing: theme.spacingMd
+                        rowSpacing: theme.spacingMd
+
+                        Repeater {
+                            model: picker.catalog ? picker.catalog.list() : []
+                            delegate: Rectangle {
+                                id: presetCard
+                                required property var modelData
+                                objectName: "presetCard-" + modelData.id
+                                property bool sel: picker.pendingId === modelData.id
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: Math.max(120, cardCol.implicitHeight + 28)
+                                radius: theme.radiusLg
+                                color: sel ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.14)
+                                           : (cardMA.pressed ? theme.cardBackgroundAlt : theme.cardBackground)
+                                border.width: sel ? 2 : 1
+                                border.color: sel ? theme.accent : theme.cardBorder
+
+                                ColumnLayout {
+                                    id: cardCol
+                                    anchors.fill: parent
+                                    anchors.margins: 14
+                                    spacing: 6
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 10
+                                        AppIcon {
+                                            name: presetCard.modelData.icon || "ui-layout"
+                                            size: 22
+                                            color: theme.accent
+                                            Layout.alignment: Qt.AlignVCenter
+                                        }
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: presetCard.modelData.title
+                                            font.pixelSize: theme.fontTitle
+                                            font.bold: true
+                                            font.family: theme.fontDisplay
+                                            color: theme.textPrimary
+                                            elide: Text.ElideRight
+                                        }
+                                    }
                                     Text {
                                         Layout.fillWidth: true
-                                        text: presetCard.modelData.title
-                                        font.pixelSize: 17; font.bold: true; font.family: theme.fontDisplay
-                                        color: theme.textPrimary; elide: Text.ElideRight
+                                        Layout.fillHeight: true
+                                        text: presetCard.modelData.blurb
+                                        font.pixelSize: theme.fontMinimum
+                                        color: theme.textSecondary
+                                        wrapMode: Text.WordWrap
+                                        maximumLineCount: 3
+                                        elide: Text.ElideRight
                                     }
                                 }
-                                Text {
-                                    Layout.fillWidth: true; Layout.fillHeight: true
-                                    text: presetCard.modelData.blurb
-                                    font.pixelSize: 13; color: theme.textSecondary
-                                    wrapMode: Text.WordWrap; maximumLineCount: 3; elide: Text.ElideRight
+                                MouseArea {
+                                    id: cardMA
+                                    objectName: "presetCardTap-" + presetCard.modelData.id
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: picker.pendingId = presetCard.modelData.id
                                 }
                             }
+                        }
+
+                        Rectangle {
+                            objectName: "presetCard-blank"
+                            property bool sel: picker.pendingId === "blank"
+                            Layout.fillWidth: true
+                            Layout.columnSpan: presetGrid.columns
+                            Layout.preferredHeight: theme.touchSecondary
+                            radius: theme.radiusMd
+                            color: sel ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.14)
+                                       : theme.cardBackground
+                            border.width: sel ? 2 : 1
+                            border.color: sel ? theme.accent : theme.cardBorder
+                            Text {
+                                anchors.centerIn: parent
+                                text: "Or start from a blank dashboard"
+                                font.pixelSize: theme.fontLabel
+                                color: theme.textPrimary
+                            }
                             MouseArea {
-                                id: cardMA
                                 anchors.fill: parent
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: picker.pendingId = presetCard.modelData.id
+                                onClicked: picker.pendingId = "blank"
                             }
                         }
-                    }
-
-                    // Blank slate, same as the wizard offers.
-                    Rectangle {
-                        objectName: "presetCard-blank"
-                        property bool sel: picker.pendingId === "blank"
-                        Layout.fillWidth: true
-                        Layout.columnSpan: presetGrid.columns
-                        Layout.preferredHeight: theme.touchSecondary
-                        radius: theme.radiusMd
-                        color: sel ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.14)
-                                   : theme.cardBackground
-                        border.width: sel ? 2 : 1
-                        border.color: sel ? theme.accent : theme.cardBorder
-                        Text {
-                            anchors.centerIn: parent
-                            text: "Or start from a blank dashboard"
-                            font.pixelSize: theme.fontLabel; color: theme.textPrimary
-                        }
-                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                            onClicked: picker.pendingId = "blank" }
                     }
                 }
             }

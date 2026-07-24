@@ -12,12 +12,16 @@
         <file alias="DashboardStore.qml">../ui/qml/DashboardStore.qml</file>
         <file alias="WidgetCatalog.qml">../ui/qml/WidgetCatalog.qml</file>
         <file alias="PresetCatalog.qml">../ui/qml/PresetCatalog.qml</file>
+        <file alias="PresetPreview.qml">../ui/qml/widgets/PresetPreview.qml</file>
         <file alias="WidgetSizes.qml">../ui/qml/WidgetSizes.qml</file>
         <file alias="WidgetPacker.qml">../ui/qml/WidgetPacker.qml</file>
         <file alias="WallpaperCatalog.qml">../ui/qml/WallpaperCatalog.qml</file>
         <file alias="BackgroundCatalog.qml">../ui/qml/BackgroundCatalog.qml</file>
         <!-- Shared widget framework (so the clone renders the REAL widgets). -->
         <file alias="WidgetChrome.qml">../ui/qml/widgets/WidgetChrome.qml</file>
+        <file alias="WidgetHost.qml">../ui/qml/widgets/WidgetHost.qml</file>
+        <file alias="ProviderState.qml">../ui/qml/widgets/ProviderState.qml</file>
+        <file alias="WeatherIcon.qml">../ui/qml/widgets/WeatherIcon.qml</file>
         <file alias="AppIcon.qml">../ui/qml/widgets/AppIcon.qml</file>
         <file alias="PillButton.qml">../ui/qml/widgets/PillButton.qml</file>
         <file alias="SegmentedControl.qml">../ui/qml/widgets/SegmentedControl.qml</file>

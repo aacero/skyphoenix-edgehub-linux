@@ -46,6 +46,8 @@ WidgetChrome {
     readonly property bool showSeconds: cfg.showSeconds !== undefined ? cfg.showSeconds : false
     readonly property bool showDate: cfg.showDate !== undefined ? cfg.showDate : true
     readonly property string dateStyle: cfg.dateStyle !== undefined ? cfg.dateStyle : "full"
+    readonly property string datePattern: cfg.datePattern || "ddd, d MMM"
+    readonly property string localeName: cfg.localeName || ""
     // World-clock: show another zone instead of local time. `zoneId` is a real IANA
     // zone (DST-correct); `utcOffset` is the legacy fixed-offset model kept for
     // configs saved before zoneId existed - zoneId: "" selects it, so an existing
@@ -54,6 +56,7 @@ WidgetChrome {
     readonly property string zoneId: cfg.zoneId || ""
     readonly property real utcOffset: cfg.utcOffset !== undefined ? cfg.utcOffset : 0
     readonly property string zoneLabel: cfg.zoneLabel || ""
+    readonly property string secondaryZones: cfg.secondaryZones || ""
 
     // ── IANA zones ───────────────────────────────────────────────────────────
     // Resolved by the C++ TimeZoneBridge (app/src/timezone_bridge.h), injected as
@@ -116,9 +119,19 @@ WidgetChrome {
     // The zone path never builds a local Date, so the host's DST gap cannot bite.
     function formatAt(fmt, at) {
         at = at || new Date()
-        if (!w.customZone) return Qt.formatDateTime(at, fmt)
-        if (w.zoneResolvable()) return w._tz().format(w.zoneId, at.getTime(), fmt)
-        return Qt.formatDateTime(w.zonedAt(at), fmt)
+        if (!w.customZone) return w.localeName.length
+                ? at.toLocaleString(Qt.locale(w.localeName), fmt)
+                : Qt.formatDateTime(at, fmt)
+        if (w.zoneResolvable()) {
+            var tz = w._tz()
+            return w.localeName.length && tz.formatLocale
+                    ? tz.formatLocale(w.zoneId, at.getTime(), fmt, w.localeName)
+                    : tz.format(w.zoneId, at.getTime(), fmt)
+        }
+        var shifted = w.zonedAt(at)
+        return w.localeName.length
+                ? shifted.toLocaleString(Qt.locale(w.localeName), fmt)
+                : Qt.formatDateTime(shifted, fmt)
     }
     function zonedNow() { return w.zonedAt(new Date()) }
 
@@ -135,10 +148,52 @@ WidgetChrome {
     // they crowd the half-cell (timeFmt itself stays as configured).
     readonly property string effTimeFmt: (w.micro && w.showSeconds)
         ? (w.format24 ? "HH:mm" : "h:mm AP") : w.timeFmt
+
+    function validDatePattern(pattern) {
+        var p = String(pattern || "").trim()
+        if (!p.length) return false
+        var inQuote = false
+        var unquoted = ""
+        for (var i = 0; i < p.length; i++) {
+            if (p[i] === "'") {
+                if (i + 1 < p.length && p[i + 1] === "'") {
+                    i++
+                    continue
+                }
+                inQuote = !inQuote
+            } else if (!inQuote) {
+                unquoted += p[i]
+            }
+        }
+        return !inQuote && /[dMy]/.test(unquoted)
+    }
+    function localeShortDatePattern() {
+        var locale = w.localeName.length ? Qt.locale(w.localeName) : Qt.locale()
+        return locale.dateFormat(Locale.ShortFormat)
+    }
+
     // Tall tiles have room for the spelled-out date too.
-    readonly property string dateFmt: w.dateStyle === "short"
-        ? "dd/MM"
+    readonly property string dateFmt: w.dateStyle === "short" ? w.localeShortDatePattern()
+        : w.dateStyle === "iso" ? "yyyy-MM-dd"
+        : w.dateStyle === "custom"
+          ? (w.validDatePattern(w.datePattern) ? w.datePattern : "ddd, d MMM")
         : ((w.expanded || w.tallish) ? "dddd, MMMM d yyyy" : "ddd, d MMM")
+
+    function secondaryZoneIds() {
+        return w.secondaryZones.split(",").map(function (s) { return s.trim() })
+                .filter(function (s, index, all) {
+                    return s.length && all.indexOf(s) === index
+                           && w._tz() && w._tz().isValid(s)
+                }).slice(0, 3)
+    }
+    function zoneTime(zoneId) {
+        var tz = w._tz()
+        return tz ? tz.format(zoneId, Date.now(), w.format24 ? "HH:mm" : "h:mm AP") : ""
+    }
+    function shortZoneName(zoneId) {
+        var parts = zoneId.split("/")
+        return parts[parts.length - 1].replace(/_/g, " ")
+    }
 
     // Calendar context for the tall info line (zone-adjusted).
     function isoWeek(d) {
@@ -149,8 +204,11 @@ WidgetChrome {
         return 1 + Math.round((t - firstThu) / 604800000)
     }
     function dayOfYear(d) {
-        return Math.floor((new Date(d.getFullYear(), d.getMonth(), d.getDate())
-                           - new Date(d.getFullYear(), 0, 0)) / 86400000)
+        // Calendar components are converted to UTC before subtraction. Local
+        // midnights can be 23 or 25 hours apart when daylight saving changes,
+        // which made every following day one out in affected time zones.
+        return Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())
+                           - Date.UTC(d.getFullYear(), 0, 0)) / 86400000)
     }
     // Reads the offset in force at `at` (default now), so a DST zone's chip tracks
     // the season (New York reads UTC-5 in January, UTC-4 in July).
@@ -179,7 +237,8 @@ WidgetChrome {
             visible: w.customZone
             text: (w.tick, w.zoneLabel.length ? w.zoneLabel
                                               : (w.zoneCity().length ? w.zoneCity() : w.offsetLabel()))
-            font.pixelSize: w.expanded ? 22 : Math.max(12, Math.min(w.width * 0.035, 20))
+            font.pixelSize: w.expanded ? 22 : Math.max(theme.fontMinimum,
+                                                       Math.min(w.width * 0.035, 20))
             font.bold: true
             font.family: theme.fontDisplay; color: w.effAccent
             // preferredWidth pairs the cap so elide binds; a long zone label
@@ -190,6 +249,56 @@ WidgetChrome {
             // Centre the label WITHIN that wide box, or it left-aligns off-centre.
             horizontalAlignment: Text.AlignHCenter
         }
+        GridLayout {
+            objectName: "clockSecondaryZones"
+            Layout.alignment: Qt.AlignHCenter
+            Layout.preferredWidth: Math.min(col.width * 0.94, 720)
+            Layout.maximumWidth: Math.min(col.width * 0.94, 720)
+            visible: (w.expanded || w.tallish) && w.secondaryZoneIds().length > 0
+            columns: w.width < 500 ? 1 : w.secondaryZoneIds().length
+            columnSpacing: 8
+            rowSpacing: 6
+            Repeater {
+                model: w.secondaryZoneIds()
+                delegate: Rectangle {
+                    required property string modelData
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 54
+                    radius: theme.radiusSm
+                    color: Qt.rgba(theme.cardBackgroundAlt.r, theme.cardBackgroundAlt.g,
+                                   theme.cardBackgroundAlt.b, 0.72)
+                    border.width: 1
+                    border.color: theme.cardBorder
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 8
+                        Text {
+                            Layout.fillWidth: true
+                            text: w.shortZoneName(modelData)
+                            color: theme.textSecondary
+                            font.pixelSize: theme.fontLabel
+                            font.weight: Font.DemiBold
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            text: (w.tick, w.zoneTime(modelData))
+                            color: theme.textPrimary
+                            font.family: theme.fontMono
+                            font.bold: true
+                            font.pixelSize: w.expanded ? 22 : Math.max(theme.fontTitle, 18)
+                        }
+                    }
+                }
+            }
+        }
+        Text {
+            Layout.fillWidth: true
+            visible: w.expanded && w.customZone && !w.zoneResolvable()
+            horizontalAlignment: Text.AlignHCenter
+            text: "Fixed UTC offset. Daylight-saving changes are not applied."
+            color: theme.textTertiary; font.pixelSize: theme.fontMinimum; wrapMode: Text.WordWrap
+        }
         Text {
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
@@ -197,11 +306,12 @@ WidgetChrome {
             // The type scales with the box: wide grows into its width, tall
             // stays width-bound, micro is the whole (small) tile.
             font.pixelSize: w.expanded ? 168
-                          : Math.max(30, Math.min(w.width * 0.24, w.height * 0.42,
+                          : Math.max(30, Math.min(w.width * 0.24,
+                                                  w.height * (w.sizeClass === "wide" ? 0.34 : 0.42),
                                                   w.sizeClass === "wide" ? 132
                                                 : w.tallish ? 120
                                                 : w.micro ? 88 : 104))
-            fontSizeMode: Text.HorizontalFit; minimumPixelSize: 12
+            fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum
             elide: Text.ElideRight
             font.bold: true; font.family: theme.fontMono; color: theme.textPrimary
         }
@@ -209,28 +319,72 @@ WidgetChrome {
             Layout.fillWidth: true; visible: w.showDate && !w.micro
             horizontalAlignment: Text.AlignHCenter
             text: (w.tick, w.formatAt(w.dateFmt))
-            font.pixelSize: w.expanded ? 26 : Math.max(13, Math.min(w.width * 0.035, 22))
+            font.pixelSize: w.expanded ? 26 : Math.max(theme.fontMinimum,
+                                                       Math.min(w.width * 0.035, 22))
             color: theme.textSecondary
-            fontSizeMode: Text.HorizontalFit; minimumPixelSize: 9
+            fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum
             elide: Text.ElideRight
         }
-        // Calendar context - earned by tall tiles only (week + day-of-year,
-        // plus the precise UTC offset for world clocks).
-        Text {
+        // Calendar context is promoted into glanceable cards on shaped tiles.
+        // A tall or wide clock has room to answer where today sits in the week
+        // and year instead of merely scaling the same time string.
+        GridLayout {
+            objectName: "clockCalendarContext"
             Layout.fillWidth: true
-            visible: w.tallish && !w.expanded
-            horizontalAlignment: Text.AlignHCenter
-            text: {
+            Layout.maximumWidth: Math.min(col.width * 0.92, 620)
+            Layout.alignment: Qt.AlignHCenter
+            visible: (w.sizeClass === "tall" || w.sizeClass === "wide") && !w.expanded
+            columns: 3
+            columnSpacing: theme.spacingXs
+            Layout.topMargin: theme.spacingXs
+            property var entries: {
                 w.tick
                 var n = w.zonedNow()
-                var s = "Week " + w.isoWeek(n) + " · Day " + w.dayOfYear(n)
-                return w.customZone ? (w.offsetLabel() + " · " + s) : s
+                return [
+                    { label: "TODAY", value: w.formatAt("ddd") },
+                    { label: "WEEK", value: "" + w.isoWeek(n) },
+                    { label: w.customZone ? "OFFSET" : "DAY OF YEAR",
+                      value: w.customZone ? w.offsetLabel() : "" + w.dayOfYear(n) }
+                ]
             }
-            font.pixelSize: Math.max(12, Math.min(w.width * 0.032, 16))
-            font.family: theme.fontMono; color: theme.textTertiary
-            fontSizeMode: Text.HorizontalFit; minimumPixelSize: 9
-            elide: Text.ElideRight
-            Layout.topMargin: 2
+            Repeater {
+                model: parent.entries
+                delegate: Rectangle {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 58
+                    radius: theme.radiusSm
+                    color: Qt.rgba(theme.cardBackgroundAlt.r, theme.cardBackgroundAlt.g,
+                                   theme.cardBackgroundAlt.b, 0.72)
+                    border.width: 1
+                    border.color: theme.cardBorder
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 6
+                        spacing: 1
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData.label
+                            color: theme.textTertiary
+                            font.pixelSize: theme.fontMinimum
+                            font.bold: true
+                            font.letterSpacing: 0.6
+                            horizontalAlignment: Text.AlignHCenter
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData.value
+                            color: w.effAccent
+                            font.pixelSize: theme.fontLabel
+                            font.family: theme.fontMono
+                            font.bold: true
+                            horizontalAlignment: Text.AlignHCenter
+                            elide: Text.ElideRight
+                        }
+                    }
+                }
+            }
         }
     }
 }

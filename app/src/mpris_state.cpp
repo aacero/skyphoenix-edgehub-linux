@@ -15,9 +15,17 @@ bool isMprisService(const QString& busName) { return busName.startsWith(kPrefix)
 QString playerNameFromService(const QString& service) { return service.mid(kPrefix.length()); }
 
 QString choosePlayer(const QStringList& order, const QMap<QString, QString>& statuses,
-                     const QString& current) {
+                     const QString& current, const QString& preferred) {
     if (order.isEmpty())
         return QString();
+    const QString wanted = preferred.trimmed();
+    if (!wanted.isEmpty()) {
+        for (const QString& candidate : order) {
+            if (candidate.compare(wanted, Qt::CaseInsensitive) == 0 ||
+                playerNameFromService(candidate).compare(wanted, Qt::CaseInsensitive) == 0)
+                return candidate;
+        }
+    }
     QString chosen;
     for (const QString& cand : order)
         if (statuses.value(cand) == QStringLiteral("Playing")) { chosen = cand; break; }
@@ -29,6 +37,13 @@ QString choosePlayer(const QStringList& order, const QMap<QString, QString>& sta
 TrackState resolveTrack(const QVariantMap& props, const QString& service) {
     TrackState s;
     s.status = props.value(QStringLiteral("PlaybackStatus")).toString();
+    s.canPlayPause = props.value(QStringLiteral("CanControl"), true).toBool() &&
+                     (props.value(QStringLiteral("CanPlay"), true).toBool() ||
+                      props.value(QStringLiteral("CanPause"), true).toBool());
+    s.canGoNext = props.value(QStringLiteral("CanGoNext"), true).toBool();
+    s.canGoPrevious = props.value(QStringLiteral("CanGoPrevious"), true).toBool();
+    s.canSeek = props.value(QStringLiteral("CanSeek"), false).toBool() &&
+                props.value(QStringLiteral("CanControl"), true).toBool();
 
     const QVariantMap meta = qdbus_cast<QVariantMap>(props.value(QStringLiteral("Metadata")));
     s.title = meta.value(QStringLiteral("xesam:title")).toString();
@@ -90,7 +105,9 @@ TrackState resolveTrack(const QVariantMap& props, const QString& service) {
 bool visiblyDiffers(const TrackState& a, const TrackState& b) {
     return a.available != b.available || a.status != b.status || a.title != b.title ||
            a.artist != b.artist || a.album != b.album || a.artUrl != b.artUrl ||
-           a.playerName != b.playerName;
+           a.playerName != b.playerName || a.canPlayPause != b.canPlayPause ||
+           a.canGoNext != b.canGoNext || a.canGoPrevious != b.canGoPrevious ||
+           a.canSeek != b.canSeek || a.lengthUs != b.lengthUs;
 }
 
 }  // namespace mpris

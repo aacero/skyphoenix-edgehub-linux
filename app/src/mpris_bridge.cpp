@@ -78,6 +78,10 @@ MprisBridge::~MprisBridge() {
 
 // (Re)pick the active player: async ListNames → filter to MPRIS services.
 void MprisBridge::reevaluate() {
+    if (!m_scanning) {
+        m_scanning = true;
+        emit discoveryChanged();
+    }
     QDBusMessage msg = QDBusMessage::createMethodCall(
         QStringLiteral("org.freedesktop.DBus"), QStringLiteral("/org/freedesktop/DBus"),
         QStringLiteral("org.freedesktop.DBus"), QStringLiteral("ListNames"));
@@ -90,6 +94,19 @@ void MprisBridge::reevaluate() {
             for (const QString& name : reply.value())
                 if (mpris::isMprisService(name))
                     services << name;
+        }
+        QStringList players;
+        players.reserve(services.size());
+        for (const QString& service : services)
+            players << mpris::playerNameFromService(service);
+        players.sort(Qt::CaseInsensitive);
+        if (players != m_availablePlayers) {
+            m_availablePlayers = players;
+            emit discoveryChanged();
+        }
+        if (m_scanning) {
+            m_scanning = false;
+            emit discoveryChanged();
         }
         chooseFrom(services);
     });
@@ -120,7 +137,8 @@ void MprisBridge::chooseFrom(const QStringList& services) {
                 return;
             // The policy itself is pure and lives in mpris_state.h; this lambda
             // only supplies the collected replies.
-            const QString chosen = mpris::choosePlayer(*order, *statuses, m_service);
+            const QString chosen = mpris::choosePlayer(*order, *statuses, m_service,
+                                                       m_preferredPlayer);
             if (chosen != m_service)
                 connectTo(chosen);
             else
@@ -204,6 +222,10 @@ void MprisBridge::applyProps(const QVariantMap& m) {
     m_lengthUs = next.lengthUs;
     m_playerName = next.playerName;
     m_available = next.available;
+    m_canPlayPause = next.canPlayPause;
+    m_canGoNext = next.canGoNext;
+    m_canGoPrevious = next.canGoPrevious;
+    m_canSeek = next.canSeek;
 
     if (dirty)
         emit changed();
@@ -221,7 +243,21 @@ mpris::TrackState MprisBridge::currentTrack() const {
     s.playerName = m_playerName;
     s.lengthUs = m_lengthUs;
     s.available = m_available;
+    s.canPlayPause = m_canPlayPause;
+    s.canGoNext = m_canGoNext;
+    s.canGoPrevious = m_canGoPrevious;
+    s.canSeek = m_canSeek;
     return s;
+}
+
+void MprisBridge::setPreferredPlayer(const QString& player) {
+    const QString next = player.trimmed();
+    if (next.compare(m_preferredPlayer, Qt::CaseInsensitive) == 0)
+        return;
+    m_preferredPlayer = next;
+    emit preferredPlayerChanged();
+    if (m_bus.isConnected())
+        reevaluate();
 }
 
 // GCOVR_EXCL_START (D-Bus plumbing - see the note above propGetMsg)
@@ -272,6 +308,24 @@ void MprisBridge::callPlayer(const char* method) {
     });
     // Reflect the new state promptly.
     QTimer::singleShot(200, this, [this] { refresh(); });
+}
+
+void MprisBridge::seekFraction(double fraction) {
+    if (m_service.isEmpty() || !m_available || !m_canSeek || m_lengthUs <= 0)
+        return;
+    const double bounded = qBound(0.0, fraction, 1.0);
+    const qlonglong targetUs = qRound64(bounded * double(m_lengthUs));
+    const qlonglong offsetUs = targetUs - m_positionUs;
+    if (offsetUs == 0)
+        return;
+    QDBusMessage msg = QDBusMessage::createMethodCall(
+        m_service, QString::fromLatin1(kPath), QString::fromLatin1(kPlayerIface),
+        QStringLiteral("Seek"));
+    msg << offsetUs;
+    m_bus.asyncCall(msg);
+    m_positionUs = targetUs;
+    emit positionChanged();
+    QTimer::singleShot(200, this, [this] { fetchPosition(); });
 }
 
 void MprisBridge::playPause() { callPlayer("PlayPause"); }

@@ -37,7 +37,8 @@ Rectangle {
     // Colour tokens for the shared BackgroundPicker.
     readonly property var pickerCol: ({ textPrimary: theme.textPrimary, textSecondary: theme.textSecondary,
         panel: theme.cardBackground, panelAlt: theme.cardBackgroundAlt, border: theme.cardBorder,
-        accent: theme.accent, radius: theme.radiusMd })
+        accent: theme.accent, radius: theme.radiusMd, ctlH: theme.touchSecondary,
+        fontBase: theme.fontLabel })
 
     // scrim click closes
     MouseArea { anchors.fill: parent; onClicked: panel.closeRequested() }
@@ -221,12 +222,13 @@ Rectangle {
                                                 Text { text: modelData.n; color: theme.textPrimary; font.pixelSize: theme.fontLabel }
                                                 Rectangle {
                                                     visible: modelData.pro === true
-                                                    implicitWidth: proBadge.implicitWidth + 10; implicitHeight: 16; radius: 8
+                                                    implicitWidth: proBadge.implicitWidth + 12
+                                                    implicitHeight: 24; radius: 12
                                                     color: locked ? Qt.rgba(theme.textSecondary.r, theme.textSecondary.g, theme.textSecondary.b, 0.25)
                                                                   : Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.22)
                                                     Text { id: proBadge; anchors.centerIn: parent; text: "PRO"
                                                         color: locked ? theme.textSecondary : theme.accent
-                                                        font.pixelSize: 9; font.bold: true }
+                                                        font.pixelSize: theme.fontMinimum; font.bold: true }
                                                 }
                                                 AppIcon { visible: active; name: "ui-check"; size: 16; color: theme.accent }
                                             }
@@ -270,6 +272,60 @@ Rectangle {
                                     Text { id: oLbl; anchors.centerIn: parent; text: modelData.l; color: theme.textPrimary; font.pixelSize: theme.fontLabel }
                                     MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                                         onClicked: root.orientationMode = modelData.v }
+                                }
+                            }
+                        }
+                    }
+
+                    // --- Readability ---
+                    ColumnLayout {
+                        Layout.fillWidth: true; spacing: theme.spacingSm
+                        Text { text: "Readability"; font.pixelSize: theme.fontLabel; font.bold: true; color: theme.textSecondary }
+                        Text {
+                            text: "Choose text that stays comfortable at the distance you use the Edge. This applies to every screen and the Manager preview."
+                            font.pixelSize: theme.fontCaption; color: theme.textTertiary
+                            Layout.fillWidth: true; wrapMode: Text.WordWrap
+                        }
+                        Flow {
+                            Layout.fillWidth: true; spacing: theme.spacingSm
+                            Repeater {
+                                model: [ { v: 1.0, l: "Compact" }, { v: 1.15, l: "Comfortable" },
+                                         { v: 1.3, l: "Large" }, { v: 1.45, l: "Extra large" } ]
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    width: sizeLabel.implicitWidth + 28; height: theme.touchSecondary
+                                    radius: theme.radiusMd
+                                    property bool active: Math.abs(theme.textScale - modelData.v) < 0.01
+                                    color: active ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.18)
+                                                  : theme.cardBackground
+                                    border.width: active ? 2 : 1
+                                    border.color: active ? theme.accent : theme.cardBorder
+                                    Text { id: sizeLabel; anchors.centerIn: parent; text: modelData.l
+                                        color: theme.textPrimary; font.pixelSize: theme.fontLabel }
+                                    MouseArea { anchors.fill: parent; onClicked: root.textScale = modelData.v }
+                                }
+                            }
+                        }
+                        Flow {
+                            Layout.fillWidth: true; spacing: theme.spacingSm
+                            Repeater {
+                                model: [ { v: "hyperlegible", l: "Hyperlegible" },
+                                         { v: "lexend", l: "Lexend" }, { v: "system", l: "System" } ]
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    width: fontLabel.implicitWidth + 28; height: theme.touchSecondary
+                                    radius: theme.radiusMd
+                                    property bool active: theme.fontChoice === modelData.v
+                                    color: active ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.18)
+                                                  : theme.cardBackground
+                                    border.width: active ? 2 : 1
+                                    border.color: active ? theme.accent : theme.cardBorder
+                                    Text { id: fontLabel; anchors.centerIn: parent; text: modelData.l
+                                        color: theme.textPrimary; font.pixelSize: theme.fontLabel
+                                        font.family: modelData.v === "lexend" ? theme.fontFamilyLexend
+                                                     : modelData.v === "hyperlegible" ? theme.fontFamilyHyperlegible
+                                                     : theme._fontDisplaySystem }
+                                    MouseArea { anchors.fill: parent; onClicked: root.fontChoice = modelData.v }
                                 }
                             }
                         }
@@ -342,6 +398,29 @@ Rectangle {
                     // --- Glass / transparency ---
                     ColumnLayout {
                         Layout.fillWidth: true; spacing: theme.spacingSm
+                        Text { text: "Hub display"; font.pixelSize: theme.fontLabel
+                            font.bold: true; color: theme.textSecondary }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text { text: "Show Hub navigation bar"; font.pixelSize: theme.fontLabel
+                                color: theme.textPrimary; Layout.fillWidth: true }
+                            Switch {
+                                objectName: "hubBarSwitch"
+                                checked: { var _ = store.revision; return store.appearance().hubControlsMode !== "immersive" }
+                                onToggled: {
+                                    store.setAppearance("hubControlsMode", checked ? "standard" : "immersive")
+                                    checked = Qt.binding(function () {
+                                        var _ = store.revision
+                                        return store.appearance().hubControlsMode !== "immersive"
+                                    })
+                                }
+                            }
+                        }
+                        Text {
+                            Layout.fillWidth: true; wrapMode: Text.WordWrap
+                            text: "Turn this off for an immersive Hub. Screens and appearance are then managed in EdgeHub Manager; each widget's own corner configuration remains available on the Hub."
+                            font.pixelSize: theme.fontCaption; color: theme.textTertiary
+                        }
                         RowLayout {
                             Layout.fillWidth: true
                             Text { text: "Glass / Transparency"; font.pixelSize: theme.fontLabel; font.bold: true; color: theme.textSecondary; Layout.fillWidth: true }
@@ -349,6 +428,7 @@ Rectangle {
                         }
                         Slider {
                             Layout.fillWidth: true
+                            implicitHeight: theme.touchTertiary
                             from: 0; to: 1; value: root.glassOpacity
                             // Dragging writes `value` internally, which would sever the
                             // `value: root.glassOpacity` binding forever. Push to source,
@@ -401,12 +481,12 @@ Rectangle {
                             }
                         }
                         // These two knobs are independent: "Animated background" decides
-                        // whether the living backdrop shows at all (off → plain gradient),
-                        // while "Reduce motion" keeps the backdrop but freezes its motion
-                        // (and shortens transitions everywhere).
+                        // whether the living backdrop shows at all, while "Reduce motion"
+                        // keeps the backdrop but freezes its motion and removes spatial
+                        // transitions, including the physical orientation turn.
                         Text {
                             Layout.fillWidth: true; wrapMode: Text.WordWrap
-                            text: "“Animated background” shows the drifting backdrop (off = plain gradient). “Reduce motion” keeps the backdrop but stops all animation."
+                            text: "Animated background shows the drifting backdrop. Reduce motion stops animation and makes physical screen turns immediate."
                             font.pixelSize: theme.fontCaption; color: theme.textTertiary
                         }
                     }
@@ -475,4 +555,3 @@ Rectangle {
         }
     }
 }
-

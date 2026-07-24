@@ -50,10 +50,13 @@ SegmentedControl 1.0 widgets/SegmentedControl.qml
 SensorsWidget 1.0 widgets/SensorsWidget.qml
 SettingsPanel 1.0 widgets/SettingsPanel.qml
 PresetPicker 1.0 widgets/PresetPicker.qml
+PresetPreview 1.0 widgets/PresetPreview.qml
 Sparkline 1.0 widgets/Sparkline.qml
 StarfieldBackground 1.0 widgets/StarfieldBackground.qml
 TasksWidget 1.0 widgets/TasksWidget.qml
 WavesBackground 1.0 widgets/WavesBackground.qml
 WeatherWidget 1.0 widgets/WeatherWidget.qml
 WidgetChrome 1.0 widgets/WidgetChrome.qml
+WidgetHost 1.0 widgets/WidgetHost.qml
+ProviderState 1.0 widgets/ProviderState.qml
 WidgetConfigPanel 1.0 widgets/WidgetConfigPanel.qml

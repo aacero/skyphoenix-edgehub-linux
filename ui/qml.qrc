@@ -18,12 +18,16 @@
 
         <!-- Shared framework components -->
         <file alias="qml/WidgetChrome.qml">qml/widgets/WidgetChrome.qml</file>
+        <file alias="qml/WidgetHost.qml">qml/widgets/WidgetHost.qml</file>
+        <file alias="qml/ProviderState.qml">qml/widgets/ProviderState.qml</file>
+        <file alias="qml/WeatherIcon.qml">qml/widgets/WeatherIcon.qml</file>
         <file alias="qml/AppIcon.qml">qml/widgets/AppIcon.qml</file>
         <file alias="qml/PillButton.qml">qml/widgets/PillButton.qml</file>
         <file alias="qml/SegmentedControl.qml">qml/widgets/SegmentedControl.qml</file>
         <file alias="qml/RingProgress.qml">qml/widgets/RingProgress.qml</file>
         <file alias="qml/SettingsPanel.qml">qml/widgets/SettingsPanel.qml</file>
         <file alias="qml/PresetPicker.qml">qml/widgets/PresetPicker.qml</file>
+        <file alias="qml/PresetPreview.qml">qml/widgets/PresetPreview.qml</file>
         <file alias="qml/Sparkline.qml">qml/widgets/Sparkline.qml</file>
         <file alias="qml/MetricGauge.qml">qml/widgets/MetricGauge.qml</file>
         <file alias="qml/AnimatedBackground.qml">qml/widgets/AnimatedBackground.qml</file>

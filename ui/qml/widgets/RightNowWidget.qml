@@ -33,6 +33,11 @@ WidgetChrome {
         return (store && instanceId) ? JSON.parse(JSON.stringify(store.settingsFor(instanceId))) : ({})
     }
     readonly property string current: cfg.text || ""
+    readonly property real startedAt: Number(cfg.startedAt || 0)
+    property string _observedCurrent: ""
+    property real _observedStartedAt: 0
+    property bool _trackingCurrent: false
+    readonly property string completionStyle: cfg.completionStyle || "celebrate"
     // A focus counts only if it has real (non-whitespace) content.
     readonly property bool hasFocus: current.trim().length > 0
     // Reactive on `tick` (bumped every second by the Dashboard) so it rolls over
@@ -45,14 +50,74 @@ WidgetChrome {
         var key = Qt.formatDate(new Date(), "yyyy-MM-dd")
         return cfg.day === key ? (cfg.finishedToday || 0) : 0
     }
-    function setText(t) { if (store && t !== w.current) store.setSetting(instanceId, "text", t) }
+    function setText(t) {
+        if (!store || t === w.current) return
+        store.patchSettings(instanceId, { text: t, startedAt: t.trim().length ? Date.now() : 0 })
+    }
+    Component.onCompleted: {
+        w._observedCurrent = w.current
+        w._observedStartedAt = w.startedAt
+        w._trackingCurrent = true
+    }
+    onCurrentChanged: {
+        if (!w._trackingCurrent) return
+        var previous = w._observedCurrent
+        w._observedCurrent = w.current
+        if (previous === w.current) return
+        var shouldStart = w.current.trim().length > 0
+        var expected = w.current
+        var startedAtWhenTextChanged = w.startedAt
+        var lifecycleSupplied = w.startedAt !== w._observedStartedAt
+        w._observedStartedAt = w.startedAt
+        // The Manager's schema field writes `text` without calling setText.
+        // Reconcile its timer lifecycle so both editors produce the same state.
+        Qt.callLater(function () {
+            if (!w.store || w.current !== expected) return
+            if (w.startedAt !== startedAtWhenTextChanged) return
+            if (shouldStart && !lifecycleSupplied)
+                w.store.setSetting(w.instanceId, "startedAt", Date.now())
+            else if (!shouldStart && !lifecycleSupplied && w.startedAt !== 0)
+                w.store.setSetting(w.instanceId, "startedAt", 0)
+        })
+    }
+    onStartedAtChanged: Qt.callLater(function () {
+        w._observedStartedAt = w.startedAt
+    })
+    function clearFocus() { if (store) store.patchSettings(instanceId, { text: "", startedAt: 0 }) }
+    readonly property int elapsedSeconds: hasFocus && startedAt > 0
+        ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000) + (w.tick, 0)) : 0
+    function elapsedLabel() {
+        var m = Math.floor(elapsedSeconds / 60)
+        if (m < 1) return "Started just now"
+        if (m < 60) return "Focused for " + m + " min"
+        var h = Math.floor(m / 60), rem = m % 60
+        return "Focused for " + h + "h" + (rem ? " " + rem + "m" : "")
+    }
+    function startedLabel() {
+        return startedAt > 0 ? Qt.formatTime(new Date(startedAt), "HH:mm") : "Not started"
+    }
+    property bool clearArmed: false
+    function requestClear() {
+        if (clearArmed) {
+            clearFocus()
+            clearArmed = false
+        } else {
+            clearArmed = true
+            clearArmTimer.restart()
+        }
+    }
+    Timer { id: clearArmTimer; interval: 3500; onTriggered: w.clearArmed = false }
     // Finishing a focus is a small win - count it and celebrate, then clear.
     // Operates on the visible text when given (Done!), else the saved focus.
     function finish(explicitText) {
         var t = explicitText !== undefined ? explicitText : w.current
         var had = t.trim().length > 0
         var patch = { text: "" }
-        if (had) { patch.finishedToday = finishedToday + 1; patch.day = todayKey; celebrateNow("🎉 Done!") }
+        patch.startedAt = 0
+        if (had) {
+            patch.finishedToday = finishedToday + 1; patch.day = todayKey
+            if (completionStyle === "celebrate") celebrateNow("Done!")
+        }
         if (store) store.patchSettings(instanceId, patch)
     }
 
@@ -73,8 +138,8 @@ WidgetChrome {
         anchors.fill: parent; radius: theme.radiusLg; color: w.effAccent; opacity: 0; z: 5
         SequentialAnimation on opacity {
             id: flash; running: false
-            NumberAnimation { to: 0.30; duration: 120 }
-            NumberAnimation { to: 0.0; duration: 500 }
+            NumberAnimation { to: theme.effectiveReduceMotion ? 0 : 0.30; duration: theme.motionFast }
+            NumberAnimation { to: 0.0; duration: theme.motionSlow }
         }
     }
     Text {
@@ -84,14 +149,14 @@ WidgetChrome {
         color: w.effAccent; horizontalAlignment: Text.AlignHCenter
         SequentialAnimation {
             id: celebrateAnim; running: false
-            PropertyAction { target: celebrateLabel; property: "scale"; value: 0.6 }
+            PropertyAction { target: celebrateLabel; property: "scale"; value: theme.effectiveReduceMotion ? 1 : 0.6 }
             ParallelAnimation {
-                NumberAnimation { target: celebrateLabel; property: "opacity"; from: 0; to: 1; duration: 180 }
-                NumberAnimation { target: celebrateLabel; property: "scale"; to: 1.12
-                    duration: 260; easing.type: theme.reduceMotion ? Easing.Linear : Easing.OutBack }
+                NumberAnimation { target: celebrateLabel; property: "opacity"; from: 0; to: 1; duration: theme.motionAdd }
+                NumberAnimation { target: celebrateLabel; property: "scale"; to: theme.effectiveReduceMotion ? 1 : 1.12
+                    duration: theme.motionPage; easing.type: theme.effectiveReduceMotion ? Easing.Linear : Easing.OutBack }
             }
             PauseAnimation { duration: 850 }
-            NumberAnimation { target: celebrateLabel; property: "opacity"; to: 0; duration: 500 }
+            NumberAnimation { target: celebrateLabel; property: "opacity"; to: 0; duration: theme.motionSlow }
         }
     }
 
@@ -100,6 +165,9 @@ WidgetChrome {
     // half-cell is told apart by the box (~344-416px short side vs ~690px+).
     readonly property bool micro: sizeClass === "compact" && Math.min(width, height) < 480
     readonly property bool horiz: sizeClass === "wide"
+    readonly property bool heroRoomy: sizeClass === "large" || sizeClass === "full"
+        || ((sizeClass === "tall" || sizeClass === "wide")
+            && Math.min(width, height) >= 480)
     // What each size earns: micro is the focus text alone (a pure cue); every
     // larger size adds the eyebrow (identity - the header is hidden on tiles),
     // the daily momentum line, and a Done button - the single most useful
@@ -107,11 +175,20 @@ WidgetChrome {
     readonly property bool showEyebrow: !micro
     readonly property bool showDoneTile: !micro && hasFocus
     readonly property bool showCount: !micro && finishedToday > 0
+    readonly property bool showElapsed: hasFocus && startedAt > 0 && !micro
+    readonly property int heroMaxLines: micro ? 3 : (sizeClass === "tall" ? 5 : 4)
+    readonly property real heroMaxPx: {
+        if (micro) return Math.max(36, Math.min(width * 0.145, height * 0.12, 52))
+        if (sizeClass === "compact") return Math.max(42, Math.min(width * 0.082, height * 0.12, 58))
+        if (horiz) return Math.max(38, Math.min(height * 0.16, width * 0.052, 54))
+        return Math.max(42, Math.min(width * 0.115, height * 0.10, 60))
+    }
     readonly property real heroPx: {
-        if (micro) return Math.max(14, Math.min(width * 0.12, 22))
-        if (sizeClass === "compact") return Math.max(16, Math.min(width * 0.055, 34))
-        if (horiz) return Math.max(18, Math.min(height * 0.13, width * 0.045, 40))
-        return Math.max(16, Math.min(width * 0.10, 44))   // tall
+        var n = current.trim().length
+        if (n <= 18) return heroMaxPx
+        if (n <= 45) return Math.max(theme.fontTitle, heroMaxPx * 0.84)
+        if (n <= 90) return Math.max(theme.fontTitle, heroMaxPx * 0.70)
+        return Math.max(theme.fontTitle, heroMaxPx * 0.58)
     }
 
     // Tile / display mode
@@ -129,32 +206,93 @@ WidgetChrome {
             Layout.alignment: Qt.AlignVCenter
             spacing: w.micro ? 2 : theme.spacingXs
             Text {
+                objectName: "rightNowEyebrow"
                 visible: w.showEyebrow
                 Layout.fillWidth: true
                 horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
                 text: "RIGHT NOW"
-                font.pixelSize: Math.max(11, Math.min(w.width * 0.026, 15))
+                font.pixelSize: Math.max(theme.fontMinimum,
+                                         Math.min(w.width * 0.026, theme.fontLabel))
                 font.letterSpacing: 2; font.weight: Font.DemiBold
-                color: theme.textTertiary
+                color: w.effAccent
                 elide: Text.ElideRight; maximumLineCount: 1
             }
             Text {
+                objectName: "rightNowHero"
                 Layout.fillWidth: true
                 horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
                 wrapMode: Text.WordWrap
                 text: w.hasFocus ? w.current : "Tap to set your one focus"
-                font.pixelSize: w.hasFocus ? w.heroPx : Math.max(14, Math.min(w.width * 0.035, 18))
+                font.pixelSize: w.hasFocus ? w.heroPx
+                                           : Math.max(theme.fontLabel,
+                                                      Math.min(w.width * 0.042, 22))
                 font.bold: w.hasFocus
                 // Hero content adopts the per-instance accent (S7); placeholder stays muted.
-                color: w.hasFocus ? w.effAccent : theme.textTertiary
-                maximumLineCount: w.micro ? 3 : (w.sizeClass === "tall" ? 5 : 3)
+                color: w.hasFocus ? w.effAccent : theme.textPrimary
+                opacity: w.hasFocus ? 1 : 0.78
+                maximumLineCount: w.heroMaxLines
                 elide: Text.ElideRight
+            }
+            Text {
+                visible: !w.hasFocus && w.heroRoomy
+                Layout.fillWidth: true
+                horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
+                text: "Choose one finishable outcome. Everything else can wait."
+                color: theme.textPrimary
+                opacity: 0.78
+                font.pixelSize: theme.fontLabel
+                wrapMode: Text.WordWrap
             }
         }
         ColumnLayout {
             visible: w.showDoneTile || w.showCount
             Layout.alignment: Qt.AlignVCenter | Qt.AlignHCenter
             spacing: theme.spacingXs
+            Rectangle {
+                objectName: "rightNowFocusContext"
+                visible: w.heroRoomy && w.hasFocus
+                Layout.fillWidth: true
+                Layout.preferredWidth: w.horiz ? Math.min(540, w.width * 0.43)
+                                               : Math.min(620, w.width * 0.86)
+                Layout.preferredHeight: 78
+                radius: theme.radiusMd
+                color: Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.08)
+                border.width: 1
+                border.color: Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.25)
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: theme.spacingMd
+                    anchors.rightMargin: theme.spacingMd
+                    spacing: theme.spacingSm
+                    ColumnLayout {
+                        Layout.fillWidth: true; spacing: 2
+                        Text { text: "STARTED"; color: w.effAccent; font.pixelSize: theme.fontLabel
+                            font.bold: true; font.letterSpacing: 1.1 }
+                        Text { text: w.startedLabel(); color: theme.textPrimary
+                            font.pixelSize: theme.fontLabel; font.bold: true }
+                    }
+                    Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true
+                        Layout.topMargin: 15; Layout.bottomMargin: 15; color: theme.cardBorder }
+                    ColumnLayout {
+                        Layout.fillWidth: true; spacing: 2
+                        Text { text: "IN FLOW"; color: w.effAccent; font.pixelSize: theme.fontLabel
+                            font.bold: true; font.letterSpacing: 1.1 }
+                        Text { text: w.elapsedSeconds < 60 ? "Just now"
+                              : Math.floor(w.elapsedSeconds / 60) + " min"
+                            color: w.effAccent; font.pixelSize: theme.fontLabel; font.bold: true }
+                    }
+                    Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true
+                        Layout.topMargin: 15; Layout.bottomMargin: 15; color: theme.cardBorder }
+                    ColumnLayout {
+                        Layout.fillWidth: true; spacing: 2
+                        Text { text: "FINISHED"; color: w.effAccent; font.pixelSize: theme.fontLabel
+                            font.bold: true; font.letterSpacing: 1.1 }
+                        Text { text: w.finishedToday + " today"; color: theme.textPrimary
+                            font.pixelSize: theme.fontLabel; font.bold: true }
+                    }
+                }
+            }
             PillButton {
                 visible: w.showDoneTile
                 Layout.alignment: Qt.AlignHCenter
@@ -162,11 +300,21 @@ WidgetChrome {
                 onClicked: w.finish()
             }
             Text {
-                visible: w.showCount
+                objectName: "rightNowCount"
+                visible: w.showCount && !w.heroRoomy
                 Layout.alignment: Qt.AlignHCenter
                 text: "✓ " + w.finishedToday + " today"
-                font.pixelSize: Math.max(12, Math.min(w.width * 0.03, 15))
-                color: theme.textTertiary
+                font.pixelSize: theme.fontLabel
+                color: theme.textPrimary
+                opacity: 0.78
+            }
+            Text {
+                objectName: "rightNowElapsed"
+                visible: w.showElapsed && !w.heroRoomy
+                Layout.alignment: Qt.AlignHCenter
+                text: w.elapsedLabel(); color: theme.textPrimary
+                opacity: 0.78
+                font.pixelSize: theme.fontLabel
             }
         }
     }
@@ -180,15 +328,17 @@ WidgetChrome {
         Text {
             Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
             text: "What's the one thing right now?"
-            font.pixelSize: 18; color: theme.textSecondary
+            font.pixelSize: theme.fontTitle; color: theme.textPrimary
         }
         TextField {
             id: field
             Layout.fillWidth: true; Layout.preferredHeight: theme.touchPrimary
             text: w.current
-            font.pixelSize: 28; horizontalAlignment: Text.AlignHCenter
+            font.pixelSize: Math.max(theme.fontTitle, Math.min(w.width * 0.045, 32))
+            horizontalAlignment: Text.AlignHCenter
             color: theme.textPrimary; placeholderText: "e.g. Finish the report"
             placeholderTextColor: theme.textTertiary
+            Accessible.name: "Current focus"
             background: Rectangle { radius: theme.radiusMd; color: theme.backgroundColor
                 border.color: field.activeFocus ? w.effAccent : theme.cardBorder; border.width: 2 }
             onEditingFinished: w.setText(text)
@@ -199,16 +349,23 @@ WidgetChrome {
             Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
             visible: w.finishedToday > 0
             text: "✓ " + w.finishedToday + (w.finishedToday === 1 ? " thing finished today" : " things finished today")
-            font.pixelSize: 15; color: theme.textTertiary
+            font.pixelSize: theme.fontLabel; color: theme.textPrimary; opacity: 0.78
         }
         RowLayout {
             Layout.alignment: Qt.AlignHCenter; spacing: theme.spacingMd
             PillButton { label: "Save"; glyph: "✓"; primary: true; tint: w.effAccent
                 onClicked: w.setText(field.text) }
-            PillButton { label: "Done!"; glyph: "🎉"; tint: theme.textSecondary
+            PillButton { label: "Done!"; glyph: "✓"; tint: w.effAccent
                 // Act on the text the user actually sees, not the stale saved value.
                 enabled: field.text.trim().length > 0
                 onClicked: { w.finish(field.text); field.text = "" } }
+            PillButton { label: w.clearArmed ? "Confirm" : "Clear"; glyph: "✕"
+                tint: w.clearArmed ? theme.warning : theme.textPrimary
+                enabled: field.text.trim().length > 0
+                onClicked: {
+                    if (w.clearArmed) field.text = ""
+                    w.requestClear()
+                } }
         }
         Item { Layout.fillHeight: true }
     }

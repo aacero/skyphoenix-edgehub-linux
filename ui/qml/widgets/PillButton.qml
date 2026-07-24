@@ -22,10 +22,12 @@ Rectangle {
     id: btn
     property string label: ""
     property string glyph: ""
+    property string glyphIcon: ""
     property color tint: theme.accent
     property bool primary: false      // filled vs. outline
     property bool danger: false
     property bool enabledState: true
+    property string accessibleName: ""
     // A caller's floor for a HERO action - "this one is large, do not shrink-wrap
     // it to its text". A FLOOR, exactly like theme.touchSecondary below: content
     // wins whenever it is wider, so a longer label can never be capped by it.
@@ -37,6 +39,21 @@ Rectangle {
     // the label just elides inside a button that had no reason to be that narrow.
     property int minWidth: 0
     signal clicked()
+
+    activeFocusOnTab: enabledState
+    Accessible.role: Accessible.Button
+    Accessible.name: accessibleName !== "" ? accessibleName
+                     : (label !== "" ? label : (glyphIcon !== "" ? glyphIcon : glyph))
+    Accessible.description: danger ? "Destructive action" : ""
+    Accessible.onPressAction: if (btn.enabledState) btn.clicked()
+    Keys.onPressed: function(event) {
+        if (!btn.enabledState) return
+        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+                || event.key === Qt.Key_Space) {
+            btn.clicked()
+            event.accepted = true
+        }
+    }
 
     // The glyph is a font-sized SIBLING of the label, not a fixed 18px. The label
     // is theme.fontLabel (15 * textScale, clamped 0.8-1.6), so a literal 18 froze
@@ -64,8 +81,10 @@ Rectangle {
 
     property color _c: danger ? theme.error : tint
     color: primary ? _c : Qt.rgba(_c.r, _c.g, _c.b, ma.containsMouse ? 0.22 : 0.12)
-    border.width: primary ? 0 : 1
-    border.color: Qt.rgba(_c.r, _c.g, _c.b, 0.5)
+    border.width: activeFocus ? 3 : (primary ? 0 : 1)
+    border.color: activeFocus ? theme.textPrimary
+                              : Qt.rgba(_c.r, _c.g, _c.b, 0.5)
+    Accessible.focused: activeFocus
     Behavior on color { ColorAnimation { duration: theme.motionFast } }
     scale: ma.pressed && enabledState ? 0.96 : 1.0
     Behavior on scale { NumberAnimation { duration: theme.motionFast; easing.type: Easing.OutCubic } }
@@ -81,8 +100,15 @@ Rectangle {
         width: Math.min(implicitWidth, Math.max(0, btn.width - 2 * btn._padH))
         spacing: theme.spacingXs
 
+        AppIcon {
+            visible: btn.glyphIcon !== ""
+            name: btn.glyphIcon
+            size: btn.glyphPx
+            color: btn.primary ? "#0D1117" : btn._c
+            Layout.alignment: Qt.AlignVCenter
+        }
         Text {
-            visible: btn.glyph !== ""
+            visible: btn.glyph !== "" && btn.glyphIcon === ""
             text: btn.glyph
             font.pixelSize: btn.glyphPx
             color: btn.primary ? "#0D1117" : btn._c

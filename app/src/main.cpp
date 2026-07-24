@@ -44,6 +44,7 @@
 #include "display_match.h"
 #include "config_bridge.h"
 #include "network_access_policy.h"
+#include "notification_bridge.h"
 #include "license_bridge.h"
 #include "metrics_worker.h"
 
@@ -564,6 +565,9 @@ int main(int argc, char *argv[]) {
     ConfigBridge* configBridge = new ConfigBridge(config, &engine);
     engine.rootContext()->setContextProperty("configBridge", configBridge);
 
+    NotificationBridge* notificationBridge = new NotificationBridge(&engine);
+    engine.rootContext()->setContextProperty("notifications", notificationBridge);
+
     // The Pro tier, live. QML gates premium content on `license.isPro`; a key
     // pasted in the Manager (pushed over the control socket, below) re-gates
     // without a restart. Verification is offline and fails-soft (see license.rs).
@@ -607,9 +611,24 @@ int main(int argc, char *argv[]) {
             return;
         }
         if (ok) *ok = true;
-        // Trigger a live reload in QML (main.qml forwards this to the dashboard).
-        for (auto* obj : engine.rootObjects())
-            obj->setProperty("externalUiState", json);
+        // Trigger a live reload in QML. The writable property is the primary
+        // bridge because its change signal is observable and covered by the shell
+        // integration test. main.qml retains the latest state and retries briefly
+        // if the StackView has not finished constructing Dashboard yet, so an IPC
+        // request accepted during startup cannot stop at persistence without ever
+        // repainting the panel. An alternate root without that property falls back
+        // to the direct method.
+        for (auto* obj : engine.rootObjects()) {
+            if (obj->setProperty("externalUiState", json)) {
+                qInfo() << "Hub: external UI state delivered to QML property,"
+                        << "applied:" << obj->property("externalUiStateApplied").toBool();
+            } else {
+                const bool invoked = QMetaObject::invokeMethod(
+                    obj, "applyExternalUiState", Q_ARG(QVariant, json));
+                if (!invoked)
+                    qWarning() << "Hub: QML root cannot accept external UI state";
+            }
+        }
     // EXPLICIT Qt::DirectConnection is REQUIRED, not incidental: both the ack
     // correctness and the validity of the `bool* ok` argument depend on SAME-THREAD
     // synchronous delivery - the slot must run and write *ok BEFORE handleLine() reads

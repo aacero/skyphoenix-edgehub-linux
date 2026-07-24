@@ -16,13 +16,10 @@ import QtQuick.Layouts
 // own `instanceId`, so it reads the same `url` setting and there is exactly one
 // source of truth per tile.
 //
-// EGRESS. Nothing new: the nested Calendar fetches through the injected NetHub -
-// the same gate, the same kill switch, the same allowlist, the same counters, and
-// the same 15-minute poll gated on `active`. This widget constructs no XHR of its
-// own (`check_no_raw_xhr.sh` would fail the build if it did). It is honestly ONE
-// MORE request of the URL you already gave it, not a new destination: a tile
-// cannot see another tile's parsed model, and wiring a shared agenda cache into
-// Dashboard is a bigger change than this widget's remit.
+// EGRESS. The nested Calendar fetches through the injected NetHub with the same
+// kill switch, allowlist, counters, private-reference resolution, and provider
+// lease. Calendar and Now/Next instances using the same stored source coalesce
+// concurrent requests and reuse the just-published in-memory result.
 //
 // Sizing (W1 wave 2b): there are exactly TWO blocks, ever, so this widget cannot
 // earn a size with more rows - it earns it with LEGIBILITY. The type was a flat
@@ -31,8 +28,8 @@ import QtQuick.Layouts
 //   • wide  - NOW and NEXT side by side. A 846x306 banner stacked into two blocks
 //             leaves each ~120px; beside each other they get the full height.
 //   • every other shape - stacked, with the type scaled to the box.
-//   • full (overlay) - as before, plus the URL editor (genuinely modal, so that
-//             one stays keyed off `expanded`).
+//   • full (overlay) - larger hierarchy and live source status; connection
+//             editing stays in the adjacent shared WidgetConfigPanel.
 // (No 0.5x0.5 is declared, so `micro` is never true here - see WidgetCatalog.)
 // ─────────────────────────────────────────────────────────────────────────
 WidgetChrome {
@@ -48,6 +45,9 @@ WidgetChrome {
     property var netHub: null
     // Test seam, forwarded the same way.
     property var xhrFactory: null
+    // Test seam for the final confirmed external launch.
+    property var externalOpener: function(url) { return Qt.openUrlExternally(url) }
+    property string pendingJoinUrl: ""
 
     title: "Now / Next"; iconName: "nownext"; accentColor: theme.catServices
 
@@ -56,6 +56,10 @@ WidgetChrome {
         return (store && instanceId) ? JSON.parse(JSON.stringify(store.settingsFor(instanceId))) : ({})
     }
     readonly property string url: cfg.url || ""
+    readonly property int bufferMin: Math.max(0, Math.min(120,
+        Number(cfg.bufferMin !== undefined ? cfg.bufferMin : 10)))
+    property double nowMsOverride: -1
+    function currentMs() { return w.nowMsOverride >= 0 ? w.nowMsOverride : Date.now() }
 
     // The agenda model. Zero-sized + invisible: it is data, not chrome.
     CalendarWidget {
@@ -67,6 +71,7 @@ WidgetChrome {
         netHub: w.netHub
         xhrFactory: w.xhrFactory
         tick: w.tick
+        nowMsOverride: w.nowMsOverride
     }
 
     // Proxies, so this widget's own state reads (and its tests) never have to
@@ -74,7 +79,10 @@ WidgetChrome {
     readonly property var events: agenda.events
     readonly property bool loading: agenda.loading
     readonly property string errorText: agenda.errorText
-    function refresh() { agenda.refresh() }
+    readonly property bool stale: agenda.stale
+    readonly property string freshnessText: agenda.freshnessText()
+    readonly property var parseWarnings: agenda.parseWarnings
+    function refresh() { agenda.refresh(true) }
 
     // An all-day event carries DTEND exclusive, and CalendarWidget leaves dur = 0
     // when there is no DTEND at all - so `end` can equal `start` (midnight) and a
@@ -84,27 +92,36 @@ WidgetChrome {
         if (!ev || !ev.start) return 0
         var s = ev.start.getTime()
         var e = ev.end ? ev.end.getTime() : s
-        if (ev.allDay) return Math.max(e, s + 86400000)
+        if (ev.allDay) {
+            var nextMidnight = new Date(ev.start)
+            nextMidnight.setHours(0, 0, 0, 0)
+            nextMidnight.setDate(nextMidnight.getDate() + 1)
+            return Math.max(e, nextMidnight.getTime())
+        }
         return e
     }
 
     // `tick` is what makes these re-evaluate each second; nothing is written.
     readonly property var nowEvent: {
-        var t = (w.tick, Date.now())
+        var t = (w.tick, w.currentMs())
         var evs = w.events
         for (var i = 0; i < evs.length; i++)
             if (evs[i].start.getTime() <= t && t < w.endOf(evs[i])) return evs[i]
         return null
     }
     readonly property var nextEvent: {
-        var t = (w.tick, Date.now())
+        var t = (w.tick, w.currentMs())
         var evs = w.events
         for (var i = 0; i < evs.length; i++)
             if (evs[i].start.getTime() > t) return evs[i]
         return null
     }
 
-    status: w.expanded ? "" : (w.nowEvent ? "now" : (w.nextEvent ? "next" : ""))
+    status: w.errorText.length ? "Error" : w.stale ? "Stale"
+            : w.parseWarnings.length ? "Partial"
+            : (w.expanded ? "" : (w.nowEvent ? "now" : (w.nextEvent ? "next" : "")))
+    statusColor: w.errorText.length || w.stale || w.parseWarnings.length
+                 ? theme.warning : w.effAccent
 
     // ── Per-size layout (sizeClass injected by Dashboard) ────────────────────
     // Two blocks side by side once the box is genuinely wider than it is tall.
@@ -115,17 +132,17 @@ WidgetChrome {
     readonly property real _blockH: w.horiz ? height : height / Math.max(1, w._blocks)
     // The event title is the thing you read from across the room.
     readonly property real titlePx: w.expanded ? 44
-        : Math.max(15, Math.min(w._colW * 0.075, w._blockH * 0.22, 40))
+        : Math.max(theme.fontTitle, Math.min(w._colW * 0.075, w._blockH * 0.22, 40))
     readonly property real nextTitlePx: w.expanded ? 32
-        : Math.max(14, Math.round(w.titlePx * (w.nowEvent ? 0.78 : 1.0)))
-    readonly property real labelPx: w.expanded ? 15
-        : Math.max(10, Math.min(w.titlePx * 0.36, 16))
-    readonly property real metaPx: w.expanded ? 18
-        : Math.max(11, Math.min(w.titlePx * 0.44, 20))
+        : Math.max(theme.fontTitle, Math.round(w.titlePx * (w.nowEvent ? 0.78 : 1.0)))
+    readonly property real labelPx: w.expanded ? theme.fontLabel
+        : Math.max(theme.fontLabel, Math.min(w.titlePx * 0.36, 19))
+    readonly property real metaPx: w.expanded ? 22
+        : Math.max(theme.fontLabel, Math.min(w.titlePx * 0.48, 24))
 
     // Whole minutes, rounded UP: "in 1 min" must not appear as "in 0 min" for the
     // 59 seconds before the thing starts.
-    function minutesUntil(d) { return Math.ceil((d.getTime() - Date.now()) / 60000) }
+    function minutesUntil(d) { return Math.ceil((d.getTime() - w.currentMs()) / 60000) }
     function humanDelta(mins) {
         if (mins <= 0) return "now"
         if (mins < 60) return "in " + mins + " min"
@@ -138,18 +155,53 @@ WidgetChrome {
         if (!ev) return ""
         var t = (w.tick, 0)
         if (ev.allDay) {
-            var today = new Date().toDateString() === ev.start.toDateString()
+            var today = new Date(w.currentMs()).toDateString() === ev.start.toDateString()
             return today ? "all day" : Qt.formatDate(ev.start, "ddd MMM d") + " · all day"
         }
-        return Qt.formatTime(ev.start, "HH:mm") + " · " + w.humanDelta(w.minutesUntil(ev.start))
+        var mins = w.minutesUntil(ev.start)
+        return Qt.formatTime(ev.start, "HH:mm") + " · "
+               + (mins > 0 && mins <= w.bufferMin ? "starts soon" : w.humanDelta(mins))
     }
     function untilText(ev) {
         if (!ev) return ""
         var t = (w.tick, 0)
         if (ev.allDay) return "all day"
-        var mins = Math.ceil((w.endOf(ev) - Date.now()) / 60000)
+        var mins = Math.ceil((w.endOf(ev) - w.currentMs()) / 60000)
         return "until " + Qt.formatTime(new Date(w.endOf(ev)), "HH:mm")
                + (mins > 0 && mins < 60 ? " · " + mins + " min left" : "")
+    }
+    function meetingUrl(ev) {
+        if (!ev) return ""
+        var direct = String(ev.url || "")
+        if (/^https:\/\//i.test(direct)) return direct.replace(/[)\],.!;]+$/, "")
+        var match = /https:\/\/[^\s,;]+/i.exec(String(ev.location || ""))
+        return match ? match[0].replace(/[)\],.!;]+$/, "") : ""
+    }
+    readonly property string joinUrl: w.meetingUrl(w.nowEvent) || w.meetingUrl(w.nextEvent)
+    function joinHost(url) {
+        var m = /^https:\/\/([^\/?#]+)/i.exec(url || "")
+        return m ? m[1].replace(/^www\./i, "") : "meeting"
+    }
+    function joinLabel(url) {
+        return w.pendingJoinUrl === url
+            ? "Open " + w.joinHost(url) + "?"
+            : "Join " + w.joinHost(url)
+    }
+    function requestJoin(url) {
+        if (!url.length) return
+        if (w.pendingJoinUrl === url) {
+            w.pendingJoinUrl = ""
+            joinConfirmTimer.stop()
+            w.externalOpener(url)
+            return
+        }
+        w.pendingJoinUrl = url
+        joinConfirmTimer.restart()
+    }
+    Timer {
+        id: joinConfirmTimer
+        interval: 5000
+        onTriggered: w.pendingJoinUrl = ""
     }
 
     // ── Empty / error state ────────────────────────────────────────────────
@@ -158,10 +210,12 @@ WidgetChrome {
         width: parent.width - 2 * theme.spacingSm
         visible: !w.url.length || (!w.nowEvent && !w.nextEvent)
         text: !w.url.length
-              ? (w.expanded ? "Add an ICS calendar URL below to see what's now and next."
-                            : "Add a calendar\n(ICS URL) in settings")
-              : (w.loading ? "Loading…" : (w.errorText.length ? w.errorText : "Nothing scheduled"))
-        color: theme.textTertiary; font.pixelSize: w.expanded ? 15 : 12
+              ? (w.expanded ? "Add a private ICS reference in the configuration panel."
+                            : "Add a calendar\nin settings")
+              : (w.loading ? "Loading calendar..." : (w.errorText.length ? w.errorText : "Nothing scheduled"))
+        color: w.errorText.length ? theme.warning : theme.textTertiary
+        font.pixelSize: w.expanded ? theme.fontTitle
+            : Math.max(theme.fontLabel, Math.min(w.width * 0.045, 22))
         horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
     }
 
@@ -171,8 +225,7 @@ WidgetChrome {
     GridLayout {
         anchors.fill: parent
         anchors.margins: w.expanded ? theme.spacingMd : 0
-        // Keep clear of the expanded URL editor, which is anchored to the bottom.
-        anchors.bottomMargin: w.expanded ? theme.touchSecondary + theme.spacingXl : 0
+        anchors.bottomMargin: w.expanded ? theme.fontLabel + theme.spacingLg : 0
         visible: w.url.length > 0 && (w.nowEvent !== null || w.nextEvent !== null)
         columns: w.horiz ? 3 : 1        // NOW | hairline | NEXT
         rowSpacing: w.expanded ? theme.spacingXl : theme.spacingSm
@@ -203,6 +256,15 @@ WidgetChrome {
                                    + (w.nowEvent.location ? "  ·  " + w.nowEvent.location : "") : ""
                 color: theme.textSecondary; font.pixelSize: Math.round(w.metaPx)
                 elide: Text.ElideRight
+            }
+            PillButton {
+                visible: w.nowEvent !== null && w.meetingUrl(w.nowEvent).length > 0
+                         && w._blockH >= 220
+                label: w.joinLabel(w.meetingUrl(w.nowEvent))
+                glyph: "↗"; primary: w.pendingJoinUrl === w.meetingUrl(w.nowEvent)
+                tint: w.effAccent
+                minWidth: Math.min(240, Math.max(150, w._colW * 0.72))
+                onClicked: w.requestJoin(w.meetingUrl(w.nowEvent))
             }
             Item { Layout.fillHeight: true }
         }
@@ -245,35 +307,26 @@ WidgetChrome {
                 color: theme.textSecondary; font.pixelSize: Math.round(w.metaPx)
                 elide: Text.ElideRight
             }
+            PillButton {
+                visible: w.nextEvent !== null && w.meetingUrl(w.nextEvent).length > 0
+                         && w._blockH >= 220
+                label: w.joinLabel(w.meetingUrl(w.nextEvent))
+                glyph: "↗"; primary: w.pendingJoinUrl === w.meetingUrl(w.nextEvent)
+                tint: w.effAccent
+                minWidth: Math.min(240, Math.max(150, w._colW * 0.72))
+                onClicked: w.requestJoin(w.meetingUrl(w.nextEvent))
+            }
             Item { Layout.fillHeight: true }
         }
     }
 
-    // ── Expanded: the URL field, mirroring Calendar's own editor ────────────
-    RowLayout {
-        anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
-        visible: w.expanded
-        spacing: theme.spacingSm
-        TextField {
-            id: urlField
-            Layout.fillWidth: true; Layout.preferredHeight: theme.touchSecondary
-            text: w.url; placeholderText: "Paste an ICS calendar URL…"
-            placeholderTextColor: theme.textTertiary; color: theme.textPrimary; font.pixelSize: 15
-            background: Rectangle {
-                radius: theme.radiusSm; color: theme.backgroundColor
-                border.color: urlField.activeFocus ? w.effAccent : theme.cardBorder; border.width: 1
-            }
-            onEditingFinished: if (w.store) w.store.setSetting(w.instanceId, "url", text)
-            // Re-assert the store value after an external/store push: typing severs
-            // the `text:` binding permanently. Skip while the user is in the field.
-            Connections {
-                target: w
-                function onUrlChanged() { if (!urlField.activeFocus) urlField.text = w.url }
-            }
-        }
-        PillButton {
-            label: "Save"; primary: true; tint: w.effAccent
-            onClicked: if (w.store) w.store.setSetting(w.instanceId, "url", urlField.text)
-        }
+    Text {
+        visible: w.expanded && w.url.length > 0
+        anchors.left: parent.left; anchors.bottom: parent.bottom
+        width: parent.width
+        text: w.freshnessText + (w.parseWarnings.length ? " · " + w.parseWarnings.join("; ") : "")
+        color: w.errorText.length || w.stale || w.parseWarnings.length
+               ? theme.warning : theme.textTertiary
+        font.pixelSize: theme.fontMinimum; elide: Text.ElideRight
     }
 }

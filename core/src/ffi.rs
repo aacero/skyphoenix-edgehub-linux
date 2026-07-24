@@ -870,23 +870,8 @@ pub extern "C" fn xeneon_metrics_to_json(handle: *const MetricsHandle) -> *mut c
     if handle.is_null() {
         return std::ptr::null_mut();
     }
-    let m = &unsafe { &*handle }.metrics;
-    let json = serde_json::json!({
-        "cpu_usage_percent": m.cpu_usage_percent,
-        "cpu_temp_celsius": m.cpu_temp_celsius,
-        "ram_usage_percent": m.ram_usage_percent,
-        "ram_total_bytes": m.ram_total_bytes,
-        "ram_used_bytes": m.ram_used_bytes,
-        "cpu_core_count": m.cpu_core_count,
-        "gpu_usage_percent": m.gpu_usage_percent,
-        "gpu_temp_celsius": m.gpu_temp_celsius,
-        "net_rx_bytes_per_sec": m.net_rx_bytes_per_sec,
-        "net_tx_bytes_per_sec": m.net_tx_bytes_per_sec,
-        "disk_total_bytes": m.disk_total_bytes,
-        "disk_used_bytes": m.disk_used_bytes,
-        "disk_usage_percent": m.disk_usage_percent,
-    });
-    match serde_json::to_string(&json) {
+    let metrics = &unsafe { &*handle }.metrics;
+    match serde_json::to_string(metrics) {
         Ok(s) => to_c_string(s),
         Err(_) => std::ptr::null_mut(),
     }
@@ -967,9 +952,10 @@ pub extern "C" fn xeneon_secret_is_plaintext(raw: *const c_char) -> i32 {
 /// ```json
 /// { "id": "cachyos", "name": "CachyOS", "family": "arch",
 ///   "packageCount": 1461, "unsupportedReason": null,
-///   "updates": null, "installEpoch": 1752191590 }
+///   "updates": null, "installEpoch": 1752191590,
+///   "installSource": "package-log-estimate" }
 /// ```
-/// `packageCount`, `updates` and `installEpoch` are `null` - never `0` or `-1` -
+/// `packageCount`, `updates`, `installEpoch` and `installSource` are `null` - never `0` or `-1` -
 /// when unknown, so a sentinel can never render as a real measurement.
 ///
 /// This is READ-ONLY: it opens files and lists directories. It never mutates a
@@ -1700,18 +1686,110 @@ mod tests {
         let h = MetricsHandle {
             metrics: SystemMetrics {
                 cpu_usage_percent: 12.5,
+                cpu_usage_available: true,
+                cpu_sample_status: "ready".to_string(),
+                cpu_sample_unix_ms: 1_700_000_000_000,
                 cpu_temp_celsius: None,
+                cpu_load_1: Some(0.5),
+                cpu_load_5: Some(0.75),
+                cpu_load_15: Some(1.0),
+                cpu_frequency_mhz: Some(4200.0),
+                cpu_core_usage_percent: vec![25.0, 50.0],
+                cpu_temperature_sensors: vec![crate::metrics::CpuTemperatureReading {
+                    id: "coretemp:temp1".to_string(),
+                    label: "Package id 0".to_string(),
+                    celsius: 42.0,
+                }],
+                cpu_top_process_name: Some("compiler".to_string()),
+                cpu_top_process_percent: Some(18.5),
                 ram_usage_percent: 40.0,
+                ram_metrics_available: true,
+                ram_sample_unix_ms: 1_700_000_000_000,
+                ram_unavailable_reason: String::new(),
                 ram_total_bytes: 16,
                 ram_used_bytes: 8,
+                ram_available_bytes: 8,
+                ram_cached_bytes: 3,
+                ram_buffers_bytes: 1,
+                swap_total_bytes: 32,
+                swap_used_bytes: 4,
+                ram_pressure_some_avg10: Some(0.25),
                 cpu_core_count: 8,
                 gpu_usage_percent: Some(55.0),
                 gpu_temp_celsius: None,
+                gpu_primary_id: Some("card1".to_string()),
+                gpu_unavailable_reason: String::new(),
+                gpu_devices: vec![crate::metrics::GpuDeviceMetrics {
+                    id: "card1".to_string(),
+                    name: "Example GPU".to_string(),
+                    vendor: "AMD".to_string(),
+                    driver: "amdgpu".to_string(),
+                    device_type: "discrete".to_string(),
+                    usage_percent: Some(55.0),
+                    unavailable_reason: String::new(),
+                    temperature_celsius: Some(50.0),
+                    vram_total_bytes: Some(16 * 1024 * 1024 * 1024),
+                    vram_used_bytes: Some(4 * 1024 * 1024 * 1024),
+                    power_watts: Some(45.0),
+                    power_cap_watts: Some(220.0),
+                    clock_mhz: Some(2400.0),
+                    fan_rpm: Some(900),
+                    fan_max_rpm: Some(3200),
+                    temperature_critical_celsius: Some(105.0),
+                }],
                 net_rx_bytes_per_sec: 1.0,
                 net_tx_bytes_per_sec: 2.0,
+                net_metrics_available: true,
+                net_sample_status: "ready".to_string(),
+                net_sample_unix_ms: 1_700_000_000_000,
+                net_unavailable_reason: String::new(),
+                net_rx_total_bytes: 1_000,
+                net_tx_total_bytes: 2_000,
+                net_rx_errors: 1,
+                net_tx_errors: 2,
+                net_rx_dropped: 3,
+                net_tx_dropped: 4,
+                net_interfaces: vec![crate::metrics::NetworkInterfaceMetrics {
+                    name: "enp1s0".to_string(),
+                    friendly_name: "Desk Ethernet".to_string(),
+                    category: "physical".to_string(),
+                    included_by_default: true,
+                    link_state: "up".to_string(),
+                    speed_mbps: Some(2500),
+                    rate_available: true,
+                    rx_bytes_per_sec: 1.0,
+                    tx_bytes_per_sec: 2.0,
+                    rx_total_bytes: 1_000,
+                    tx_total_bytes: 2_000,
+                    rx_errors: 1,
+                    tx_errors: 2,
+                    rx_dropped: 3,
+                    tx_dropped: 4,
+                }],
                 disk_total_bytes: 100,
                 disk_used_bytes: 50,
+                disk_available_bytes: 45,
+                disk_reserved_bytes: 5,
+                disk_metrics_available: true,
+                disk_sample_unix_ms: 1_700_000_000_000,
+                disk_unavailable_reason: String::new(),
                 disk_usage_percent: 50.0,
+                disk_mounts: vec![crate::metrics::DiskMountMetrics {
+                    path: "/".to_string(),
+                    source: "/dev/nvme0n1p2".to_string(),
+                    fs_type: "ext4".to_string(),
+                    device: "nvme0n1p2".to_string(),
+                    metrics_available: true,
+                    total_bytes: 100,
+                    used_bytes: 50,
+                    available_bytes: 45,
+                    reserved_bytes: 5,
+                    usage_percent: 50.0,
+                    io_rate_available: true,
+                    read_bytes_per_sec: 10.0,
+                    write_bytes_per_sec: 20.0,
+                    ..Default::default()
+                }],
             },
         };
         let json = unsafe { take(xeneon_metrics_to_json(&h as *const MetricsHandle)) };
@@ -1719,26 +1797,96 @@ mod tests {
 
         for key in [
             "cpu_usage_percent",
+            "cpu_usage_available",
+            "cpu_sample_status",
+            "cpu_sample_unix_ms",
             "cpu_temp_celsius",
+            "cpu_load_1",
+            "cpu_load_5",
+            "cpu_load_15",
+            "cpu_frequency_mhz",
+            "cpu_core_usage_percent",
+            "cpu_temperature_sensors",
+            "cpu_top_process_name",
+            "cpu_top_process_percent",
             "ram_usage_percent",
+            "ram_metrics_available",
+            "ram_sample_unix_ms",
+            "ram_unavailable_reason",
             "ram_total_bytes",
             "ram_used_bytes",
+            "ram_available_bytes",
+            "ram_cached_bytes",
+            "ram_buffers_bytes",
+            "swap_total_bytes",
+            "swap_used_bytes",
+            "ram_pressure_some_avg10",
             "cpu_core_count",
             "gpu_usage_percent",
             "gpu_temp_celsius",
+            "gpu_primary_id",
+            "gpu_unavailable_reason",
+            "gpu_devices",
             "net_rx_bytes_per_sec",
             "net_tx_bytes_per_sec",
+            "net_metrics_available",
+            "net_sample_status",
+            "net_sample_unix_ms",
+            "net_unavailable_reason",
+            "net_rx_total_bytes",
+            "net_tx_total_bytes",
+            "net_rx_errors",
+            "net_tx_errors",
+            "net_rx_dropped",
+            "net_tx_dropped",
+            "net_interfaces",
             "disk_total_bytes",
             "disk_used_bytes",
+            "disk_available_bytes",
+            "disk_reserved_bytes",
+            "disk_metrics_available",
+            "disk_sample_unix_ms",
+            "disk_unavailable_reason",
             "disk_usage_percent",
+            "disk_mounts",
         ] {
             assert!(v.get(key).is_some(), "missing key {key}");
         }
         assert!(v["cpu_temp_celsius"].is_null());
+        assert_eq!(v["cpu_usage_available"], true);
+        assert_eq!(v["cpu_sample_status"], "ready");
+        assert_eq!(v["cpu_sample_unix_ms"], 1_700_000_000_000u64);
+        assert_eq!(v["cpu_load_1"], 0.5);
+        assert_eq!(v["cpu_frequency_mhz"], 4200.0);
+        assert_eq!(v["cpu_core_usage_percent"][1], 50.0);
+        assert_eq!(v["cpu_temperature_sensors"][0]["label"], "Package id 0");
+        assert_eq!(v["cpu_top_process_name"], "compiler");
+        assert_eq!(v["cpu_top_process_percent"], 18.5);
         assert!(v["gpu_temp_celsius"].is_null());
         assert!(v["gpu_usage_percent"].is_number());
         assert_eq!(v["gpu_usage_percent"], 55.0);
+        assert_eq!(v["gpu_primary_id"], "card1");
+        assert_eq!(v["gpu_devices"][0]["vendor"], "AMD");
+        assert_eq!(
+            v["gpu_devices"][0]["vram_used_bytes"],
+            4 * 1024 * 1024 * 1024u64
+        );
+        assert_eq!(v["gpu_devices"][0]["power_cap_watts"], 220.0);
+        assert_eq!(v["gpu_devices"][0]["fan_max_rpm"], 3200);
         assert_eq!(v["cpu_core_count"], 8);
+        assert_eq!(v["ram_metrics_available"], true);
+        assert_eq!(v["ram_available_bytes"], 8);
+        assert_eq!(v["ram_pressure_some_avg10"], 0.25);
+        assert_eq!(v["net_sample_status"], "ready");
+        assert_eq!(v["net_interfaces"][0]["name"], "enp1s0");
+        assert_eq!(v["net_interfaces"][0]["friendly_name"], "Desk Ethernet");
+        assert_eq!(v["net_interfaces"][0]["speed_mbps"], 2500);
+        assert_eq!(v["net_rx_dropped"], 3);
+        assert_eq!(v["disk_available_bytes"], 45);
+        assert_eq!(v["disk_reserved_bytes"], 5);
+        assert_eq!(v["disk_metrics_available"], true);
+        assert_eq!(v["disk_mounts"][0]["path"], "/");
+        assert_eq!(v["disk_mounts"][0]["read_bytes_per_sec"], 10.0);
     }
 
     #[test]
@@ -2292,16 +2440,30 @@ mod proptests {
                     disk_total_bytes: 100,
                     disk_used_bytes: 50,
                     disk_usage_percent: disk,
+                    ..Default::default()
                 },
             };
             let json = unsafe { take(xeneon_metrics_to_json(&h as *const MetricsHandle)) };
             let v: serde_json::Value = serde_json::from_str(&json).unwrap();
             for key in [
-                "cpu_usage_percent", "cpu_temp_celsius", "ram_usage_percent",
-                "ram_total_bytes", "ram_used_bytes", "cpu_core_count",
-                "gpu_usage_percent", "gpu_temp_celsius", "net_rx_bytes_per_sec",
-                "net_tx_bytes_per_sec", "disk_total_bytes", "disk_used_bytes",
-                "disk_usage_percent",
+                "cpu_usage_percent", "cpu_usage_available", "cpu_sample_status",
+                "cpu_sample_unix_ms", "cpu_temp_celsius", "cpu_load_1",
+                "cpu_load_5", "cpu_load_15", "cpu_frequency_mhz",
+                "cpu_core_usage_percent", "cpu_temperature_sensors",
+                "cpu_top_process_name", "cpu_top_process_percent", "ram_usage_percent",
+                "ram_metrics_available", "ram_sample_unix_ms", "ram_unavailable_reason",
+                "ram_total_bytes", "ram_used_bytes", "ram_available_bytes",
+                "ram_cached_bytes", "ram_buffers_bytes", "swap_total_bytes",
+                "swap_used_bytes", "ram_pressure_some_avg10", "cpu_core_count",
+                "gpu_usage_percent", "gpu_temp_celsius", "gpu_primary_id",
+                "gpu_unavailable_reason", "gpu_devices", "net_rx_bytes_per_sec",
+                "net_tx_bytes_per_sec", "net_metrics_available", "net_sample_status",
+                "net_sample_unix_ms", "net_unavailable_reason", "net_rx_total_bytes",
+                "net_tx_total_bytes", "net_rx_errors", "net_tx_errors",
+                "net_rx_dropped", "net_tx_dropped", "net_interfaces",
+                "disk_total_bytes", "disk_used_bytes", "disk_available_bytes",
+                "disk_reserved_bytes", "disk_metrics_available", "disk_sample_unix_ms",
+                "disk_unavailable_reason", "disk_usage_percent",
             ] {
                 prop_assert!(v.get(key).is_some(), "missing key {}", key);
             }

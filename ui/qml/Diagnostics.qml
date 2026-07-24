@@ -161,7 +161,7 @@ Item {
                                 color: theme.cardBackground; border.color: theme.cardBorder
                                 ColumnLayout {
                                     anchors.centerIn: parent; spacing: 4
-                                    Text { text: modelData.label; color: theme.textSecondary; font.pixelSize: 12; Layout.alignment: Qt.AlignHCenter }
+                                    Text { text: modelData.label; color: theme.textSecondary; font.pixelSize: theme.fontMinimum; Layout.alignment: Qt.AlignHCenter }
                                     Text {
                                         text: {
                                             var val = diag.parsedMetrics[modelData.key];
@@ -183,9 +183,9 @@ Item {
                         ColumnLayout {
                             anchors.fill: parent; anchors.margins: 12; spacing: 4
                             readonly property string appVer: (typeof configBridge !== "undefined" && configBridge && configBridge.appVersion) ? configBridge.appVersion() : "dev"
-                            Text { text: "Xeneon Edge Hub " + parent.appVer; color: theme.textPrimary; font.pixelSize: 14; font.bold: true }
-                            Text { text: "Platform: " + Qt.platform.os + " | Build " + parent.appVer; color: theme.textSecondary; font.pixelSize: 12 }
-                            Text { text: "Build: " + (typeof _buildType !== "undefined" && _buildType ? _buildType : "unknown"); color: theme.textSecondary; font.pixelSize: 12 }
+                            Text { text: "Xeneon Edge Hub " + parent.appVer; color: theme.textPrimary; font.pixelSize: theme.fontLabel; font.bold: true }
+                            Text { text: "Platform: " + Qt.platform.os + " | Build " + parent.appVer; color: theme.textSecondary; font.pixelSize: theme.fontMinimum }
+                            Text { text: "Build: " + (typeof _buildType !== "undefined" && _buildType ? _buildType : "unknown"); color: theme.textSecondary; font.pixelSize: theme.fontMinimum }
                         }
                     }
                     }
@@ -205,7 +205,7 @@ Item {
                             Text {
                                 id: configText; anchors.fill: parent; anchors.margins: 12
                                 text: diag.configJson || "Loading..."; color: theme.textPrimary
-                                font.family: theme.fontMono; font.pixelSize: 11; wrapMode: Text.Wrap
+                                font.family: theme.fontMono; font.pixelSize: theme.fontMinimum; wrapMode: Text.Wrap
                             }
                         }
                         Text { text: "User widgets (Tier-0)"; color: theme.textPrimary; font.pixelSize: 16; font.bold: true }
@@ -215,7 +215,7 @@ Item {
                             Text {
                                 id: uwText; anchors.fill: parent; anchors.margins: 12
                                 text: diag.userWidgetsText; color: theme.textPrimary
-                                font.family: theme.fontMono; font.pixelSize: 11; wrapMode: Text.Wrap
+                                font.family: theme.fontMono; font.pixelSize: theme.fontMinimum; wrapMode: Text.Wrap
                             }
                         }
                     }
@@ -238,24 +238,24 @@ Item {
                                 ColumnLayout {
                                     anchors.fill: parent; anchors.margins: 12; spacing: 4
                                     RowLayout {
-                                        Text { text: modelData.model||"Unknown"; color: theme.textPrimary; font.pixelSize: 14; font.bold: true }
+                                        Text { text: modelData.model||"Unknown"; color: theme.textPrimary; font.pixelSize: theme.fontLabel; font.bold: true }
                                         Rectangle {
                                             visible: modelData.likelyXeneonEdge
                                             color: theme.success; radius: 4
-                                            implicitWidth: badgeText.implicitWidth+12; implicitHeight: 20
-                                            Text { id: badgeText; anchors.centerIn: parent; text: "XENEON EDGE"; color: theme.backgroundColor; font.pixelSize: 9; font.bold: true }
+                                            implicitWidth: badgeText.implicitWidth+16; implicitHeight: 30
+                                            Text { id: badgeText; anchors.centerIn: parent; text: "XENEON EDGE"; color: theme.backgroundColor; font.pixelSize: theme.fontMinimum; font.bold: true }
                                         }
                                         Rectangle {
                                             visible: modelData.isPrimary
                                             color: theme.accent; radius: 4
-                                            implicitWidth: primaryText.implicitWidth+12; implicitHeight: 20
-                                            Text { id: primaryText; anchors.centerIn: parent; text: "PRIMARY"; color: theme.backgroundColor; font.pixelSize: 9; font.bold: true }
+                                            implicitWidth: primaryText.implicitWidth+16; implicitHeight: 30
+                                            Text { id: primaryText; anchors.centerIn: parent; text: "PRIMARY"; color: theme.backgroundColor; font.pixelSize: theme.fontMinimum; font.bold: true }
                                         }
                                     }
-                                    Text { text: (modelData.geometry?modelData.geometry.width+"×"+modelData.geometry.height:"?")+" @ "+(modelData.refreshRate?modelData.refreshRate.toFixed(0):"?")+"Hz | "+(modelData.orientation||"?"); color: theme.textSecondary; font.pixelSize: 12 }
-                                    Text { text: "DPI: "+(modelData.logicalDpi?modelData.logicalDpi.toFixed(0):"?")+" logical / "+(modelData.physicalDpi?modelData.physicalDpi.toFixed(0):"?")+" physical"; color: theme.textSecondary; font.pixelSize: 12 }
-                                    Text { text: "Connector: "+(modelData.name||"?"); color: theme.textSecondary; font.pixelSize: 12 }
-                                    Text { text: "EDID Hash: "+(modelData.edidHash||"N/A"); color: theme.textSecondary; font.family: theme.fontMono; font.pixelSize: 9; elide: Text.ElideMiddle; Layout.fillWidth: true }
+                                    Text { text: (modelData.geometry?modelData.geometry.width+"×"+modelData.geometry.height:"?")+" @ "+(modelData.refreshRate?modelData.refreshRate.toFixed(0):"?")+"Hz | "+(modelData.orientation||"?"); color: theme.textSecondary; font.pixelSize: theme.fontMinimum }
+                                    Text { text: "DPI: "+(modelData.logicalDpi?modelData.logicalDpi.toFixed(0):"?")+" logical / "+(modelData.physicalDpi?modelData.physicalDpi.toFixed(0):"?")+" physical"; color: theme.textSecondary; font.pixelSize: theme.fontMinimum }
+                                    Text { text: "Connector: "+(modelData.name||"?"); color: theme.textSecondary; font.pixelSize: theme.fontMinimum }
+                                    Text { text: "EDID Hash: "+(modelData.edidHash||"N/A"); color: theme.textSecondary; font.family: theme.fontMono; font.pixelSize: theme.fontMinimum; elide: Text.ElideMiddle; Layout.fillWidth: true }
                                 }
                             }
                         }
@@ -270,7 +270,7 @@ Item {
                     Text { text: "Log Output"; color: theme.textPrimary; font.pixelSize: 16; font.bold: true }
                     Text {
                         text: "Logs are written to stdout/stderr via the Rust tracing subscriber.\nUse --diagnostics to view live logs, or check journal/syslog."
-                        color: theme.textSecondary; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true
+                        color: theme.textSecondary; font.pixelSize: theme.fontMinimum; wrapMode: Text.WordWrap; Layout.fillWidth: true
                     }
                     Rectangle {
                         Layout.fillWidth: true; Layout.fillHeight: true; radius: 8
@@ -278,7 +278,7 @@ Item {
                         Text {
                             anchors.fill: parent; anchors.margins: 12
                             text: "Run with RUST_LOG=debug for detailed logs.\n\nConfig dir: "+_configDir
-                            color: theme.textPrimary; font.family: theme.fontMono; font.pixelSize: 11; wrapMode: Text.Wrap
+                            color: theme.textPrimary; font.family: theme.fontMono; font.pixelSize: theme.fontMinimum; wrapMode: Text.Wrap
                         }
                     }
                 }
@@ -297,7 +297,7 @@ Item {
                         Text { text: "Network (egress gate)"; color: theme.textPrimary; font.pixelSize: 16; font.bold: true }
                         Text {
                             text: "Every outbound request a widget makes goes through one audited gate. These counters are that gate's own tally for this session."
-                            color: theme.textSecondary; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true
+                            color: theme.textSecondary; font.pixelSize: theme.fontMinimum; wrapMode: Text.WordWrap; Layout.fillWidth: true
                         }
 
                         // No gate in this session (--diagnostics starts without a
@@ -305,7 +305,7 @@ Item {
                         Text {
                             visible: !diag.netHub
                             text: "The network gate is not available in this session (no dashboard is running)."
-                            color: theme.warning; font.pixelSize: 12; wrapMode: Text.WordWrap; Layout.fillWidth: true
+                            color: theme.warning; font.pixelSize: theme.fontMinimum; wrapMode: Text.WordWrap; Layout.fillWidth: true
                         }
 
                         Rectangle {
@@ -320,23 +320,23 @@ Item {
                                     text: "Offline kill switch: " + (diag.netHub && diag.netHub.offline
                                           ? "On - all remote requests are refused" : "Off")
                                     color: diag.netHub && diag.netHub.offline ? theme.warning : theme.textPrimary
-                                    font.pixelSize: 13; wrapMode: Text.WordWrap; Layout.fillWidth: true
+                                    font.pixelSize: theme.fontMinimum; wrapMode: Text.WordWrap; Layout.fillWidth: true
                                 }
                                 Text {
                                     text: "Allowed hosts: " + (diag.netHub && diag.netHub.allowHosts
                                                                && diag.netHub.allowHosts.length
                                           ? diag.netHub.allowHosts.join(", ")
                                           : "any host (no allowlist active)")
-                                    color: theme.textPrimary; font.pixelSize: 13
+                                    color: theme.textPrimary; font.pixelSize: theme.fontMinimum
                                     wrapMode: Text.WrapAnywhere; Layout.fillWidth: true
                                 }
                                 Text {
                                     text: "Requests sent: " + (diag.netHub ? diag.netHub.requests : 0)
-                                    color: theme.textPrimary; font.pixelSize: 13
+                                    color: theme.textPrimary; font.pixelSize: theme.fontMinimum
                                 }
                                 Text {
                                     text: "Blocked by the gate: " + (diag.netHub ? diag.netHub.blocked : 0)
-                                    color: theme.textPrimary; font.pixelSize: 13
+                                    color: theme.textPrimary; font.pixelSize: theme.fontMinimum
                                 }
                             }
                         }
@@ -348,7 +348,7 @@ Item {
                         Text {
                             visible: !!diag.netHub && diag.netHosts.length === 0
                             text: "No requests have been sent this session."
-                            color: theme.textSecondary; font.pixelSize: 12
+                            color: theme.textSecondary; font.pixelSize: theme.fontMinimum
                         }
                         Repeater {
                             model: diag.netHosts
@@ -359,12 +359,12 @@ Item {
                                     anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12
                                     Text {
                                         text: modelData.host; color: theme.textPrimary
-                                        font.family: theme.fontMono; font.pixelSize: 12
+                                        font.family: theme.fontMono; font.pixelSize: theme.fontMinimum
                                         elide: Text.ElideMiddle; Layout.fillWidth: true
                                     }
                                     Text {
                                         text: modelData.n + (modelData.n === 1 ? " request" : " requests")
-                                        color: theme.textSecondary; font.pixelSize: 12
+                                        color: theme.textSecondary; font.pixelSize: theme.fontMinimum
                                     }
                                 }
                             }
@@ -372,7 +372,7 @@ Item {
                         Text {
                             visible: !!diag.netHub
                             text: "\"(local)\" counts file:/qrc: reads - they never leave this machine."
-                            color: theme.textTertiary; font.pixelSize: 11; wrapMode: Text.WordWrap; Layout.fillWidth: true
+                            color: theme.textTertiary; font.pixelSize: theme.fontMinimum; wrapMode: Text.WordWrap; Layout.fillWidth: true
                         }
                     }
                 }

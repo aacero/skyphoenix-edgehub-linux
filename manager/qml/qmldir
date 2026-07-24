@@ -1,5 +1,6 @@
 EdgeClone 1.0 EdgeClone.qml
 Manager 1.0 Manager.qml
+PresetPreview 1.0 PresetPreview.qml
 MockMedia 1.0 MockMedia.qml
 WidgetConfigDialog 1.0 WidgetConfigDialog.qml
 BackgroundCatalog 1.0 ../../ui/qml/BackgroundCatalog.qml
@@ -59,5 +60,8 @@ StarfieldBackground 1.0 ../../ui/qml/widgets/StarfieldBackground.qml
 TasksWidget 1.0 ../../ui/qml/widgets/TasksWidget.qml
 WavesBackground 1.0 ../../ui/qml/widgets/WavesBackground.qml
 WeatherWidget 1.0 ../../ui/qml/widgets/WeatherWidget.qml
+WeatherIcon 1.0 ../../ui/qml/widgets/WeatherIcon.qml
 WidgetChrome 1.0 ../../ui/qml/widgets/WidgetChrome.qml
+WidgetHost 1.0 ../../ui/qml/widgets/WidgetHost.qml
+ProviderState 1.0 ../../ui/qml/widgets/ProviderState.qml
 WidgetConfigPanel 1.0 ../../ui/qml/widgets/WidgetConfigPanel.qml

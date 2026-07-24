@@ -15,12 +15,34 @@ Item {
     // width/height explicitly.
 
     property int currentStep: 0
+    onCurrentStepChanged: {
+        // Reset immediately and once more after the newly visible layout has
+        // recalculated its height. This keeps every step's heading and actions
+        // in view after moving away from a long, scrolled preset list.
+        flick.contentY = 0
+        Qt.callLater(function() { flick.contentY = 0 })
+    }
     property var selectedScreen: null
     // Default to the recommended few-screen starter bundle (see DashboardStore.seed).
     property string selectedLayout: "starter"
 
     // The curated preset library drives the "choose a screen" step.
     PresetCatalog { id: presetCatalog }
+    WidgetCatalog { id: wizardWidgets }
+    readonly property var starterPreview: ({
+        id: "starter", title: "Recommended starter",
+        purpose: "Begin with three useful screens to swipe between: focused work, core system health, and home context.",
+        setup: "The Focus and System Core screens work immediately. Set your weather location on the Home screen.",
+        pages: presetCatalog.def("productivity").pages
+    })
+    readonly property var blankPreview: ({
+        id: "blank", title: "Blank dashboard",
+        purpose: "Start with an empty screen and add only the widgets you choose.",
+        setup: "Nothing is configured or connected. Add widgets after setup.",
+        pages: [ { name: "Blank", tiles: [] } ]
+    })
+    readonly property var selectedLayoutPreview: selectedLayout === "starter" ? starterPreview
+        : (selectedLayout === "blank" ? blankPreview : presetCatalog.def(selectedLayout))
     property string finishError: ""
 
     // Parse the detected screens once at the root (the old per-step
@@ -120,7 +142,7 @@ Item {
 
                     Text {
                         text: "Choose the display where your dashboard will appear.\nDisplays matching the Xeneon Edge are highlighted."
-                        font.pixelSize: 14
+                        font.pixelSize: theme.fontMinimum
                         color: theme.textSecondary
                         wrapMode: Text.WordWrap
                         Layout.fillWidth: true
@@ -176,7 +198,7 @@ Item {
                                                 id: detectedLabel
                                                 anchors.centerIn: parent
                                                 text: "⭐ Detected"
-                                                font.pixelSize: 11
+                                                font.pixelSize: theme.fontMinimum
                                                 color: "#000000"
                                             }
                                         }
@@ -187,7 +209,7 @@ Item {
                                         text: (modelData.manufacturer || "") + " • " +
                                               modelData.size.width + "×" + modelData.size.height + " • " +
                                               modelData.name
-                                        font.pixelSize: 13
+                                        font.pixelSize: theme.fontMinimum
                                         color: theme.textSecondary
                                         elide: Text.ElideRight
                                     }
@@ -214,7 +236,7 @@ Item {
                         visible: screenList.count === 0
                         text: "No displays detected. You can continue and choose a display later from Settings."
                         color: theme.warning
-                        font.pixelSize: 14
+                        font.pixelSize: theme.fontMinimum
                         wrapMode: Text.WordWrap
                         Layout.fillWidth: true
                     }
@@ -242,7 +264,7 @@ Item {
 
                     Text {
                         text: "You can customize everything later."
-                        font.pixelSize: 14
+                        font.pixelSize: theme.fontMinimum
                         color: theme.textSecondary
                     }
 
@@ -263,15 +285,25 @@ Item {
                                 font.pixelSize: 17; font.bold: true; color: theme.textPrimary }
                             Text { Layout.fillWidth: true; wrapMode: Text.WordWrap
                                 text: "A few ready-made screens to swipe between - focus & tasks, system stats, and home. Add or remove screens any time."
-                                font.pixelSize: 13; color: theme.textSecondary }
+                                font.pixelSize: theme.fontMinimum; color: theme.textSecondary }
                         }
                         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                             onClicked: selectedLayout = "starter" }
                     }
 
+                    PresetPreview {
+                        id: starterLayoutPreview
+                        objectName: "wizardPresetPreview"
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 390
+                        preset: wizard.selectedLayoutPreview
+                        widgetCatalog: wizardWidgets
+                        landscape: true
+                    }
+
                     Text {
                         text: "…or start from a single screen:"
-                        font.pixelSize: 13
+                        font.pixelSize: theme.fontMinimum
                         color: theme.textSecondary
                     }
 
@@ -313,7 +345,7 @@ Item {
                                     }
                                     Text {
                                         text: modelData.blurb
-                                        font.pixelSize: 13
+                                        font.pixelSize: theme.fontMinimum
                                         color: theme.textSecondary
                                         wrapMode: Text.WordWrap
                                         maximumLineCount: 3
@@ -396,7 +428,7 @@ Item {
                                 }
                                 Text {
                                     text: "Adds to system autostart"
-                                    font.pixelSize: 13
+                                    font.pixelSize: theme.fontMinimum
                                     color: theme.textSecondary
                                 }
                             }
@@ -420,7 +452,7 @@ Item {
                                 }
                                 Text {
                                     text: "Recommended"
-                                    font.pixelSize: 13
+                                    font.pixelSize: theme.fontMinimum
                                     color: theme.textSecondary
                                 }
                             }
@@ -500,7 +532,7 @@ Item {
                 Layout.fillWidth: true
                 visible: wizard.finishError.length > 0
                 text: wizard.finishError
-                color: theme.error; font.pixelSize: 14
+                color: theme.error; font.pixelSize: theme.fontMinimum
                 horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
             }
         }

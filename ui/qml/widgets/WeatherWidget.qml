@@ -7,8 +7,8 @@ import QtQuick.Layouts
 //
 // Both requests (forecast + city geocode) go through NetHub, never a raw XHR, so
 // the global offline switch, the host allowlist and the attestation counters
-// cover them. Readings stay in widget properties: they are never written to the
-// store, so a poll cannot churn config.toml.
+// cover them. Readings use NetHub's volatile shared-provider cache, so tile,
+// overlay, and passive clones can reuse one result without writing to config.
 //
 // Sizing (W1 wave 3): layout keys off the injected `sizeClass`. Every tile used
 // to render the same glyph + temperature + place, so a 696x1228 box showed a
@@ -37,6 +37,8 @@ WidgetChrome {
     property bool active: true
     property var store: null
     property string instanceId: ""
+    property int tick: 0
+    property double nowMsOverride: -1
     // The egress gate. Injected by Dashboard (one app-global instance); a local
     // fallback keeps the widget self-contained in tests / standalone use.
     property var netHub: null
@@ -54,6 +56,9 @@ WidgetChrome {
     readonly property bool tallish: sizeClass === "tall" || sizeClass === "large"
     // Anything past "glyph + temperature + place" needs more than a half-cell.
     readonly property bool rich: !micro
+    // 1x1.5 in either orientation has enough area for the current-condition
+    // details that otherwise live only in the expanded view.
+    readonly property bool roomy: !expanded && width * height > 700000
 
     // The days we actually hold, minus today. `days` is only rebuilt by a fetch
     // (every 30 min), never by a tick.
@@ -64,7 +69,7 @@ WidgetChrome {
         : w.horiz ? Math.min(w.width * 0.10, w.height * 0.26, 80)
         : Math.min(w.width * 0.18, w.height * 0.13, 88)
     readonly property real tempPx: Math.max(18, Math.round(w.glyphPx * 0.78))
-    readonly property real subPx: Math.max(11, Math.min(w.tempPx * 0.30, 16))
+    readonly property real subPx: Math.max(theme.fontLabel, Math.min(w.tempPx * 0.38, 21))
     // Width the "now" block claims when the forecast sits beside it.
     readonly property real nowW: Math.min(w.width * 0.32, 340)
 
@@ -90,37 +95,85 @@ WidgetChrome {
         var _ = store ? store.revision : 0
         return (store && instanceId) ? JSON.parse(JSON.stringify(store.settingsFor(instanceId))) : ({})
     }
-    property real lat: cfg.lat !== undefined ? cfg.lat : 52.52
-    property real lon: cfg.lon !== undefined ? cfg.lon : 13.405
+    property real lat: cfg.lat !== undefined ? Number(cfg.lat) : NaN
+    property real lon: cfg.lon !== undefined ? Number(cfg.lon) : NaN
+    readonly property string locationMode: cfg.locationMode || "search"
     // Only default to "Berlin" when no coordinates are configured either - a
     // custom location with a blanked place field must not be mislabelled Berlin;
     // fall back to the coordinates instead.
     property string place: cfg.place ? cfg.place
-        : ((cfg.lat === undefined && cfg.lon === undefined) ? "Berlin"
-           : (Number(lat).toFixed(2) + ", " + Number(lon).toFixed(2)))
+        : (isFinite(lat) && isFinite(lon) ? Number(lat).toFixed(2) + ", " + Number(lon).toFixed(2) : "")
+    readonly property bool locationConfigured: isFinite(w.lat) && isFinite(w.lon)
+                                               && w.lat >= -90 && w.lat <= 90
+                                               && w.lon >= -180 && w.lon <= 180
     readonly property string units: cfg.units || "celsius"
+    readonly property string windUnits: cfg.windUnits || "kmh"
+    readonly property string precipitationUnits: cfg.precipitationUnits || "mm"
     readonly property int forecastDays: cfg.forecastDays !== undefined ? cfg.forecastDays : 4
     readonly property string degSym: units === "fahrenheit" ? "°F" : "°C"
+    readonly property string windSym: windUnits === "mph" ? "mph"
+        : (windUnits === "ms" ? "m/s" : "km/h")
+    readonly property string precipitationSym: precipitationUnits === "inch" ? "in" : "mm"
 
     property bool loaded: false
     property string errorText: ""
+    property string stateHelp: ""
+    property bool sharedLoading: false
     property real curTemp: 0
     property real feels: 0
     property int curCode: 0
     property var days: []   // [{ day, code, min, max }]
+    property real humidity: NaN
+    property real windSpeed: NaN
+    property real precipitation: NaN
+    property string sunrise: ""
+    property string sunset: ""
+    property double lastSuccessAt: 0
+    property double recoveredAt: 0
+    readonly property int refreshSec: 1800
+    readonly property string sharedKind: "weather-open-meteo-v1"
+    readonly property string sharedKey: w.lat + "," + w.lon + "," + w.units + ","
+                                        + w.windUnits + "," + w.precipitationUnits + ","
+                                        + w.forecastDays
+    function currentMs() { return w.nowMsOverride >= 0 ? w.nowMsOverride : Date.now() }
+    ProviderState {
+        id: provider
+        configured: w.locationConfigured
+        loading: w._fxhr !== null || w.sharedLoading
+        hasData: w.loaded
+        errorText: w.errorText
+        lastSuccessAt: w.lastSuccessAt
+        nowMs: (w.tick, w.currentMs())
+        staleAfterSec: w.refreshSec * 2
+    }
+    readonly property string providerState: provider.state
+    readonly property int refreshAgeSec: provider.ageSec
+    readonly property bool stale: provider.isStale
+    readonly property bool recentlyRecovered: w.recoveredAt > 0
+        && w.currentMs() >= w.recoveredAt && w.currentMs() - w.recoveredAt < 60000
+    function freshnessText() { return provider.freshnessText }
+    status: w.recentlyRecovered ? "Recovered" : provider.badgeLabel
+    statusColor: provider.state === "loading" || provider.state === "unconfigured"
+        ? w.effAccent : theme.warning
 
-    function weatherGlyph(code) {
-        if (code === 0) return "☀️"
-        if (code <= 2) return "⛅"
-        if (code === 3) return "☁️"
-        if (code === 45 || code === 48) return "🌫️"
-        if (code >= 51 && code <= 57) return "🌦️"
-        if (code >= 61 && code <= 67) return "🌧️"
-        if (code >= 71 && code <= 77) return "🌨️"
-        if (code >= 80 && code <= 82) return "🌧️"
-        if (code >= 85 && code <= 86) return "🌨️"
-        if (code >= 95) return "⛈️"
-        return "🌡️"
+    function weatherKind(code) {
+        if (code === 0) return "clear"
+        if (code >= 1 && code <= 2) return "partly-cloudy"
+        if (code === 3) return "cloudy"
+        if (code === 45 || code === 48) return "fog"
+        if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) return "rain"
+        if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86)) return "snow"
+        if (code >= 95) return "storm"
+        return "unknown"
+    }
+    function weatherDescription(code) {
+        var names = {
+            "clear": "Clear sky", "partly-cloudy": "Partly cloudy",
+            "cloudy": "Cloudy", "fog": "Fog", "rain": "Rain",
+            "snow": "Snow", "storm": "Thunderstorm",
+            "unknown": "Weather unavailable"
+        }
+        return names[w.weatherKind(code)]
     }
 
     // In-flight requests, tracked so a newer fetch aborts an older one (last-write
@@ -132,16 +185,57 @@ WidgetChrome {
     property int _fseq: 0
     property var _gxhr: null
     property int _gseq: 0
-    Component.onDestruction: { if (_fxhr) _fxhr.abort(); if (_gxhr) _gxhr.abort() }
+    function _syncShared() {
+        if (!w.locationConfigured || !w._hub().sharedProvider) return false
+        var entry = w._hub().sharedProvider(w.sharedKind, w.sharedKey)
+        if (!entry) return false
+        w.sharedLoading = !!entry.loading
+        var keys = ["loaded", "errorText", "stateHelp", "curTemp", "feels", "curCode",
+                    "days", "humidity", "windSpeed", "precipitation", "sunrise",
+                    "sunset", "lastSuccessAt", "recoveredAt"]
+        for (var i = 0; i < keys.length; i++)
+            if (entry[keys[i]] !== undefined) w[keys[i]] = entry[keys[i]]
+        return true
+    }
+    function _snapshot() {
+        return {
+            loaded: w.loaded, errorText: w.errorText, stateHelp: w.stateHelp,
+            curTemp: w.curTemp, feels: w.feels, curCode: w.curCode,
+            days: w.days, humidity: w.humidity, windSpeed: w.windSpeed,
+            precipitation: w.precipitation, sunrise: w.sunrise, sunset: w.sunset,
+            lastSuccessAt: w.lastSuccessAt, recoveredAt: w.recoveredAt
+        }
+    }
+    Connections {
+        target: w._hub() && w._hub().sharedRevision !== undefined ? w._hub() : null
+        function onSharedRevisionChanged() { w._syncShared() }
+    }
+    Component.onDestruction: {
+        if (_fxhr) _fxhr.abort()
+        if (_gxhr) _gxhr.abort()
+        if (w.locationConfigured && w._hub().releaseSharedProvider)
+            w._hub().releaseSharedProvider(w.sharedKind, w.sharedKey, w, "")
+    }
 
     // Map a forecast payload → the rendered reading.
     function _applyForecast(body) {
         try {
             var d = JSON.parse(body)
-            if (!d || !d.current || !d.daily || !d.daily.time) { w.loaded = false; w.errorText = "No data"; return }
+            if (!d || !d.current || !d.daily || !d.daily.time) {
+                w.loaded = false
+                w.errorText = "No data"
+                w.stateHelp = "The provider response is missing current or daily conditions."
+                return
+            }
+            var recovering = w.errorText.length > 0
             w.curTemp = d.current.temperature_2m
             w.feels = d.current.apparent_temperature
             w.curCode = d.current.weather_code
+            w.humidity = Number(d.current.relative_humidity_2m)
+            w.windSpeed = Number(d.current.wind_speed_10m)
+            w.precipitation = Number(d.current.precipitation)
+            w.sunrise = d.daily.sunrise && d.daily.sunrise.length ? String(d.daily.sunrise[0]).slice(11, 16) : ""
+            w.sunset = d.daily.sunset && d.daily.sunset.length ? String(d.daily.sunset[0]).slice(11, 16) : ""
             var out = []
             var names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
             for (var i = 0; i < d.daily.time.length; i++) {
@@ -155,19 +249,44 @@ WidgetChrome {
                            max: Math.round(d.daily.temperature_2m_max[i]),
                            min: Math.round(d.daily.temperature_2m_min[i]) })
             }
-            w.days = out; w.loaded = true; w.errorText = ""
-        } catch (e) { w.loaded = false; w.errorText = "Parse error" }
+            w.days = out
+            w.loaded = true
+            w.errorText = ""
+            w.stateHelp = recovering ? "Connection restored. Forecast updated." : "Forecast is up to date."
+            w.lastSuccessAt = w.currentMs()
+            w.recoveredAt = recovering ? w.lastSuccessAt : 0
+        } catch (e) {
+            w.loaded = false
+            w.errorText = "Parse error"
+            w.stateHelp = "Retry later or check the configured location."
+        }
     }
 
-    function refresh() {
+    function refresh(force) {
+        var forceNow = force === undefined ? true : !!force
+        if (!w.locationConfigured) {
+            w.loaded = false
+            w.errorText = "Set a location"
+            w.stateHelp = "Search for a city or enter valid coordinates in settings."
+            return
+        }
         var fdays = Math.max(1, Math.min(16, w.forecastDays + 1))
         var url = "https://api.open-meteo.com/v1/forecast?latitude=" + w.lat + "&longitude=" + w.lon
-                + "&current=temperature_2m,apparent_temperature,weather_code"
-                + "&daily=weather_code,temperature_2m_max,temperature_2m_min"
+                + "&current=temperature_2m,apparent_temperature,weather_code,relative_humidity_2m,wind_speed_10m,precipitation"
+                + "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset"
                 + (w.units === "fahrenheit" ? "&temperature_unit=fahrenheit" : "")
+                + (w.windUnits !== "kmh" ? "&wind_speed_unit=" + w.windUnits : "")
+                + (w.precipitationUnits === "inch" ? "&precipitation_unit=inch" : "")
                 + "&timezone=auto&forecast_days=" + fdays
         if (w._fxhr) w._fxhr.abort()
         w._fxhr = null
+        if (w._hub().claimSharedProvider
+                && !w._hub().claimSharedProvider(w.sharedKind, w.sharedKey, w,
+                                                  forceNow ? 0 : 3000)) {
+            w._syncShared()
+            return
+        }
+        w.sharedLoading = true
         var seq = ++w._fseq
         var xhr = w._hub().request({
             url: url,
@@ -176,18 +295,31 @@ WidgetChrome {
             onDone: function (status, body) {
                 if (seq !== w._fseq) return   // superseded by a newer request
                 w._fxhr = null
+                w.sharedLoading = false
                 w._applyForecast(body)
+                if (w._hub().publishSharedProvider)
+                    w._hub().publishSharedProvider(w.sharedKind, w.sharedKey, w, w._snapshot())
             },
             onError: function (reason) {
                 if (seq !== w._fseq) return
                 w._fxhr = null
-                // A timeout may still resolve into the same reading, so the last
-                // one stays on screen; every other failure means what's displayed
-                // is no longer live (curTemp/days still hold the previous city's
-                // numbers - clear `loaded` so they aren't shown as current).
-                if (reason === "timeout") { if (!w.loaded) w.errorText = "Timed out"; return }
-                w.loaded = false
-                w.errorText = reason === "blocked" ? "Blocked" : "Offline"
+                w.sharedLoading = false
+                // Keep a last known good forecast useful during a transient
+                // refresh failure. ProviderState already communicates age and
+                // staleness, so replacing valid readings with an error is a
+                // worse failure mode than continuing to show them.
+                w.errorText = reason === "timeout" ? "Timed out"
+                    : reason === "blocked" ? "Blocked"
+                    : reason === "offline" ? "Offline"
+                    : reason === "response-too-large" ? "Response too large"
+                    : "Unavailable"
+                w.stateHelp = reason === "blocked"
+                    ? "Allow api.open-meteo.com in network policy."
+                    : reason === "offline"
+                        ? "Turn off Offline mode, then refresh."
+                    : "Check the network and configured location, then refresh."
+                if (w._hub().publishSharedProvider)
+                    w._hub().publishSharedProvider(w.sharedKind, w.sharedKey, w, w._snapshot())
             }
         })
         if (seq === w._fseq) w._fxhr = xhr
@@ -237,18 +369,28 @@ WidgetChrome {
     }
 
     // Debounce: lat and lon both "change" as settings load - coalesce to one fetch.
-    property string locKey: lat + "," + lon + "," + units + "," + forecastDays
+    property string locKey: w.sharedKey
     // Honor `active` (S3): don't fetch/repaint on the inactive (non-driver)
     // instance; refetch once when it becomes active again.
-    onLocKeyChanged: if (w.active) refreshDebounce.restart()
+    onLocKeyChanged: {
+        if (w._fxhr) w._fxhr.abort()
+        w._fxhr = null
+        w._fseq++
+        w.sharedLoading = false
+        w.loaded = false
+        w.errorText = ""
+        w.stateHelp = "Updating forecast for the new settings."
+        w._syncShared()
+        if (w.active) refreshDebounce.restart()
+    }
     onActiveChanged: if (w.active) refreshDebounce.restart()
     // A units flip changes degSym synchronously, but curTemp still holds the old
     // reading in the previous unit - invalidate it so the tile never relabels a
     // Celsius number as "°F" until the refetch lands.
-    onUnitsChanged: w.loaded = false
-    Component.onCompleted: refreshDebounce.restart()
-    Timer { id: refreshDebounce; interval: 350; onTriggered: w.refresh() }
-    Timer { interval: 1800000; repeat: true; running: w.active; onTriggered: w.refresh() }
+    Component.onCompleted: if (w.active) refreshDebounce.restart()
+    Timer { id: refreshDebounce; interval: 350; onTriggered: if (w.active) w.refresh(false) }
+    Timer { interval: w.refreshSec * 1000; repeat: true; running: w.active && w.locationConfigured
+            onTriggered: if (w.active) w.refresh(false) }
 
     // ── Tile (every non-overlay size) ────────────────────────────────────────
     GridLayout {
@@ -281,13 +423,18 @@ WidgetChrome {
             RowLayout {
                 Layout.alignment: Qt.AlignHCenter
                 spacing: theme.spacingSm
-                Text { text: w.loaded ? w.weatherGlyph(w.curCode) : "…"
-                    font.pixelSize: Math.max(14, w.glyphPx) }
+                WeatherIcon {
+                    Layout.preferredWidth: Math.max(28, w.glyphPx)
+                    Layout.preferredHeight: Math.max(28, w.glyphPx)
+                    code: w.loaded ? w.curCode : -1
+                    primaryColor: w.effAccent
+                    cloudColor: theme.textSecondary
+                    detailColor: theme.catInfo
+                }
                 ColumnLayout {
                     spacing: 0
                     Text {
-                        text: (w.loaded && !w.errorText.length)
-                              ? Math.round(w.curTemp) + w.degSym
+                        text: w.loaded ? Math.round(w.curTemp) + w.degSym
                               : (w.errorText.length ? "-" : "…")
                         font.pixelSize: w.tempPx; font.bold: true; color: theme.textPrimary
                     }
@@ -295,7 +442,7 @@ WidgetChrome {
                     // it was locked in the overlay for no reason. The half-cell
                     // has no room for it.
                     Text {
-                        visible: w.rich && w.loaded && !w.errorText.length
+                        visible: w.rich && w.loaded
                         text: "Feels " + Math.round(w.feels) + w.degSym
                         font.pixelSize: w.subPx; color: theme.textSecondary
                     }
@@ -305,9 +452,20 @@ WidgetChrome {
                 Layout.fillWidth: true; Layout.topMargin: 2
                 horizontalAlignment: Text.AlignHCenter
                 elide: Text.ElideRight
-                text: w.errorText.length ? w.errorText : w.place
+                text: !w.locationConfigured ? "Set location in settings"
+                    : w.place
                 font.pixelSize: w.subPx
-                color: w.errorText.length ? theme.warning : theme.textSecondary
+                color: theme.textSecondary
+            }
+            Text {
+                visible: w.errorText.length > 0 || w.stale || w.recentlyRecovered
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
+                text: w.errorText.length ? w.errorText
+                    : (w.recentlyRecovered ? "Connection restored" : "Forecast is stale")
+                font.pixelSize: w.subPx
+                color: w.recentlyRecovered ? w.effAccent : theme.warning
             }
 
             Item { Layout.fillHeight: true; visible: !w.horiz }
@@ -356,7 +514,7 @@ WidgetChrome {
 
                     Text {
                         text: dayCell.d ? dayCell.d.day : ""
-                        font.pixelSize: Math.max(11, Math.min(dayCell.px * 0.30, 20))
+                        font.pixelSize: Math.max(theme.fontLabel, Math.min(dayCell.px * 0.32, 21))
                         color: theme.textSecondary
                         horizontalAlignment: w.horiz ? Text.AlignHCenter : Text.AlignLeft
                         verticalAlignment: Text.AlignVCenter
@@ -365,22 +523,24 @@ WidgetChrome {
                         Layout.fillWidth: w.horiz
                         Layout.fillHeight: !w.horiz
                     }
-                    Text {
-                        text: dayCell.d ? w.weatherGlyph(dayCell.d.code) : ""
-                        font.pixelSize: Math.max(14, Math.min(dayCell.px * 0.58, 44))
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
+                    WeatherIcon {
+                        code: dayCell.d ? dayCell.d.code : -1
+                        primaryColor: w.effAccent
+                        cloudColor: theme.textSecondary
+                        detailColor: theme.catInfo
+                        Layout.preferredWidth: Math.max(28, Math.min(dayCell.px * 0.64, 48))
+                        Layout.preferredHeight: Math.max(28, Math.min(dayCell.px * 0.64, 48))
+                        Layout.alignment: Qt.AlignCenter
                         Layout.fillWidth: w.horiz
-                        Layout.fillHeight: !w.horiz
                     }
                     Text {
                         text: dayCell.d ? (dayCell.d.max + w.degSym + " / " + dayCell.d.min + w.degSym) : ""
-                        font.pixelSize: Math.max(11, Math.min(dayCell.px * 0.30, 20))
+                        font.pixelSize: Math.max(theme.fontLabel, Math.min(dayCell.px * 0.32, 21))
                         color: theme.textPrimary
                         horizontalAlignment: w.horiz ? Text.AlignHCenter : Text.AlignRight
                         verticalAlignment: Text.AlignVCenter
                         // A 7-day °F row ("108°F / -12°F") must shrink, not clip.
-                        fontSizeMode: Text.HorizontalFit; minimumPixelSize: 9
+                        fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum
                         elide: Text.ElideRight
                         Layout.fillWidth: !w.horiz
                         Layout.preferredWidth: w.horiz ? Math.round(w.dayColW) : -1
@@ -401,14 +561,56 @@ WidgetChrome {
             Layout.alignment: w.horiz ? Qt.AlignVCenter : Qt.AlignRight
             Rectangle {
                 id: refreshCompact
+                objectName: "weatherRefreshButton"
                 anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                 width: theme.touchTertiary; height: theme.touchTertiary; radius: width / 2
+                activeFocusOnTab: true
+                Accessible.role: Accessible.Button
+                Accessible.name: "Refresh weather"
+                Accessible.onPressAction: w.refresh(true)
                 color: Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b,
                                refMA.pressed ? 0.32 : (refMA.containsMouse ? 0.22 : 0.14))
-                Text { anchors.centerIn: parent; text: "⟳"; font.pixelSize: 22; color: w.effAccent }
+                AppIcon { anchors.centerIn: parent; name: "ui-refresh"; size: 24; color: w.effAccent }
+                Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+                            || event.key === Qt.Key_Space) {
+                        w.refresh(true)
+                        event.accepted = true
+                    }
+                }
                 MouseArea {
                     id: refMA; anchors.fill: parent; hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor; onClicked: w.refresh()
+                    cursorShape: Qt.PointingHandCursor; onClicked: w.refresh(true)
+                }
+            }
+        }
+
+        RowLayout {
+            objectName: "weatherConditionSummary"
+            visible: w.roomy && w.loaded
+            Layout.columnSpan: w.horiz ? 3 : 1
+            Layout.fillWidth: true
+            spacing: theme.spacingLg
+
+            Repeater {
+                model: [
+                    { label: "HUMIDITY", value: isFinite(w.humidity) ? Math.round(w.humidity) + "%" : "-" },
+                    { label: "WIND", value: isFinite(w.windSpeed) ? Math.round(w.windSpeed) + " " + w.windSym : "-" },
+                    { label: "RAIN", value: isFinite(w.precipitation) ? w.precipitation + " " + w.precipitationSym : "-" }
+                ]
+                delegate: ColumnLayout {
+                    required property var modelData
+                    Layout.fillWidth: true; spacing: 0
+                    Text {
+                        Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
+                        text: modelData.label; color: theme.textTertiary
+                        font.pixelSize: theme.fontLabel; font.letterSpacing: 1
+                    }
+                    Text {
+                        Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
+                        text: modelData.value; color: theme.textSecondary
+                        font.pixelSize: theme.fontLabel; font.family: theme.fontMono
+                    }
                 }
             }
         }
@@ -422,13 +624,19 @@ WidgetChrome {
 
         RowLayout {
             Layout.alignment: Qt.AlignHCenter; spacing: theme.spacingMd
-            Text { text: w.loaded ? w.weatherGlyph(w.curCode) : "…"; font.pixelSize: w.expanded ? 72 : 34 }
+            WeatherIcon {
+                Layout.preferredWidth: 84; Layout.preferredHeight: 84
+                code: w.loaded ? w.curCode : -1
+                primaryColor: w.effAccent
+                cloudColor: theme.textSecondary
+                detailColor: theme.catInfo
+            }
             ColumnLayout {
                 spacing: 0
-                Text { text: (w.loaded && !w.errorText.length) ? Math.round(w.curTemp) + w.degSym : (w.errorText.length ? "-" : "…")
+                Text { text: w.loaded ? Math.round(w.curTemp) + w.degSym : (w.errorText.length ? "-" : "…")
                     font.pixelSize: w.expanded ? 64 : 28; font.bold: true; color: theme.textPrimary }
                 Text { visible: w.expanded && w.loaded; text: "Feels " + Math.round(w.feels) + w.degSym + "  ·  " + w.place
-                    font.pixelSize: 14; color: theme.textSecondary }
+                    font.pixelSize: theme.fontLabel; color: theme.textSecondary }
             }
         }
         Text {
@@ -440,7 +648,7 @@ WidgetChrome {
             // (otherwise the big "-" gives no hint why there's no data).
             visible: !w.expanded || w.errorText.length > 0
             text: w.errorText.length ? w.errorText : w.place
-            font.pixelSize: w.expanded && w.errorText.length ? 15 : 12
+            font.pixelSize: w.expanded && w.errorText.length ? theme.fontLabel : theme.fontMinimum
             color: w.errorText.length ? theme.warning : theme.textSecondary
         }
         RowLayout {
@@ -449,15 +657,48 @@ WidgetChrome {
                 model: w.days.slice(1)
                 delegate: ColumnLayout {
                     required property var modelData; spacing: 2
-                    Text { Layout.alignment: Qt.AlignHCenter; text: modelData.day; font.pixelSize: 13; color: theme.textSecondary }
-                    Text { Layout.alignment: Qt.AlignHCenter; text: w.weatherGlyph(modelData.code); font.pixelSize: 26 }
+                    Text { Layout.alignment: Qt.AlignHCenter; text: modelData.day; font.pixelSize: theme.fontLabel; color: theme.textSecondary }
+                    WeatherIcon {
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.preferredWidth: 36; Layout.preferredHeight: 36
+                        code: modelData.code
+                        primaryColor: w.effAccent
+                        cloudColor: theme.textSecondary
+                        detailColor: theme.catInfo
+                    }
                     Text { Layout.alignment: Qt.AlignHCenter; text: modelData.max + w.degSym + " / " + modelData.min + w.degSym
-                        font.pixelSize: 13; color: theme.textPrimary
+                        font.pixelSize: theme.fontLabel; color: theme.textPrimary
                         // S12: shrink-to-fit the day's hi/lo so a wide 7-day °F row
                         // (e.g. "108°F / -12°F") never clips the panel.
-                        fontSizeMode: Text.HorizontalFit; minimumPixelSize: 9; elide: Text.ElideRight }
+                        fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum; elide: Text.ElideRight }
                 }
             }
+        }
+        Text {
+            visible: w.loaded
+            Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
+            text: (isFinite(w.humidity) ? "Humidity " + Math.round(w.humidity) + "%" : "")
+                  + (isFinite(w.windSpeed) ? " · Wind " + Math.round(w.windSpeed) + " " + w.windSym : "")
+                  + (isFinite(w.precipitation) ? " · Rain " + w.precipitation + " " + w.precipitationSym : "")
+                  + (w.sunrise.length ? " · Sunrise " + w.sunrise : "")
+                  + (w.sunset.length ? " · Sunset " + w.sunset : "")
+            color: theme.textSecondary; font.pixelSize: theme.fontLabel; elide: Text.ElideRight
+        }
+        Text {
+            visible: w.locationConfigured
+            Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
+            text: w.freshnessText() + " · Open-Meteo refreshes every 30m"
+            color: w.errorText.length || w.stale ? theme.warning : theme.textTertiary
+            font.pixelSize: theme.fontLabel
+        }
+        Text {
+            visible: w.expanded && w.stateHelp.length > 0
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignHCenter
+            text: w.stateHelp
+            color: w.recentlyRecovered ? w.effAccent : theme.textSecondary
+            font.pixelSize: theme.fontLabel
+            wrapMode: Text.WordWrap
         }
         Item { Layout.fillHeight: true; visible: w.expanded }
         RowLayout {
@@ -465,7 +706,7 @@ WidgetChrome {
             TextField {
                 id: cityField; Layout.fillWidth: true; Layout.preferredHeight: theme.touchSecondary
                 placeholderText: "Search a city…"; placeholderTextColor: theme.textTertiary
-                color: theme.textPrimary; font.pixelSize: 15
+                color: theme.textPrimary; font.pixelSize: theme.fontLabel
                 background: Rectangle { radius: theme.radiusSm; color: theme.backgroundColor
                     border.color: cityField.activeFocus ? w.effAccent : theme.cardBorder; border.width: 1 }
                 onAccepted: w.geocode(text)

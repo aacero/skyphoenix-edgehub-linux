@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QTimer>
 #include <QVariantMap>
 #include <QtDBus/QDBusConnection>
@@ -26,6 +27,16 @@ class MprisBridge : public QObject {
     Q_PROPERTY(bool playing READ playing NOTIFY changed)
     Q_PROPERTY(QString playerName READ playerName NOTIFY changed)
     Q_PROPERTY(double position READ position NOTIFY positionChanged) // 0..1 fraction
+    Q_PROPERTY(bool canPlayPause READ canPlayPause NOTIFY changed)
+    Q_PROPERTY(bool canGoNext READ canGoNext NOTIFY changed)
+    Q_PROPERTY(bool canGoPrevious READ canGoPrevious NOTIFY changed)
+    Q_PROPERTY(bool canSeek READ canSeek NOTIFY changed)
+    Q_PROPERTY(qlonglong positionMs READ positionMs NOTIFY positionChanged)
+    Q_PROPERTY(qlonglong durationMs READ durationMs NOTIFY changed)
+    Q_PROPERTY(bool busConnected READ busConnected CONSTANT)
+    Q_PROPERTY(bool scanning READ scanning NOTIFY discoveryChanged)
+    Q_PROPERTY(QStringList availablePlayers READ availablePlayers NOTIFY discoveryChanged)
+    Q_PROPERTY(QString preferredPlayer READ preferredPlayer WRITE setPreferredPlayer NOTIFY preferredPlayerChanged)
 
 public:
     explicit MprisBridge(QObject* parent = nullptr);
@@ -42,10 +53,22 @@ public:
     double position() const {
         return m_lengthUs > 0 ? double(m_positionUs) / double(m_lengthUs) : 0.0;
     }
+    bool canPlayPause() const { return m_canPlayPause; }
+    bool canGoNext() const { return m_canGoNext; }
+    bool canGoPrevious() const { return m_canGoPrevious; }
+    bool canSeek() const { return m_canSeek; }
+    qlonglong positionMs() const { return qMax<qlonglong>(0, m_positionUs / 1000); }
+    qlonglong durationMs() const { return qMax<qlonglong>(0, m_lengthUs / 1000); }
+    bool busConnected() const { return m_bus.isConnected(); }
+    bool scanning() const { return m_scanning; }
+    QStringList availablePlayers() const { return m_availablePlayers; }
+    QString preferredPlayer() const { return m_preferredPlayer; }
+    void setPreferredPlayer(const QString& player);
 
     Q_INVOKABLE void playPause();
     Q_INVOKABLE void next();
     Q_INVOKABLE void previous();
+    Q_INVOKABLE void seekFraction(double fraction);
 
     // ── Test seam (no D-Bus) ─────────────────────────────────────────────────
     // Fold a Player GetAll property map into the exposed state, notifying QML
@@ -63,6 +86,8 @@ public:
 signals:
     void changed();
     void positionChanged();
+    void discoveryChanged();
+    void preferredPlayerChanged();
 
 private slots:
     void onPropertiesChanged(const QString& iface, const QVariantMap& changed,
@@ -84,6 +109,13 @@ private:
     qlonglong m_lengthUs = 0;
     qlonglong m_positionUs = 0;
     bool m_available = false;
+    bool m_canPlayPause = true;
+    bool m_canGoNext = true;
+    bool m_canGoPrevious = true;
+    bool m_canSeek = false;
+    bool m_scanning = false;
+    QStringList m_availablePlayers;
+    QString m_preferredPlayer;
     QTimer m_poll;
     QTimer m_rescan;
 };

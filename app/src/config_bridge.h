@@ -13,6 +13,11 @@
 #include <QUrl>
 #include <QVariantMap>
 
+#include <cerrno>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include "autostart.h"
 #include "xeneon_core.h"
 #include "xeneon_string.h"
@@ -267,6 +272,119 @@ public:
             r["error"] = err.qstring();
         }
         return r;
+    }
+
+    // Read one local KPI metric without giving QML general filesystem access.
+    // The public invokable has a fixed allowlist. The roots-taking overload is a
+    // deterministic test seam and is intentionally not invokable.
+    Q_INVOKABLE QVariantMap readMetricFile(const QString& rawPath) const {
+        return readMetricFileFromRoots(
+            rawPath,
+            {QStringLiteral("/run"), QStringLiteral("/var/run"),
+             QStringLiteral("/proc"), QStringLiteral("/sys")});
+    }
+
+    static QVariantMap readMetricFileFromRoots(const QString& rawPath,
+                                               const QStringList& approvedRoots) {
+        auto fail = [](const QString& code, const QString& message) {
+            return QVariantMap{{QStringLiteral("ok"), false},
+                               {QStringLiteral("body"), QString()},
+                               {QStringLiteral("error"), code},
+                               {QStringLiteral("message"), message}};
+        };
+        QString path = rawPath.trimmed();
+        if (path.startsWith(QStringLiteral("file:"), Qt::CaseInsensitive)) {
+            const QUrl url(path);
+            if (!url.isLocalFile())
+                return fail(QStringLiteral("invalid-path"),
+                            QStringLiteral("Use an absolute local file path."));
+            path = url.toLocalFile();
+        }
+        if (path.isEmpty() || path.contains(QChar::Null) || !QFileInfo(path).isAbsolute())
+            return fail(QStringLiteral("invalid-path"),
+                        QStringLiteral("Use an absolute local file path."));
+        const QString slashPath = QDir::fromNativeSeparators(path);
+        if (slashPath.contains(QStringLiteral("/../")) ||
+            slashPath.endsWith(QStringLiteral("/..")) ||
+            slashPath.contains(QStringLiteral("/./")) ||
+            slashPath.endsWith(QStringLiteral("/."))) {
+            return fail(QStringLiteral("traversal"),
+                        QStringLiteral("Parent and current-directory segments are not allowed."));
+        }
+
+        const QFileInfo candidate(path);
+        const QString canonical = candidate.canonicalFilePath();
+        if (canonical.isEmpty())
+            return fail(QStringLiteral("not-found"),
+                        QStringLiteral("The metric file does not exist."));
+
+        bool inside = false;
+        for (const QString& rawRoot : approvedRoots) {
+            QString root = QFileInfo(rawRoot).canonicalFilePath();
+            if (root.isEmpty())
+                root = QDir::cleanPath(rawRoot);
+            if (canonical == root || canonical.startsWith(root + QLatin1Char('/'))) {
+                inside = true;
+                break;
+            }
+        }
+        if (!inside)
+            return fail(QStringLiteral("outside-approved-roots"),
+                        QStringLiteral("Metric files must stay under an approved system metric directory."));
+
+        const QByteArray encoded = QFile::encodeName(path);
+        const int fd = ::open(encoded.constData(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+        if (fd < 0)
+            return fail(errno == ELOOP ? QStringLiteral("symlink")
+                                       : QStringLiteral("unreadable"),
+                        errno == ELOOP
+                            ? QStringLiteral("Symbolic-link metric files are not allowed.")
+                            : QStringLiteral("The metric file could not be opened."));
+
+        struct stat st {};
+        if (::fstat(fd, &st) != 0) {
+            ::close(fd);
+            return fail(QStringLiteral("unreadable"),
+                        QStringLiteral("The metric file could not be inspected."));
+        }
+        if (!S_ISREG(st.st_mode)) {
+            ::close(fd);
+            return fail(QStringLiteral("not-regular-file"),
+                        QStringLiteral("The path must be a regular file."));
+        }
+        constexpr qint64 kMaxBytes = 1024 * 1024;
+        if (st.st_size > kMaxBytes) {
+            ::close(fd);
+            return fail(QStringLiteral("too-large"),
+                        QStringLiteral("Metric files may be at most 1 MiB."));
+        }
+
+        QByteArray bytes;
+        bytes.reserve(st.st_size > 0 ? int(st.st_size) : 4096);
+        char chunk[8192];
+        while (true) {
+            const ssize_t got = ::read(fd, chunk, sizeof(chunk));
+            if (got == 0)
+                break;
+            if (got < 0) {
+                if (errno == EINTR)
+                    continue;
+                ::close(fd);
+                return fail(QStringLiteral("unreadable"),
+                            QStringLiteral("The metric file could not be read."));
+            }
+            if (qint64(bytes.size()) + qint64(got) > kMaxBytes) {
+                ::close(fd);
+                return fail(QStringLiteral("too-large"),
+                            QStringLiteral("Metric files may be at most 1 MiB."));
+            }
+            bytes.append(chunk, qsizetype(got));
+        }
+        ::close(fd);
+        return QVariantMap{{QStringLiteral("ok"), true},
+                           {QStringLiteral("body"), QString::fromUtf8(bytes)},
+                           {QStringLiteral("error"), QString()},
+                           {QStringLiteral("message"), QString()}};
     }
 
     // --- Managed / org policy (E9) --------------------------------------------

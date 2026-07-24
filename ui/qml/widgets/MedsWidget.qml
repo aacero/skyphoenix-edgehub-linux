@@ -46,6 +46,9 @@ WidgetChrome {
     property bool active: true
     property var store: null
     property string instanceId: ""
+    property bool foreground: true
+    property var notificationBridge:
+        (typeof notifications !== "undefined" ? notifications : null)
     property int tick: 0
 
     title: "Meds"; iconName: "meds"; accentColor: theme.catServices
@@ -58,13 +61,24 @@ WidgetChrome {
     // because the whole adjustment surface is meant to stay small - the evidence
     // supports "make it adjustable, keep the surface small", not a form builder.
     readonly property string schedule: cfg.schedule !== undefined ? cfg.schedule : ""
+    readonly property var scheduleItems:
+        Array.isArray(cfg.scheduleItems) ? cfg.scheduleItems : []
     // How long after its time a dose still reads "Due now" rather than settling
     // into the neutral "not marked" state. The one knob that genuinely changes
     // behaviour, so it is the only one offered.
-    readonly property int dueWindowMin: cfg.dueWindowMin !== undefined ? cfg.dueWindowMin : 60
+    readonly property int dueWindowMin: Math.max(15, Math.min(240,
+        Number(cfg.dueWindowMin !== undefined ? cfg.dueWindowMin : 60)))
+    readonly property bool notifyWhenHidden: cfg.notifyWhenHidden === true
+    readonly property bool notificationDetails: cfg.notificationDetails === true
+    readonly property string recordMeaningText: "A mark records your tap only. It cannot confirm a dose was taken."
+    readonly property string privacyText:
+        "Medication names and marks are stored locally in plaintext. Diagnostics redact medication settings."
 
     function todayKey() { return Qt.formatDate(new Date(), "yyyy-MM-dd") }
     property string dayKey: (w.tick, todayKey())
+    property int todayWeekdayOverride: -1
+    readonly property int todayWeekday:
+        todayWeekdayOverride >= 0 ? todayWeekdayOverride : (w.tick, new Date().getDay())
     // Taken-today only. A stored day that is not today means the list is stale, so
     // it reads as empty - the rollover needs no timer and cannot half-apply.
     readonly property var takenToday: (cfg.takenDay === dayKey && cfg.taken) ? cfg.taken : []
@@ -74,8 +88,40 @@ WidgetChrome {
     // parse. A line with no readable time is kept as an UNTIMED dose rather than
     // dropped - silently discarding a medication line is the worst failure mode
     // here, so it degrades to "no set time" and is still tappable.
-    readonly property var doses: {
+    readonly property var allDoses: {
         var out = []
+        if (cfg.scheduleFormat === "structured" || w.scheduleItems.length) {
+            for (var s = 0; s < w.scheduleItems.length; s++) {
+                var item = w.scheduleItems[s] || ({})
+                var time = String(item.time || "").trim()
+                var match = /^(\d{2}):(\d{2})$/.exec(time)
+                var hour = -1
+                var minute = 0
+                if (match && +match[1] <= 23 && +match[2] <= 59) {
+                    hour = +match[1]
+                    minute = +match[2]
+                }
+                var title = String(item.name || "").trim()
+                if (!title.length) title = "Dose"
+                var days = String(item.days !== undefined
+                                  ? item.days : "0,1,2,3,4,5,6")
+                    .split(",").map(function(value) { return value.trim() })
+                    .filter(function(value, index, all) {
+                        return /^[0-6]$/.test(value) && all.indexOf(value) === index
+                    }).map(function(value) { return Number(value) })
+                out.push({
+                    key: String(item.id || ("dose-" + s)),
+                    sourceLine: time + " " + title,
+                    occurrence: 1,
+                    name: title,
+                    hour: hour,
+                    minute: minute,
+                    mins: hour < 0 ? -1 : hour * 60 + minute,
+                    days: days
+                })
+            }
+        } else {
+        var occurrences = ({})
         var lines = String(w.schedule).split("\n")
         for (var i = 0; i < lines.length; i++) {
             var line = lines[i].trim()
@@ -89,10 +135,17 @@ WidgetChrome {
                     if (!name.length) name = "Dose"
                 }
             }
-            // The stable identity of a dose across a re-read: its own line text.
-            // Index would re-point every taken mark when a line is inserted above.
-            out.push({ key: line, name: name, hour: h, minute: mi,
-                       mins: h < 0 ? -1 : h * 60 + mi })
+            // The first occurrence keeps the legacy line key. Repeated identical
+            // lines get an occurrence suffix so marking one does not mark all of
+            // them. A line inserted elsewhere cannot re-point an existing mark.
+            var occurrence = occurrences[line] || 0
+            occurrences[line] = occurrence + 1
+            var key = occurrence === 0 ? line : line + "\u001f" + (occurrence + 1)
+            out.push({ key: key, sourceLine: line, occurrence: occurrence + 1,
+                       name: name, hour: h, minute: mi,
+                       mins: h < 0 ? -1 : h * 60 + mi,
+                       days: [0, 1, 2, 3, 4, 5, 6] })
+        }
         }
         // Timed doses in clock order; untimed ones last, in written order.
         out.sort(function (a, b) {
@@ -102,6 +155,25 @@ WidgetChrome {
             return a.mins - b.mins
         })
         return out
+    }
+    readonly property var doses: allDoses.filter(function(dose) {
+        return dose.days.indexOf(w.todayWeekday) >= 0
+    })
+
+    readonly property var scheduleIssues: {
+        var issues = []
+        var seen = ({})
+        for (var i = 0; i < w.allDoses.length; i++) {
+            var dose = w.allDoses[i]
+            if (dose.mins < 0)
+                issues.push("Line " + (i + 1) + " has no valid HH:MM time")
+            if (!dose.days.length)
+                issues.push(dose.name + " has no active weekdays")
+            if (seen[dose.sourceLine])
+                issues.push("Repeated line: " + dose.sourceLine)
+            seen[dose.sourceLine] = true
+        }
+        return issues
     }
 
     function isTaken(key) { return w.takenToday.indexOf(key) >= 0 }
@@ -154,6 +226,12 @@ WidgetChrome {
         if (st === "later") return "Later"
         return "Not marked"
     }
+    function symbolOf(st) {
+        if (st === "taken") return "✓"
+        if (st === "due") return "!"
+        if (st === "later") return "○"
+        return "-"
+    }
     function timeOf(dose) {
         if (dose.mins < 0) return "-"
         return (dose.hour < 10 ? "0" : "") + dose.hour + ":" + (dose.minute < 10 ? "0" : "") + dose.minute
@@ -176,20 +254,53 @@ WidgetChrome {
         for (var i = 0; i < w.doses.length; i++) if (w.isTaken(w.doses[i].key)) n++
         return n
     }
+    readonly property var notifiedToday:
+        cfg.notifiedDay === dayKey && Array.isArray(cfg.notified) ? cfg.notified : []
+    function checkNotifications() {
+        if (!w.active || w.foreground || !w.notifyWhenHidden
+                || !w.notificationBridge || !w.notificationBridge.send)
+            return false
+        var pending = []
+        for (var i = 0; i < w.doses.length; i++) {
+            var dose = w.doses[i]
+            if (w.stateOf(dose) === "due"
+                    && w.notifiedToday.indexOf(dose.key) < 0)
+                pending.push(dose)
+        }
+        if (!pending.length) return false
+        var body = "A scheduled dose is due now."
+        if (w.notificationDetails)
+            body = pending.length === 1 ? pending[0].name + " is due now."
+                                        : pending.length + " scheduled doses are due now."
+        var sent = w.notificationBridge.send("Medication reminder", body)
+        if (sent !== false && w.store) {
+            var next = w.notifiedToday.slice()
+            for (var j = 0; j < pending.length; j++)
+                if (next.indexOf(pending[j].key) < 0) next.push(pending[j].key)
+            w.store.patchSettings(w.instanceId,
+                                  { notifiedDay: w.dayKey, notified: next })
+        }
+        return sent !== false
+    }
+    onTickChanged: checkNotifications()
     status: w.expanded || !w.doses.length ? "" : w.takenCount + "/" + w.doses.length
 
     // ── Per-size layout (sizeClass injected by Dashboard) ────────────────────
     readonly property bool horiz: sizeClass === "wide"
+                                  || ((sizeClass === "large" || sizeClass === "full")
+                                      && width > height * 1.25)
     // The wide shape leads with the focused dose + its button; every other shape
     // leads with the schedule (whose rows are themselves the tap target).
     readonly property bool showFocus: w.horiz
     readonly property bool showSchedule: !w.horiz || w.width > 560
     // A dose row is a full touch target at EVERY size - never thinned for density.
-    readonly property real rowH: theme.touchSecondary
-    readonly property real rowFont: w.expanded ? 16
-        : Math.max(13, Math.min((w.horiz ? width * 0.55 : width) * 0.028, 16))
-    readonly property real timeFont: w.expanded ? 18
-        : Math.max(14, Math.min((w.horiz ? width * 0.55 : width) * 0.032, 18))
+    readonly property real rowH: Math.max(theme.touchSecondary, 72)
+    readonly property real rowFont: w.expanded ? Math.max(theme.fontLabel, 17)
+        : Math.max(17,
+                   Math.min((w.horiz ? width * 0.55 : width) * 0.034, 21))
+    readonly property real timeFont: w.expanded ? 20
+        : Math.max(18,
+                   Math.min((w.horiz ? width * 0.55 : width) * 0.038, 22))
 
     // Toggle, not a one-way "confirm": a mis-tap must be undoable, and an undo is
     // strictly safer than leaving a false "taken" on the record.
@@ -207,9 +318,13 @@ WidgetChrome {
         anchors.centerIn: parent
         width: parent.width - 2 * theme.spacingSm
         visible: w.doses.length === 0
-        text: w.expanded ? "Add your doses in settings - one per line, like “08:00 Vitamin D”."
-                         : "Add doses\nin settings"
-        color: theme.textTertiary; font.pixelSize: w.expanded ? 15 : 12
+        text: w.allDoses.length
+              ? "No doses scheduled today"
+              : (w.expanded ? "Add a dose, time, and weekdays in settings."
+                            : "Add doses\nin settings")
+        color: theme.textPrimary
+        font.pixelSize: w.expanded ? Math.max(theme.fontLabel, 17) : 17
+        font.bold: true
         horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
     }
 
@@ -247,14 +362,14 @@ WidgetChrome {
             Text {
                 Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
                 text: w.focusDose ? w.labelOf(w.stateOf(w.focusDose)) : ""
-                font.pixelSize: Math.max(11, Math.round(w.rowFont * 0.8))
-                color: theme.textSecondary; elide: Text.ElideRight
+                font.pixelSize: Math.max(15, Math.round(w.rowFont * 0.9))
+                color: theme.textPrimary; font.bold: true; elide: Text.ElideRight
             }
             Text {
                 Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
                 visible: !w.showSchedule
                 text: w.takenCount + " of " + w.doses.length + " marked taken today"
-                font.pixelSize: Math.max(10, Math.round(w.rowFont * 0.75))
+                font.pixelSize: Math.max(theme.fontMinimum, Math.round(w.rowFont * 0.75))
                 color: theme.textTertiary; elide: Text.ElideRight
             }
             // Logging from the tile itself - the whole point is that it takes one
@@ -263,7 +378,7 @@ WidgetChrome {
                 Layout.alignment: Qt.AlignHCenter
                 Layout.topMargin: theme.spacingXs
                 visible: w.focusDose !== null
-                label: w.focusDose && w.isTaken(w.focusDose.key) ? "Taken ✓" : "Mark taken"
+                label: w.focusDose && w.isTaken(w.focusDose.key) ? "Undo taken" : "Mark taken"
                 primary: !!(w.focusDose && !w.isTaken(w.focusDose.key))
                 tint: w.focusDose && w.isTaken(w.focusDose.key) ? theme.success : w.effAccent
                 onClicked: if (w.focusDose) w.toggleTaken(w.focusDose.key)
@@ -281,8 +396,11 @@ WidgetChrome {
                 Layout.fillWidth: true
                 visible: !w.showFocus
                 text: w.takenCount + " of " + w.doses.length + " marked taken today"
-                color: theme.textSecondary
+                      + (w.scheduleIssues.length ? " · " + w.scheduleIssues.length + " line"
+                         + (w.scheduleIssues.length === 1 ? "" : "s") + " need review" : "")
+                color: theme.textPrimary
                 font.pixelSize: Math.round(w.rowFont * 0.95)
+                font.bold: true
                 elide: Text.ElideRight
             }
 
@@ -292,6 +410,7 @@ WidgetChrome {
                 Layout.fillWidth: true; Layout.fillHeight: true
                 ListView {
                     id: doseList
+                    objectName: "medsDoseList"
                     readonly property real rowPitch: w.rowH + spacing
                     width: parent.width
                     height: Math.max(w.rowH,
@@ -302,7 +421,9 @@ WidgetChrome {
                     model: w.doses
                     delegate: Rectangle {
                         id: doseRow
+                        required property int index
                         required property var modelData
+                        objectName: "medsDoseRow-" + index
                         readonly property string st: w.stateOf(modelData)
                         width: ListView.view ? ListView.view.width : 0
                         // A full-width row IS the touch target - above
@@ -322,6 +443,15 @@ WidgetChrome {
                             spacing: theme.spacingMd
 
                             Text {
+                                text: w.symbolOf(doseRow.st)
+                                font.pixelSize: Math.round(w.timeFont)
+                                font.bold: true
+                                color: w.colorOf(doseRow.st)
+                                Layout.preferredWidth: Math.round(w.timeFont * 1.2)
+                                horizontalAlignment: Text.AlignHCenter
+                                Accessible.ignored: true
+                            }
+                            Text {
                                 text: w.timeOf(doseRow.modelData)
                                 font.pixelSize: Math.round(w.timeFont); font.family: theme.fontMono
                                 color: w.colorOf(doseRow.st)
@@ -336,30 +466,56 @@ WidgetChrome {
                                 }
                                 Text {
                                     text: w.labelOf(doseRow.st)
-                                    color: theme.textSecondary
-                                    font.pixelSize: Math.max(10, Math.round(w.rowFont * 0.75))
+                                    color: theme.textPrimary
+                                    font.pixelSize: Math.max(15,
+                                                             Math.round(w.rowFont * 0.82))
+                                    font.bold: true
                                     elide: Text.ElideRight; Layout.fillWidth: true
                                 }
                             }
-                            // A check that is filled when taken; the row's
-                            // MouseArea does the work, so this stays purely a
-                            // state read-out.
-                            Rectangle {
-                                Layout.preferredWidth: 32; Layout.preferredHeight: 32
-                                radius: 16
-                                color: doseRow.st === "taken" ? theme.success : "transparent"
-                                border.width: 2
-                                border.color: doseRow.st === "taken" ? theme.success : theme.cardBorder
-                                Text {
+                            Item {
+                                objectName: "medsDoseAction-" + doseRow.index
+                                Layout.preferredWidth: theme.touchSecondary
+                                Layout.fillHeight: true
+                                activeFocusOnTab: true
+                                Accessible.role: Accessible.CheckBox
+                                Accessible.name: (doseRow.st === "taken" ? "Undo taken mark for " : "Mark taken: ")
+                                                 + doseRow.modelData.name
+                                Accessible.checked: doseRow.st === "taken"
+                                Accessible.onPressAction: w.toggleTaken(doseRow.modelData.key)
+                                Keys.onSpacePressed: w.toggleTaken(doseRow.modelData.key)
+                                Keys.onReturnPressed: w.toggleTaken(doseRow.modelData.key)
+
+                                Rectangle {
                                     anchors.centerIn: parent
-                                    visible: doseRow.st === "taken"
-                                    text: "✓"; color: "#0D1117"; font.bold: true; font.pixelSize: 18
+                                    width: 32; height: 32
+                                    radius: 16
+                                    color: doseRow.st === "taken" ? theme.success : "transparent"
+                                    border.width: 2
+                                    border.color: doseRow.st === "taken" ? theme.success : theme.cardBorder
+                                    Text {
+                                        anchors.centerIn: parent
+                                        visible: doseRow.st === "taken"
+                                        text: "✓"; color: "#0D1117"; font.bold: true; font.pixelSize: 18
+                                    }
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: w.toggleTaken(doseRow.modelData.key)
                                 }
                             }
                         }
-                        MouseArea { anchors.fill: parent; onClicked: w.toggleTaken(doseRow.modelData.key) }
                     }
                 }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                visible: w.expanded
+                text: w.recordMeaningText + " " + w.privacyText
+                color: theme.textTertiary
+                font.pixelSize: theme.fontMinimum
+                wrapMode: Text.WordWrap
             }
         }
     }

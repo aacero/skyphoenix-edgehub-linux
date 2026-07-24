@@ -43,13 +43,47 @@ ApplicationWindow {
     // Live UI-state pushed from the companion Manager app via the C++
     // ControlServer. Forward it to the dashboard for an immediate reload.
     property string externalUiState: ""
-    onExternalUiStateChanged: {
-        if (!externalUiState.length) return
+    property string pendingExternalUiState: ""
+    property int externalUiStateRetryCount: 0
+    property bool externalUiStateApplied: false
+    function applyExternalUiState(json) {
+        if (!json || !json.length) return false
+        pendingExternalUiState = json
         // Route to whichever stack item can apply it (the Dashboard), even when
         // Diagnostics or the wizard is on top - otherwise a live Manager push is
         // silently dropped while any other page is showing.
         var target = stackView.find(function (item) { return item && item.applyExternalState })
-        if (target) target.applyExternalState(externalUiState)
+        if (!target) {
+            if (externalUiStateRetryCount < 100) {
+                externalUiStateRetryCount++
+                externalUiStateRetry.start()
+            } else {
+                console.warn("Manager UI state could not reach the Dashboard after 5 seconds")
+            }
+            return false
+        }
+        var applied = target.applyExternalState(json)
+        if (applied === false) {
+            pendingExternalUiState = ""
+            externalUiStateRetryCount = 0
+            return false
+        }
+        pendingExternalUiState = ""
+        externalUiStateRetryCount = 0
+        return true
+    }
+    onExternalUiStateChanged: {
+        externalUiStateApplied = applyExternalUiState(externalUiState)
+    }
+    Timer {
+        id: externalUiStateRetry
+        interval: 50
+        repeat: false
+        onTriggered: {
+            if (root.pendingExternalUiState)
+                root.externalUiStateApplied =
+                    root.applyExternalUiState(root.pendingExternalUiState)
+        }
     }
 
     // ── Manager screen mirroring (O1) ─────────────────────────────────────────
@@ -102,6 +136,8 @@ ApplicationWindow {
     property alias accentName: _theme.accentName
     property alias glassOpacity: _theme.glassOpacity
     property alias showWidgetGlow: _theme.showWidgetGlow
+    property alias textScale: _theme.textScale
+    property alias fontChoice: _theme.fontChoice
     property bool animatedBackground: false  // Calm-by-default (beta): no drifting
                                              // orbs on a fresh install; opt in via
                                              // Appearance. Motion transitions stay on.

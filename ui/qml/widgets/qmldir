@@ -41,12 +41,16 @@ SegmentedControl 1.0 SegmentedControl.qml
 SensorsWidget 1.0 SensorsWidget.qml
 SettingsPanel 1.0 SettingsPanel.qml
 PresetPicker 1.0 PresetPicker.qml
+PresetPreview 1.0 PresetPreview.qml
 Sparkline 1.0 Sparkline.qml
 StarfieldBackground 1.0 StarfieldBackground.qml
 TasksWidget 1.0 TasksWidget.qml
 WavesBackground 1.0 WavesBackground.qml
 WeatherWidget 1.0 WeatherWidget.qml
+WeatherIcon 1.0 WeatherIcon.qml
 WidgetChrome 1.0 WidgetChrome.qml
+WidgetHost 1.0 WidgetHost.qml
+ProviderState 1.0 ProviderState.qml
 WidgetConfigPanel 1.0 WidgetConfigPanel.qml
 BackgroundCatalog 1.0 ../BackgroundCatalog.qml
 Dashboard 1.0 ../Dashboard.qml
@@ -56,5 +60,7 @@ FirstRunWizard 1.0 ../FirstRunWizard.qml
 Theme 1.0 ../Theme.qml
 WallpaperCatalog 1.0 ../WallpaperCatalog.qml
 WidgetCatalog 1.0 ../WidgetCatalog.qml
+WidgetPacker 1.0 ../WidgetPacker.qml
+WidgetSizes 1.0 ../WidgetSizes.qml
 WidgetConfigSchema 1.0 ../WidgetConfigSchema.qml
 main 1.0 ../main.qml

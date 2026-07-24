@@ -56,6 +56,16 @@ public:
         return QLocale().toString(QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(msEpoch), tz), fmt);
     }
 
+    // Locale-aware companion used by clocks with an explicit language/region.
+    // An empty locale name deliberately preserves the process locale.
+    Q_INVOKABLE QString formatLocale(const QString& zoneId, double msEpoch, const QString& fmt,
+                                     const QString& localeName) const {
+        const QTimeZone tz = _zone(zoneId);
+        if (!tz.isValid()) return QString();
+        const QLocale locale = localeName.trimmed().isEmpty() ? QLocale() : QLocale(localeName);
+        return locale.toString(QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(msEpoch), tz), fmt);
+    }
+
     // Offset from UTC in SECONDS at the given instant, DST included. Callers that
     // need arithmetic (a countdown, a day boundary) use this rather than parsing a
     // formatted string. Returns 0 for an unknown zone - pair it with isValid().

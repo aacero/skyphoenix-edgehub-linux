@@ -94,10 +94,11 @@ public:
         connect(reconnect, &QTimer::timeout, this, [this] { tryConnectHub(); });
         reconnect->start();
 
-        // Gentle periodic pull so device-side edits on the hub appear in the
-        // Manager (getUiState is cheap; QML only reloads when the state differs).
+        // A short local pull keeps device-side edits visibly live in the Manager.
+        // getUiState is a tiny local-socket message and QML reloads only when the
+        // state differs, so 500 ms gives WYSIWYG feedback without repaint churn.
         auto* pull = new QTimer(this);
-        pull->setInterval(4000);
+        pull->setInterval(500);
         connect(pull, &QTimer::timeout, this, [this] { syncFromHub(); });
         pull->start();
 

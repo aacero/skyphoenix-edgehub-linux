@@ -38,7 +38,7 @@ QString playerNameFromService(const QString& service);
 // `statuses` maps service -> PlaybackStatus, with "" for a player that did not
 // answer (a hung/erroring player must not win). Returns "" iff `order` is empty.
 QString choosePlayer(const QStringList& order, const QMap<QString, QString>& statuses,
-                     const QString& current);
+                     const QString& current, const QString& preferred = QString());
 
 // The user-visible now-playing state, as resolved from one GetAll reply.
 struct TrackState {
@@ -50,6 +50,10 @@ struct TrackState {
     QString playerName;
     qlonglong lengthUs = 0;
     bool available = false;
+    bool canPlayPause = true;
+    bool canGoNext = true;
+    bool canGoPrevious = true;
+    bool canSeek = false;
 };
 
 // Resolve a Player GetAll property map into the state QML should show.
@@ -68,8 +72,8 @@ struct TrackState {
 //     playing" rather than a blank card.
 TrackState resolveTrack(const QVariantMap& props, const QString& service);
 
-// Do two states differ in any field the user can SEE? (Deliberately ignores
-// lengthUs, which is not rendered on its own - position is notified separately.)
+// Do two states differ in any field the user can see? Track length is included
+// because the widget renders total time; position has its own notification.
 //
 // This is the dirty-check: applyProps runs on every 3s rescan, and emitting
 // changed() unconditionally re-fires every property NOTIFY, restarting the QML

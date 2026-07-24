@@ -91,12 +91,12 @@ Item {
 
                         Text {
                             text: modelData.title || ""
-                            color: panel.col.textPrimary; font.pixelSize: 16; font.bold: true
+                            color: panel.col.textPrimary; font.pixelSize: 18; font.bold: true
                             visible: (modelData.title || "").length > 0
                         }
                         Text {
                             text: modelData.desc || ""
-                            color: panel.col.textSecondary; font.pixelSize: 13
+                            color: panel.col.textSecondary; font.pixelSize: 15
                             wrapMode: Text.WordWrap; Layout.fillWidth: true
                             visible: (modelData.desc || "").length > 0
                         }
@@ -122,7 +122,7 @@ Item {
 
             Text {
                 visible: panel.statusText.length > 0
-                text: panel.statusText; color: panel.col.textSecondary; font.pixelSize: 13
+                text: panel.statusText; color: panel.col.textSecondary; font.pixelSize: 15
                 Layout.fillWidth: true; wrapMode: Text.WordWrap
             }
         }

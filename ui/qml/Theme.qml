@@ -145,9 +145,12 @@ QtObject {
     // Edge's viewing distance, and over 1.6 the 40–48px data readouts overflow
     // the narrow panel's tiles. An out-of-range value is a bug, not a taste -
     // clamp rather than let it break the layout.
-    property real textScale: 1.0
+    // The Edge is normally read at arm's length, not like a phone held close.
+    // 1.15 is the legible default; users can still choose 1.0 for dense layouts.
+    property real textScale: 1.15
     readonly property real textScaleEff: Math.max(0.8, Math.min(1.6, textScale))
 
+    property int fontMinimum: Math.round(13 * textScaleEff)
     property int fontData: Math.round(40 * textScaleEff)
     property int fontDataLarge: Math.round(48 * textScaleEff)
     property int fontTitle: Math.round(17 * textScaleEff)

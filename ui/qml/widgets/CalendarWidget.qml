@@ -12,10 +12,9 @@ import QtQuick.Layouts
 // widget properties: they are never written to the store, so a poll cannot churn
 // config.toml.
 //
-// NOTE: `url` is a SECRET - an ICS subscription URL is a bearer capability (anyone
-// holding it can read the private calendar), yet it is stored as a plain setting
-// and shown in the expanded field. Migrating it to a credential ref is E7's
-// surface, not this widget's; until then treat it as sensitive when logging.
+// `url` is a bearer capability. It may be stored as an environment/file secret
+// reference; NetHub resolves that reference inside request() so the plaintext URL
+// never becomes a widget property. Legacy literal URLs remain supported.
 WidgetChrome {
     id: w
     property var metrics: ({})
@@ -44,6 +43,40 @@ WidgetChrome {
     property var events: []        // expanded, sorted upcoming
     property string errorText: ""
     property bool loading: false
+    property double lastSuccessAt: 0
+    property double nowMsOverride: -1
+    property var parseWarnings: []
+    property string stateHelp: ""
+    readonly property int refreshSec: 900
+    readonly property string sharedKind: "calendar-ics-v1"
+    function currentMs() { return w.nowMsOverride >= 0 ? w.nowMsOverride : Date.now() }
+    ProviderState {
+        id: provider
+        configured: w.url.length > 0
+        loading: w.loading
+        hasData: w.events.length > 0
+        errorText: w.errorText
+        lastSuccessAt: w.lastSuccessAt
+        nowMs: (w.tick, w.currentMs())
+        staleAfterSec: w.refreshSec * 2
+    }
+    readonly property string providerState: provider.state
+    readonly property int refreshAgeSec: provider.ageSec
+    readonly property bool stale: provider.isStale
+    function freshnessText() { return provider.freshnessText }
+    function sourceHost() {
+        if (w._hub()._looksLikeRef && w._hub()._looksLikeRef(w.url))
+            return "private calendar source"
+        var m = /^(?:https?|webcal):\/\/([^\/:?#]+)/i.exec(w.url)
+        return m ? m[1] : "configured calendar"
+    }
+    function addParseWarning(message) {
+        if (w.parseWarnings.indexOf(message) < 0) w.parseWarnings = w.parseWarnings.concat([message])
+    }
+    status: (provider.state === "fresh" || provider.state === "empty")
+            && w.parseWarnings.length ? "Partial" : provider.badgeLabel
+    statusColor: provider.state !== "fresh" || w.parseWarnings.length
+                 ? theme.warning : w.effAccent
 
     // ── Per-size layout (sizeClass injected by Dashboard) ────────────────────
     readonly property bool horiz: sizeClass === "wide"
@@ -109,6 +142,7 @@ WidgetChrome {
         var tz = tzidOf(key)
         var off = tz ? tzOffsetMinutes(tz, y, mo, d) : null
         if (off !== null) return new Date(Date.UTC(y, mo, d, h, mi, s) - off * 60000)
+        if (tz) w.addParseWarning("Unsupported timezone: " + tz)
         return new Date(y, mo, d, h, mi, s)
     }
 
@@ -219,7 +253,7 @@ WidgetChrome {
                 finished = occStart.getTime() + dur < now.getTime()
             }
             if (finished) return
-            out.push({ title: ev.title, location: ev.location, allDay: ev.allDay,
+            out.push({ title: ev.title, location: ev.location, url: ev.url || "", allDay: ev.allDay,
                        start: new Date(occStart), end: new Date(occStart.getTime() + dur) })
         }
         if (!ev.rrule) {
@@ -229,6 +263,10 @@ WidgetChrome {
         }
         var parts = {}
         ev.rrule.split(";").forEach(function (p) { var kv = p.split("="); parts[kv[0]] = kv[1] })
+        var supportedParts = ["FREQ", "INTERVAL", "COUNT", "UNTIL", "BYDAY"]
+        for (var partName in parts)
+            if (supportedParts.indexOf(partName) < 0)
+                w.addParseWarning("Unsupported recurrence rule: " + partName)
         var interval = +(parts.INTERVAL || 1)
         var count = parts.COUNT ? +parts.COUNT : 100000
         var until = parts.UNTIL ? parseDT(parts.UNTIL, "") : horizonEnd
@@ -275,6 +313,7 @@ WidgetChrome {
 
         var stepDays = freq === "WEEKLY" ? 7 * interval : (freq === "DAILY" ? interval : 0)
         if (stepDays === 0) { // unsupported FREQ → single instance
+            w.addParseWarning("Unsupported recurrence frequency: " + freq)
             var effEnd0 = ev.end || ev.start
             if (effEnd0 >= todayStart && ev.start <= horizonEnd) emit(ev.start)
             return out
@@ -290,6 +329,7 @@ WidgetChrome {
     }
 
     function parseICS(text) {
+        w.parseWarnings = []
         var raw = text.replace(/\r\n/g, "\n").replace(/\n[ \t]/g, "") // unfold
         var lines = raw.split("\n")
         var evs = [], cur = null
@@ -303,6 +343,7 @@ WidgetChrome {
                 var name = key.split(";")[0]
                 if (name === "SUMMARY") cur.title = val
                 else if (name === "LOCATION") cur.location = val
+                else if (name === "URL") cur.url = val
                 else if (name === "RRULE") cur.rrule = val
                 else if (name === "DTSTART") {
                     cur.start = parseDT(val, key)
@@ -330,20 +371,50 @@ WidgetChrome {
     // no XHR to compare a callback against in exactly the cases that must still report.
     property var _xhr: null
     property int _seq: 0
-    Component.onDestruction: { if (_xhr) _xhr.abort() }
-    function refresh() {
-        if (!url.length) { events = []; errorText = ""; loading = false; return }
-        loading = true
+    function _syncShared() {
+        if (!w.url.length || !w._hub().sharedProvider) return false
+        var entry = w._hub().sharedProvider(w.sharedKind, w.url)
+        if (!entry) return false
+        w.loading = !!entry.loading
+        if (entry.events !== undefined) w.events = entry.events
+        if (entry.parseWarnings !== undefined) w.parseWarnings = entry.parseWarnings
+        if (entry.lastSuccessAt !== undefined) w.lastSuccessAt = Number(entry.lastSuccessAt || 0)
+        w.errorText = entry.errorText || ""
+        w.stateHelp = entry.stateHelp || ""
+        return true
+    }
+    Connections {
+        target: w._hub()
+        function onSharedRevisionChanged() { w._syncShared() }
+    }
+    Component.onDestruction: {
+        if (_xhr) _xhr.abort()
+        if (w.url.length && w._hub().releaseSharedProvider)
+            w._hub().releaseSharedProvider(w.sharedKind, w.url, w, "")
+    }
+    function refresh(force) {
+        var forceNow = force === undefined ? true : !!force
+        if (!url.length) {
+            events = []; errorText = ""; stateHelp = ""; loading = false; parseWarnings = []
+            return
+        }
         if (_xhr) _xhr.abort()
         w._xhr = null
-        // webcal:// (iCloud/Apple) is just ICS over HTTP(S) - rewrite the scheme
-        // rather than handing the gate a scheme it would read as a local path
-        // (and which XMLHttpRequest rejects as invalid anyway).
-        var reqUrl = /^webcal:/i.test(url) ? url.replace(/^webcal:/i, "https:") : url
+        if (w._hub().claimSharedProvider
+                && !w._hub().claimSharedProvider(w.sharedKind, w.url, w,
+                                                  forceNow ? 0 : 3000)) {
+            w._syncShared()
+            return
+        }
+        loading = true
+        stateHelp = ""
         var seq = ++w._seq
         var xhr = w._hub().request({
-            url: reqUrl,
+            url: w.url,
+            urlIsSecretRef: true,
+            normalizeWebcal: true,
             timeout: 12000,
+            maxResponseBytes: 2097152,
             xhrFactory: w.xhrFactory,
             onDone: function (status, body) {
                 if (seq !== w._seq) return   // superseded by a newer fetch
@@ -351,8 +422,31 @@ WidgetChrome {
                 w.loading = false
                 try {
                     w.events = w.parseICS(body)
-                    w.errorText = w.events.length ? "" : "No upcoming events"
-                } catch (e) { w.errorText = "Couldn't read calendar" }
+                    w.errorText = ""
+                    w.stateHelp = w.events.length
+                        ? "Calendar is up to date."
+                        : "The subscription connected successfully but has no events in the next 30 days."
+                    w.lastSuccessAt = w.currentMs()
+                    if (w._hub().publishSharedProvider)
+                        w._hub().publishSharedProvider(w.sharedKind, w.url, w, {
+                            events: w.events,
+                            parseWarnings: w.parseWarnings,
+                            errorText: "",
+                            stateHelp: w.stateHelp,
+                            lastSuccessAt: w.lastSuccessAt
+                        })
+                } catch (e) {
+                    w.errorText = "Couldn't read calendar"
+                    w.stateHelp = "Check that the subscription returns a valid ICS calendar."
+                    if (w._hub().publishSharedProvider)
+                        w._hub().publishSharedProvider(w.sharedKind, w.url, w, {
+                            events: w.events,
+                            parseWarnings: w.parseWarnings,
+                            errorText: w.errorText,
+                            stateHelp: w.stateHelp,
+                            lastSuccessAt: w.lastSuccessAt
+                        })
+                }
             },
             onError: function (reason) {
                 if (seq !== w._seq) return
@@ -361,22 +455,43 @@ WidgetChrome {
                 w.errorText = reason === "offline" ? "Calendar is offline"
                     : reason === "blocked" ? "Calendar host not allowed"
                     : reason === "timeout" ? "Calendar timed out"
-                    : reason === "open-failed" ? "Invalid URL" : "Couldn't fetch calendar"
+                    : reason === "open-failed" || reason === "unsupported-scheme" ? "Invalid URL"
+                    : reason === "response-too-large" ? "Calendar response is too large"
+                    : reason.indexOf("url-secret:") === 0 ? "Private calendar URL unavailable"
+                    : "Couldn't fetch calendar"
+                w.stateHelp = reason === "offline" ? "Turn off Offline mode, then refresh."
+                    : reason === "blocked" ? "Allow this calendar host in network policy."
+                    : reason.indexOf("url-secret:") === 0
+                        ? "Check the environment or file reference in widget settings."
+                    : reason === "response-too-large"
+                        ? "Use a calendar subscription smaller than 2 MiB."
+                    : "Check the subscription URL and network, then refresh."
+                if (w._hub().publishSharedProvider)
+                    w._hub().publishSharedProvider(w.sharedKind, w.url, w, {
+                        events: w.events,
+                        parseWarnings: w.parseWarnings,
+                        errorText: w.errorText,
+                        stateHelp: w.stateHelp,
+                        lastSuccessAt: w.lastSuccessAt
+                    })
             }
         })
         if (seq === w._seq) w._xhr = xhr
     }
 
     property string _urlKey: url
-    on_UrlKeyChanged: refreshDebounce.restart()
-    Component.onCompleted: refreshDebounce.restart()
-    Timer { id: refreshDebounce; interval: 300; onTriggered: w.refresh() }
-    Timer { interval: 900000; repeat: true; running: w.active && w.url.length > 0; onTriggered: w.refresh() }
+    on_UrlKeyChanged: if (w.active) refreshDebounce.restart()
+    onActiveChanged: if (w.active) refreshDebounce.restart()
+    Component.onCompleted: if (w.active) refreshDebounce.restart()
+    Timer { id: refreshDebounce; interval: 300; onTriggered: if (w.active) w.refresh(false) }
+    Timer { interval: w.refreshSec * 1000; repeat: true; running: w.active && w.url.length > 0
+            onTriggered: if (w.active) w.refresh(false) }
 
     function fmtWhen(ev) {
         var d = ev.start, now = new Date()
         var sameDay = d.toDateString() === now.toDateString()
-        var tomorrow = new Date(now.getTime() + 86400000)
+        var tomorrow = new Date(now)
+        tomorrow.setDate(tomorrow.getDate() + 1)
         var isTom = d.toDateString() === tomorrow.toDateString()
         var day = sameDay ? "Today" : (isTom ? "Tomorrow" : Qt.formatDate(d, "ddd MMM d"))
         return ev.allDay ? day : day + " " + Qt.formatTime(d, "HH:mm")
@@ -398,7 +513,8 @@ WidgetChrome {
             horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
             text: "Add a calendar\n(ICS URL) in settings"
             color: theme.textTertiary
-            font.pixelSize: Math.max(11, Math.min(w.width * 0.038, w.height * 0.045, 18))
+            font.pixelSize: Math.max(theme.fontMinimum,
+                                     Math.min(w.width * 0.038, w.height * 0.045, 18))
         }
 
         ColumnLayout {
@@ -407,8 +523,25 @@ WidgetChrome {
             Layout.maximumWidth: Number.POSITIVE_INFINITY
             spacing: theme.spacingXs
 
-            Text { text: (w.tick, "Up next"); color: theme.textTertiary
-                font.pixelSize: Math.max(11, Math.min(w.rowH * 0.30, 16)) }
+            RowLayout {
+                Layout.fillWidth: true
+                Text {
+                    text: (w.tick, "Up next"); color: theme.textTertiary
+                    font.pixelSize: Math.max(theme.fontMinimum,
+                                             Math.min(w.rowH * 0.30, theme.fontLabel))
+                }
+                Item { Layout.fillWidth: true }
+                Text {
+                    visible: w.loading || w.errorText.length > 0 || w.stale
+                    text: w.loading ? "Loading calendar..."
+                        : (w.errorText.length ? w.errorText : "Calendar data is stale")
+                    color: w.loading ? theme.textSecondary : theme.warning
+                    font.pixelSize: Math.max(theme.fontMinimum,
+                                             Math.min(w.rowH * 0.30, theme.fontLabel))
+                    elide: Text.ElideRight
+                    Layout.maximumWidth: Math.max(80, w.width * 0.58)
+                }
+            }
 
             GridLayout {
                 Layout.fillWidth: true; Layout.fillHeight: true
@@ -438,46 +571,74 @@ WidgetChrome {
                             Layout.fillWidth: true; spacing: 0
                             Text { text: evRow.ev ? (evRow.ev.title || "(busy)") : ""
                                 color: theme.textPrimary
-                                font.pixelSize: Math.max(11, Math.min(w.rowH * 0.34, 20))
+                                font.pixelSize: Math.max(theme.fontMinimum,
+                                                         Math.min(w.rowH * 0.34, theme.fontTitle))
                                 elide: Text.ElideRight; Layout.fillWidth: true }
                             Text { text: evRow.ev ? w.fmtWhen(evRow.ev) : ""
                                 color: theme.textSecondary
-                                font.pixelSize: Math.max(10, Math.min(w.rowH * 0.28, 16))
+                                font.pixelSize: Math.max(theme.fontMinimum,
+                                                         Math.min(w.rowH * 0.28, theme.fontLabel))
                                 elide: Text.ElideRight; Layout.fillWidth: true }
                         }
                     }
                 }
             }
-            Text { visible: w.events.length === 0
-                text: w.errorText || (w.loading ? "Loading…" : "No upcoming events")
-                color: theme.textTertiary
-                font.pixelSize: Math.max(11, Math.min(w.width * 0.03, 16)) }
+            ColumnLayout {
+                visible: w.events.length === 0
+                Layout.fillWidth: true; Layout.fillHeight: true
+                spacing: theme.spacingXs
+                Text {
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    text: w.errorText || (w.loading ? "Loading calendar..." : "No upcoming events")
+                    color: w.errorText.length ? theme.warning : theme.textSecondary
+                    font.pixelSize: Math.max(theme.fontLabel,
+                                             Math.min(w.width * 0.04, w.rowH * 0.4, 22))
+                    wrapMode: Text.WordWrap
+                }
+                Text {
+                    visible: !w.loading && (w.stateHelp.length > 0 || w.errorText.length > 0)
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    text: w.stateHelp
+                    color: theme.textTertiary
+                    font.pixelSize: Math.max(theme.fontMinimum, Math.min(w.rowH * 0.3, 17))
+                    wrapMode: Text.WordWrap
+                }
+            }
             Item { Layout.fillHeight: true }
         }
     }
 
-    // ── Expanded: agenda + settings ──
+    // Expanded uses the same agenda and a single refresh action. Subscription
+    // editing belongs to the adjacent shared WidgetConfigPanel.
     ColumnLayout {
         anchors.fill: parent; visible: w.expanded; spacing: theme.spacingMd
 
         RowLayout {
             Layout.fillWidth: true; spacing: theme.spacingSm
-            TextField {
-                id: urlField; Layout.fillWidth: true; Layout.preferredHeight: theme.touchSecondary
-                text: w.url; placeholderText: "Paste an ICS calendar URL…"
-                placeholderTextColor: theme.textTertiary; color: theme.textPrimary; font.pixelSize: 15
-                background: Rectangle { radius: theme.radiusSm; color: theme.backgroundColor
-                    border.color: urlField.activeFocus ? w.effAccent : theme.cardBorder; border.width: 1 }
-                onEditingFinished: if (w.store) w.store.setSetting(w.instanceId, "url", text)
-                // Re-assert the store value after an external/store push (typing
-                // severs the `text:` binding permanently - S2). Skip while editing.
-                Connections {
-                    target: w
-                    function onUrlChanged() { if (!urlField.activeFocus) urlField.text = w.url }
+            ColumnLayout {
+                Layout.fillWidth: true; spacing: 2
+                Text {
+                    Layout.fillWidth: true
+                    text: w.url.length ? "Upcoming events" : "Calendar not connected"
+                    color: theme.textPrimary; font.pixelSize: theme.fontTitle; font.bold: true
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: w.url.length
+                        ? "Source: " + w.sourceHost()
+                        : "Add the private ICS reference in the configuration panel."
+                    color: theme.textSecondary; font.pixelSize: theme.fontLabel
+                    elide: Text.ElideRight
                 }
             }
-            PillButton { label: "Save"; primary: true; tint: w.effAccent
-                onClicked: if (w.store) w.store.setSetting(w.instanceId, "url", urlField.text) }
+            PillButton {
+                label: w.loading ? "Refreshing..." : "Refresh now"
+                primary: true; tint: w.effAccent
+                enabled: w.url.length > 0 && !w.loading
+                onClicked: w.refresh(true)
+            }
         }
 
         ListView {
@@ -490,17 +651,34 @@ WidgetChrome {
                 Rectangle { Layout.preferredWidth: 4; Layout.preferredHeight: 40; radius: 2; color: w.effAccent }
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: 0
-                    Text { text: modelData.title || "(busy)"; color: theme.textPrimary; font.pixelSize: 17
+                    Text { text: modelData.title || "(busy)"; color: theme.textPrimary; font.pixelSize: 20
                         font.bold: true; elide: Text.ElideRight; Layout.fillWidth: true }
                     Text { text: w.fmtWhen(modelData) + (modelData.location ? "  ·  " + modelData.location : "")
-                        color: theme.textSecondary; font.pixelSize: 13; elide: Text.ElideRight; Layout.fillWidth: true }
+                        color: theme.textSecondary; font.pixelSize: theme.fontLabel; elide: Text.ElideRight; Layout.fillWidth: true }
                 }
             }
         }
         Text {
             visible: w.events.length === 0; Layout.alignment: Qt.AlignHCenter
-            text: w.loading ? "Loading…" : (w.errorText || (w.url.length ? "No upcoming events" : "Add an ICS URL above to see your agenda."))
-            color: theme.textTertiary; font.pixelSize: 15
+            text: w.loading ? "Loading calendar..." : (w.errorText || (w.url.length ? "No upcoming events" : "Add an ICS reference in the configuration panel."))
+            color: w.errorText.length ? theme.warning : theme.textTertiary; font.pixelSize: theme.fontTitle
+        }
+        Text {
+            visible: !w.loading && w.stateHelp.length > 0
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignHCenter
+            text: w.stateHelp
+            color: theme.textSecondary; font.pixelSize: theme.fontLabel
+            wrapMode: Text.WordWrap
+        }
+        Text {
+            visible: w.url.length > 0
+            Layout.fillWidth: true
+            text: w.freshnessText() + " · Requests " + w.sourceHost() + " every 15m"
+                  + (w.parseWarnings.length ? " · " + w.parseWarnings.join("; ") : "")
+            color: w.errorText.length || w.stale || w.parseWarnings.length
+                   ? theme.warning : theme.textTertiary
+            font.pixelSize: theme.fontMinimum; wrapMode: Text.WordWrap
         }
     }
 }

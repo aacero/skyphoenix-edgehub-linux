@@ -30,6 +30,21 @@ Rectangle {
                 Layout.fillHeight: true
                 radius: height / 2
                 property bool active: seg._val(modelData) === seg.currentValue
+                border.width: activeFocus ? 3 : 0
+                border.color: theme.textPrimary
+                activeFocusOnTab: true
+                Accessible.role: Accessible.RadioButton
+                Accessible.name: seg._lab(modelData)
+                Accessible.checked: active
+                Accessible.focused: activeFocus
+                Accessible.onPressAction: seg.selected(seg._val(modelData))
+                Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
+                            || event.key === Qt.Key_Space) {
+                        seg.selected(seg._val(modelData))
+                        event.accepted = true
+                    }
+                }
                 color: active ? seg.tint : "transparent"
                 Behavior on color { ColorAnimation { duration: theme.motionFast } }
                 Text {
@@ -51,4 +66,3 @@ Rectangle {
         }
     }
 }
-

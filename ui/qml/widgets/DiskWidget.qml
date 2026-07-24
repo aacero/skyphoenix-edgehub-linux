@@ -1,11 +1,11 @@
 import QtQuick
 import QtQuick.Layouts
 
-// Root-filesystem usage - real data (statvfs via the Rust core).
+// Filesystem capacity and block activity from the Rust core.
 //
 // Sizing (W1): layout keys off `sizeClass` (injected by Dashboard), never off
-// `expanded`. Disk usage barely changes, so the ring carries the story and each
-// size earns what it can hold:
+// `expanded`. The ring carries the capacity story while larger sizes add mount
+// identity, exact capacity composition, thresholds, and read/write activity:
 //   • 0.5x0.5 (micro) - a bare ring + percent, headerless: nothing competes
 //     with the one number in a twelfth of the screen.
 //   • 1x1 (compact)   - header + ring with percent and used/total inside.
@@ -34,26 +34,80 @@ WidgetChrome {
         var p = cfg.warnPercent !== undefined ? cfg.warnPercent : 90
         return Math.max(50, Math.min(99, p))
     }
+    readonly property string requestedMountPath: String(cfg.mountPath || "/")
+    readonly property bool showActivity: cfg.showActivity !== false
+    readonly property var mountCatalog: Array.isArray(metrics.disk_mounts)
+                                        ? metrics.disk_mounts : []
+    readonly property bool selectedMountMissing: mountCatalog.length > 0
+                                                 && selectedMount === null
+    readonly property var selectedMount: {
+        for (var i = 0; i < mountCatalog.length; i++) {
+            var candidate = mountCatalog[i] || ({})
+            if (String(candidate.path || "") === requestedMountPath) return candidate
+        }
+        if (mountCatalog.length > 0) return null
+        if (requestedMountPath !== "/") return null
+        return {
+            path: "/",
+            source: "",
+            fs_type: "",
+            device: "",
+            metrics_available: metrics.disk_metrics_available !== undefined
+                               ? metrics.disk_metrics_available
+                               : Number(metrics.disk_total_bytes || 0) > 0,
+            unavailable_reason: metrics.disk_unavailable_reason,
+            total_bytes: metrics.disk_total_bytes,
+            used_bytes: metrics.disk_used_bytes,
+            available_bytes: metrics.disk_available_bytes,
+            reserved_bytes: metrics.disk_reserved_bytes,
+            usage_percent: metrics.disk_usage_percent,
+            io_rate_available: false,
+            read_bytes_per_sec: 0,
+            write_bytes_per_sec: 0
+        }
+    }
 
-    // statvfs('/') failure - and the pre-first-sample frame - report no real disk
+    // statvfs failure and the pre-first-sample frame report no real disk
     // (total absent or 0). Don't fabricate a confident "0%"; flag the tile
     // unavailable so the gauge dims instead of showing a full empty track.
-    property bool avail: metrics.disk_total_bytes !== undefined
-                         && metrics.disk_total_bytes !== null
-                         && metrics.disk_total_bytes > 0
+    readonly property bool explicitAvailable: selectedMount !== null
+                                              && selectedMount.metrics_available !== undefined
+    property bool avail: selectedMount !== null
+                         && (explicitAvailable ? selectedMount.metrics_available === true
+                                              : Number(selectedMount.total_bytes || 0) > 0)
+    readonly property string unavailableReason: selectedMountMissing
+                                                ? "Selected mount " + requestedMountPath + " is offline"
+                                                : String(selectedMount
+                                                         ? selectedMount.unavailable_reason || ""
+                                                         : "")
+                                                  || "Filesystem metrics are unavailable"
+    readonly property string freshness: {
+        if (!w.avail) return "unavailable"
+        var stamp = Number(metrics.disk_sample_unix_ms || 0)
+        if (stamp <= 0) return "live"
+        var age = Math.max(0, Math.floor((Date.now() - stamp) / 1000))
+        return age < 2 ? "updated now" : "updated " + age + "s ago"
+    }
+    status: explicitAvailable ? freshness : ""
+    statusColor: avail ? theme.textSecondary : theme.warning
 
     // The df-correct fill (accounts for root-reserved blocks). Clamp to 0..100 so a
     // transient used>total sample can't overdrive the ring.
-    property real v: avail ? Math.max(0, Math.min(100, metrics.disk_usage_percent || 0)) : 0
+    property real v: avail ? Math.max(0, Math.min(100,
+                                                 selectedMount.usage_percent || 0)) : 0
 
     // Critical (red) must always sit above the warn line so the amber band stays
     // reachable, and never below the hardware-sensible 97%. Ordering the checks
     // warn→critical stops a high warnPercent turning the ring red below the user's
     // own warn line.
-    readonly property real critPercent: Math.max(97, w.warnPercent + 1)
+    readonly property real critPercent: Math.min(100, Math.max(97, w.warnPercent + 1))
     function col(p) {
-        if (p > w.critPercent) return theme.error
-        if (p > w.warnPercent) return theme.warning
+        // The ring label is rounded to a whole percent. Use that same displayed
+        // value for status bands so two readings both shown as "97%" cannot
+        // disagree in colour.
+        var shown = Math.round(p)
+        if (shown >= w.critPercent) return theme.error
+        if (shown >= w.warnPercent) return theme.warning
         return w.effAccent
     }
     function human(b) {
@@ -61,17 +115,63 @@ WidgetChrome {
         if (b >= 1099511627776) return (b / 1099511627776).toFixed(2) + " TiB"
         return (b / 1073741824).toFixed(0) + " GiB"
     }
-    // Used/free derive from the ring's percent (the same accounting as the gauge)
-    // so a 100%-full ring never simultaneously advertises root-reserved "free"
-    // space, and the sub-line's implied fill always matches the ring.
-    readonly property real usedBytes: (metrics.disk_total_bytes || 0) * w.v / 100
-    readonly property real freeBytes: avail ? Math.max(0, (metrics.disk_total_bytes || 0) - usedBytes) : 0
+    function humanRate(b) {
+        if (b >= 1073741824) return (b / 1073741824).toFixed(1) + " GiB/s"
+        if (b >= 1048576) return (b / 1048576).toFixed(1) + " MiB/s"
+        if (b >= 1024) return (b / 1024).toFixed(0) + " KiB/s"
+        return Math.round(b) + " B/s"
+    }
+    readonly property string mountPath: selectedMount
+                                        ? String(selectedMount.path || requestedMountPath)
+                                        : requestedMountPath
+    readonly property string filesystemIdentity: {
+        if (!selectedMount) return mountPath
+        var parts = [mountPath]
+        if (String(selectedMount.fs_type || "").length)
+            parts.push(String(selectedMount.fs_type))
+        if (String(selectedMount.source || "").length)
+            parts.push(String(selectedMount.source))
+        return parts.join(" · ")
+    }
+    readonly property bool ioAvailable: avail && selectedMount
+                                        && selectedMount.io_rate_available === true
+    readonly property real readRate: ioAvailable
+                                     ? Number(selectedMount.read_bytes_per_sec || 0) : 0
+    readonly property real writeRate: ioAvailable
+                                      ? Number(selectedMount.write_bytes_per_sec || 0) : 0
+    readonly property string capacityState: !avail ? "Unavailable"
+                                                  : Math.round(v) >= critPercent ? "Critical"
+                                                  : Math.round(v) >= warnPercent ? "Warning"
+                                                  : "Healthy"
+    readonly property string accessibleSummary: !avail
+                                                ? "Disk " + mountPath + ", "
+                                                  + unavailableReason
+                                                : "Disk " + filesystemIdentity + ", "
+                                                  + v.toFixed(0) + " percent used, "
+                                                  + capacityState + ", "
+                                                  + human(availableBytes) + " available"
+    Accessible.name: accessibleSummary
+    // Byte labels use the real statvfs counters. The percentage intentionally
+    // follows df and uses Used / (Used + Available), while Total also includes
+    // root-reserved blocks.
+    readonly property real totalBytes: selectedMount ? Number(selectedMount.total_bytes || 0) : 0
+    readonly property real usedBytes: selectedMount ? Number(selectedMount.used_bytes || 0) : 0
+    readonly property real availableBytes: selectedMount
+                                            && selectedMount.available_bytes !== undefined
+                                            ? Number(selectedMount.available_bytes || 0)
+                                            : Math.max(0, totalBytes - usedBytes)
+    readonly property real reservedBytes: selectedMount
+                                          ? Number(selectedMount.reserved_bytes || 0) : 0
+    readonly property real freeBytes: availableBytes
 
     // ── Per-size layout (sizeClass is injected by Dashboard) ─────────────────
     // 0.5x0.5 and 1x1 are both "compact" (shape, not footprint); the micro
     // half-cell is told apart by the box (~344-416px short side vs ~690px+).
     readonly property bool micro: sizeClass === "compact" && Math.min(width, height) < 480
     readonly property bool horiz: sizeClass === "wide"
+    readonly property bool shortWide: horiz && height < 380
+    readonly property bool roomy: (sizeClass === "tall" || sizeClass === "wide")
+                                  && Math.min(width, height) >= 480
     // The detail column earns its place wherever there is room beyond the ring.
     readonly property bool showDetails: sizeClass === "wide" || sizeClass === "tall"
                                         || sizeClass === "large" || sizeClass === "full"
@@ -81,9 +181,10 @@ WidgetChrome {
     readonly property real ringDia: {
         var boxW = width - 2 * contentMargins, boxH = height - 2 * contentMargins - (showHeader ? headerHeight : 0)
         if (micro) return Math.max(0, Math.min(boxW, boxH) * 0.92)
-        if (horiz) return Math.max(0, Math.min(boxH * 0.88, boxW * 0.44))
+        if (horiz) return Math.max(0, Math.min(boxH * 0.72, boxW * 0.34))
         if (sizeClass === "compact") return Math.max(0, Math.min(boxW, boxH) * 0.80)
-        return Math.max(0, Math.min(boxW * 0.72, boxH * 0.52))   // tall / full
+        return Math.max(0, Math.min(boxW * (w.roomy ? 0.58 : 0.62),
+                                    boxH * (w.roomy ? 0.32 : 0.40)))
     }
 
     GridLayout {
@@ -116,7 +217,7 @@ WidgetChrome {
                     horizontalAlignment: Text.AlignHCenter
                     text: w.avail ? w.v.toFixed(0) + "%" : "N/A"
                     font.pixelSize: Math.max(18, Math.min(ringBox.width * 0.30, w.sizeClass === "full" ? 108 : 72))
-                    fontSizeMode: Text.HorizontalFit; minimumPixelSize: 10; elide: Text.ElideRight
+                    fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum; elide: Text.ElideRight
                     font.bold: true; font.family: theme.fontMono
                     color: w.avail ? w.col(w.v) : theme.textTertiary
                 }
@@ -124,15 +225,27 @@ WidgetChrome {
                     width: parent.width
                     horizontalAlignment: Text.AlignHCenter
                     visible: w.showInlineSub
-                    text: w.human(w.usedBytes) + " / " + w.human(metrics.disk_total_bytes || 0)
-                    font.pixelSize: Math.max(11, Math.min(ringBox.width * 0.055, 16))
-                    fontSizeMode: Text.HorizontalFit; minimumPixelSize: 9; elide: Text.ElideRight
-                    color: theme.textSecondary
+                    text: w.human(w.usedBytes) + " / " + w.human(w.totalBytes)
+                    font.pixelSize: Math.max(theme.fontMinimum, Math.min(ringBox.width * 0.055, theme.fontLabel))
+                    fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum; elide: Text.ElideRight
+                    color: theme.textPrimary
+                }
+                Text {
+                    width: parent.width
+                    horizontalAlignment: Text.AlignHCenter
+                    visible: !w.micro && !w.showDetails
+                    text: w.mountPath + " · " + w.capacityState
+                    font.pixelSize: theme.fontLabel
+                    fontSizeMode: Text.HorizontalFit
+                    minimumPixelSize: theme.fontMinimum
+                    elide: Text.ElideRight
+                    color: w.avail ? theme.textPrimary : theme.warning
                 }
             }
         }
 
-        // Used / Free / Total - the numbers the percent is made of, where a size
+        // Used / Available / Total are the raw statvfs byte counters. Reserved is
+        // shown only when the filesystem exposes a nonzero root reservation.
         // has the room to spell them out.
         ColumnLayout {
             visible: w.showDetails
@@ -142,27 +255,158 @@ WidgetChrome {
                                          : Math.round(diskLayout.width * 0.86)
             spacing: theme.spacingXs
 
+            Text {
+                Layout.fillWidth: true
+                text: w.filesystemIdentity
+                elide: Text.ElideMiddle
+                horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
+                font.pixelSize: theme.fontLabel
+                font.bold: true
+                color: w.avail ? theme.textPrimary : theme.warning
+            }
+            Text {
+                Layout.fillWidth: true
+                text: w.capacityState + " · warn " + w.warnPercent.toFixed(0)
+                      + "% · crit " + w.critPercent.toFixed(0) + "%"
+                elide: Text.ElideRight
+                horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
+                font.pixelSize: theme.fontLabel
+                font.bold: w.capacityState !== "Healthy"
+                color: w.avail ? w.col(w.v) : theme.warning
+            }
+
+            Text {
+                visible: !w.avail
+                Layout.fillWidth: true
+                text: w.unavailableReason
+                wrapMode: Text.Wrap
+                horizontalAlignment: Text.AlignHCenter
+                font.pixelSize: theme.fontLabel
+                color: theme.warning
+            }
+
             Repeater {
                 model: [
                     { k: "Used",  val: w.avail ? w.human(w.usedBytes) : "-", hot: true },
-                    { k: "Free",  val: w.avail ? w.human(w.freeBytes) : "-", hot: false },
-                    { k: "Total", val: w.avail ? w.human(metrics.disk_total_bytes || 0) : "-", hot: false }
+                    { k: "Available", val: w.avail ? w.human(w.availableBytes) : "-", hot: false },
+                    { k: "Reserved", val: w.avail && w.reservedBytes > 0
+                                                  ? w.human(w.reservedBytes) : "-", hot: false },
+                    { k: "Total", val: w.avail ? w.human(w.totalBytes) : "-", hot: false }
                 ]
                 delegate: RowLayout {
+                    visible: (modelData.k !== "Reserved" || w.reservedBytes > 0)
+                             && !(w.shortWide && modelData.k === "Reserved")
                     Layout.fillWidth: true
                     spacing: theme.spacingMd
                     Text {
                         text: modelData.k
-                        font.pixelSize: Math.max(13, Math.min(w.width * 0.032, 18))
-                        color: theme.textSecondary
+                        font.pixelSize: theme.fontLabel
+                        color: theme.textPrimary
                     }
                     Item { Layout.fillWidth: true }
                     Text {
                         text: modelData.val
-                        font.pixelSize: Math.max(13, Math.min(w.width * 0.036, 20))
+                        font.pixelSize: theme.fontTitle
                         font.family: theme.fontMono; font.bold: modelData.hot
                         color: modelData.hot && w.avail ? w.col(w.v) : theme.textPrimary
                     }
+                }
+            }
+
+            ColumnLayout {
+                objectName: "diskActivity"
+                visible: w.avail && w.showActivity
+                Layout.fillWidth: true
+                Layout.topMargin: theme.spacingSm
+                spacing: theme.spacingXs
+                Text {
+                    visible: !w.shortWide
+                    text: "LIVE ACTIVITY"
+                    color: theme.textPrimary
+                    font.pixelSize: theme.fontLabel
+                    font.bold: true
+                    font.letterSpacing: 0.8
+                }
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: w.horiz ? 2 : 1
+                    columnSpacing: theme.spacingMd
+                    rowSpacing: theme.spacingXs
+                    Text {
+                        text: "↓ Read  " + (w.ioAvailable ? w.humanRate(w.readRate)
+                                                         : w.shortWide ? "N/A"
+                                                                       : "Sampling or unsupported")
+                        color: w.ioAvailable ? theme.success : theme.textSecondary
+                        font.pixelSize: theme.fontLabel
+                        font.family: theme.fontMono
+                        font.bold: w.ioAvailable
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                    Text {
+                        text: "↑ Write  " + (w.ioAvailable ? w.humanRate(w.writeRate)
+                                                           : w.shortWide ? "N/A"
+                                                                         : "Sampling or unsupported")
+                        color: w.ioAvailable ? w.effAccent : theme.textSecondary
+                        font.pixelSize: theme.fontLabel
+                        font.family: theme.fontMono
+                        font.bold: w.ioAvailable
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                        horizontalAlignment: w.horiz ? Text.AlignRight : Text.AlignLeft
+                    }
+                }
+            }
+
+            ColumnLayout {
+                objectName: "diskCapacityComposition"
+                visible: w.avail
+                Layout.fillWidth: true
+                Layout.topMargin: theme.spacingSm
+                spacing: theme.spacingXs
+                Text {
+                    visible: !w.shortWide
+                    text: "CAPACITY COMPOSITION"
+                    color: theme.textPrimary
+                    font.pixelSize: theme.fontLabel
+                    font.bold: true
+                    font.letterSpacing: 0.8
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: w.roomy ? 18 : 14
+                    radius: height / 2
+                    color: theme.cardBorder
+                    clip: true
+                    Row {
+                        anchors.fill: parent
+                        Rectangle {
+                            width: parent.width * Math.max(0, Math.min(1,
+                                   w.usedBytes / Math.max(1, w.totalBytes)))
+                            height: parent.height
+                            color: w.col(w.v)
+                        }
+                        Rectangle {
+                            width: parent.width * Math.max(0, Math.min(1,
+                                   w.availableBytes / Math.max(1, w.totalBytes)))
+                            height: parent.height
+                            color: theme.success
+                        }
+                        Rectangle {
+                            width: Math.max(0, parent.width - x)
+                            height: parent.height
+                            color: theme.textTertiary
+                        }
+                    }
+                }
+                RowLayout {
+                    visible: !w.shortWide
+                    Layout.fillWidth: true
+                    Text { text: "USED"; color: w.col(w.v); font.pixelSize: theme.fontLabel; font.bold: true }
+                    Item { Layout.fillWidth: true }
+                    Text { text: "AVAILABLE"; color: theme.success; font.pixelSize: theme.fontLabel; font.bold: true }
+                    Item { Layout.fillWidth: true }
+                    Text { text: "RESERVED"; color: theme.textSecondary; font.pixelSize: theme.fontLabel; font.bold: true }
                 }
             }
         }

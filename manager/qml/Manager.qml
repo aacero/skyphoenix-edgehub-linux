@@ -83,7 +83,13 @@ ApplicationWindow {
         readonly property color success: _p.success
         readonly property color danger: _p.danger
         readonly property int radius: 12
-        readonly property int touch: 44
+        readonly property int touch: 52
+        readonly property int fontMinimum: 15
+        readonly property int fontCaption: 16
+        readonly property int fontLabel: 17
+        readonly property int fontSection: 19
+        readonly property int ctlH: touch
+        readonly property int fontBase: fontLabel
         readonly property var accentPresets: [
             { name: "blue", c: "#58A6FF" }, { name: "purple", c: "#A371F7" },
             { name: "green", c: "#3FB950" }, { name: "orange", c: "#F0883E" },
@@ -112,20 +118,29 @@ ApplicationWindow {
         property string iconName: ""
         property bool primary: false
         property color tone: primary ? m.accent : m.panel
-        implicitHeight: 40; hoverEnabled: true
+        implicitHeight: m.touch
+        implicitWidth: Math.max(m.touch, mbtnRow.implicitWidth + 32)
+        leftPadding: 16; rightPadding: 16
+        hoverEnabled: true
         contentItem: Item {
             implicitWidth: mbtnRow.implicitWidth; implicitHeight: mbtnRow.implicitHeight
-            Row {
-                id: mbtnRow; anchors.centerIn: parent; spacing: 8
+            RowLayout {
+                id: mbtnRow
+                anchors.fill: parent
+                spacing: 8
                 AppIcon {
                     visible: mbtn.iconName !== ""; name: mbtn.iconName; size: 16
-                    anchors.verticalCenter: parent.verticalCenter
+                    Layout.alignment: Qt.AlignVCenter
                     color: mbtn.primary ? m.textOnAccent : m.textPrimary
                 }
                 Text {
-                    text: mbtn.text; anchors.verticalCenter: parent.verticalCenter
+                    text: mbtn.text
                     color: mbtn.primary ? m.textOnAccent : m.textPrimary
-                    font.pixelSize: 14; font.bold: mbtn.primary
+                    font.pixelSize: 16; font.bold: mbtn.primary
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignVCenter
+                    horizontalAlignment: Text.AlignHCenter
                 }
             }
         }
@@ -141,7 +156,7 @@ ApplicationWindow {
 
     component MSwitch: Switch {
         id: msw
-        implicitHeight: 30
+        implicitHeight: m.touch
         indicator: Rectangle {
             implicitWidth: 46; implicitHeight: 26; radius: 13
             x: msw.leftPadding; anchors.verticalCenter: parent.verticalCenter
@@ -156,7 +171,7 @@ ApplicationWindow {
             }
         }
         contentItem: Text {
-            text: msw.text; color: m.textPrimary; font.pixelSize: 14
+            text: msw.text; color: m.textPrimary; font.pixelSize: 16
             verticalAlignment: Text.AlignVCenter
             leftPadding: msw.indicator.width + 10
         }
@@ -213,7 +228,7 @@ ApplicationWindow {
                     Behavior on scale { NumberAnimation { duration: 90 } }
                     Text {
                         anchors.centerIn: parent; text: mseg._lab(modelData)
-                        font.pixelSize: 13; font.bold: parent.active
+                        font.pixelSize: m.fontLabel; font.bold: parent.active
                         color: parent.active ? m.textOnAccent : m.textPrimary
                         elide: Text.ElideRight; width: parent.width - 12
                         horizontalAlignment: Text.AlignHCenter
@@ -292,7 +307,7 @@ ApplicationWindow {
                         anchors.horizontalCenter: parent.horizontalCenter
                         visible: parent.parent.width > 42 && parent.parent.height > 34
                         text: catalog.title(modelData.type)
-                        color: cc; font.pixelSize: 8; font.bold: true
+                        color: cc; font.pixelSize: m.fontMinimum; font.bold: true
                         elide: Text.ElideRight
                         width: Math.min(implicitWidth, parent.parent.width - 6)
                         horizontalAlignment: Text.AlignHCenter
@@ -315,7 +330,9 @@ ApplicationWindow {
 
     // Colour tokens + the user's uploaded images, for the shared BackgroundPicker.
     readonly property var mCol: ({ textPrimary: m.textPrimary, textSecondary: m.textSecondary,
-        panel: m.panel, panelAlt: m.panelAlt, border: m.border, accent: m.accent, radius: m.radius })
+        panel: m.panel, panelAlt: m.panelAlt, border: m.border, accent: m.accent,
+        textOnAccent: m.textOnAccent, radius: m.radius, ctlH: m.touch,
+        fontBase: m.fontLabel })
     property var uploadedWallpapers: {
         var out = []
         for (var i = 0; i < imagesModel.count; i++) {
@@ -375,10 +392,10 @@ ApplicationWindow {
         id: stag
         objectName: "scopePill"          // test seam: every pill is findable as one set
         property string label: ""
-        implicitWidth: stLbl.implicitWidth + 18; implicitHeight: 22; radius: 11
+        implicitWidth: stLbl.implicitWidth + 24; implicitHeight: 32; radius: 16
         color: "transparent"; border.width: 1; border.color: m.accent
         Text { id: stLbl; anchors.centerIn: parent; text: stag.label
-            color: m.accent; font.pixelSize: 11; font.bold: true }
+            color: m.accent; font.pixelSize: m.fontMinimum; font.bold: true }
         // Hovering the pill spells the rule out, so the short label can stay short.
         ToolTip.visible: stMA.containsMouse && ToolTip.text !== ""
         ToolTip.delay: 250
@@ -466,6 +483,8 @@ ApplicationWindow {
         theme.glassOpacity = a.glass !== undefined ? a.glass : 0.55
         theme.showWidgetGlow = a.glow !== undefined ? a.glow : true
         theme.reduceMotion = a.reduceMotion || false
+        theme.textScale = a.textScale !== undefined ? a.textScale : 1.15
+        theme.fontChoice = a.fontChoice || "hyperlegible"
     }
     Connections { target: store; function onChanged() { win.syncTheme() } }
 
@@ -627,7 +646,7 @@ ApplicationWindow {
                 }
                 Text {
                     text: "by SKYPhoenix IT"; color: m.textSecondary
-                    font.family: theme.fontMono; font.pixelSize: 10; font.letterSpacing: 0.5
+                    font.family: theme.fontMono; font.pixelSize: m.fontMinimum; font.letterSpacing: 0.5
                 }
                 Image {
                     Layout.preferredWidth: 104; Layout.preferredHeight: 44
@@ -648,13 +667,20 @@ ApplicationWindow {
                              { l: "Images", i: "ui-image" }, { l: "Device", i: "ui-display" },
                              { l: "About", i: "ui-settings" } ]
                     delegate: Rectangle {
+                        id: navRow
                         required property int index
                         required property var modelData
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 48
+                        Layout.preferredHeight: m.touch
                         radius: m.radius
                         color: nav.currentIndex === index ? m.accent
                                : (navMA.containsMouse ? m.panelAlt : "transparent")
+                        activeFocusOnTab: true
+                        Accessible.role: Accessible.PageTab
+                        Accessible.name: modelData.l
+                        Accessible.onPressAction: nav.currentIndex = navRow.index
+                        Keys.onSpacePressed: nav.currentIndex = navRow.index
+                        Keys.onReturnPressed: nav.currentIndex = navRow.index
                         RowLayout {
                             anchors.verticalCenter: parent.verticalCenter; anchors.left: parent.left
                             anchors.leftMargin: 14; spacing: 10
@@ -663,11 +689,11 @@ ApplicationWindow {
                             Text {
                                 text: modelData.l
                                 color: nav.currentIndex === index ? m.textOnAccent : m.textPrimary
-                                font.pixelSize: 15; font.bold: nav.currentIndex === index
+                                font.pixelSize: m.fontLabel; font.bold: nav.currentIndex === index
                             }
                         }
                         MouseArea { id: navMA; anchors.fill: parent; hoverEnabled: true
-                            onClicked: nav.currentIndex = index }
+                            onClicked: nav.currentIndex = navRow.index }
                     }
                 }
 
@@ -691,11 +717,11 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             text: backend.hubConnected ? "Hub connected (live)"
                                   : (win.hubStarting ? "Starting hub…" : "Hub offline (saved)")
-                            color: m.textSecondary; font.pixelSize: 12; elide: Text.ElideRight
+                            color: m.textSecondary; font.pixelSize: m.fontMinimum; elide: Text.ElideRight
                         }
                     }
                     MButton {
-                        Layout.fillWidth: true; implicitHeight: 36
+                        Layout.fillWidth: true
                         enabled: !win.hubStarting
                         text: backend.hubConnected ? "Stop hub" : "Start hub"
                         iconName: backend.hubConnected ? "ui-close" : "ui-play"
@@ -734,7 +760,7 @@ ApplicationWindow {
 
                     Text { text: "Screens"; color: m.textPrimary; font.pixelSize: 24; font.bold: true }
                     Text { text: "Step 2 - build each screen: add & arrange its widgets. Set the overall look for every screen in Look first."
-                        color: m.textSecondary; font.pixelSize: 14; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                        color: m.textSecondary; font.pixelSize: m.fontCaption; Layout.fillWidth: true; wrapMode: Text.WordWrap }
 
                     // Page selector
                     Flow {
@@ -744,6 +770,7 @@ ApplicationWindow {
                             // removed/renamed, not on every settings keystroke [S11].
                             model: (store.structureRevision, store.pages())
                             delegate: Rectangle {
+                                id: screenChip
                                 required property int index
                                 required property var modelData
                                 width: pageLbl.implicitWidth + 32; height: m.touch
@@ -751,29 +778,47 @@ ApplicationWindow {
                                 color: win.currentPageIndex === index ? m.accent
                                        : (pgMA.containsMouse ? m.panelAlt : m.panel)
                                 border.width: 1; border.color: m.border
+                                activeFocusOnTab: true
+                                Accessible.role: Accessible.PageTab
+                                Accessible.name: "Screen: " + modelData.name
+                                Accessible.onPressAction: win.currentPageIndex = screenChip.index
+                                Keys.onSpacePressed: win.currentPageIndex = screenChip.index
+                                Keys.onReturnPressed: win.currentPageIndex = screenChip.index
                                 Text { id: pageLbl; anchors.centerIn: parent; text: modelData.name
                                     color: win.currentPageIndex === index ? m.textOnAccent : m.textPrimary
-                                    font.pixelSize: 14; font.bold: win.currentPageIndex === index }
+                                    font.pixelSize: m.fontLabel; font.bold: win.currentPageIndex === index }
                                 MouseArea { id: pgMA; anchors.fill: parent; hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: win.currentPageIndex = index }
+                                    onClicked: win.currentPageIndex = screenChip.index }
                             }
                         }
                         Rectangle {
+                            id: addScreenButton
+                            objectName: "addScreenButton"
                             width: m.touch; height: m.touch; radius: m.radius
                             color: addPgMA.containsMouse ? m.panelAlt : m.panel
                             border.width: 1; border.color: m.border
+                            activeFocusOnTab: true
+                            Accessible.role: Accessible.Button
+                            Accessible.name: "Add screen"
+                            Accessible.onPressAction: addScreenButton.addScreen()
+                            Keys.onSpacePressed: addScreenButton.addScreen()
+                            Keys.onReturnPressed: addScreenButton.addScreen()
+                            function addScreen() {
+                                store.addPage("")
+                                win.currentPageIndex = store.pageCount() - 1
+                            }
                             AppIcon { anchors.centerIn: parent; name: "ui-plus"; color: m.accent; size: 22 }
                             MouseArea { id: addPgMA; anchors.fill: parent; hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: { store.addPage(""); win.currentPageIndex = store.pageCount() - 1 } }
+                                onClicked: addScreenButton.addScreen() }
                         }
                     }
 
                     // Page tools
                     RowLayout {
                         Layout.fillWidth: true; spacing: 8
-                        Text { text: "Screen name:"; color: m.textSecondary; font.pixelSize: 13
+                        Text { text: "Screen name:"; color: m.textSecondary; font.pixelSize: m.fontLabel
                             Layout.alignment: Qt.AlignVCenter }
                         TextField {
                             id: pageName; Layout.preferredWidth: 240; Layout.preferredHeight: m.touch
@@ -840,7 +885,7 @@ ApplicationWindow {
                                 // ── Widgets ─────────────────────────────────────
                                 RowLayout {
                                     spacing: 8
-                                    Text { text: "Widgets"; color: m.textPrimary; font.pixelSize: 15; font.bold: true }
+                                    Text { text: "Widgets"; color: m.textPrimary; font.pixelSize: m.fontSection; font.bold: true }
                                     ScopeTag { label: win.scopeLabels.page }
                                 }
                                 MButton { text: "Add widget"; iconName: "ui-plus"; primary: true
@@ -859,11 +904,11 @@ ApplicationWindow {
                                 // the buttons never create a screen you cannot see.
                                 RowLayout {
                                     Layout.topMargin: 6; spacing: 8
-                                    Text { text: "Columns"; color: m.textPrimary; font.pixelSize: 15; font.bold: true }
+                                    Text { text: "Columns"; color: m.textPrimary; font.pixelSize: m.fontSection; font.bold: true }
                                     ScopeTag { label: win.scopeLabels.page }
                                 }
                                 Text { text: "How many widgets sit side by side on this screen. Switching reflows the widgets already here to fit - a screen always stays one screen (it never scrolls)."
-                                    color: m.textSecondary; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                                    color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.fillWidth: true; wrapMode: Text.WordWrap }
                                 MSegment {
                                     Layout.fillWidth: true
                                     options: [ { label: "1 column", value: 1 }, { label: "2 columns", value: 2 } ]
@@ -890,7 +935,7 @@ ApplicationWindow {
                                                 anchors.left: parent.left; anchors.right: parent.right
                                                 anchors.verticalCenter: parent.verticalCenter; spacing: 6
                                                 Text { text: "This is your Edge"; color: m.textPrimary
-                                                    font.pixelSize: 15; font.bold: true; Layout.fillWidth: true }
+                                                    font.pixelSize: m.fontLabel; font.bold: true; Layout.fillWidth: true }
                                                 AppIcon { name: "ui-caret-right"; size: 14; color: m.textSecondary
                                                     rotation: appSettings.howToCollapsed ? 0 : -90
                                                     Behavior on rotation { NumberAnimation { duration: 120 } } }
@@ -912,11 +957,11 @@ ApplicationWindow {
                                                     Layout.fillWidth: true; spacing: 8
                                                     AppIcon { name: modelData.i; size: 15; color: m.textSecondary
                                                         Layout.alignment: Qt.AlignTop }
-                                                    Text { text: modelData.t; color: m.textSecondary; font.pixelSize: 13
+                                                    Text { text: modelData.t; color: m.textSecondary; font.pixelSize: m.fontMinimum
                                                         Layout.fillWidth: true; wrapMode: Text.WordWrap }
                                                 }
                                             }
-                                            Text { Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: 12
+                                            Text { Layout.fillWidth: true; wrapMode: Text.WordWrap; font.pixelSize: m.fontMinimum
                                                 Layout.topMargin: 2
                                                 text: win.liveNote
                                                 color: backend.hubConnected ? m.success : m.textSecondary }
@@ -927,11 +972,11 @@ ApplicationWindow {
                                 RowLayout {
                                     Layout.topMargin: 6; spacing: 8
                                     Text { text: "This screen's look"; color: m.textPrimary
-                                        font.pixelSize: 15; font.bold: true }
+                                        font.pixelSize: m.fontSection; font.bold: true }
                                     ScopeTag { label: win.scopeLabels.page }
                                 }
                                 Text { text: "Optional. Overrides the global background from Look, for this screen alone. “Use global” returns to the shared one."
-                                    color: m.textSecondary; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                                    color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.fillWidth: true; wrapMode: Text.WordWrap }
                                 BackgroundPicker {
                                     Layout.fillWidth: true
                                     st: store; pageIndex: win.currentPageIndex; col: win.mCol
@@ -993,15 +1038,15 @@ ApplicationWindow {
                     // be the better fix - it needs BackgroundPicker, which this
                     // workstream does not own. Recorded in the audit.)
                     Text { text: "Step 1 - the look for EVERY screen: theme, accent, background and effects. A single screen can override its background in Screens. Hover a theme or accent to try it in the preview (those apply on click); everything else applies as you change it."
-                        color: m.textSecondary; font.pixelSize: 14; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                        color: m.textSecondary; font.pixelSize: m.fontCaption; Layout.fillWidth: true; wrapMode: Text.WordWrap }
 
                     RowLayout {
                         Layout.topMargin: 4; spacing: 8
-                        Text { text: "Edge theme"; color: m.textPrimary; font.pixelSize: 15; font.bold: true }
+                        Text { text: "Edge theme"; color: m.textPrimary; font.pixelSize: m.fontSection; font.bold: true }
                         ScopeTag { label: win.scopeLabels.edge }
                     }
                     Text { text: "The colour palette for every screen and widget. Hover an option to try it in the preview; click to apply. (The Manager window's own style is a separate control below.)"
-                        color: m.textSecondary; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                        color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.fillWidth: true; wrapMode: Text.WordWrap }
 
                     // Theme dropdown (Hybrid appearance): a compact field that opens a
                     // scrollable list of swatch + name rows. Pro themes are badged and,
@@ -1010,7 +1055,7 @@ ApplicationWindow {
                     Rectangle {
                         id: themeField
                         objectName: "themeDropdownField"
-                        Layout.fillWidth: true; implicitHeight: 46; radius: m.radius
+                        Layout.fillWidth: true; implicitHeight: m.touch; radius: m.radius
                         color: themeFieldMA.containsMouse ? m.panelAlt : m.panel
                         border.width: 1; border.color: themePopup.visible ? m.accent : m.border
                         readonly property string curKey: (store.revision, store.appearance().themeMode || theme.defaultThemeKey)
@@ -1027,7 +1072,7 @@ ApplicationWindow {
                             Text {
                                 Layout.fillWidth: true; elide: Text.ElideRight
                                 text: (themeField.curDef ? themeField.curDef.n : themeField.curKey)
-                                color: m.textPrimary; font.pixelSize: 14
+                                color: m.textPrimary; font.pixelSize: m.fontLabel
                             }
                             // A real icon instead of a text glyph, rotated to point
                             // down (closed) / up (open) - consistent with the app's SVG set.
@@ -1078,7 +1123,7 @@ ApplicationWindow {
                                     readonly property bool locked: (modelData.pro === true) && !win.isPro
                                     readonly property bool sel: (store.revision, (store.appearance().themeMode || theme.defaultThemeKey) === modelData.k)
                                     width: ListView.view ? ListView.view.width : 0
-                                    height: 44; radius: 8
+                                    height: m.touch; radius: 8
                                     color: rowMA.containsMouse ? m.panelAlt : "transparent"
                                     scale: rowMA.pressed ? 0.98 : 1.0
                                     Behavior on scale { NumberAnimation { duration: 90 } }
@@ -1092,13 +1137,13 @@ ApplicationWindow {
                                         }
                                         Text { Layout.fillWidth: true; elide: Text.ElideRight
                                             text: modelData.n; color: m.textPrimary
-                                            font.pixelSize: 14; font.bold: sel }
+                                            font.pixelSize: m.fontLabel; font.bold: sel }
                                         Rectangle {
                                             visible: locked
-                                            implicitWidth: proL.implicitWidth + 12; implicitHeight: 18; radius: 9
+                                            implicitWidth: proL.implicitWidth + 14; implicitHeight: 28; radius: 14
                                             color: Qt.rgba(0, 0, 0, 0.30)
                                             Text { id: proL; anchors.centerIn: parent; text: "PRO"
-                                                color: m.textSecondary; font.pixelSize: 10; font.bold: true }
+                                                color: m.textSecondary; font.pixelSize: m.fontMinimum; font.bold: true }
                                         }
                                         AppIcon { visible: sel; name: "ui-check"; size: 16; color: m.accent }
                                     }
@@ -1120,11 +1165,11 @@ ApplicationWindow {
                     // your PC; it never touches the Edge.
                     RowLayout {
                         Layout.topMargin: 4; spacing: 8
-                        Text { text: "Manager window style"; color: m.textPrimary; font.pixelSize: 15; font.bold: true }
+                        Text { text: "Manager window style"; color: m.textPrimary; font.pixelSize: m.fontSection; font.bold: true }
                         ScopeTag { label: win.scopeLabels.window }
                     }
                     Text { text: "The look of THIS companion window on your PC - separate from the Edge theme above. Default is the warm SKYPhoenix palette."
-                        color: m.textSecondary; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                        color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.fillWidth: true; wrapMode: Text.WordWrap }
                     MSegment {
                         Layout.fillWidth: true
                         options: [ { label: "Dark", value: "dark" }, { label: "Light", value: "light" },
@@ -1136,11 +1181,38 @@ ApplicationWindow {
                     MDivider {}
                     RowLayout {
                         Layout.topMargin: 4; spacing: 8
-                        Text { text: "Accent colour"; color: m.textPrimary; font.pixelSize: 15; font.bold: true }
+                        Text { text: "Readability"; color: m.textPrimary; font.pixelSize: 16; font.bold: true }
+                        ScopeTag { label: win.scopeLabels.edge }
+                    }
+                    Text {
+                        text: "Text size and typeface apply to every Hub screen and this WYSIWYG preview. Comfortable is the recommended viewing-distance size."
+                        color: m.textSecondary; font.pixelSize: m.fontCaption; Layout.fillWidth: true; wrapMode: Text.WordWrap
+                    }
+                    MSegment {
+                        objectName: "managerTextScale"
+                        Layout.fillWidth: true
+                        options: [ { label: "Compact", value: 1.0 }, { label: "Comfortable", value: 1.15 },
+                                   { label: "Large", value: 1.3 }, { label: "Extra large", value: 1.45 } ]
+                        currentValue: theme.textScale
+                        onSelected: (v) => store.setAppearance("textScale", v)
+                    }
+                    MSegment {
+                        objectName: "managerFontChoice"
+                        Layout.fillWidth: true
+                        options: [ { label: "Hyperlegible", value: "hyperlegible" },
+                                   { label: "Lexend", value: "lexend" }, { label: "System", value: "system" } ]
+                        currentValue: theme.fontChoice
+                        onSelected: (v) => store.setAppearance("fontChoice", v)
+                    }
+
+                    MDivider {}
+                    RowLayout {
+                        Layout.topMargin: 4; spacing: 8
+                        Text { text: "Accent colour"; color: m.textPrimary; font.pixelSize: m.fontSection; font.bold: true }
                         ScopeTag { label: win.scopeLabels.edge }
                     }
                     Text { text: "The highlight colour for rings, buttons and charts. A widget can override it just for itself (⚙ → Widget appearance)."
-                        color: m.textSecondary; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                        color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.fillWidth: true; wrapMode: Text.WordWrap }
                     // One swatch shape for BOTH accent groups (house palette + the
                     // colour-blind-safe Okabe–Ito set), so the two rows are identical
                     // in every way but their colours. Selected = a contrasting ring +
@@ -1154,7 +1226,7 @@ ApplicationWindow {
                             // accent key (fall back to the applied theme.accentName, i.e.
                             // the effective default) - otherwise no swatch reads as selected.
                             property bool sel: (store.revision, (store.appearance().accent || theme.accentName) === modelData.name)
-                            width: 46; height: 46; radius: 23; color: modelData.c
+                            width: m.touch; height: m.touch; radius: m.touch / 2; color: modelData.c
                             // Always keep a subtle 1px edge so a dark swatch (e.g. the
                             // Okabe-Ito black) is visible on the dark panel; thicker +
                             // contrasting on hover/select.
@@ -1182,7 +1254,7 @@ ApplicationWindow {
                     // deliberate set rather than eight more decorative tones.
                     Text {
                         text: "Colour-blind safe (Okabe–Ito)"
-                        color: m.textSecondary; font.pixelSize: 12; font.bold: true; Layout.topMargin: 6
+                        color: m.textSecondary; font.pixelSize: m.fontMinimum; font.bold: true; Layout.topMargin: 6
                     }
                     Flow {
                         Layout.fillWidth: true; spacing: 10
@@ -1192,15 +1264,15 @@ ApplicationWindow {
                     MDivider {}
                     RowLayout {
                         Layout.topMargin: 4; spacing: 8
-                        Text { text: "Background"; color: m.textPrimary; font.pixelSize: 15; font.bold: true }
+                        Text { text: "Background"; color: m.textPrimary; font.pixelSize: m.fontSection; font.bold: true }
                         ScopeTag { label: win.scopeLabels.pages }
                     }
                     Text { text: "Pick an animated style OR a wallpaper - the default every screen starts from. One screen can go its own way in Screens → “This screen's look”."
-                        color: m.textSecondary; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                        color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.fillWidth: true; wrapMode: Text.WordWrap }
                     RowLayout { visible: !theme.decorative; Layout.fillWidth: true; spacing: 6
                         AppIcon { name: "ui-warning"; size: 14; color: m.danger; Layout.alignment: Qt.AlignTop }
                         Text { text: "The High Contrast theme keeps backgrounds off for legibility - switch themes to see them."
-                            color: m.danger; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.WordWrap } }
+                            color: m.danger; font.pixelSize: m.fontMinimum; Layout.fillWidth: true; wrapMode: Text.WordWrap } }
                     BackgroundPicker {
                         Layout.fillWidth: true
                         st: store; pageIndex: -1; col: win.mCol
@@ -1220,14 +1292,16 @@ ApplicationWindow {
                     MDivider {}
                     RowLayout {
                         Layout.topMargin: 4; spacing: 8
-                        Text { text: "Effects"; color: m.textPrimary; font.pixelSize: 15; font.bold: true }
+                        Text { text: "Effects"; color: m.textPrimary; font.pixelSize: m.fontSection; font.bold: true }
                         ScopeTag { label: win.scopeLabels.edge }
                     }
                     RowLayout {
                         Layout.fillWidth: true; spacing: 12
-                        Text { text: "Glassiness"; color: m.textSecondary; font.pixelSize: 14; Layout.preferredWidth: 120 }
+                        Text { text: "Glassiness"; color: m.textSecondary; font.pixelSize: m.fontLabel; Layout.preferredWidth: 140 }
                         Slider {
-                            id: glassSlider; Layout.fillWidth: true; from: 0; to: 1
+                            id: glassSlider; Layout.fillWidth: true
+                            Layout.preferredHeight: m.touch
+                            from: 0; to: 1
                             // Bind to theme.glassOpacity - a STABLE Theme property kept in
                             // step with the store by syncTheme() - NOT to store.revision.
                             // The Appearance preview renders live cpu/gpu/ram widgets that
@@ -1260,8 +1334,8 @@ ApplicationWindow {
                                 x: glassSlider.leftPadding + glassSlider.visualPosition * (glassSlider.availableWidth - width)
                                 y: glassSlider.topPadding + glassSlider.availableHeight / 2 - height / 2
                                 // See background: implicit size gives the Slider a real hit area.
-                                implicitWidth: 20; implicitHeight: 20
-                                width: 20; height: 20; radius: 10
+                                implicitWidth: 26; implicitHeight: 26
+                                width: 26; height: 26; radius: 13
                                 color: glassSlider.pressed ? Qt.lighter(m.accent, 1.15) : m.textOnAccent
                                 border.width: 2; border.color: m.accent
                             }
@@ -1283,12 +1357,12 @@ ApplicationWindow {
                                 } }
                         }
                         Text { text: Math.round(glassSlider.value * 100) + "%"
-                            color: m.textPrimary; font.pixelSize: 13; font.bold: true
+                            color: m.textPrimary; font.pixelSize: m.fontLabel; font.bold: true
                             Layout.preferredWidth: 44; horizontalAlignment: Text.AlignRight }
                     }
 
                     Text { text: "How see-through widget cards are: 0% solid, 100% pure glass."
-                        color: m.textSecondary; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                        color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.fillWidth: true; wrapMode: Text.WordWrap }
 
                     ColumnLayout {
                         spacing: 12
@@ -1301,6 +1375,24 @@ ApplicationWindow {
                         ColumnLayout {
                             spacing: 2
                             MSwitch {
+                                objectName: "managerHubBarSwitch"
+                                text: "Show navigation bar on the Hub"
+                                checked: { store.revision; return store.appearance().hubControlsMode !== "immersive" }
+                                onToggled: {
+                                    store.setAppearance("hubControlsMode", checked ? "standard" : "immersive")
+                                    checked = Qt.binding(function() {
+                                        store.revision
+                                        return store.appearance().hubControlsMode !== "immersive"
+                                    })
+                                }
+                            }
+                            Text { text: "Off gives the Hub an immersive edge-to-edge dashboard. Layout, screens and global appearance remain available here; widget-specific configuration stays available on the Hub."
+                                color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.leftMargin: 56
+                                Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                        }
+                        ColumnLayout {
+                            spacing: 2
+                            MSwitch {
                                 text: "Widget glow"
                                 checked: { store.revision; var g = store.appearance().glow; return g === undefined ? true : g }
                                 onToggled: {
@@ -1309,7 +1401,7 @@ ApplicationWindow {
                                 }
                             }
                             Text { text: "A soft coloured halo behind each widget card."
-                                color: m.textSecondary; font.pixelSize: 12; Layout.leftMargin: 56
+                                color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.leftMargin: 56
                                 Layout.fillWidth: true; wrapMode: Text.WordWrap }
                         }
                         ColumnLayout {
@@ -1323,7 +1415,7 @@ ApplicationWindow {
                                 }
                             }
                             Text { text: "Lets the background style above move. Off = it stands still. Not used while a wallpaper is set."
-                                color: m.textSecondary; font.pixelSize: 12; Layout.leftMargin: 56
+                                color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.leftMargin: 56
                                 Layout.fillWidth: true; wrapMode: Text.WordWrap }
                         }
                         ColumnLayout {
@@ -1336,8 +1428,8 @@ ApplicationWindow {
                                     checked = Qt.binding(function() { store.revision; return store.appearance().reduceMotion || false })
                                 }
                             }
-                            Text { text: "Calms the whole Edge: stills backgrounds and widget animations. Wins over the two switches above."
-                                color: m.textSecondary; font.pixelSize: 12; Layout.leftMargin: 56
+                            Text { text: "Stops backgrounds, widgets, and spatial transitions. Physical screen turns become immediate."
+                                color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.leftMargin: 56
                                 Layout.fillWidth: true; wrapMode: Text.WordWrap }
                         }
                     }
@@ -1364,7 +1456,7 @@ ApplicationWindow {
                     // landscape - the preview would simply vanish.
                     Layout.maximumWidth: lookClone.landscape ? Number.POSITIVE_INFINITY : 400
                     spacing: 8
-                    Text { text: "Live preview"; color: m.textPrimary; font.pixelSize: 15; font.bold: true }
+                    Text { text: "Live preview"; color: m.textPrimary; font.pixelSize: m.fontSection; font.bold: true }
                     // Page chips so "which page am I looking at?" has an answer -
                     // and per-page overrides can be checked without leaving the tab.
                     Flow {
@@ -1380,7 +1472,7 @@ ApplicationWindow {
                                 border.width: 1; border.color: m.border
                                 Text { id: apPgLbl; anchors.centerIn: parent; text: modelData.name
                                     color: win.currentPageIndex === index ? m.textOnAccent : m.textSecondary
-                                    font.pixelSize: 12; font.bold: win.currentPageIndex === index }
+                                    font.pixelSize: m.fontMinimum; font.bold: win.currentPageIndex === index }
                                 MouseArea { id: apPgMA; anchors.fill: parent; hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: win.currentPageIndex = index }
@@ -1401,7 +1493,7 @@ ApplicationWindow {
                         scrolling: apScroll.contentItem ? apScroll.contentItem.moving : false
                     }
                     Text { text: win.liveNote; color: backend.hubConnected ? m.success : m.textSecondary
-                        font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                        font.pixelSize: m.fontMinimum; Layout.fillWidth: true; wrapMode: Text.WordWrap }
                 }
               }
             }
@@ -1412,7 +1504,7 @@ ApplicationWindow {
                     anchors.fill: parent; anchors.margins: 24; spacing: 16
                     Text { text: "Images"; color: m.textPrimary; font.pixelSize: 24; font.bold: true }
                     Text { text: "Upload your own images here - they then appear as wallpaper options in the background picker (Look → Background, or per-screen in Screens)."
-                        color: m.textSecondary; font.pixelSize: 14; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                        color: m.textSecondary; font.pixelSize: m.fontCaption; Layout.fillWidth: true; wrapMode: Text.WordWrap }
 
                     RowLayout {
                         Layout.fillWidth: true; spacing: 8
@@ -1426,32 +1518,32 @@ ApplicationWindow {
                     // live in this section). Clicking sets it as the Edge-wide wallpaper.
                     RowLayout {
                         Layout.fillWidth: true; Layout.topMargin: 4; spacing: 8
-                        Text { text: "Bundled backgrounds"; color: m.textSecondary; font.pixelSize: 14; font.bold: true }
+                        Text { text: "Bundled backgrounds"; color: m.textSecondary; font.pixelSize: m.fontSection; font.bold: true }
                         ScopeTag { label: win.scopeLabels.pages }
                         Item { Layout.fillWidth: true }
                     }
                     Text { text: "Graphics that ship with EdgeHub - click one to use it on every screen (a single screen can override it in Screens)."
-                        color: m.textSecondary; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                        color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.fillWidth: true; wrapMode: Text.WordWrap }
                     Flow {
                         Layout.fillWidth: true; spacing: 8
                         Repeater {
                             model: bundledWallpapers.items
                             delegate: Rectangle {
                                 required property var modelData
-                                width: 128; height: 76; radius: m.radius; clip: true
+                                width: 160; height: 108; radius: m.radius; clip: true
                                 property bool bw: (store.revision, store.appearance().wallpaper === modelData.source)
                                 color: m.panel; border.width: bw ? 2 : 1
                                 border.color: bw ? m.accent : m.border
                                 Image { anchors.fill: parent; anchors.margins: 2; source: modelData.source
                                     fillMode: Image.PreserveAspectCrop; asynchronous: true; mipmap: true }
                                 Rectangle { anchors.bottom: parent.bottom; anchors.left: parent.left
-                                    anchors.right: parent.right; height: 18; color: Qt.rgba(0, 0, 0, 0.5)
+                                    anchors.right: parent.right; height: 30; color: Qt.rgba(0, 0, 0, 0.62)
                                     Text { anchors.centerIn: parent; text: modelData.label; color: "#fff"
-                                        font.pixelSize: 10; elide: Text.ElideRight; width: parent.width - 6
+                                        font.pixelSize: m.fontMinimum; elide: Text.ElideRight; width: parent.width - 8
                                         horizontalAlignment: Text.AlignHCenter } }
                                 Rectangle { visible: parent.bw; anchors.top: parent.top; anchors.right: parent.right
-                                    anchors.margins: 4; width: 18; height: 18; radius: 9; color: m.accent
-                                    AppIcon { anchors.centerIn: parent; name: "ui-check"; size: 12; color: "#FFFFFF" } }
+                                    anchors.margins: 4; width: 26; height: 26; radius: 13; color: m.accent
+                                    AppIcon { anchors.centerIn: parent; name: "ui-check"; size: 16; color: "#FFFFFF" } }
                                 MouseArea { anchors.fill: parent; hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: store.setAppearance("wallpaper", modelData.source) }
@@ -1465,12 +1557,12 @@ ApplicationWindow {
                     // every page changes. Say the scope, and say where to undo it.
                     RowLayout {
                         Layout.fillWidth: true; spacing: 8
-                        Text { text: "Your images"; color: m.textSecondary; font.pixelSize: 14; font.bold: true }
+                        Text { text: "Your images"; color: m.textSecondary; font.pixelSize: m.fontSection; font.bold: true }
                         ScopeTag { visible: imagesModel.count > 0; label: win.scopeLabels.pages }
                         Item { Layout.fillWidth: true }
                     }
                     Text { text: "Click an image to make it the wallpaper on every screen. To use one on a single screen instead, go to Screens → “This screen's look”."
-                        color: m.textSecondary; font.pixelSize: 12; visible: imagesModel.count > 0
+                        color: m.textSecondary; font.pixelSize: m.fontMinimum; visible: imagesModel.count > 0
                         Layout.fillWidth: true; wrapMode: Text.WordWrap }
                     // Empty state. The trailing filler keeps the column top-packed while the
                     // grid is hidden - without it the few remaining rows spread out
@@ -1478,7 +1570,7 @@ ApplicationWindow {
                     Text { visible: imagesModel.count === 0; Layout.fillWidth: true; Layout.topMargin: 24
                         horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
                         text: "No images yet - use “Import image…” to add one."
-                        color: m.textSecondary; font.pixelSize: 14 }
+                        color: m.textSecondary; font.pixelSize: m.fontCaption }
                     Item { visible: imagesModel.count === 0; Layout.fillHeight: true }
                     GridView {
                         id: imgGrid
@@ -1522,10 +1614,10 @@ ApplicationWindow {
                                         Layout.fillWidth: true; spacing: 4
                                         AppIcon { visible: imgCard.isWall; name: "ui-check"; size: 14; color: m.accent }
                                         Text { text: imgCard.isWall ? "wallpaper" : imgCard.modelData
-                                            color: imgCard.isWall ? m.accent : m.textSecondary; font.pixelSize: 11
+                                            color: imgCard.isWall ? m.accent : m.textSecondary; font.pixelSize: m.fontMinimum
                                             elide: Text.ElideRight; Layout.fillWidth: true }
                                         // Bigger, padded delete hit target.
-                                        Rectangle { Layout.preferredWidth: 30; Layout.preferredHeight: 26; radius: 6
+                                        Rectangle { Layout.preferredWidth: 48; Layout.preferredHeight: 48; radius: 10
                                             color: delMA.containsMouse ? Qt.rgba(m.danger.r, m.danger.g, m.danger.b, 0.18) : "transparent"
                                             AppIcon { anchors.centerIn: parent; name: "ui-trash"; size: 16; color: m.danger }
                                             MouseArea { id: delMA; anchors.fill: parent; hoverEnabled: true
@@ -1560,15 +1652,15 @@ ApplicationWindow {
                     // simply wasn't true, so it moved down onto the screen picker,
                     // which is the only thing it describes.
                     Text { text: "Where the hub runs, how it's turned, and whether it starts itself."
-                        color: m.textSecondary; font.pixelSize: 14; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                        color: m.textSecondary; font.pixelSize: m.fontCaption; Layout.fillWidth: true; wrapMode: Text.WordWrap }
 
                     RowLayout {
                         Layout.topMargin: 8; spacing: 8
-                        Text { text: "Screen the hub runs on"; color: m.textPrimary; font.pixelSize: 15; font.bold: true }
+                        Text { text: "Screen the hub runs on"; color: m.textPrimary; font.pixelSize: m.fontSection; font.bold: true }
                         ScopeTag { label: win.scopeLabels.computer }
                     }
                     Text { text: "Applies next time the hub starts - a running hub stays where it is."
-                        color: m.textSecondary; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                        color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.fillWidth: true; wrapMode: Text.WordWrap }
 
                     // Audit F8 / W5 #13: with no screens the tab showed a sentence
                     // about choosing a screen, then blank space, then Orientation -
@@ -1585,7 +1677,7 @@ ApplicationWindow {
                             Text {
                                 Layout.fillWidth: true; wrapMode: Text.WordWrap
                                 text: "No screens detected. Connect your Xeneon Edge (or any display) and it will appear here."
-                                color: m.textSecondary; font.pixelSize: 13
+                                color: m.textSecondary; font.pixelSize: m.fontMinimum
                             }
                         }
                     }
@@ -1604,9 +1696,9 @@ ApplicationWindow {
                                 ColumnLayout {
                                     spacing: 0; Layout.fillWidth: true
                                     Text { text: (modelData.model || modelData.name) + (modelData.isEdge ? "  · Xeneon Edge" : "")
-                                        color: m.textPrimary; font.pixelSize: 15; font.bold: true }
+                                        color: m.textPrimary; font.pixelSize: m.fontLabel; font.bold: true }
                                     Text { text: modelData.name + "  ·  " + modelData.width + "×" + modelData.height
-                                        color: m.textSecondary; font.pixelSize: 12 }
+                                        color: m.textSecondary; font.pixelSize: m.fontMinimum }
                                 }
                                 MButton {
                                     property bool isTarget: modelData.name === win.currentTarget
@@ -1621,11 +1713,11 @@ ApplicationWindow {
 
                     RowLayout {
                         Layout.topMargin: 8; spacing: 8
-                        Text { text: "Orientation"; color: m.textPrimary; font.pixelSize: 15; font.bold: true }
+                        Text { text: "Orientation"; color: m.textPrimary; font.pixelSize: m.fontSection; font.bold: true }
                         ScopeTag { label: win.scopeLabels.edge }
                     }
                     Text { text: "Pick a fixed mode to rotate the dashboard for a wall/arm mount. Auto follows the system only when an orientation sensor is present."
-                        color: m.textSecondary; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                        color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.fillWidth: true; wrapMode: Text.WordWrap }
                     Flow {
                         Layout.fillWidth: true; spacing: 8
                         Repeater {
@@ -1639,7 +1731,7 @@ ApplicationWindow {
                                 color: sel ? m.accent : (oriMA.containsMouse ? m.panelAlt : m.panel)
                                 border.width: 1; border.color: m.border
                                 Text { id: oriLbl; anchors.centerIn: parent; text: modelData.l
-                                    color: sel ? m.textOnAccent : m.textPrimary; font.pixelSize: 13 }
+                                    color: sel ? m.textOnAccent : m.textPrimary; font.pixelSize: m.fontLabel }
                                 MouseArea { id: oriMA; anchors.fill: parent; hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
                                     onClicked: store.setAppearance("orientation", modelData.v) }
@@ -1651,7 +1743,7 @@ ApplicationWindow {
                     // (it writes a login autostart entry) carried no scope and no note.
                     RowLayout {
                         Layout.topMargin: 8; spacing: 8
-                        Text { text: "Startup"; color: m.textPrimary; font.pixelSize: 15; font.bold: true }
+                        Text { text: "Startup"; color: m.textPrimary; font.pixelSize: m.fontSection; font.bold: true }
                         ScopeTag { label: win.scopeLabels.computer }
                     }
                     ColumnLayout {
@@ -1668,7 +1760,7 @@ ApplicationWindow {
                             }
                         }
                         Text { text: "Adds the hub to this computer's login startup. Takes effect at your next login; it doesn't start or stop the hub now."
-                            color: m.textSecondary; font.pixelSize: 12; Layout.leftMargin: 56
+                            color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.leftMargin: 56
                             Layout.fillWidth: true; wrapMode: Text.WordWrap }
                     }
 
@@ -1681,7 +1773,7 @@ ApplicationWindow {
                     // gate, so the Manager adds no new egress surface.
                     RowLayout {
                         Layout.topMargin: 8; spacing: 8
-                        Text { text: "Software updates"; color: m.textPrimary; font.pixelSize: 15; font.bold: true }
+                        Text { text: "Software updates"; color: m.textPrimary; font.pixelSize: m.fontSection; font.bold: true }
                         ScopeTag { label: win.scopeLabels.edge }
                     }
                     ColumnLayout {
@@ -1696,18 +1788,18 @@ ApplicationWindow {
                             }
                         }
                         Text { text: "Off by default - EdgeHub never checks on its own. When on, the Edge asks GitHub for the latest release tag through its audited network gate (nothing identifying is sent) and shows the result on the display itself. Install updates with your package manager."
-                            color: m.textSecondary; font.pixelSize: 12; Layout.leftMargin: 56
+                            color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.leftMargin: 56
                             Layout.fillWidth: true; wrapMode: Text.WordWrap }
                     }
 
                     // ── Troubleshooting / reset ──
                     RowLayout {
                         Layout.topMargin: 8; spacing: 8
-                        Text { text: "Troubleshooting"; color: m.textPrimary; font.pixelSize: 15; font.bold: true }
+                        Text { text: "Troubleshooting"; color: m.textPrimary; font.pixelSize: m.fontSection; font.bold: true }
                         ScopeTag { label: win.scopeLabels.edge }
                     }
                     Text { text: "Start over from a clean default layout. Your uploaded images are kept - only screens and widgets are reset."
-                        color: m.textSecondary; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                        color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.fillWidth: true; wrapMode: Text.WordWrap }
                     RowLayout {
                         Layout.fillWidth: true; spacing: 8
                         MButton { objectName: "resetLayoutBtn"; text: "Reset to default layout"; iconName: "ui-trash"
@@ -1750,7 +1842,7 @@ ApplicationWindow {
                             }
                             Text {
                                 text: "by SKYPhoenix IT"; color: m.textSecondary
-                                font.family: theme.fontMono; font.pixelSize: 12; font.letterSpacing: 0.5
+                                font.family: theme.fontMono; font.pixelSize: m.fontMinimum; font.letterSpacing: 0.5
                             }
                             Image {
                                 Layout.preferredWidth: 150; Layout.preferredHeight: 60
@@ -1767,16 +1859,16 @@ ApplicationWindow {
                     // Version + description.
                     RowLayout {
                         Layout.fillWidth: true; Layout.topMargin: 6; spacing: 8
-                        Text { text: "Version:"; color: m.textSecondary; font.pixelSize: 14 }
+                        Text { text: "Version:"; color: m.textSecondary; font.pixelSize: m.fontLabel }
                         Text {
                             text: (backend && backend.appVersion ? backend.appVersion() : "?")
-                            color: m.textPrimary; font.pixelSize: 14; font.family: theme.fontMono
+                            color: m.textPrimary; font.pixelSize: m.fontLabel; font.family: theme.fontMono
                             Layout.fillWidth: true; elide: Text.ElideRight
                         }
                     }
                     Text {
                         text: "A native Linux widget dashboard for your second screen."
-                        color: m.textPrimary; font.pixelSize: 14
+                        color: m.textPrimary; font.pixelSize: m.fontLabel
                         Layout.fillWidth: true; wrapMode: Text.WordWrap
                     }
 
@@ -1823,7 +1915,7 @@ ApplicationWindow {
                                             // those here is exactly what makes a buyer feel misled once
                                             // they find they already had them.
                                             : "Everything works. Pro adds 9 extra themes and supports development."
-                                        color: m.textSecondary; font.pixelSize: 12
+                                        color: m.textSecondary; font.pixelSize: m.fontMinimum
                                         Layout.fillWidth: true; wrapMode: Text.WordWrap
                                     }
                                 }
@@ -1867,7 +1959,7 @@ ApplicationWindow {
                     }
                     Text {
                         text: "www.skyphoenix-it.com"
-                        color: m.textSecondary; font.pixelSize: 12; font.family: theme.fontMono
+                        color: m.textSecondary; font.pixelSize: m.fontMinimum; font.family: theme.fontMono
                     }
 
                     // ── Diagnostics (for support) ──
@@ -1893,9 +1985,9 @@ ApplicationWindow {
                             Text { text: (backend.hubConnected ? "Hub connected (live)" : "Hub offline (saved)")
                                     + "  ·  " + win.screens.length + " display" + (win.screens.length === 1 ? "" : "s")
                                     + (win.currentTarget.length ? "  ·  target " + win.currentTarget : "")
-                                color: m.textSecondary; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                                color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.fillWidth: true; wrapMode: Text.WordWrap }
                             Text { text: "Live network egress counters are shown on the Edge itself (the hub's Diagnostics) - the Manager makes no network requests of its own."
-                                color: m.textSecondary; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                                color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.fillWidth: true; wrapMode: Text.WordWrap }
                             Rectangle {
                                 id: diagBox; visible: false
                                 Layout.fillWidth: true; Layout.preferredHeight: 220
@@ -1913,7 +2005,7 @@ ApplicationWindow {
                                             return (backend && backend.configJson) ? backend.configJson()
                                                                                     : "(config unavailable)"
                                         }
-                                        color: m.textSecondary; font.family: theme.fontMono; font.pixelSize: 10
+                                        color: m.textSecondary; font.family: theme.fontMono; font.pixelSize: m.fontMinimum
                                         wrapMode: Text.WrapAnywhere; textFormat: Text.PlainText
                                     }
                                 }
@@ -1923,7 +2015,7 @@ ApplicationWindow {
 
                     Text {
                         text: "© 2026 SKYPhoenix IT · Independent product"
-                        color: m.textSecondary; font.pixelSize: 12
+                        color: m.textSecondary; font.pixelSize: m.fontMinimum
                         Layout.topMargin: 8; Layout.fillWidth: true; wrapMode: Text.WordWrap
                     }
                     Item { Layout.preferredHeight: 12 }   // bottom padding
@@ -1957,7 +2049,7 @@ ApplicationWindow {
                     Text {
                         objectName: "addPickerTarget"
                         text: "Adds to the screen “" + (store.structureRevision, win.currentPageName()) + "”."
-                        color: m.textSecondary; font.pixelSize: 12
+                        color: m.textSecondary; font.pixelSize: m.fontMinimum
                         elide: Text.ElideRight; Layout.fillWidth: true
                     }
                 }
@@ -1985,7 +2077,7 @@ ApplicationWindow {
                         Text {
                             Layout.fillWidth: true; wrapMode: Text.WordWrap
                             text: "This screen is full - your next widget will start a new screen."
-                            color: m.textPrimary; font.pixelSize: 13
+                            color: m.textPrimary; font.pixelSize: m.fontMinimum
                         }
                     }
                 }
@@ -1994,34 +2086,43 @@ ApplicationWindow {
                     delegate: ColumnLayout {
                         required property string modelData
                         Layout.fillWidth: true; spacing: 8
-                        Text { text: modelData; color: m.textSecondary; font.pixelSize: 14; font.bold: true }
+                        Text { text: modelData; color: m.textSecondary; font.pixelSize: m.fontSection; font.bold: true }
                         Flow {
                             Layout.fillWidth: true; spacing: 8
                             Repeater {
                                 model: catalog.inCategory(modelData)
                                 delegate: Rectangle {
+                                    id: widgetChoice
                                     required property var modelData
+                                    objectName: "widgetChoice-" + modelData.type
                                     width: 150; height: 84; radius: m.radius
                                     color: itemMA.containsMouse ? m.panelAlt : m.bg
                                     border.width: 1; border.color: m.border
+                                    activeFocusOnTab: true
+                                    Accessible.role: Accessible.Button
+                                    Accessible.name: "Add widget: " + modelData.title
+                                    Accessible.onPressAction: widgetChoice.addWidget()
+                                    Keys.onSpacePressed: widgetChoice.addWidget()
+                                    Keys.onReturnPressed: widgetChoice.addWidget()
+                                    function addWidget() {
+                                        var newId = store.addTile(win.currentPageIndex, modelData.type)
+                                        addPicker.close()
+                                        if (newId) {
+                                            var tp = store.pageIndexForTile(newId)
+                                            if (tp >= 0) win.currentPageIndex = tp
+                                        }
+                                    }
                                     ColumnLayout {
                                         anchors.centerIn: parent; spacing: 4
                                         AppIcon { Layout.alignment: Qt.AlignHCenter; name: modelData.type; size: 26; color: m.textPrimary }
                                         Text { Layout.alignment: Qt.AlignHCenter; text: modelData.title
-                                            color: m.textPrimary; font.pixelSize: 13 }
+                                            color: m.textPrimary; font.pixelSize: m.fontMinimum }
                                     }
                                     MouseArea { id: itemMA; anchors.fill: parent; hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
                                         // Adding never fails: fits this screen, or the store starts a
                                         // new one. Follow the tile to whichever screen it landed on.
-                                        onClicked: {
-                                            var newId = store.addTile(win.currentPageIndex, modelData.type)
-                                            addPicker.close()
-                                            if (newId) {
-                                                var tp = store.pageIndexForTile(newId)
-                                                if (tp >= 0) win.currentPageIndex = tp
-                                            }
-                                        }
+                                        onClicked: widgetChoice.addWidget()
                                     }
                                 }
                             }
@@ -2036,15 +2137,20 @@ ApplicationWindow {
     // The full curated library. ADDITIVE: choosing one appends it as a NEW screen
     // (applyPresetScreen → store.appendPreset) and jumps to it, leaving the other
     // screens and the global look untouched - same meaning as the hub's preset
-    // picker. It applies immediately (no confirm; adding is harmless). "Reset to
-    // default layout" on the Device/About side is the destructive path.
+    // picker. Selection is passive and opens the shared detailed preview; a
+    // separate Add screen action commits it. "Reset to default layout" on the
+    // Device/About side is the destructive path.
     Dialog {
         id: presetDialog
+        objectName: "managerPresetDialog"
         title: "Start from a preset screen"
         modal: true; anchors.centerIn: parent
-        width: Math.min(parent ? parent.width * 0.9 : 760, 820)
-        height: Math.min(parent ? parent.height * 0.85 : 620, 700)
-        standardButtons: Dialog.Close
+        width: Math.min(parent ? parent.width * 0.94 : 1100, 1180)
+        height: Math.min(parent ? parent.height * 0.9 : 760, 820)
+        standardButtons: Dialog.NoButton
+        property string selectedId: ""
+        readonly property var selectedPreset: selectedId !== "" ? presetLib.def(selectedId) : null
+        onOpened: selectedId = ""
         background: Rectangle { color: m.panel; radius: m.radius; border.width: 1; border.color: m.border }
         header: Rectangle {
             color: "transparent"; implicitHeight: 68
@@ -2055,55 +2161,115 @@ ApplicationWindow {
                     spacing: 1; Layout.fillWidth: true
                     Text { text: "Start from a preset screen"; color: m.textPrimary; font.pixelSize: 19; font.bold: true }
                     Text { text: "Adds the chosen screen as a NEW screen - your other screens and your look stay put. Tweak it afterwards."
-                        color: m.textSecondary; font.pixelSize: 12; elide: Text.ElideRight; Layout.fillWidth: true }
+                        color: m.textSecondary; font.pixelSize: m.fontMinimum; elide: Text.ElideRight; Layout.fillWidth: true }
                 }
             }
         }
-        contentItem: MScroll {
-            clip: true
-            ColumnLayout {
-                width: presetDialog.availableWidth
-                spacing: 10
-                Repeater {
-                    model: presetLib.list()
-                    delegate: Rectangle {
-                        required property var modelData
-                        Layout.fillWidth: true; implicitHeight: presetRow.implicitHeight + 24
-                        radius: m.radius; color: presetMA.containsMouse ? m.panelAlt : m.bg
-                        border.width: 1; border.color: m.border
-                        RowLayout {
-                            id: presetRow
-                            anchors.left: parent.left; anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.leftMargin: 14; anchors.rightMargin: 14; spacing: 14
-                            // A live layout thumbnail of the screen - see what you get.
-                            PresetMini {
-                                Layout.alignment: Qt.AlignVCenter
-                                Layout.preferredWidth: 224; Layout.preferredHeight: 64
-                                tiles: (modelData.pages && modelData.pages[0])
-                                       ? modelData.pages[0].tiles : []
-                            }
-                            ColumnLayout {
-                                spacing: 2; Layout.fillWidth: true
-                                RowLayout {
-                                    spacing: 8
-                                    AppIcon { name: modelData.icon || "ui-layout"; size: 18; color: m.accent
-                                        Layout.alignment: Qt.AlignVCenter }
-                                    Text { text: modelData.title; color: m.textPrimary
-                                        font.pixelSize: 16; font.bold: true }
+        contentItem: RowLayout {
+            spacing: 14
+            MScroll {
+                Layout.preferredWidth: 520
+                Layout.fillHeight: true
+                clip: true
+                ColumnLayout {
+                    width: 500
+                    spacing: 10
+                    Repeater {
+                        model: presetLib.list()
+                        delegate: Rectangle {
+                            id: managerPresetCard
+                            required property var modelData
+                            objectName: "managerPresetCard-" + modelData.id
+                            readonly property bool selected: presetDialog.selectedId === modelData.id
+                            Layout.fillWidth: true
+                            implicitHeight: presetRow.implicitHeight + 24
+                            radius: m.radius
+                            color: selected ? Qt.rgba(m.accent.r, m.accent.g, m.accent.b, 0.14)
+                                            : (presetMA.containsMouse ? m.panelAlt : m.bg)
+                            border.width: selected ? 2 : 1
+                            border.color: selected ? m.accent : m.border
+                            RowLayout {
+                                id: presetRow
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                spacing: 12
+                                PresetMini {
+                                    Layout.alignment: Qt.AlignVCenter
+                                    Layout.preferredWidth: 176
+                                    Layout.preferredHeight: 58
+                                    tiles: (modelData.pages && modelData.pages[0])
+                                           ? modelData.pages[0].tiles : []
                                 }
-                                Text { text: modelData.blurb || ""; color: m.textSecondary
-                                    font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                                ColumnLayout {
+                                    spacing: 3
+                                    Layout.fillWidth: true
+                                    RowLayout {
+                                        spacing: 8
+                                        AppIcon {
+                                            name: modelData.icon || "ui-layout"
+                                            size: 18
+                                            color: m.accent
+                                            Layout.alignment: Qt.AlignVCenter
+                                        }
+                                        Text {
+                                            text: modelData.title
+                                            color: m.textPrimary
+                                            font.pixelSize: 16
+                                            font.bold: true
+                                        }
+                                    }
+                                    Text {
+                                        text: modelData.blurb || ""
+                                        color: m.textSecondary
+                                        font.pixelSize: m.fontMinimum
+                                        Layout.fillWidth: true
+                                        wrapMode: Text.WordWrap
+                                        maximumLineCount: 3
+                                        elide: Text.ElideRight
+                                    }
+                                }
                             }
-                            MButton { text: "Add screen"; iconName: "ui-check"; primary: true
-                                Layout.alignment: Qt.AlignVCenter
-                                // Adding a preset screen is additive and harmless, so it
-                                // applies straight away - no "this won't affect your other
-                                // screens" confirm to click through.
-                                onClicked: { presetDialog.close(); win.applyPresetScreen(modelData.id) } }
+                            MouseArea {
+                                id: presetMA
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: presetDialog.selectedId = managerPresetCard.modelData.id
+                            }
                         }
-                        MouseArea { id: presetMA; anchors.fill: parent; hoverEnabled: true; z: -1 }
                     }
+                }
+            }
+            PresetPreview {
+                objectName: "managerPresetPreview"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumWidth: 430
+                preset: presetDialog.selectedPreset
+                widgetCatalog: catalog
+                landscape: true
+            }
+        }
+        footer: RowLayout {
+            spacing: 10
+            Item { Layout.fillWidth: true }
+            MButton {
+                objectName: "managerPresetCancel"
+                text: "Cancel"
+                Layout.preferredHeight: m.touch
+                onClicked: presetDialog.close()
+            }
+            MButton {
+                objectName: "managerPresetAdd"
+                text: "Add selected screen"
+                iconName: "ui-check"
+                primary: true
+                enabled: presetDialog.selectedPreset !== null
+                Layout.preferredHeight: m.touch
+                onClicked: {
+                    var id = presetDialog.selectedId
+                    presetDialog.close()
+                    win.applyPresetScreen(id)
                 }
             }
         }
@@ -2153,7 +2319,7 @@ ApplicationWindow {
             Text {
                 text: "Paste the licence key from your purchase e-mail. It is verified on "
                     + "this device - nothing is sent anywhere."
-                color: m.textSecondary; font.pixelSize: 13
+                color: m.textSecondary; font.pixelSize: m.fontMinimum
                 Layout.fillWidth: true; wrapMode: Text.WordWrap
             }
             Rectangle {
@@ -2166,7 +2332,7 @@ ApplicationWindow {
                     anchors.fill: parent; anchors.margins: 8
                     wrapMode: TextArea.WrapAnywhere
                     placeholderText: "XE1.…"
-                    color: m.textPrimary; font.family: theme.fontMono; font.pixelSize: 13
+                    color: m.textPrimary; font.family: theme.fontMono; font.pixelSize: m.fontMinimum
                     selectByMouse: true
                     background: null
                     onTextChanged: licenseDialog.reVerify()
@@ -2185,7 +2351,7 @@ ApplicationWindow {
                 }
                 Text {
                     Layout.fillWidth: true; wrapMode: Text.WordWrap
-                    color: m.textPrimary; font.pixelSize: 13
+                    color: m.textPrimary; font.pixelSize: m.fontMinimum
                     text: parent.ok
                           ? ("Valid - unlocks Pro"
                              + (licenseDialog.preview.issuedTo ? " for " + licenseDialog.preview.issuedTo : "") + ".")
@@ -2246,7 +2412,7 @@ ApplicationWindow {
             }
         }
         contentItem: Text { text: confirmDialog.message; color: m.textPrimary
-            wrapMode: Text.WordWrap; padding: 18; font.pixelSize: 14
+            wrapMode: Text.WordWrap; padding: 18; font.pixelSize: m.fontMinimum
             // Cap the width so a long message wraps instead of stretching the dialog wide.
             width: Math.min(implicitWidth, 360) }
         onAccepted: if (onConfirm) onConfirm()

@@ -2,6 +2,7 @@
 
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QDateTime>
 #include <QObject>
 #include <QString>
 #include <QThread>
@@ -72,6 +73,8 @@ class DistroBridge : public QObject {
     // False until the first probe returns. QML keys its placeholder off this -
     // an empty map and "0 packages" must never be confusable.
     Q_PROPERTY(bool ready READ ready NOTIFY infoChanged)
+    Q_PROPERTY(bool refreshing READ refreshing NOTIFY infoChanged)
+    Q_PROPERTY(qint64 refreshedAtMs READ refreshedAtMs NOTIFY infoChanged)
 
 public:
     // The probe is cheap-ish but not free, and the answer changes on the order of
@@ -105,6 +108,8 @@ public:
 
     QVariantMap info() const { return m_info; }
     bool ready() const { return m_ready; }
+    bool refreshing() const { return m_refreshing; }
+    qint64 refreshedAtMs() const { return m_refreshedAtMs; }
 
     // Which root actually produced the current `info`. Distinct from the root we
     // last ASKED for: after setRoot() the old answer is still published until the
@@ -112,7 +117,11 @@ public:
     QString probedRoot() const { return m_probedRoot; }
 
     // Re-probe. Safe to call at any time: the result simply replaces the cache.
-    Q_INVOKABLE void refresh() { emit _requestProbe(m_root); }
+    Q_INVOKABLE void refresh() {
+        m_refreshing = true;
+        emit infoChanged();
+        emit _requestProbe(m_root);
+    }
 
     // Root the probe at a fixture tree instead of "/". FOR TESTS - it lets the
     // C++ suite assert real behaviour against crafted /etc + /var trees without
@@ -143,7 +152,9 @@ private slots:
             m_info = doc.object().toVariantMap();
             m_probedRoot = root;
             m_ready = true;
+            m_refreshedAtMs = QDateTime::currentMSecsSinceEpoch();
         }
+        m_refreshing = false;
         emit infoChanged();
     }
 
@@ -155,4 +166,6 @@ private:
     QString m_root;         // "" = the real system - the root we are ASKING about
     QString m_probedRoot;   // the root that produced m_info
     bool m_ready = false;
+    bool m_refreshing = false;
+    qint64 m_refreshedAtMs = 0;
 };

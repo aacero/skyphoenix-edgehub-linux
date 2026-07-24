@@ -319,6 +319,14 @@ fn count_dpkg(root: &Path) -> Option<u64> {
 
 // ─── Install date ────────────────────────────────────────────────────────────
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InstallEvidence {
+    epoch: i64,
+    source: &'static str,
+    path: String,
+    note: String,
+}
+
 /// First install timestamp from a pacman log.
 ///
 /// The log's first `installed` line is the first package the system ever laid
@@ -332,9 +340,9 @@ fn count_dpkg(root: &Path) -> Option<u64> {
 /// truncated, this is the age of the LOG, not of the system. pacman stores no
 /// install epoch anywhere else, so there is no better source - the widget says
 /// what it measured and does not pretend to more.
-fn pacman_install_epoch(root: &Path) -> Option<i64> {
+fn first_pacman_install(path: &Path) -> Option<i64> {
     use std::io::{BufRead, BufReader};
-    let f = fs::File::open(root.join("var/log/pacman.log")).ok()?;
+    let f = fs::File::open(path).ok()?;
     for line in BufReader::new(f).lines().map_while(Result::ok) {
         let Some(rest) = line.strip_prefix('[') else {
             continue;
@@ -352,6 +360,46 @@ fn pacman_install_epoch(root: &Path) -> Option<i64> {
     None
 }
 
+fn pacman_install_evidence(root: &Path) -> Option<InstallEvidence> {
+    let entries = fs::read_dir(root.join("var/log")).ok()?;
+    let mut readable_logs = Vec::new();
+    let mut compressed_rotation = false;
+
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name == "pacman.log" || name.starts_with("pacman.log.") {
+            if name.ends_with(".gz") {
+                compressed_rotation = true;
+            } else if entry.path().is_file() {
+                readable_logs.push((name, entry.path()));
+            }
+        }
+    }
+
+    let mut oldest: Option<(i64, String)> = None;
+    for (name, path) in readable_logs {
+        let Some(epoch) = first_pacman_install(&path) else {
+            continue;
+        };
+        if oldest.as_ref().is_none_or(|(current, _)| epoch < *current) {
+            oldest = Some((epoch, name));
+        }
+    }
+
+    let (epoch, name) = oldest?;
+    let note = if compressed_rotation {
+        "Earliest record in readable pacman logs. Older compressed or deleted logs may exist."
+    } else {
+        "Earliest record in visible pacman history. Deleted logs may make this younger than the system."
+    };
+    Some(InstallEvidence {
+        epoch,
+        source: "package-log-estimate",
+        path: format!("/var/log/{name}"),
+        note: note.to_string(),
+    })
+}
+
 /// First install timestamp for a dpkg system.
 ///
 /// Two sources, best first:
@@ -364,40 +412,64 @@ fn pacman_install_epoch(root: &Path) -> Option<i64> {
 /// a gzip dependency to a shipped product for a fallback-of-a-fallback is not a
 /// trade worth making. The consequence is an honest "unknown" on a system whose
 /// plain logs have all rotated away - not a wrong date.
-fn dpkg_install_epoch(root: &Path) -> Option<i64> {
+fn dpkg_install_evidence(root: &Path) -> Option<InstallEvidence> {
     use std::io::{BufRead, BufReader};
 
     if let Ok(md) = fs::metadata(root.join("var/log/installer")) {
         if let Ok(mtime) = md.modified() {
             if let Ok(d) = mtime.duration_since(std::time::UNIX_EPOCH) {
-                return Some(d.as_secs() as i64);
+                return Some(InstallEvidence {
+                    epoch: d.as_secs() as i64,
+                    source: "installer-record",
+                    path: "/var/log/installer".to_string(),
+                    note: "Distribution installer record. High-confidence installation evidence."
+                        .to_string(),
+                });
             }
         }
     }
 
     let entries = fs::read_dir(root.join("var/log")).ok()?;
-    let mut logs: Vec<PathBuf> = Vec::new();
+    let mut logs: Vec<(String, PathBuf)> = Vec::new();
+    let mut compressed_rotation = false;
     for e in entries.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
-        if name.starts_with("dpkg.log") && !name.ends_with(".gz") {
-            logs.push(e.path());
+        if name.starts_with("dpkg.log") {
+            if name.ends_with(".gz") {
+                compressed_rotation = true;
+            } else {
+                logs.push((name, e.path()));
+            }
         }
     }
 
     // The OLDEST first-entry across the rotations - not the alphabetically first
     // (dpkg.log sorts before dpkg.log.1 but is newer) and not the newest.
-    let mut oldest: Option<i64> = None;
-    for p in logs {
+    let mut oldest: Option<(i64, String)> = None;
+    for (name, p) in logs {
         let Ok(f) = fs::File::open(&p) else { continue };
         // dpkg.log lines are `YYYY-MM-DD HH:MM:SS <action> ...`; a file's first
         // line is its oldest entry.
         if let Some(line) = BufReader::new(f).lines().map_while(Result::ok).next() {
             if let Some(ts) = parse_log_timestamp(line.get(0..19).unwrap_or("")) {
-                oldest = Some(oldest.map_or(ts, |o: i64| o.min(ts)));
+                if oldest.as_ref().is_none_or(|(current, _)| ts < *current) {
+                    oldest = Some((ts, name));
+                }
             }
         }
     }
-    oldest
+    let (epoch, name) = oldest?;
+    let note = if compressed_rotation {
+        "Earliest record in readable dpkg logs. Older compressed or deleted logs may exist."
+    } else {
+        "Earliest record in visible dpkg history. Deleted logs may make this younger than the system."
+    };
+    Some(InstallEvidence {
+        epoch,
+        source: "package-log-estimate",
+        path: format!("/var/log/{name}"),
+        note: note.to_string(),
+    })
 }
 
 // ─── Probe ───────────────────────────────────────────────────────────────────
@@ -418,7 +490,21 @@ pub struct DistroInfo {
     pub unsupported_reason: Option<String>,
     /// Always `None` today - see the module docs.
     pub updates: Option<u64>,
+    /// Security-only subset of `updates`, when a trustworthy local source exists.
+    pub security_updates: Option<u64>,
+    /// Why update counts are absent. This prevents `null` being mistaken for zero.
+    pub updates_reason: Option<String>,
     pub install_epoch: Option<i64>,
+    /// `installer-record` is a durable installer timestamp;
+    /// `package-log-estimate` may be younger than the actual installation.
+    pub install_source: Option<String>,
+    /// The exact file or directory that supplied `install_epoch`.
+    pub install_evidence: Option<String>,
+    /// A user-facing confidence and completeness statement for the evidence.
+    pub install_evidence_note: Option<String>,
+    /// Why no install evidence could be read. Kept separate from package-count
+    /// support so the System Age widget never shows an unrelated RPM count error.
+    pub install_reason: Option<String>,
 }
 
 /// Probe the system rooted at `root` (production: `/`).
@@ -428,9 +514,9 @@ pub fn probe(root: &Path) -> DistroInfo {
     let os = read_os_release(root);
     let family = family_for(&os);
 
-    let (package_count, unsupported_reason, install_epoch) = match family {
-        Family::Arch => (count_pacman(root), None, pacman_install_epoch(root)),
-        Family::Debian => (count_dpkg(root), None, dpkg_install_epoch(root)),
+    let (package_count, unsupported_reason) = match family {
+        Family::Arch => (count_pacman(root), None),
+        Family::Debian => (count_dpkg(root), None),
         // DELIBERATE non-support, reported rather than hidden. The rpm database
         // is a Berkeley-DB/sqlite blob whose schema is librpm's private
         // business; there is no text file to count. The only cheap answer is
@@ -446,14 +532,41 @@ pub fn probe(root: &Path) -> DistroInfo {
                  this build does not shell out to rpm."
                     .to_string(),
             ),
-            None,
         ),
         Family::Unknown => (
             None,
             Some("This distribution's package manager isn't recognised.".to_string()),
-            None,
         ),
     };
+
+    let evidence = match family {
+        Family::Arch => pacman_install_evidence(root),
+        Family::Debian => dpkg_install_evidence(root),
+        Family::Rpm | Family::Unknown => None,
+    };
+    let install_reason = if evidence.is_some() {
+        None
+    } else {
+        Some(
+            match family {
+                Family::Arch => "No readable pacman installation record was found.",
+                Family::Debian => {
+                    "No installer record or readable dpkg installation history was found."
+                }
+                Family::Rpm => {
+                    "System age is unavailable because no safe RPM install-history provider is configured."
+                }
+                Family::Unknown => {
+                    "System age is unavailable because this distribution is not recognised."
+                }
+            }
+            .to_string(),
+        )
+    };
+    let install_epoch = evidence.as_ref().map(|e| e.epoch);
+    let install_source = evidence.as_ref().map(|e| e.source.to_string());
+    let install_evidence = evidence.as_ref().map(|e| e.path.clone());
+    let install_evidence_note = evidence.as_ref().map(|e| e.note.clone());
 
     DistroInfo {
         id: os.id.clone(),
@@ -462,7 +575,16 @@ pub fn probe(root: &Path) -> DistroInfo {
         package_count,
         unsupported_reason,
         updates: None,
+        security_updates: None,
+        updates_reason: Some(
+            "Update counts are not inferred from package-manager caches because stale metadata can report a believable but wrong zero."
+                .to_string(),
+        ),
         install_epoch,
+        install_source,
+        install_evidence,
+        install_evidence_note,
+        install_reason,
     }
 }
 
@@ -479,7 +601,13 @@ pub fn to_json(info: &DistroInfo) -> String {
         "packageCount": info.package_count,
         "unsupportedReason": info.unsupported_reason,
         "updates": info.updates,
+        "securityUpdates": info.security_updates,
+        "updatesReason": info.updates_reason,
         "installEpoch": info.install_epoch,
+        "installSource": info.install_source,
+        "installEvidence": info.install_evidence,
+        "installEvidenceNote": info.install_evidence_note,
+        "installReason": info.install_reason,
     })
     .to_string()
 }
@@ -877,7 +1005,7 @@ Description: a shell
 ";
         fs::write(d.path().join("var/log/pacman.log"), log).unwrap();
         assert_eq!(
-            pacman_install_epoch(d.path()),
+            pacman_install_evidence(d.path()).map(|e| e.epoch),
             parse_log_timestamp("2026-07-11T01:53:10+0200")
         );
     }
@@ -896,7 +1024,7 @@ Description: a shell
 ";
         fs::write(d.path().join("var/log/pacman.log"), log).unwrap();
         assert_eq!(
-            pacman_install_epoch(d.path()),
+            pacman_install_evidence(d.path()).map(|e| e.epoch),
             parse_log_timestamp("2018-03-04 09:12")
         );
     }
@@ -914,7 +1042,7 @@ Description: a shell
 ";
         fs::write(d.path().join("var/log/pacman.log"), log).unwrap();
         assert_eq!(
-            pacman_install_epoch(d.path()),
+            pacman_install_evidence(d.path()).map(|e| e.epoch),
             parse_log_timestamp("2024-03-01T00:00:00+0000")
         );
     }
@@ -922,7 +1050,32 @@ Description: a shell
     #[test]
     fn pacman_install_epoch_is_none_when_there_is_no_log() {
         let d = fake_arch_root(1);
-        assert_eq!(pacman_install_epoch(d.path()), None);
+        assert_eq!(pacman_install_evidence(d.path()), None);
+    }
+
+    #[test]
+    fn pacman_evidence_uses_the_oldest_readable_rotation_and_discloses_gaps() {
+        let d = fake_arch_root(1);
+        fs::create_dir_all(d.path().join("var/log")).unwrap();
+        fs::write(
+            d.path().join("var/log/pacman.log"),
+            "[2024-06-01T00:00:00+0000] [ALPM] installed current (1-1)\n",
+        )
+        .unwrap();
+        fs::write(
+            d.path().join("var/log/pacman.log.1"),
+            "[2022-02-03T08:30:00+0000] [ALPM] installed older (1-1)\n",
+        )
+        .unwrap();
+        fs::write(d.path().join("var/log/pacman.log.2.gz"), [0x1f, 0x8b]).unwrap();
+
+        let evidence = pacman_install_evidence(d.path()).unwrap();
+        assert_eq!(
+            evidence.epoch,
+            parse_log_timestamp("2022-02-03T08:30:00+0000").unwrap()
+        );
+        assert_eq!(evidence.path, "/var/log/pacman.log.1");
+        assert!(evidence.note.contains("compressed"));
     }
 
     #[test]
@@ -930,7 +1083,7 @@ Description: a shell
         let d = TempDir::new().unwrap();
         fs::create_dir_all(d.path().join("var/log/installer")).unwrap();
         fs::write(d.path().join("var/log/installer/syslog"), "x").unwrap();
-        let got = dpkg_install_epoch(d.path()).unwrap();
+        let got = dpkg_install_evidence(d.path()).unwrap().epoch;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -960,7 +1113,7 @@ Description: a shell
         )
         .unwrap();
         assert_eq!(
-            dpkg_install_epoch(d.path()),
+            dpkg_install_evidence(d.path()).map(|e| e.epoch),
             parse_log_timestamp("2022-02-03 08:30:00")
         );
     }
@@ -981,7 +1134,7 @@ Description: a shell
         )
         .unwrap();
         assert_eq!(
-            dpkg_install_epoch(d.path()),
+            dpkg_install_evidence(d.path()).map(|e| e.epoch),
             parse_log_timestamp("2024-06-01 10:00:00")
         );
     }
@@ -989,7 +1142,7 @@ Description: a shell
     #[test]
     fn dpkg_install_epoch_is_none_on_an_empty_system() {
         let d = TempDir::new().unwrap();
-        assert_eq!(dpkg_install_epoch(d.path()), None);
+        assert_eq!(dpkg_install_evidence(d.path()), None);
     }
 
     // ── probe + json ─────────────────────────────────────────────────────────
@@ -1012,6 +1165,16 @@ Description: a shell
             info.install_epoch,
             parse_log_timestamp("2024-03-01T00:00:00+0000")
         );
+        assert_eq!(info.install_source.as_deref(), Some("package-log-estimate"));
+        assert_eq!(
+            info.install_evidence.as_deref(),
+            Some("/var/log/pacman.log")
+        );
+        assert!(info
+            .install_evidence_note
+            .as_deref()
+            .is_some_and(|note| note.contains("visible pacman history")));
+        assert_eq!(info.install_reason, None);
         // Never claimed, on any distro, today.
         assert_eq!(info.updates, None);
     }
@@ -1032,6 +1195,7 @@ Description: a shell
         let d = TempDir::new().unwrap();
         fs::create_dir_all(d.path().join("etc")).unwrap();
         fs::create_dir_all(d.path().join("var/lib/dpkg")).unwrap();
+        fs::create_dir_all(d.path().join("var/log/installer")).unwrap();
         fs::write(d.path().join("etc/os-release"), UBUNTU).unwrap();
         fs::write(
             d.path().join("var/lib/dpkg/status"),
@@ -1042,6 +1206,13 @@ Description: a shell
         assert_eq!(info.family, Family::Debian);
         assert_eq!(info.name, "Ubuntu 24.04.1 LTS");
         assert_eq!(info.package_count, Some(1));
+        assert!(info.install_epoch.is_some());
+        assert_eq!(info.install_source.as_deref(), Some("installer-record"));
+        assert_eq!(info.install_evidence.as_deref(), Some("/var/log/installer"));
+        assert!(info
+            .install_evidence_note
+            .as_deref()
+            .is_some_and(|note| note.contains("High-confidence")));
     }
 
     // The honest outcome, asserted so it cannot regress into a silent subprocess.
@@ -1055,6 +1226,10 @@ Description: a shell
         assert_eq!(info.name, "Fedora Linux 40 (Workstation Edition)");
         assert_eq!(info.package_count, None);
         assert_eq!(info.install_epoch, None);
+        assert!(info
+            .install_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("RPM")));
         let reason = info.unsupported_reason.unwrap();
         assert!(reason.contains("librpm"), "reason should explain: {reason}");
     }
@@ -1082,7 +1257,13 @@ Description: a shell
         // null, NOT 0 / -1: a sentinel would render as "0 packages".
         assert!(v["packageCount"].is_null());
         assert!(v["installEpoch"].is_null());
+        assert!(v["installSource"].is_null());
+        assert!(v["installEvidence"].is_null());
+        assert!(v["installEvidenceNote"].is_null());
+        assert!(v["installReason"].is_string());
         assert!(v["updates"].is_null());
+        assert!(v["securityUpdates"].is_null());
+        assert!(v["updatesReason"].is_string());
         assert!(v["unsupportedReason"].is_string());
     }
 
@@ -1099,6 +1280,10 @@ Description: a shell
         assert_eq!(v["packageCount"], 5);
         assert_eq!(v["family"], "arch");
         assert_eq!(v["installEpoch"], 1709251200i64);
+        assert_eq!(v["installSource"], "package-log-estimate");
+        assert_eq!(v["installEvidence"], "/var/log/pacman.log");
+        assert!(v["installEvidenceNote"].is_string());
+        assert!(v["installReason"].is_null());
         assert!(v["unsupportedReason"].is_null());
     }
 

@@ -23,6 +23,22 @@ Item {
     property var history: []        // 0..1 samples for the sparkline
     property bool expanded: false
     property bool ok: true          // false → dim (e.g. GPU N/A)
+    // Optional glanceable context supplied by a metric widget. This lives with
+    // the history instead of being squeezed into the ring's centre caption.
+    // Entries are { label, value }; an empty list preserves the classic gauge.
+    property var detailItems: []
+    property string historyCaption: ""
+    // Consumers with information-dense cards may raise these two tokens without
+    // forking the shared gauge. The row height follows the text, so increased
+    // legibility cannot turn into clipping at larger accessibility scales.
+    property real detailLabelPixelSize: theme.fontMinimum
+    property real detailValuePixelSize: theme.fontLabel
+    property color detailLabelColor: theme.textTertiary
+    property color historyCaptionColor: theme.textTertiary
+    property color subTextColor: theme.textSecondary
+    property real historyCaptionPixelSize: theme.fontMinimum
+    readonly property real detailRowHeight:
+        Math.max(52, detailLabelPixelSize + detailValuePixelSize + 19)
 
     // Per-size layout knobs (see header note). Defaults = the original layout.
     property bool showSpark: true
@@ -32,6 +48,7 @@ Item {
     // sparkline ALL the remaining height - history earns the height, and the
     // ring no longer floats in a stretched void. Only meaningful stacked.
     property bool sparkFills: false
+    property real stackedRingMaxFraction: 0.62
     // Cap for the centre value font when collapsed (micro tiles raise it so the
     // one number actually fills its headerless box).
     property real bigMax: 60
@@ -62,7 +79,8 @@ Item {
             // (capped at ~2/5 of the width so the sparkline keeps the majority).
             Layout.preferredWidth: g.horizontal ? Math.round(Math.min(g.height, g.width * 0.42)) : -1
             // Tall: a square cell up top; the sparkline below takes the rest.
-            Layout.preferredHeight: square ? Math.round(Math.min(g.width, g.height * 0.62)) : -1
+            Layout.preferredHeight: square
+                ? Math.round(Math.min(g.width, g.height * g.stackedRingMaxFraction)) : -1
             RingProgress {
                 id: ring
                 anchors.centerIn: parent
@@ -102,7 +120,7 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     font.pixelSize: Math.min(g._ringW * 0.34, g.expanded ? 108 : g.bigMax)
                     fontSizeMode: Text.HorizontalFit
-                    minimumPixelSize: 10
+                    minimumPixelSize: theme.fontMinimum
                     elide: Text.ElideRight
                     font.bold: true; font.family: theme.fontMono
                     color: g.ok ? g.color : theme.textTertiary
@@ -119,11 +137,13 @@ Item {
                     horizontalAlignment: Text.AlignHCenter   // centre within the wide box
                     // Scale gently with the ring so a big tall-tile ring doesn't
                     // caption itself in 14px dust.
-                    font.pixelSize: g.expanded ? 20 : Math.max(12, Math.min(g._ringW * 0.075, 18))
+                    font.pixelSize: g.expanded ? theme.fontTitle
+                                               : Math.max(theme.fontMinimum,
+                                                          Math.min(g._ringW * 0.075, theme.fontLabel))
                     fontSizeMode: Text.HorizontalFit
-                    minimumPixelSize: 9
+                    minimumPixelSize: theme.fontMinimum
                     elide: Text.ElideRight
-                    color: theme.textSecondary
+                    color: g.subTextColor
                 }
             }
         }
@@ -138,11 +158,91 @@ Item {
             Layout.fillHeight: g.horizontal || (g.sparkFills && !g.horizontal)
             Layout.preferredHeight: (g.horizontal || g.sparkFills) ? -1
                                   : (g.expanded ? 110 : Math.max(30, g.height * g.sparkFrac))
-            Sparkline {
+            ColumnLayout {
                 anchors.fill: parent
-                values: g.history
-                color: g.color
-                visible: g.ok && g.history && g.history.length > 1
+                spacing: theme.spacingXs
+
+                GridLayout {
+                    id: metricDetailStrip
+                    objectName: "metricDetailStrip"
+                    visible: g.detailItems && g.detailItems.length > 0
+                    Layout.fillWidth: true
+                    columns: g.horizontal ? Math.max(1, g.detailItems.length) : 2
+                    rows: g.horizontal ? 1 : Math.ceil(g.detailItems.length / 2)
+                    Layout.minimumHeight: visible
+                        ? (g.horizontal ? g.detailRowHeight : g.detailRowHeight * 2 + rowSpacing)
+                        : 0
+                    Layout.preferredHeight: Layout.minimumHeight
+                    Layout.maximumHeight: Layout.minimumHeight
+                    rowSpacing: theme.spacingXs
+                    columnSpacing: theme.spacingXs
+                    Repeater {
+                        model: g.detailItems || []
+                        delegate: Rectangle {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: g.detailRowHeight
+                            radius: theme.radiusSm
+                            color: Qt.rgba(theme.cardBackgroundAlt.r,
+                                           theme.cardBackgroundAlt.g,
+                                           theme.cardBackgroundAlt.b, 0.72)
+                            border.width: 1
+                            border.color: theme.cardBorder
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 6
+                                spacing: 1
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: modelData.label || ""
+                                    color: g.detailLabelColor
+                                    font.pixelSize: g.detailLabelPixelSize
+                                    font.bold: true
+                                    font.letterSpacing: 0.7
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: modelData.value || "-"
+                                    color: theme.textPrimary
+                                    font.pixelSize: g.detailValuePixelSize
+                                    font.weight: Font.DemiBold
+                                    font.family: theme.fontMono
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Text {
+                    visible: g.historyCaption.length > 0
+                    Layout.fillWidth: true
+                    text: g.historyCaption
+                    color: g.historyCaptionColor
+                    font.pixelSize: g.historyCaptionPixelSize
+                    font.bold: true
+                    font.letterSpacing: 0.8
+                    elide: Text.ElideRight
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Sparkline {
+                        anchors.fill: parent
+                        values: g.history
+                        color: g.color
+                        visible: g.ok && g.history && g.history.length > 1
+                    }
+                    Text {
+                        anchors.centerIn: parent
+                        visible: g.ok && (!g.history || g.history.length < 2)
+                        text: "Building history"
+                        color: theme.textTertiary
+                        font.pixelSize: theme.fontMinimum
+                    }
+                }
             }
         }
     }

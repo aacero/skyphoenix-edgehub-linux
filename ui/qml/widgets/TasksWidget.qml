@@ -35,26 +35,46 @@ WidgetChrome {
     }
     readonly property var items: cfg.items || []
     readonly property bool hideCompleted: cfg.hideCompleted !== undefined ? cfg.hideCompleted : false
-    readonly property bool celebrate: cfg.celebrate !== undefined ? cfg.celebrate : true
+    readonly property string behaviorProfile: cfg.behaviorProfile || "custom"
+    readonly property bool celebrate: behaviorProfile === "calm" ? false
+        : behaviorProfile === "momentum" ? true : (cfg.celebrate !== undefined ? cfg.celebrate : true)
+    readonly property string displayMode: cfg.displayMode || "all"
     // View-only projection: optionally drop done items, but carry each item's
     // original storage index so toggle/remove still target the right entry.
     readonly property var visibleItems: {
         var a = []
         for (var i = 0; i < items.length; i++) {
             if (hideCompleted && items[i].done) continue
-            a.push({ text: items[i].text, done: items[i].done, idx: i })
+            a.push(Object.assign({}, items[i], {
+                text: items[i].text !== undefined ? String(items[i].text) : "",
+                done: items[i].done === true,
+                idx: i
+            }))
+            if (displayMode === "top3" && a.length === 3) break
         }
         return a
     }
+    readonly property int eligibleCount: {
+        var n = 0
+        for (var i = 0; i < items.length; i++)
+            if (!(hideCompleted && items[i].done)) n++
+        return n
+    }
+    readonly property int modeHiddenCount: Math.max(0, eligibleCount - visibleItems.length)
     property int doneCount: {
         var n = 0
         for (var i = 0; i < items.length; i++) if (items[i].done) n++
         return n
     }
+    readonly property int openCount: Math.max(0, items.length - doneCount)
+    readonly property int completionPercent: items.length
+        ? Math.round(doneCount * 100 / items.length) : 0
     status: items.length ? doneCount + "/" + items.length : ""
 
     // ── Per-size layout (sizeClass injected by Dashboard) ────────────────────
     readonly property bool horiz: sizeClass === "wide"
+                                  || ((sizeClass === "large" || sizeClass === "full")
+                                      && width > height * 1.25)
 
     // Does this instance have half-screen room? HabitWidget's predicate, derived
     // the same way and for the same reason - the room itself answers it, not a
@@ -76,7 +96,8 @@ WidgetChrome {
     // there. It is dropped because it asked the wrong question, not because the
     // answer moved.
     readonly property real rowFont:
-        Math.max(13, Math.min((w.horiz ? width * 0.55 : width) * 0.032, 18))
+        Math.max(theme.fontLabel,
+                 Math.min((w.horiz ? width * 0.55 : width) * 0.038, 21))
     // The checkbox is sized by its ROW, and the row is theme.touchTertiary at
     // EVERY size by explicit design (see the header). So the box is a constant
     // too, and `w.expanded ? 30` was a mode-keyed exception to a deliberate
@@ -91,10 +112,36 @@ WidgetChrome {
     // its 34 after W5 shrank that pane to 38% of the width. Both axes bind (the
     // text wraps to at most 2 lines, so a wide-but-short pane must not overreach)
     // and 34 stays the designed ceiling.
-    readonly property real celebratePx: Math.max(12, Math.min(width * 0.055,
+    readonly property real celebratePx: Math.max(theme.fontMinimum, Math.min(width * 0.055,
                                                               height * 0.075, 34))
 
     function _save(arr) { if (store) store.setSetting(instanceId, "items", arr) }
+    property var undoAction: null
+    property int undoRevision: -1
+    readonly property bool canUndo: undoAction !== null
+        && (!store || store.revision === undoRevision)
+    readonly property string undoMessage: canUndo ? String(undoAction.message || "") : ""
+    function _snapshot() {
+        return items.map(function (entry) { return Object.assign({}, entry) })
+    }
+    function _dismissUndo() {
+        undoTimer.stop()
+        undoAction = null
+        undoRevision = -1
+    }
+    function _rememberUndo(message, before) {
+        undoAction = { message: message, items: before }
+        undoRevision = store ? store.revision : -1
+        undoTimer.restart()
+    }
+    function undoLast() {
+        if (!canUndo) { _dismissUndo(); return false }
+        var before = undoAction.items
+        _dismissUndo()
+        _save(before)
+        return true
+    }
+    Timer { id: undoTimer; interval: 7000; onTriggered: w._dismissUndo() }
     // Key of the last list we celebrated, so re-completing an already-finished
     // set (un-check then re-check) doesn't re-fire the burst.
     property string _celebratedKey: ""
@@ -103,21 +150,57 @@ WidgetChrome {
         // A rendered row's idx can go stale after an external shrink; ignore it
         // rather than crash (a[i].text on undefined) or mutate the wrong entry.
         if (i < 0 || i >= items.length) return
+        var before = _snapshot()
         var a = items.slice()
         var it = a[i]
         // Preserve any extra fields (e.g. a Manager-assigned id) and never
         // re-persist a malformed item with text:undefined.
         a[i] = Object.assign({}, it, { text: it.text !== undefined ? it.text : "", done: !it.done })
         _save(a)
+        _rememberUndo((a[i].done ? "Completed " : "Reopened ") + String(a[i].text || "task"), before)
         // Dopamine hit: a burst when checking the box that clears the whole list.
         if (a[i].done && celebrate && a.length > 0 && a.every(function (t) { return t.done })) {
             var key = _itemsKey(a)
             if (key !== _celebratedKey) { _celebratedKey = key; celebrateNow("🎉 All done!") }
         }
     }
-    function remove(i) { if (i < 0 || i >= items.length) return; var a = items.slice(); a.splice(i, 1); _save(a) }
-    function add(t) { if (!t || !t.trim().length) return; var a = items.slice(); a.push({ text: t.trim(), done: false }); _save(a) }
-    function clearCompleted() { _save(items.filter(function (t) { return !t.done })) }
+    function remove(i) {
+        if (i < 0 || i >= items.length) return
+        var before = _snapshot(), a = items.slice()
+        var removed = a.splice(i, 1)[0]
+        _save(a)
+        _rememberUndo("Removed " + String(removed.text || "task"), before)
+    }
+    function add(t) {
+        if (!t || !t.trim().length) return
+        _dismissUndo()
+        var a = items.slice(), serial = Number(cfg.nextId || 0) + 1
+        a.push({ id: "task-" + Date.now() + "-" + serial, text: t.trim(), done: false })
+        if (store) store.patchSettings(instanceId, { items: a, nextId: serial })
+    }
+    function edit(i, text) {
+        if (i < 0 || i >= items.length || !text || !text.trim().length) return
+        _dismissUndo()
+        var a = items.slice(); a[i] = Object.assign({}, a[i], { text: text.trim() }); _save(a)
+    }
+    function move(i, delta) {
+        var j = i + delta
+        if (i < 0 || i >= items.length || j < 0 || j >= items.length) return
+        _dismissUndo()
+        var a = items.slice(), entry = a.splice(i, 1)[0]; a.splice(j, 0, entry); _save(a)
+    }
+    function clearCompleted() {
+        if (!doneCount) return
+        var before = _snapshot(), count = doneCount
+        _save(items.filter(function (t) { return !t.done }))
+        _rememberUndo("Cleared " + count + " completed " + (count === 1 ? "task" : "tasks"), before)
+    }
+    property bool clearArmed: false
+    function requestClearCompleted() {
+        if (clearArmed) { clearCompleted(); clearArmed = false }
+        else { clearArmed = true; clearArmTimer.restart() }
+    }
+    Timer { id: clearArmTimer; interval: 4000; onTriggered: w.clearArmed = false }
 
     // Celebration pop, mirroring FocusWidget's honest little reward.
     property string celebrateMsg: ""
@@ -127,8 +210,8 @@ WidgetChrome {
         anchors.fill: parent; radius: theme.radiusLg; color: w.effAccent; opacity: 0; z: 5
         SequentialAnimation on opacity {
             id: flash; running: false
-            NumberAnimation { to: 0.30; duration: 120 }
-            NumberAnimation { to: 0.0; duration: 500 }
+            NumberAnimation { to: theme.effectiveReduceMotion ? 0 : 0.30; duration: theme.motionFast }
+            NumberAnimation { to: 0.0; duration: theme.motionSlow }
         }
     }
     Text {
@@ -144,14 +227,14 @@ WidgetChrome {
         wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
         SequentialAnimation {
             id: celebrateAnim; running: false
-            PropertyAction { target: celebrateLabel; property: "scale"; value: 0.6 }
+            PropertyAction { target: celebrateLabel; property: "scale"; value: theme.effectiveReduceMotion ? 1 : 0.6 }
             ParallelAnimation {
-                NumberAnimation { target: celebrateLabel; property: "opacity"; from: 0; to: 1; duration: 180 }
-                NumberAnimation { target: celebrateLabel; property: "scale"; to: 1.12
-                    duration: 260; easing.type: theme.reduceMotion ? Easing.Linear : Easing.OutBack }
+                NumberAnimation { target: celebrateLabel; property: "opacity"; from: 0; to: 1; duration: theme.motionAdd }
+                NumberAnimation { target: celebrateLabel; property: "scale"; to: theme.effectiveReduceMotion ? 1 : 1.12
+                    duration: theme.motionPage; easing.type: theme.effectiveReduceMotion ? Easing.Linear : Easing.OutBack }
             }
             PauseAnimation { duration: 900 }
-            NumberAnimation { target: celebrateLabel; property: "opacity"; to: 0; duration: 500 }
+            NumberAnimation { target: celebrateLabel; property: "opacity"; to: 0; duration: theme.motionSlow }
         }
     }
 
@@ -165,16 +248,26 @@ WidgetChrome {
 
         // ── The list ──
         Item {
+            id: listPane
             Layout.fillWidth: true; Layout.fillHeight: true
+            readonly property int rawRowCapacity: Math.max(1,
+                Math.floor(height / taskList.rowPitch))
+            readonly property bool needsOverflowFooter: !w.expanded
+                && (w.visibleItems.length > rawRowCapacity || w.modeHiddenCount > 0)
+            readonly property int rowCapacity: Math.max(1, Math.floor(
+                (height - (needsOverflowFooter ? overflowFooter.height + theme.spacingXs : 0))
+                / taskList.rowPitch))
+            readonly property int hiddenCount: w.modeHiddenCount
+                + Math.max(0, w.visibleItems.length - rowCapacity)
 
             ListView {
                 id: taskList
+                objectName: "tasksList"
                 readonly property real rowPitch: w.rowH + spacing
                 width: parent.width
                 // Snapped to a WHOLE number of rows: filling outright slices the
                 // last task in half at the card edge.
-                height: Math.max(w.rowH,
-                                 Math.floor(parent.height / rowPitch) * rowPitch - spacing)
+                height: Math.max(w.rowH, listPane.rowCapacity * rowPitch - spacing)
                 anchors.top: parent.top
                 clip: true; spacing: 3
                 interactive: w.expanded
@@ -188,6 +281,7 @@ WidgetChrome {
                 delegate: RowLayout {
                     required property int index
                     required property var modelData
+                    objectName: "taskRow-" + index
                     width: ListView.view ? ListView.view.width : 0
                     // A full touch target at EVERY size - see the header.
                     height: w.rowH
@@ -195,8 +289,17 @@ WidgetChrome {
                     // Checkbox in a full touchTertiary cell (the visual box stays
                     // smaller). This cell was 18px wide on a tile.
                     Item {
+                        objectName: "taskToggle-" + index
                         Layout.preferredWidth: theme.touchTertiary
                         Layout.fillHeight: true
+                        activeFocusOnTab: true
+                        Accessible.role: Accessible.CheckBox
+                        Accessible.name: (modelData.done ? "Mark incomplete: " : "Complete: ")
+                                         + modelData.text
+                        Accessible.checked: modelData.done
+                        Accessible.onPressAction: w.toggle(modelData.idx)
+                        Keys.onSpacePressed: w.toggle(modelData.idx)
+                        Keys.onReturnPressed: w.toggle(modelData.idx)
                         Rectangle {
                             anchors.centerIn: parent
                             width: Math.round(w.boxSize); height: width; radius: 7
@@ -211,45 +314,210 @@ WidgetChrome {
                         MouseArea { anchors.fill: parent; onClicked: w.toggle(modelData.idx) }
                     }
                     Text {
+                        objectName: "taskLabel-" + index
+                        visible: !w.expanded
                         Layout.fillWidth: true; Layout.fillHeight: true; verticalAlignment: Text.AlignVCenter
                         text: modelData.text !== undefined ? modelData.text : ""; elide: Text.ElideRight
                         font.pixelSize: Math.round(w.rowFont); font.strikeout: modelData.done
-                        color: modelData.done ? theme.textTertiary : theme.textPrimary
-                        MouseArea { anchors.fill: parent; onClicked: w.toggle(modelData.idx) }
+                        color: theme.textPrimary
+                        opacity: modelData.done ? 0.62 : 1
+                    }
+                    TextField {
+                        visible: w.expanded
+                        Layout.fillWidth: true; Layout.fillHeight: true
+                        text: modelData.text !== undefined ? modelData.text : ""
+                        color: theme.textPrimary
+                        opacity: modelData.done ? 0.62 : 1
+                        font.pixelSize: Math.round(w.rowFont); font.strikeout: modelData.done
+                        Accessible.name: "Edit task: " + modelData.text
+                        Accessible.description: "Changes are saved when editing finishes"
+                        background: Rectangle {
+                            color: "transparent"; radius: 6
+                            border.width: parent.activeFocus ? 1 : 0; border.color: w.effAccent
+                        }
+                        onEditingFinished: w.edit(modelData.idx, text)
+                    }
+                    Item {
+                        objectName: "taskMoveUp-" + index
+                        visible: w.expanded; Layout.preferredWidth: theme.touchTertiary; Layout.fillHeight: true
+                        enabled: modelData.idx > 0
+                        activeFocusOnTab: visible && enabled
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Move " + modelData.text + " up"
+                        Accessible.ignored: !visible
+                        Accessible.onPressAction: if (enabled) w.move(modelData.idx, -1)
+                        Keys.onSpacePressed: if (enabled) w.move(modelData.idx, -1)
+                        Keys.onReturnPressed: if (enabled) w.move(modelData.idx, -1)
+                        Text { anchors.centerIn: parent; text: "↑"; color: modelData.idx > 0 ? theme.textSecondary : theme.cardBorder; font.pixelSize: 22 }
+                        MouseArea { anchors.fill: parent; enabled: parent.enabled; onClicked: w.move(modelData.idx, -1) }
+                    }
+                    Item {
+                        objectName: "taskMoveDown-" + index
+                        visible: w.expanded; Layout.preferredWidth: theme.touchTertiary; Layout.fillHeight: true
+                        enabled: modelData.idx < w.items.length - 1
+                        activeFocusOnTab: visible && enabled
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Move " + modelData.text + " down"
+                        Accessible.ignored: !visible
+                        Accessible.onPressAction: if (enabled) w.move(modelData.idx, 1)
+                        Keys.onSpacePressed: if (enabled) w.move(modelData.idx, 1)
+                        Keys.onReturnPressed: if (enabled) w.move(modelData.idx, 1)
+                        Text { anchors.centerIn: parent; text: "↓"; color: modelData.idx < w.items.length - 1 ? theme.textSecondary : theme.cardBorder; font.pixelSize: 22 }
+                        MouseArea { anchors.fill: parent; enabled: parent.enabled; onClicked: w.move(modelData.idx, 1) }
                     }
                     // Remove in a full touchTertiary cell. Expanded-only: on a tile
                     // a ✕ is a mis-tap away from the checkbox.
                     Item {
+                        objectName: "taskRemove-" + index
                         visible: w.expanded; Layout.preferredWidth: theme.touchTertiary; Layout.fillHeight: true
-                        Text { anchors.centerIn: parent; text: "✕"; color: rmMA.pressed ? theme.error : theme.textTertiary
+                        activeFocusOnTab: visible
+                        Accessible.role: Accessible.Button
+                        Accessible.name: "Remove task: " + modelData.text
+                        Accessible.description: "Can be undone for seven seconds"
+                        Accessible.ignored: !visible
+                        Accessible.onPressAction: w.remove(modelData.idx)
+                        Keys.onSpacePressed: w.remove(modelData.idx)
+                        Keys.onReturnPressed: w.remove(modelData.idx)
+                        Text { anchors.centerIn: parent; text: "✕"; color: theme.error
+                            opacity: rmMA.pressed ? 1 : 0.82
                             font.pixelSize: 22 }
                         MouseArea { id: rmMA; anchors.fill: parent; onClicked: w.remove(modelData.idx) }
                     }
                 }
             }
 
-            Text {
-                // Only claim "no tasks" when the list is genuinely empty - not
-                // merely when every task is hidden by hideCompleted (status +
-                // Clear button would otherwise contradict it).
+            Rectangle {
+                id: overflowFooter
+                objectName: "tasksOverflowFooter"
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: theme.touchTertiary
+                visible: listPane.needsOverflowFooter
+                radius: theme.radiusSm
+                color: Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.11)
+                border.width: 1
+                border.color: Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.30)
+                Accessible.role: Accessible.StaticText
+                Accessible.name: listPane.hiddenCount + " more "
+                    + (listPane.hiddenCount === 1 ? "task" : "tasks")
+                    + ". Expand to view."
+                Text {
+                    anchors.centerIn: parent
+                    width: parent.width - 2 * theme.spacingMd
+                    text: "+" + listPane.hiddenCount + " more "
+                        + (listPane.hiddenCount === 1 ? "task" : "tasks")
+                        + " | expand to view"
+                    color: theme.textPrimary
+                    font.pixelSize: theme.fontLabel
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                    elide: Text.ElideRight
+                }
+            }
+
+            ColumnLayout {
+                objectName: "tasksEmptyState"
                 anchors.centerIn: parent
                 visible: w.items.length === 0
-                width: parent.width - 2 * theme.spacingSm
-                horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
-                // The TEXT stays keyed off the mode, deliberately. It is content,
-                // not a size, and the long form names a DIRECTION ("below") that
-                // only the overlay's composition guarantees: a roomy wide box -
-                // 1x1.5 landscape is 1269x612 - puts the add row BESIDE the list,
-                // so a room-keyed long form would print a lie there. Converting
-                // this needs a second string, which is a copy decision, not a
-                // sizing one.
-                text: w.expanded ? "No tasks yet - add one below." : "No tasks"
-                // The SIZE does follow the room. `expanded ? 15 : 12` had the
-                // overlay's pane and a 696-wide tile - the wider box of the two -
-                // on opposite sides of the same literal.
-                color: theme.textTertiary
-                font.pixelSize: Math.round(Math.max(12,
-                    Math.min((w.horiz ? w.width * 0.55 : w.width) * 0.026, 15)))
+                width: Math.min(parent.width - 2 * theme.spacingSm, 620)
+                spacing: w.roomy ? theme.spacingMd : theme.spacingXs
+
+                Rectangle {
+                    visible: w.roomy
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.preferredWidth: 62; Layout.preferredHeight: 62
+                    radius: 31
+                    color: Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.11)
+                    border.width: 1
+                    border.color: Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.30)
+                    Text { anchors.centerIn: parent; text: "✓"; color: w.effAccent
+                        font.pixelSize: 28; font.bold: true }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "No tasks"
+                    horizontalAlignment: Text.AlignHCenter
+                    color: w.roomy ? w.effAccent : theme.textTertiary
+                    font.bold: w.roomy
+                    font.pixelSize: Math.round(Math.max(theme.fontMinimum,
+                        Math.min((w.horiz ? w.width * 0.55 : w.width) * 0.034,
+                                 w.roomy ? 22 : 15)))
+                }
+
+                Text {
+                    visible: w.roomy
+                    Layout.fillWidth: true
+                    text: "Make the next move obvious. Add one outcome or start with a prompt."
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    color: theme.textSecondary
+                    font.pixelSize: theme.fontMinimum
+                }
+
+                RowLayout {
+                    visible: w.roomy
+                    Layout.fillWidth: true
+                    spacing: theme.spacingSm
+                    Repeater {
+                        model: ["Plan today", "Follow up", "Review progress"]
+                        delegate: Rectangle {
+                            required property int index
+                            required property string modelData
+                            objectName: "taskPrompt-" + index
+                            function activate() { w.add(modelData) }
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: theme.touchTertiary
+                            radius: theme.radiusSm
+                            color: promptMouse.pressed
+                                   ? Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.18)
+                                   : theme.backgroundColor
+                            border.width: 1
+                            border.color: theme.cardBorder
+                            Text { anchors.centerIn: parent; width: parent.width - 12
+                                text: modelData; color: theme.textPrimary
+                                font.pixelSize: theme.fontMinimum; font.bold: true
+                                horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight }
+                            MouseArea { id: promptMouse; anchors.fill: parent
+                                onClicked: parent.activate() }
+                        }
+                    }
+                }
+            }
+
+            ColumnLayout {
+                objectName: "tasksFilteredState"
+                anchors.centerIn: parent
+                visible: w.items.length > 0 && w.visibleItems.length === 0
+                width: Math.min(parent.width - 2 * theme.spacingSm, 520)
+                spacing: theme.spacingSm
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "All " + w.doneCount + " "
+                        + (w.doneCount === 1 ? "task" : "tasks") + " completed"
+                    color: w.effAccent
+                    font.pixelSize: theme.fontTitle
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: "Completed tasks are hidden."
+                    color: theme.textPrimary
+                    opacity: 0.78
+                    font.pixelSize: theme.fontLabel
+                    horizontalAlignment: Text.AlignHCenter
+                }
+                PillButton {
+                    Layout.alignment: Qt.AlignHCenter
+                    label: "Show completed"
+                    glyph: "✓"
+                    tint: w.effAccent
+                    onClicked: if (w.store)
+                        w.store.setSetting(w.instanceId, "hideCompleted", false)
+                }
             }
         }
 
@@ -259,6 +527,33 @@ WidgetChrome {
             Layout.maximumWidth: w.horiz ? w.width * 0.4 : Number.POSITIVE_INFINITY
             Layout.alignment: w.horiz ? Qt.AlignVCenter : Qt.AlignBottom
             spacing: theme.spacingSm
+
+            Rectangle {
+                objectName: "tasksProgressSummary"
+                visible: w.roomy && w.items.length > 0
+                Layout.fillWidth: true
+                Layout.preferredHeight: 68
+                radius: theme.radiusMd
+                color: Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.08)
+                border.width: 1
+                border.color: Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.24)
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: theme.spacingMd
+                    anchors.rightMargin: theme.spacingMd
+                    spacing: theme.spacingMd
+                    ColumnLayout {
+                        Layout.fillWidth: true; spacing: 1
+                        Text { text: w.openCount + " open"; color: theme.textPrimary
+                            font.pixelSize: theme.fontLabel; font.bold: true }
+                        Text { text: w.doneCount + " completed"; color: theme.textPrimary
+                            opacity: 0.78; font.pixelSize: theme.fontLabel }
+                    }
+                    Text { text: w.completionPercent + "%"; color: w.effAccent
+                        font.pixelSize: 25; font.bold: true; font.family: theme.fontMono }
+                }
+            }
 
             // Progress toward "all done" - a glanceable momentum bar, now earned
             // by any tile with room rather than kept behind the overlay.
@@ -279,10 +574,13 @@ WidgetChrome {
                 Layout.fillWidth: true; spacing: theme.spacingSm
                 TextField {
                     id: input
+                    objectName: "tasksAddField"
                     Layout.fillWidth: true
                     // theme.touchSecondary at EVERY size: this was a fixed 40px on
                     // tiles, under theme.touchTertiary (52).
                     Layout.preferredHeight: theme.touchSecondary
+                    Layout.minimumHeight: theme.touchSecondary
+                    Layout.maximumHeight: theme.touchSecondary
                     // placeholderText stays as it is: content, and already half
                     // room-keyed via `horiz`.
                     placeholderText: w.expanded || w.horiz ? "Add a task…" : "Add…"
@@ -294,8 +592,9 @@ WidgetChrome {
                     // pane now honestly reports that it has a tile's room, not a
                     // screen's.
                     color: theme.textPrimary
-                    font.pixelSize: Math.round(Math.max(14,
-                        Math.min((w.horiz ? w.width * 0.4 : w.width) * 0.022, 16)))
+                    font.pixelSize: Math.round(Math.max(theme.fontLabel,
+                        Math.min((w.horiz ? w.width * 0.4 : w.width) * 0.026,
+                                 w.height * 0.04, 20)))
                     placeholderTextColor: theme.textTertiary
                     background: Rectangle { radius: theme.radiusSm; color: theme.backgroundColor
                         border.color: input.activeFocus ? w.effAccent : theme.cardBorder; border.width: 1 }
@@ -304,13 +603,44 @@ WidgetChrome {
                 PillButton { label: w.expanded ? "Add" : ""; glyph: "＋"; primary: true; tint: w.effAccent
                     onClicked: { w.add(input.text); input.text = "" } }
             }
+            Rectangle {
+                objectName: "tasksUndoBar"
+                visible: w.canUndo
+                Layout.fillWidth: true
+                Layout.preferredHeight: theme.touchSecondary
+                radius: theme.radiusSm
+                color: Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.12)
+                border.width: 1
+                border.color: Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.34)
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: theme.spacingMd
+                    anchors.rightMargin: theme.spacingXs
+                    spacing: theme.spacingSm
+                    Text {
+                        Layout.fillWidth: true
+                        text: w.undoMessage
+                        color: theme.textPrimary
+                        font.pixelSize: theme.fontLabel
+                        elide: Text.ElideRight
+                    }
+                    PillButton {
+                        label: "Undo"
+                        glyph: "↶"
+                        tint: w.effAccent
+                        Accessible.name: "Undo " + w.undoMessage
+                        onClicked: w.undoLast()
+                    }
+                }
+            }
             // Bulk "clear completed" - only when there's something to clear, and
             // only where there is room for a deliberate act.
             PillButton {
                 Layout.alignment: Qt.AlignHCenter
                 visible: (w.expanded || w.horiz) && w.doneCount > 0
-                label: "Clear " + w.doneCount + " completed"; glyph: "🧹"; tint: theme.textSecondary
-                onClicked: w.clearCompleted()
+                label: w.clearArmed ? "Tap again to clear" : "Clear " + w.doneCount + " completed"
+                glyph: "🧹"; tint: w.clearArmed ? theme.warning : theme.textSecondary
+                onClicked: w.requestClearCompleted()
             }
         }
     }

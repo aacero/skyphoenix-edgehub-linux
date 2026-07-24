@@ -38,6 +38,9 @@ WidgetChrome {
     property bool active: true
     property var store: null
     property string instanceId: ""
+    property bool foreground: true
+    property var notificationBridge:
+        (typeof notifications !== "undefined" ? notifications : null)
 
     title: "Focus Timer"; iconName: "focus"; accentColor: theme.catProductivity
     showHeader: expanded
@@ -61,21 +64,33 @@ WidgetChrome {
     // Custom-preset durations (minutes); only used when presetName === "custom".
     readonly property int workMin: cfg.workMin !== undefined ? cfg.workMin : 25
     readonly property int breakMin: cfg.breakMin !== undefined ? cfg.breakMin : 5
+    // Existing custom presets had one break length. Preserve that value until a
+    // separate long break is explicitly configured.
+    readonly property int longBreakMin: cfg.longBreakMin !== undefined ? cfg.longBreakMin : breakMin
+    readonly property int longBreakEvery: cfg.longBreakEvery !== undefined ? cfg.longBreakEvery : 4
     readonly property bool autoStartBreak: cfg.autoStartBreak !== undefined ? cfg.autoStartBreak : false
+    readonly property bool autoStartFocus: cfg.autoStartFocus !== undefined ? cfg.autoStartFocus : false
+    readonly property bool notifyWhenHidden: cfg.notifyWhenHidden !== undefined
+                                               ? cfg.notifyWhenHidden : false
 
     // ADHD-friendly "momentum" options (all honoured below).
+    readonly property string behaviorProfile: cfg.behaviorProfile || "custom"
     readonly property int dailyGoal: cfg.dailyGoal !== undefined ? cfg.dailyGoal : 4
-    readonly property bool celebrate: cfg.celebrate !== undefined ? cfg.celebrate : true
-    readonly property bool rewardPoints: cfg.rewardPoints !== undefined ? cfg.rewardPoints : true
-    readonly property bool showNudges: cfg.showNudges !== undefined ? cfg.showNudges : true
+    readonly property bool celebrate: behaviorProfile === "calm" ? false
+        : behaviorProfile === "momentum" ? true : (cfg.celebrate !== undefined ? cfg.celebrate : true)
+    readonly property bool rewardPoints: behaviorProfile === "calm" ? false
+        : behaviorProfile === "momentum" ? true : (cfg.rewardPoints !== undefined ? cfg.rewardPoints : true)
+    readonly property bool showNudges: behaviorProfile === "calm" ? false
+        : behaviorProfile === "momentum" ? true : (cfg.showNudges !== undefined ? cfg.showNudges : true)
     readonly property bool breakSuggestions: cfg.breakSuggestions !== undefined ? cfg.breakSuggestions : true
+    readonly property bool celebrationMotionEnabled: !theme.effectiveReduceMotion
     readonly property int points: cfg.points || 0
     readonly property var breakIdeas: [
         "Stand up & stretch", "Drink some water", "Look 20ft away for 20s",
         "Roll your shoulders", "Take 5 slow breaths", "Quick walk around"
     ]
     property var p: presetName === "custom"
-        ? ({ work: workMin, short: breakMin, long: breakMin, every: 4, label: "Custom" })
+        ? ({ work: workMin, short: breakMin, long: longBreakMin, every: longBreakEvery, label: "Custom" })
         : (presets[presetName] || presets["classic"])
     property string phase: cfg.phase || "work"     // work | short | long
     property bool running: cfg.running || false
@@ -106,6 +121,19 @@ WidgetChrome {
     // their semantic colours.
     function phaseColor() { return phase === "work" ? w.effAccent : phase === "short" ? theme.success : theme.accent }
     function phaseLabel() { return phase === "work" ? "Focus" : phase === "short" ? "Short Break" : "Long Break" }
+    function nextPhaseLabel() {
+        if (phase !== "work") return "Focus"
+        return (completedWork + 1) % p.every === 0 ? "Long break" : "Short break"
+    }
+    function cyclePosition() {
+        if (phase === "work") return completedWork % p.every + 1
+        return Math.max(1, completedWork % p.every || p.every)
+    }
+    function finishHint() {
+        if (running && cfg.endEpoch)
+            return "Ends " + Qt.formatTime(new Date(cfg.endEpoch), "HH:mm")
+        return Math.max(1, Math.ceil(remaining / 60)) + " min planned"
+    }
     function fmt(s) { var m = Math.floor(s / 60), sec = s % 60; return String(m).padStart(2, '0') + ":" + String(sec).padStart(2, '0') }
 
     function save(obj) { if (store) store.patchSettings(instanceId, obj) }
@@ -154,9 +182,9 @@ WidgetChrome {
             run = autoStartBreak
         } else {
             nextPhase = "work"
-            // Never auto-start a work phase after a break.
-            run = false
+            run = autoStartFocus
         }
+        if (natural) notifyCompletion(phase, nextPhase)
         var secs = phaseSeconds(nextPhase)
         save({ phase: nextPhase, doneToday: done, day: today(), points: pts,
                running: run, endEpoch: run ? Date.now() + secs * 1000 : 0, pausedRemaining: secs })
@@ -167,6 +195,38 @@ WidgetChrome {
     property string celebrateMsg: ""
     function celebrateNow(msg) { celebrateMsg = msg; celebrateAnim.restart(); flash.restart() }
     function skip() { advance(false) }
+    property bool skipArmed: false
+    function requestSkip() {
+        if (skipArmed) {
+            skipArmed = false
+            skipArmTimeout.stop()
+            skip()
+            return
+        }
+        skipArmed = true
+        skipArmTimeout.restart()
+    }
+    function notifyCompletion(completedPhase, nextPhase) {
+        if (!notifyWhenHidden || foreground || !notificationBridge
+                || !notificationBridge.send)
+            return false
+        var summary = completedPhase === "work"
+                ? "Focus session complete" : "Break complete"
+        var body = nextPhase === "work"
+                ? "Ready for another focus session."
+                : (nextPhase === "long" ? "Your long break is ready."
+                                        : "Your short break is ready.")
+        return notificationBridge.send(summary, body)
+    }
+    Timer {
+        id: skipArmTimeout
+        interval: 3000
+        onTriggered: w.skipArmed = false
+    }
+    onPhaseChanged: {
+        skipArmed = false
+        skipArmTimeout.stop()
+    }
 
     // Keep the idle clock in sync with the chosen preset / custom lengths: when
     // the timer is NOT running, changing the preset (via the widget's segmented)
@@ -206,8 +266,8 @@ WidgetChrome {
         anchors.fill: parent; radius: theme.radiusLg; color: w.phaseColor(); opacity: 0; z: 5
         SequentialAnimation on opacity {
             id: flash; running: false
-            NumberAnimation { to: 0.35; duration: 120 }
-            NumberAnimation { to: 0.0; duration: 500 }
+            NumberAnimation { to: w.celebrationMotionEnabled ? 0.35 : 0; duration: theme.motionFast }
+            NumberAnimation { to: 0.0; duration: theme.motionSlow }
         }
     }
     // Celebration message - pops in on a completed session (dopamine kick).
@@ -220,25 +280,25 @@ WidgetChrome {
     // Both axes bind - a wide-but-short pane must not overreach - and 34 stays the
     // designed ceiling, which the tile classes this type declares (1x1, 1x1.5) all
     // reach. HorizontalFit + minimumPixelSize keep a long message inside the card.
-    readonly property real celebratePx: Math.max(12, Math.min(width * 0.055,
+    readonly property real celebratePx: Math.max(theme.fontMinimum, Math.min(width * 0.055,
                                                               height * 0.065, 34))
     Text {
         id: celebrateLabel; anchors.centerIn: parent; z: 20
         width: parent.width * 0.92
         text: w.celebrateMsg; opacity: 0
         font.pixelSize: Math.round(w.celebratePx); font.bold: true; font.family: theme.fontDisplay
-        fontSizeMode: Text.HorizontalFit; minimumPixelSize: 12
+        fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum
         color: w.phaseColor(); horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
         SequentialAnimation {
             id: celebrateAnim; running: false
-            PropertyAction { target: celebrateLabel; property: "scale"; value: 0.6 }
+            PropertyAction { target: celebrateLabel; property: "scale"; value: w.celebrationMotionEnabled ? 0.6 : 1 }
             ParallelAnimation {
-                NumberAnimation { target: celebrateLabel; property: "opacity"; from: 0; to: 1; duration: 180 }
-                NumberAnimation { target: celebrateLabel; property: "scale"; to: 1.12
-                    duration: 260; easing.type: theme.reduceMotion ? Easing.Linear : Easing.OutBack }
+                NumberAnimation { target: celebrateLabel; property: "opacity"; from: 0; to: 1; duration: theme.motionAdd }
+                NumberAnimation { target: celebrateLabel; property: "scale"; to: w.celebrationMotionEnabled ? 1.12 : 1
+                    duration: theme.motionPage; easing.type: w.celebrationMotionEnabled ? Easing.OutBack : Easing.Linear }
             }
             PauseAnimation { duration: 950 }
-            NumberAnimation { target: celebrateLabel; property: "opacity"; to: 0; duration: 500 }
+            NumberAnimation { target: celebrateLabel; property: "opacity"; to: 0; duration: theme.motionSlow }
         }
     }
 
@@ -312,7 +372,7 @@ WidgetChrome {
                         horizontalAlignment: Text.AlignHCenter
                         text: w.fmt(w.remaining)
                         font.pixelSize: Math.max(18, Math.min(ringCell.d * 0.28, 110))
-                        fontSizeMode: Text.HorizontalFit; minimumPixelSize: 12
+                        fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum
                         elide: Text.ElideRight
                         font.family: theme.fontMono; font.bold: true
                         color: w.running ? w.phaseColor() : theme.textPrimary
@@ -322,9 +382,12 @@ WidgetChrome {
                         Layout.preferredWidth: ringCell.inner
                         horizontalAlignment: Text.AlignHCenter
                         text: w.phaseLabel(); elide: Text.ElideRight
-                        fontSizeMode: Text.HorizontalFit; minimumPixelSize: 9
-                        font.pixelSize: Math.max(12, Math.min(ringCell.d * 0.075, 20))
-                        color: theme.textSecondary
+                        fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum
+                        font.pixelSize: Math.max(theme.fontMinimum,
+                                                 Math.min(ringCell.d * 0.085,
+                                                          Math.round(26 * theme.textScaleEff)))
+                        font.bold: true
+                        color: w.phaseColor()
                     }
                 }
             }
@@ -357,15 +420,82 @@ WidgetChrome {
                     visible: w.showMomentum
                     Layout.fillWidth: true
                     spacing: theme.spacingXs
+
+                    // A larger Focus tile now earns a genuine session runway,
+                    // not just a larger timer. It answers the three questions a
+                    // glance at a Pomodoro should answer: what is happening now,
+                    // what follows, and where this session sits in the cycle.
+                    Rectangle {
+                        objectName: "focusRunway"
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 78
+                        radius: theme.radiusMd
+                        color: Qt.rgba(w.phaseColor().r, w.phaseColor().g,
+                                       w.phaseColor().b, 0.09)
+                        border.width: 1
+                        border.color: Qt.rgba(w.phaseColor().r, w.phaseColor().g,
+                                              w.phaseColor().b, 0.28)
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: theme.spacingMd
+                            anchors.rightMargin: theme.spacingMd
+                            spacing: theme.spacingSm
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+                                Text { text: "NOW"; color: w.phaseColor(); font.pixelSize: theme.fontLabel
+                                    font.bold: true; font.letterSpacing: 1.2 }
+                                Text { text: w.phaseLabel(); color: theme.textPrimary
+                                    font.pixelSize: theme.fontLabel; font.bold: true; elide: Text.ElideRight
+                                    Layout.fillWidth: true }
+                                Text { text: w.finishHint(); color: theme.textPrimary; opacity: 0.78
+                                    font.pixelSize: theme.fontLabel; elide: Text.ElideRight; Layout.fillWidth: true }
+                            }
+
+                            Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true
+                                Layout.topMargin: 14; Layout.bottomMargin: 14; color: theme.cardBorder }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+                                Text { text: "NEXT"; color: w.phaseColor(); font.pixelSize: theme.fontLabel
+                                    font.bold: true; font.letterSpacing: 1.2 }
+                                Text { text: w.nextPhaseLabel(); color: theme.textPrimary
+                                    font.pixelSize: theme.fontLabel; font.bold: true; elide: Text.ElideRight
+                                    Layout.fillWidth: true }
+                                Text { text: w.phase === "work" ? "Recovery" : "Deep work"
+                                    color: theme.textPrimary; opacity: 0.78; font.pixelSize: theme.fontLabel
+                                    elide: Text.ElideRight; Layout.fillWidth: true }
+                            }
+
+                            Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true
+                                Layout.topMargin: 14; Layout.bottomMargin: 14; color: theme.cardBorder }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+                                Text { text: "CYCLE"; color: w.phaseColor(); font.pixelSize: theme.fontLabel
+                                    font.bold: true; font.letterSpacing: 1.2 }
+                                Text { text: "Session " + w.cyclePosition() + " / " + w.p.every
+                                    color: theme.textPrimary; font.pixelSize: theme.fontLabel; font.bold: true
+                                    elide: Text.ElideRight; Layout.fillWidth: true }
+                                Text { text: w.p.label + " rhythm"; color: theme.textPrimary; opacity: 0.78
+                                    font.pixelSize: theme.fontLabel; elide: Text.ElideRight; Layout.fillWidth: true }
+                            }
+                        }
+                    }
+
                     RowLayout {
                         Layout.alignment: Qt.AlignHCenter
                         spacing: theme.spacingSm
                         Text { text: w.completedWork + " / " + w.dailyGoal + " today"
-                            font.pixelSize: theme.fontCaption
-                            color: w.completedWork >= w.dailyGoal ? theme.success : theme.textSecondary
+                            font.pixelSize: theme.fontLabel
+                            color: w.completedWork >= w.dailyGoal ? theme.success : theme.textPrimary
                             font.bold: w.completedWork >= w.dailyGoal }
                         Text { visible: w.rewardPoints; text: "·  ⭐ " + w.points + " pts"
-                            font.pixelSize: theme.fontCaption; color: theme.textSecondary }
+                            font.pixelSize: theme.fontLabel; color: theme.textPrimary }
                     }
                     // Goal progress dots - the glanceable streak bar. The model is
                     // an int derived from CONFIG, so a tick never rebuilds it.
@@ -389,8 +519,8 @@ WidgetChrome {
                         text: w.phase === "work"
                               ? w.nudges[w.completedWork % w.nudges.length]
                               : "Break idea: " + w.breakIdeas[w.completedWork % w.breakIdeas.length]
-                        font.pixelSize: theme.fontCaption; font.italic: true
-                        color: theme.textTertiary; elide: Text.ElideRight
+                        font.pixelSize: theme.fontLabel; font.italic: true
+                        color: theme.textPrimary; opacity: 0.78; elide: Text.ElideRight
                     }
                 }
 
@@ -398,6 +528,7 @@ WidgetChrome {
                 // The PillButton default height (theme.touchSecondary) stands: the
                 // old `implicitHeight: 36` override undercut the touch minimum.
                 RowLayout {
+                    objectName: "focusTileControls"
                     Layout.alignment: Qt.AlignHCenter
                     spacing: theme.spacingSm
                     PillButton {
@@ -411,7 +542,10 @@ WidgetChrome {
                         label: "+5"; glyph: "＋"; tint: w.phaseColor(); onClicked: w.addFive()
                     }
                     PillButton {
-                        label: "Skip"; glyph: "⏭"; tint: theme.textSecondary; onClicked: w.skip()
+                        label: w.skipArmed ? "Confirm" : "Skip"
+                        glyph: "⏭"
+                        tint: w.skipArmed ? theme.warning : theme.textPrimary
+                        onClicked: w.requestSkip()
                     }
                 }
                 Item { Layout.fillHeight: true; visible: w.horiz }
@@ -443,17 +577,17 @@ WidgetChrome {
             ColumnLayout {
                 anchors.centerIn: parent; spacing: 2
                 Text { Layout.alignment: Qt.AlignHCenter; text: w.phaseLabel().toUpperCase()
-                    font.pixelSize: 14; font.letterSpacing: 2; color: w.phaseColor() }
+                    font.pixelSize: theme.fontLabel; font.letterSpacing: 2; color: w.phaseColor() }
                 Text { Layout.alignment: Qt.AlignHCenter; text: w.fmt(w.remaining)
                     font.pixelSize: Math.min(bigRing.width * 0.30, 92); font.family: theme.fontMono
                     font.bold: true; color: theme.textPrimary }
                 RowLayout {
                     Layout.alignment: Qt.AlignHCenter; spacing: theme.spacingSm
                     Text { text: w.completedWork + " / " + w.dailyGoal + " today"
-                        font.pixelSize: 12; color: w.completedWork >= w.dailyGoal ? theme.success : theme.textSecondary
+                        font.pixelSize: theme.fontLabel; color: w.completedWork >= w.dailyGoal ? theme.success : theme.textPrimary
                         font.bold: w.completedWork >= w.dailyGoal }
                     Text { visible: w.rewardPoints; text: "·  ⭐ " + w.points + " pts"
-                        font.pixelSize: 12; color: theme.textSecondary }
+                        font.pixelSize: theme.fontLabel; color: theme.textPrimary }
                 }
                 // Goal progress dots - a glanceable "streak" bar.
                 RowLayout {
@@ -477,15 +611,21 @@ WidgetChrome {
             text: w.phase === "work"
                   ? w.nudges[w.completedWork % w.nudges.length]
                   : "Break idea: " + w.breakIdeas[w.completedWork % w.breakIdeas.length]
-            font.pixelSize: 13; font.italic: true; color: theme.textTertiary; elide: Text.ElideRight
+            font.pixelSize: theme.fontLabel; font.italic: true
+            color: theme.textPrimary; opacity: 0.78; elide: Text.ElideRight
         }
         RowLayout {
             Layout.alignment: Qt.AlignHCenter; spacing: theme.spacingSm
-            PillButton { label: "Reset"; glyph: "⟲"; tint: theme.textSecondary; onClicked: w.reset() }
+            PillButton { label: "Reset"; glyph: "⟲"; tint: theme.textPrimary; onClicked: w.reset() }
             PillButton { label: w.running ? "Pause" : "Start"; glyph: w.running ? "⏸" : "▶"
                 primary: true; tint: w.phaseColor(); implicitWidth: 150; onClicked: w.toggle() }
             PillButton { label: "+5"; glyph: "＋"; tint: w.phaseColor(); onClicked: w.addFive() }
-            PillButton { label: "Skip"; glyph: "⏭"; tint: theme.textSecondary; onClicked: w.skip() }
+            PillButton {
+                label: w.skipArmed ? "Confirm" : "Skip"
+                glyph: "⏭"
+                tint: w.skipArmed ? theme.warning : theme.textPrimary
+                onClicked: w.requestSkip()
+            }
         }
     }
 }

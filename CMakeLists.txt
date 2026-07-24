@@ -130,6 +130,7 @@ add_executable(xeneon-edge-hub
     app/src/distro_bridge.h
     app/src/system_settings_probe.h
     app/src/network_access_policy.h
+    app/src/notification_bridge.h
     ${CMAKE_SOURCE_DIR}/ui/qml.qrc
     ${CMAKE_SOURCE_DIR}/assets/icons.qrc
     ${CMAKE_SOURCE_DIR}/assets/wallpapers.qrc

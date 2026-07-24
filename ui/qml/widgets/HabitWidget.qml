@@ -55,11 +55,35 @@ WidgetChrome {
     readonly property var checkins: cfg.checkins || []
     // Optional habit name; empty → default "Habit" header.
     readonly property string name: cfg.name !== undefined ? cfg.name : ""
+    readonly property string cadence: cfg.cadence || "daily"
+    readonly property string activeDays: cfg.activeDays !== undefined ? cfg.activeDays : "1,2,3,4,5"
+    readonly property bool paused: cfg.paused === true
+    readonly property bool showStreak: cfg.showStreak !== undefined ? cfg.showStreak : true
+    readonly property bool celebrate: cfg.celebrate !== undefined ? cfg.celebrate : true
     function key(d) { return Qt.formatDate(d, "yyyy-MM-dd") }
     // DST-safe previous-calendar-day step (S6): anchor at local noon and use
     // setDate() so a fixed-24h jump can never skip/duplicate a date across a
     // spring-forward / fall-back boundary near midnight.
     function prevDay(d) { var n = new Date(d); n.setHours(12, 0, 0, 0); n.setDate(n.getDate() - 1); return n }
+    function scheduled(d) {
+        var day = d.getDay()
+        if (cadence === "weekdays") return day >= 1 && day <= 5
+        if (cadence === "weekends") return day === 0 || day === 6
+        if (cadence === "custom") {
+            var days = activeDays.split(",").map(function (v) {
+                return String(v).trim()
+            }).filter(function (v, index, all) {
+                return /^[0-6]$/.test(v) && all.indexOf(v) === index
+            }).map(function (v) { return Number(v) })
+            return days.indexOf(day) >= 0
+        }
+        return true
+    }
+    function prevScheduledDay(d) {
+        var n = prevDay(d)
+        for (var i = 0; i < 7 && !scheduled(n); i++) n = prevDay(n)
+        return n
+    }
     // Parse a "yyyy-MM-dd" key into a local-noon Date (mirrors CountdownWidget's
     // component-wise construction - never `new Date(str)`, which is UTC).
     function parseKey(k) { var p = String(k).split("-"); return new Date(+p[0], (+p[1]) - 1, +p[2], 12, 0, 0, 0) }
@@ -67,6 +91,7 @@ WidgetChrome {
     function prevDayKey(k) { return key(prevDay(parseKey(k))) }
     property string todayKey: (w.tick, key(new Date()))
     property bool doneToday: checkins.indexOf(todayKey) >= 0
+    readonly property bool scheduledToday: scheduled(new Date())
 
     // Streak from an arbitrary check-in list - used ONLY to (a) derive an initial
     // streak from a legacy config that predates the stored number, and (b)
@@ -79,8 +104,8 @@ WidgetChrome {
         for (var i = 0; i < arr.length; i++) set[arr[i]] = true
         var d = new Date(); d.setHours(12, 0, 0, 0)
         var n = 0
-        if (!set[key(d)]) d = prevDay(d)
-        while (set[key(d)]) { n++; d = prevDay(d) }
+        if (!scheduled(d) || !set[key(d)]) d = prevScheduledDay(d)
+        while (set[key(d)]) { n++; d = prevScheduledDay(d) }
         return n
     }
     // The maintained streak state, from storage when present, else derived once
@@ -102,7 +127,8 @@ WidgetChrome {
         if (cfg.streak !== undefined && cfg.lastCheckinDay !== undefined) {
             var last = cfg.lastCheckinDay
             if (last === todayKey) return cfg.streak
-            if (last === prevDayKey(todayKey)) return cfg.streak   // grace day
+            var due = key(prevScheduledDay(parseKey(todayKey)))
+            if (last === due) return cfg.streak                    // next scheduled day grace
             return 0                                               // lapsed
         }
         return streakOf(checkins)                                  // legacy derive
@@ -112,7 +138,8 @@ WidgetChrome {
     // The one thing here that IS legitimately keyed off the mode rather than the
     // room: `status` is chrome-header content, and the overlay hosts this widget
     // with showHeader false and a header of its own. It is not a size.
-    status: w.expanded ? "" : w.streak + "🔥"
+    status: w.expanded ? "" : (w.paused ? "Paused"
+        : (!w.scheduledToday ? "Rest day" : (w.doneToday ? "Checked in" : "Ready")))
 
     // ── Per-size layout (sizeClass injected by Dashboard) ────────────────────
     readonly property bool horiz: sizeClass === "wide"
@@ -146,6 +173,12 @@ WidgetChrome {
     readonly property bool tallBox: sizeClass === "tall"
     readonly property int heatCols: w.tallBox ? 4 : 7
     readonly property int heatRows: w.tallBox ? 7 : 4
+    function dateForIndex(index) {
+        var d = new Date()
+        d.setHours(12, 0, 0, 0)
+        d.setDate(d.getDate() - w.daysAgoFor(index))
+        return d
+    }
 
     // The heatmap is 28 cells; a micro tile cannot show them legibly. Room, not
     // mode: the `|| w.expanded` this used to lead with was already dead - micro
@@ -171,7 +204,7 @@ WidgetChrome {
     // (the branch only ever fired for the overlay).
     readonly property real streakPx: w.micro
         ? Math.max(18, Math.min(width * 0.22, height * 0.20, 64))
-        : Math.max(16, Math.min((w.horiz ? width * 0.5 : width) * 0.10,
+        : Math.max(theme.fontMinimum, Math.min((w.horiz ? width * 0.5 : width) * 0.10,
                                 height * 0.10, w.roomy ? 72 : 44))
 
     // Cell size follows the box AND the grid shape it just chose. The old terms
@@ -209,9 +242,58 @@ WidgetChrome {
     }
 
     readonly property var milestones: [7, 14, 30, 60, 100, 200, 365]
+    // Keep this as one stable QObject. Returning a new JS object from a property
+    // binding here crashed Qt 6.11's QV4 property cache when a live card crossed
+    // into the roomy 1x1.5 layout and three bindings read its members at once.
+    // Primitive QObject properties also give the bindings narrower dependencies.
+    QtObject {
+        id: recentStatsState
+        readonly property int total: {
+            w.tick
+            var count = 0
+            var d = new Date(); d.setHours(12, 0, 0, 0)
+            for (var i = 0; i < 28; i++) {
+                if (w.scheduled(d)) count++
+                d = w.prevDay(d)
+            }
+            return count
+        }
+        readonly property int done: {
+            w.tick
+            var count = 0
+            var d = new Date(); d.setHours(12, 0, 0, 0)
+            for (var i = 0; i < 28; i++) {
+                if (w.scheduled(d) && w.checkins.indexOf(w.key(d)) >= 0) count++
+                d = w.prevDay(d)
+            }
+            return count
+        }
+        readonly property int percent: total ? Math.round(done * 100 / total) : 0
+    }
+    readonly property var recentStats: recentStatsState
+    readonly property string heatmapRange: {
+        w.tick
+        return Qt.formatDate(w.dateForIndex(0), "d MMM") + " to "
+                + Qt.formatDate(w.dateForIndex(27), "d MMM")
+    }
+    readonly property string heatmapSummary: "Last 28 days, " + w.heatmapRange
+        + ": " + w.recentStats.done + " of " + w.recentStats.total
+        + " scheduled check-ins completed, " + w.recentStats.percent + " percent."
+    readonly property string todayFeedback: {
+        w.tick
+        var date = Qt.formatDate(new Date(), "ddd d MMM")
+        if (w.paused) return date + ": Habit paused"
+        if (!w.scheduledToday) return date + ": Rest day"
+        return date + (w.doneToday ? ": Checked in" : ": Ready to check in")
+    }
+    readonly property int nextMilestone: {
+        for (var i = 0; i < milestones.length; i++)
+            if (milestones[i] > streak) return milestones[i]
+        return streak + 30
+    }
     function milestoneMsg(n) {
-        if (milestones.indexOf(n) >= 0) return "🏆 " + n + "-day milestone!"
-        return "🔥 " + n + (n === 1 ? " day!" : " days!")
+        if (milestones.indexOf(n) >= 0) return n + "-day milestone!"
+        return n + (n === 1 ? " day complete!" : " days complete!")
     }
 
     // Only the most recent HEATMAP_DAYS check-ins are ever shown, so the stored
@@ -220,7 +302,7 @@ WidgetChrome {
     // so it is not capped by this pruning - a 40-day run reports 40, not 28.
     readonly property int heatmapDays: 28
     function toggleToday() {
-        if (!store) return
+        if (!store || paused || !scheduledToday) return
         var a = checkins.slice()
         var i = a.indexOf(todayKey)
         var checking = i < 0
@@ -230,13 +312,16 @@ WidgetChrome {
             var st = streakState()
             var ns
             if (st.last === todayKey) ns = st.n                       // idempotent: already counted today
-            else if (st.last === prevDayKey(todayKey)) ns = st.n + 1  // consecutive → continue the run
+            else if (st.last === key(prevScheduledDay(parseKey(todayKey)))) ns = st.n + 1
             else ns = 1                                               // gap or first-ever → fresh streak
             var newBest = Math.max(prevBest, ns)
             // Announce a milestone only when it's a genuinely NEW best; a plain
             // re-check of an already-reached day shows the flame message instead.
-            celebrateNow(ns > prevBest ? milestoneMsg(ns)
-                                       : "🔥 " + ns + (ns === 1 ? " day!" : " days!"))
+            if (celebrate) {
+                var message = ns > prevBest ? milestoneMsg(ns)
+                    : ns + (ns === 1 ? " day complete!" : " days complete!")
+                celebrateNow(message)
+            }
             // Prune the heatmap array (keys sort chronologically as strings), but
             // persist the full streak NUMBER + the last check-in day.
             a.sort()
@@ -244,13 +329,25 @@ WidgetChrome {
             store.patchSettings(instanceId, { checkins: a, streak: ns,
                                 lastCheckinDay: todayKey, bestStreak: newBest })
         } else {
-            // Un-check today: recompute the maintained number from the shorter
-            // array (best-effort, walks back from today/yesterday); never lower
-            // the best-ever.
+            // Un-check today from the maintained streak NUMBER. Recomputing from
+            // the pruned 28-day heatmap collapses a 100-day run to 27, even
+            // though only one check-in was removed.
+            var prior = streakState()
             a.splice(i, 1)
-            var recomputed = streakOf(a)
             var sorted = a.slice().sort()
-            var newLast = sorted.length ? sorted[sorted.length - 1] : ""
+            var recomputed
+            var newLast
+            if (prior.last === todayKey) {
+                recomputed = Math.max(0, prior.n - 1)
+                newLast = recomputed > 0
+                    ? key(prevScheduledDay(parseKey(todayKey))) : ""
+            } else {
+                // Defensive inconsistent state: today's heatmap key existed but
+                // the maintained streak already ended earlier. Removing the key
+                // must not change that stored run.
+                recomputed = prior.n
+                newLast = prior.last || (sorted.length ? sorted[sorted.length - 1] : "")
+            }
             a.sort()
             if (a.length > heatmapDays) a = a.slice(a.length - heatmapDays)
             store.patchSettings(instanceId, { checkins: a, streak: recomputed,
@@ -266,7 +363,7 @@ WidgetChrome {
     // popped at 17, while the overlay kept its 34 after W5 shrank that pane to
     // 38% of the screen. Both axes bind (the text wraps to at most 2 lines, so a
     // wide-but-short pane must not overreach), and 34 stays the designed ceiling.
-    readonly property real celebratePx: Math.max(12, Math.min(width * 0.055,
+    readonly property real celebratePx: Math.max(theme.fontMinimum, Math.min(width * 0.055,
                                                               height * 0.075, 34))
     property string celebrateMsg: ""
     function celebrateNow(msg) { celebrateMsg = msg; celebrateAnim.restart(); flash.restart() }
@@ -274,8 +371,8 @@ WidgetChrome {
         anchors.fill: parent; radius: theme.radiusLg; color: w.effAccent; opacity: 0; z: 5
         SequentialAnimation on opacity {
             id: flash; running: false
-            NumberAnimation { to: 0.32; duration: 130 }
-            NumberAnimation { to: 0.0; duration: 520 }
+            NumberAnimation { to: theme.effectiveReduceMotion ? 0 : 0.32; duration: theme.motionFast }
+            NumberAnimation { to: 0.0; duration: theme.motionSlow }
         }
     }
     Text {
@@ -287,14 +384,14 @@ WidgetChrome {
         wrapMode: Text.Wrap; maximumLineCount: 2; elide: Text.ElideRight
         SequentialAnimation {
             id: celebrateAnim; running: false
-            PropertyAction { target: celebrateLabel; property: "scale"; value: 0.6 }
+            PropertyAction { target: celebrateLabel; property: "scale"; value: theme.effectiveReduceMotion ? 1 : 0.6 }
             ParallelAnimation {
-                NumberAnimation { target: celebrateLabel; property: "opacity"; from: 0; to: 1; duration: 180 }
-                NumberAnimation { target: celebrateLabel; property: "scale"; to: 1.12
-                    duration: 260; easing.type: theme.reduceMotion ? Easing.Linear : Easing.OutBack }
+                NumberAnimation { target: celebrateLabel; property: "opacity"; from: 0; to: 1; duration: theme.motionAdd }
+                NumberAnimation { target: celebrateLabel; property: "scale"; to: theme.effectiveReduceMotion ? 1 : 1.12
+                    duration: theme.motionPage; easing.type: theme.effectiveReduceMotion ? Easing.Linear : Easing.OutBack }
             }
             PauseAnimation { duration: 900 }
-            NumberAnimation { target: celebrateLabel; property: "opacity"; to: 0; duration: 500 }
+            NumberAnimation { target: celebrateLabel; property: "opacity"; to: 0; duration: theme.motionSlow }
         }
     }
 
@@ -314,51 +411,87 @@ WidgetChrome {
         rowSpacing: w.roomy ? 14 : 6
         columnSpacing: theme.spacingLg
 
-        // 28-day heatmap. Was expanded-only "because the grid can't fit"; at
-        // 7x4 cells it fits every size but the 1/12 tile, so it is now earned by
-        // room rather than by mode - and its grid transposes to 4x7 for a tall
-        // box rather than sitting as a squat block in a column of air.
-        GridLayout {
+        // The date range and state legend travel with the map in every non-micro
+        // layout. Each cell also carries a visible state mark, so color is never
+        // the only way to read progress.
+        ColumnLayout {
             Layout.alignment: Qt.AlignCenter
-            columns: w.heatCols
             visible: w.showHeatmap
-            rowSpacing: Math.max(2, w.heatCell * 0.18)
-            columnSpacing: Math.max(2, w.heatCell * 0.18)
-            Repeater {
-                model: 28
-                delegate: Rectangle {
-                    required property int index
-                    // Layout.preferred*, not width/height: a GridLayout sizes its
-                    // children from their implicit/preferred hints and IGNORES a
-                    // plain width, which collapsed every cell to a ~11px speck.
-                    Layout.preferredWidth: Math.round(w.heatCell)
-                    Layout.preferredHeight: Math.round(w.heatCell)
-                    radius: Math.max(2, Math.round(w.heatCell) * 0.17)
-                    // Calendar-date stepping (S6) so cells never collide across a
-                    // DST boundary. The index -> days-ago mapping follows the grid
-                    // shape (see daysAgoFor); today is the last cell either way.
-                    property string dk: {
-                        w.tick
-                        var d = new Date(); d.setHours(12, 0, 0, 0)
-                        d.setDate(d.getDate() - w.daysAgoFor(index))
-                        return w.key(d)
+            spacing: 7
+
+            Text {
+                objectName: "habitHeatmapRange"
+                Layout.alignment: Qt.AlignHCenter
+                text: "LAST 28 DAYS  ·  " + w.heatmapRange
+                color: theme.textPrimary
+                opacity: 0.82
+                font.pixelSize: Math.max(theme.fontMinimum, 18)
+                font.bold: true
+                font.letterSpacing: 0.8
+            }
+            GridLayout {
+                objectName: "habitHeatmap"
+                Layout.alignment: Qt.AlignCenter
+                columns: w.heatCols
+                rowSpacing: Math.max(2, w.heatCell * 0.18)
+                columnSpacing: Math.max(2, w.heatCell * 0.18)
+                Accessible.role: Accessible.StaticText
+                Accessible.name: w.heatmapSummary
+                Repeater {
+                    model: 28
+                    delegate: Rectangle {
+                        required property int index
+                        objectName: "habitDay-" + index
+                        Layout.preferredWidth: Math.round(w.heatCell)
+                        Layout.preferredHeight: Math.round(w.heatCell)
+                        radius: Math.max(2, Math.round(w.heatCell) * 0.17)
+                        property date dayDate: w.dateForIndex(index)
+                        property string dk: w.key(dayDate)
+                        property bool on: w.checkins.indexOf(dk) >= 0
+                        property bool isScheduled: w.scheduled(dayDate)
+                        property string stateLabel: on ? "completed"
+                            : (isScheduled ? "scheduled, not completed" : "rest day")
+                        color: on ? w.effAccent : theme.cardBorder
+                        opacity: on ? 1 : (isScheduled ? 0.58 : 0.28)
+                        border.width: dk === w.todayKey ? 2 : 1
+                        border.color: dk === w.todayKey ? theme.textPrimary : theme.cardBorder
+                        Accessible.role: Accessible.StaticText
+                        Accessible.name: Qt.formatDate(dayDate, "dddd d MMMM")
+                                         + ", " + stateLabel
+                        Text {
+                            anchors.centerIn: parent
+                            text: parent.on ? "✓" : (parent.isScheduled ? "○" : "−")
+                            color: parent.on ? theme.backgroundColor : theme.textSecondary
+                            font.pixelSize: Math.max(10, Math.round(parent.width * 0.54))
+                            font.bold: parent.on
+                        }
                     }
-                    property bool on: w.checkins.indexOf(dk) >= 0
-                    color: on ? w.effAccent : theme.cardBorder
-                    opacity: on ? 1 : 0.5
-                    border.width: dk === w.todayKey ? 2 : 0; border.color: theme.textPrimary
                 }
+            }
+            Text {
+                objectName: "habitHeatmapLegend"
+                Layout.alignment: Qt.AlignHCenter
+                text: "✓ Done   ○ Scheduled   − Rest"
+                color: theme.textPrimary
+                opacity: 0.82
+                font.pixelSize: Math.max(theme.fontMinimum, 18)
             }
         }
 
         ColumnLayout {
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignCenter
-            spacing: w.roomy ? 14 : 4          // room, not mode - see rowSpacing above
+            // A roomy landscape tile places this column beside a 7x4 heatmap.
+            // Its available height is the short axis, so use slightly tighter
+            // vertical rhythm than the portrait stack. The previous 14px gaps
+            // plus a 76px insight panel pushed the check-in pill 26px below the
+            // 1x1.5 landscape card.
+            spacing: w.roomy ? (w.horiz ? 12 : 14) : 4
 
             Text {
+                visible: w.showStreak
                 Layout.alignment: Qt.AlignHCenter; Layout.fillWidth: true
-                text: w.streak + (w.streak === 1 ? " day 🔥" : " days 🔥")
+                text: w.streak + (w.streak === 1 ? " day" : " days")
                 font.pixelSize: Math.round(w.streakPx); font.bold: true; color: w.effAccent
                 horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
             }
@@ -367,9 +500,9 @@ WidgetChrome {
             // baseline third does not, rather than the same tile stretched.
             Text {
                 Layout.alignment: Qt.AlignHCenter; Layout.fillWidth: true
-                visible: w.showBest
+                visible: w.showStreak && w.showBest
                 text: "Best: " + w.bestStreak + (w.bestStreak === 1 ? " day" : " days")
-                      + (w.streak >= w.bestStreak && w.streak > 0 ? "  ·  personal best! 🏆" : "")
+                      + (w.streak >= w.bestStreak && w.streak > 0 ? "  ·  personal best!" : "")
                 // Tied to the streak readout rather than left at the caption
                 // token: at 1x1.5 the number is ~70px and a 13px record line
                 // beside it reads as a rendering artefact rather than a stat.
@@ -380,6 +513,65 @@ WidgetChrome {
                 color: theme.textSecondary
                 horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
             }
+            Rectangle {
+                objectName: "habitInsightPanel"
+                visible: w.roomy
+                Layout.fillWidth: true
+                Layout.preferredWidth: w.horiz ? Math.min(520, w.width * 0.43)
+                                               : Math.min(620, w.width * 0.88)
+                // Preserve the full 76px treatment in the portrait stack. In a
+                // wide card, 56px still fits both label and value rows while
+                // keeping the primary action fully inside the touch surface.
+                Layout.preferredHeight: w.horiz ? 56 : 76
+                radius: theme.radiusMd
+                color: Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.08)
+                border.width: 1
+                border.color: Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.24)
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: theme.spacingMd
+                    anchors.rightMargin: theme.spacingMd
+                    spacing: theme.spacingSm
+                    ColumnLayout {
+                        Layout.fillWidth: true; spacing: 2
+                        Text { text: "28 DAYS"; color: theme.textTertiary; font.pixelSize: theme.fontMinimum
+                            font.bold: true; font.letterSpacing: 1.1 }
+                        Text { text: w.recentStats.done + " / " + w.recentStats.total
+                            color: theme.textPrimary; font.pixelSize: theme.fontLabel; font.bold: true }
+                    }
+                    Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true
+                        Layout.topMargin: 14; Layout.bottomMargin: 14; color: theme.cardBorder }
+                    ColumnLayout {
+                        Layout.fillWidth: true; spacing: 2
+                        Text { text: "CONSISTENCY"; color: theme.textTertiary; font.pixelSize: theme.fontMinimum
+                            font.bold: true; font.letterSpacing: 1.1 }
+                        Text { text: w.recentStats.percent + "%"; color: w.effAccent
+                            font.pixelSize: theme.fontLabel; font.bold: true }
+                    }
+                    Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true
+                        Layout.topMargin: 14; Layout.bottomMargin: 14; color: theme.cardBorder }
+                    ColumnLayout {
+                        Layout.fillWidth: true; spacing: 2
+                        Text { text: "NEXT GOAL"; color: theme.textTertiary; font.pixelSize: theme.fontMinimum
+                            font.bold: true; font.letterSpacing: 1.1 }
+                        Text { text: Math.max(0, w.nextMilestone - w.streak) + " days"
+                            color: theme.textPrimary; font.pixelSize: theme.fontLabel; font.bold: true }
+                    }
+                }
+            }
+            Text {
+                objectName: "habitTodayFeedback"
+                visible: !w.micro
+                Layout.fillWidth: true
+                text: w.todayFeedback
+                color: w.doneToday ? w.effAccent : theme.textSecondary
+                font.pixelSize: Math.max(theme.fontMinimum, 18)
+                font.bold: w.doneToday
+                horizontalAlignment: Text.AlignHCenter
+                elide: Text.ElideRight
+                Accessible.role: Accessible.StaticText
+                Accessible.name: w.todayFeedback
+            }
             // Check in from every size - a PillButton is theme.touchSecondary (60),
             // above the 52 minimum, and this is the widget's whole interaction.
             PillButton {
@@ -387,9 +579,11 @@ WidgetChrome {
                 // The long form is spelled out wherever there is room for it, not
                 // only in the overlay - the pill is content-sized (see PillButton),
                 // so this is a legibility choice the box makes, not the mode.
-                label: w.doneToday ? (w.roomy ? "Done today ✓" : "✓ today") : "Check in"
-                glyph: w.doneToday ? "" : "🔥"
-                primary: !w.doneToday; tint: w.effAccent
+                label: w.paused ? "Paused" : (!w.scheduledToday ? "Rest day"
+                    : (w.doneToday ? (w.roomy ? "Done today ✓" : "✓ today") : "Check in"))
+                glyph: ""
+                enabled: !w.paused && w.scheduledToday
+                primary: enabled && !w.doneToday; tint: w.effAccent
                 onClicked: w.toggleToday()
             }
         }

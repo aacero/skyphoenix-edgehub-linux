@@ -53,8 +53,34 @@ WidgetChrome {
     }
     readonly property bool showPercent: cfg.showPercent !== undefined ? cfg.showPercent : true
     readonly property string progressStyle: cfg.progressStyle !== undefined ? cfg.progressStyle : "bar"
-
-    property bool validHours: endHour > startHour
+    readonly property int startMinute: [0, 15, 30, 45].indexOf(Number(cfg.startMinute)) >= 0
+        ? Number(cfg.startMinute) : 0
+    readonly property int endMinute: endHour === 24 ? 0
+        : ([0, 15, 30, 45].indexOf(Number(cfg.endMinute)) >= 0 ? Number(cfg.endMinute) : 0)
+    readonly property bool allowOvernight: cfg.allowOvernight === true
+    readonly property string workDays: cfg.workDays !== undefined
+        ? String(cfg.workDays) : "0,1,2,3,4,5,6"
+    readonly property int startTotalMinutes: startHour * 60 + startMinute
+    readonly property int endTotalMinutes: endHour * 60 + endMinute
+    readonly property bool overnightWindow: endTotalMinutes <= startTotalMinutes
+    readonly property int windowMinutes: endTotalMinutes > startTotalMinutes
+        ? endTotalMinutes - startTotalMinutes
+        : 1440 - startTotalMinutes + endTotalMinutes
+    readonly property bool hasActiveDays: {
+        var configured = String(w.workDays).split(",")
+        for (var i = 0; i < configured.length; i++)
+            if (/^[0-6]$/.test(configured[i].trim())) return true
+        return false
+    }
+    readonly property bool validHours: endTotalMinutes !== startTotalMinutes
+        && (!overnightWindow || (w.allowOvernight && windowMinutes <= w.maxOvernightSpan * 60))
+    readonly property string invalidReason: {
+        if (endTotalMinutes === startTotalMinutes) return "Start and end must differ"
+        if (overnightWindow && !allowOvernight) return "Enable overnight mode"
+        if (overnightWindow && windowMinutes > maxOvernightSpan * 60)
+            return "Overnight window exceeds 12 hours"
+        return ""
+    }
     // Longest overnight (end < start) window we treat as a real night shift; a
     // longer wrap is almost certainly swapped hours, so it stays invalid.
     readonly property int maxOvernightSpan: 12
@@ -62,6 +88,13 @@ WidgetChrome {
     // exercised without the wall clock. null → live system clock.
     property var nowOverride: null
     function nowDate() { return nowOverride !== null ? nowOverride : new Date() }
+    function activeOn(ref) {
+        if (!ref || typeof ref.getDay !== "function") return true
+        var configured = String(w.workDays).split(",")
+        for (var i = 0; i < configured.length; i++)
+            if (Number(configured[i].trim()) === ref.getDay()) return true
+        return false
+    }
     // Window endpoints containing (or, failing that, next after) `ref`.
     //   • Same-day windows (start < end) anchor both ends on ref's date.
     //   • Overnight windows (end ≤ start, within maxOvernightSpan) span midnight,
@@ -75,17 +108,16 @@ WidgetChrome {
     //     upcoming one and drives the "Starts in …" label.
     // Calendar construction (new Date(y,m,d,h,…)) keeps this DST-safe.
     function windowBounds(ref) {
+        if (!w.validHours) return [ref, ref]
         var y = ref.getFullYear(), mo = ref.getMonth(), d = ref.getDate()
-        if (endHour > startHour)                              // same-day window
-            return [new Date(y, mo, d, startHour, 0, 0, 0),
-                    new Date(y, mo, d, endHour,   0, 0, 0)]
-        if ((24 - startHour + endHour) > maxOvernightSpan)    // implausible wrap → invalid
-            return [ref, ref]
-        var sPrev = new Date(y, mo, d - 1, startHour, 0, 0, 0)   // started yesterday
-        var ePrev = new Date(y, mo, d,     endHour,   0, 0, 0)   // ends today
+        if (!w.overnightWindow)                               // same-day window
+            return [new Date(y, mo, d, startHour, startMinute, 0, 0),
+                    new Date(y, mo, d, endHour,   endMinute, 0, 0)]
+        var sPrev = new Date(y, mo, d - 1, startHour, startMinute, 0, 0)   // started yesterday
+        var ePrev = new Date(y, mo, d,     endHour,   endMinute, 0, 0)   // ends today
         if (ref >= sPrev && ref < ePrev) return [sPrev, ePrev]
-        return [new Date(y, mo, d,     startHour, 0, 0, 0),      // starts today
-                new Date(y, mo, d + 1, endHour,   0, 0, 0)]      // ends tomorrow
+        return [new Date(y, mo, d,     startHour, startMinute, 0, 0),      // starts today
+                new Date(y, mo, d + 1, endHour,   endMinute, 0, 0)]      // ends tomorrow
     }
     property real frac: {
         w.tick
@@ -93,29 +125,71 @@ WidgetChrome {
         var wb = windowBounds(n)
         var s = wb[0], e = wb[1]
         if (e <= s) return 0
+        // Overnight windows belong to the weekday on which they start.
+        if (!w.activeOn(s)) return 0
         return Math.max(0, Math.min(1, (n - s) / (e - s)))
     }
     function fmtDur(secs) {
         return Math.floor(secs / 3600) + "h " + Math.floor((secs % 3600) / 60) + "m"
     }
-    function fmtHour(h) { return (h < 10 ? "0" + h : "" + h) + ":00" }   // zero-padded, editor-style
+    function fmtHour(h) { return w.fmtTime(h, 0) }
+    function fmtTime(h, minute) {
+        var hh = h === 24 ? "24" : (h < 10 ? "0" + h : "" + h)
+        return hh + ":" + (minute < 10 ? "0" + minute : minute)
+    }
     property string remaining: {
         w.tick
+        if (!w.validHours) return w.invalidReason
+        if (!w.hasActiveDays) return "No active weekdays"
         var n = nowDate()
         var wb = windowBounds(n)
         var s = wb[0], e = wb[1]
-        if (e <= s) return "Set hours"                    // invalid (end ≤ start, not overnight)
+        if (!w.activeOn(s)) return "Off today"
         if (n < s) return "Starts in " + fmtDur((s - n) / 1000)  // before the workday
         var d = (e - n) / 1000
-        if (d <= 0) return "Done! 🎉"
+        if (d <= 0) return "Complete"
         return fmtDur(d)
     }
+    readonly property string phase: {
+        w.tick
+        if (!w.validHours) return "invalid"
+        if (!w.hasActiveDays) return "no-days"
+        var n = nowDate()
+        var wb = windowBounds(n)
+        if (!w.activeOn(wb[0])) return "off"
+        if (n < wb[0]) return "before"
+        if (n >= wb[1]) return "complete"
+        return "working"
+    }
+    readonly property string stateLabel: {
+        if (phase === "invalid") return "Invalid schedule"
+        if (phase === "no-days") return "Schedule paused"
+        if (phase === "off") return "Off day"
+        if (phase === "before") return "Starts later"
+        if (phase === "complete") return "Complete"
+        return "Working"
+    }
+    readonly property string scheduleRange: w.fmtTime(w.startHour, w.startMinute)
+        + " to " + w.fmtTime(w.endHour, w.endMinute)
+    readonly property string progressSummary: {
+        if (phase === "working")
+            return Math.round(w.frac * 100) + "% elapsed | " + w.elapsedStr
+                + " elapsed | " + w.remaining + " remaining"
+        if (phase === "before") return w.scheduleRange
+        if (phase === "complete") return w.scheduleRange + " finished"
+        if (phase === "off") return "Not scheduled for this start day"
+        return w.remaining
+    }
+    status: w.stateLabel
     // Keep a 1-hour minimum span: whichever end the user moved yields, so the
     // work window can never invert (end ≤ start) and get stuck.
     function setHours(sh, eh) {
         var s = Math.max(0, Math.min(23, sh))
         var e = Math.max(1, Math.min(24, eh))
-        if (s >= e) { if (sh !== w.startHour) s = e - 1; else e = s + 1 }
+        if (s >= e && !w.allowOvernight) {
+            if (sh !== w.startHour) s = e - 1
+            else e = s + 1
+        }
         if (store) store.patchSettings(instanceId, { "startHour": s, "endHour": e })
     }
 
@@ -127,7 +201,10 @@ WidgetChrome {
     // rather than in a `w.expanded ?` branch repeated down the file. `large` is
     // unreachable for this type's declared sizes (1x2/1x3 are not offered); kept
     // so a forced class degrades sanely.
+    // 1x1.5 landscape is classified wide, but has the same generous area as
+    // its tall portrait projection. It earns the detail strip and ring too.
     readonly property bool roomy: tallish || sizeClass === "full"
+                                  || (!expanded && width * height > 700000)
     // The ring style is honoured wherever a ring has room - the overlay (as
     // before) and tall/wide tiles. micro/baseline keep the quiet bar.
     // (`expanded ||` dropped: `roomy` covers sizeClass "full", so it was a
@@ -194,7 +271,8 @@ WidgetChrome {
                 Text { Layout.fillWidth: true
                     horizontalAlignment: Text.AlignHCenter
                     text: w.timeInRing ? w.remaining : Math.round(w.frac * 100) + "%"
-                    elide: Text.ElideRight; fontSizeMode: Text.HorizontalFit; minimumPixelSize: 10
+                    elide: Text.ElideRight; fontSizeMode: Text.HorizontalFit
+                    minimumPixelSize: theme.fontMinimum
                     font.pixelSize: Math.min(ringBox.width * 0.22, 56)
                     font.bold: true; font.family: theme.fontMono; color: w.effAccent }
                 Text { Layout.fillWidth: true
@@ -242,14 +320,17 @@ WidgetChrome {
                 Layout.fillWidth: true
                 horizontalAlignment: Text.AlignHCenter
                 elide: Text.ElideRight; fontSizeMode: Text.HorizontalFit
-                text: Math.round(w.frac * 100) + "% of " + w.fmtHour(w.startHour) + "–" + w.fmtHour(w.endHour)
+                text: Math.round(w.frac * 100) + "% elapsed | "
+                      + (w.phase === "working" ? w.remaining + " remaining" : w.stateLabel)
+                      + " | " + w.scheduleRange
                 // Tied to the hero it annotates rather than to the mode: the
                 // caption only ever renders when the remaining time is shown
                 // (!timeInRing), so it always has a hero to scale against. The
                 // `expanded ? 15` it replaces gave both overlay panes one number;
                 // 12 is still exactly what every non-roomy tile gets.
-                font.pixelSize: Math.round(Math.max(12, Math.min(w.remainingPx * 0.20, 15)))
-                color: theme.textSecondary
+                font.pixelSize: Math.round(Math.max(theme.fontLabel,
+                                                    Math.min(w.remainingPx * 0.34, 26)))
+                color: theme.textPrimary
             }
             // Tall tiles spell the workday out - genuinely more information.
             ColumnLayout {
@@ -259,9 +340,10 @@ WidgetChrome {
                 spacing: theme.spacingXs
                 Repeater {
                     model: [
-                        { k: "Started", val: w.fmtHour(w.startHour) },
-                        { k: "Ends",    val: w.fmtHour(w.endHour) },
+                        { k: "Start", val: w.fmtTime(w.startHour, w.startMinute) },
+                        { k: "End",   val: w.fmtTime(w.endHour, w.endMinute) },
                         { k: "Elapsed", val: w.elapsedStr },
+                        { k: "Remaining", val: w.phase === "working" ? w.remaining : "0h 0m" },
                         { k: "Done",    val: Math.round(w.frac * 100) + "%" }
                     ]
                     delegate: RowLayout {
@@ -271,11 +353,12 @@ WidgetChrome {
                         // honours the same showPercent switch.
                         visible: modelData.k !== "Done" || w.showPercent
                         Text { text: modelData.k
-                            font.pixelSize: Math.max(13, Math.min(w.width * 0.045, 17))
-                            color: theme.textSecondary }
+                            font.pixelSize: Math.max(theme.fontLabel, Math.min(w.width * 0.045, 19))
+                            font.weight: Font.Medium
+                            color: theme.textPrimary }
                         Item { Layout.fillWidth: true }
                         Text { text: modelData.val
-                            font.pixelSize: Math.max(13, Math.min(w.width * 0.05, 19))
+                            font.pixelSize: Math.max(theme.fontLabel, Math.min(w.width * 0.05, 21))
                             font.family: theme.fontMono; color: theme.textPrimary }
                     }
                 }

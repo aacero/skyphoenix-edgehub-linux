@@ -30,7 +30,97 @@ Item {
     property var metrics: {
         try { return JSON.parse(metricsJson || "{}") } catch (e) { return {} }
     }
+    readonly property var availableTimeZones: (typeof timeZones !== "undefined") ? timeZones : null
     property bool editMode: false
+    readonly property bool showHubBar: {
+        store.revision
+        return store.appearance().hubControlsMode !== "immersive"
+    }
+
+    // LOSS-001: screen deletion is destructive because removing a screen also
+    // removes every widget settings bucket on it. Capture the exact screen the
+    // user reviewed and refuse the action if the layout changes before confirm.
+    property int pendingPageRemovalIndex: -1
+    property int pendingPageRemovalRevision: -1
+    property string pendingPageRemovalName: ""
+    property int pendingPageRemovalWidgetCount: 0
+    property string pageRemovalError: ""
+    readonly property alias pageDeleteDialog: pageDeleteConfirm
+    readonly property alias pageDeleteSummary: pageDeleteSummaryText
+    readonly property alias pageDeleteCancelButton: cancelPageDelete
+    readonly property alias pageDeleteConfirmButton: confirmPageDelete
+
+    property string pendingWidgetDataAction: ""
+    property string pendingWidgetDataId: ""
+    property string pendingWidgetDataType: ""
+    property string pendingWidgetDataLabel: ""
+    readonly property alias widgetDataDialog: widgetDataConfirm
+    readonly property alias widgetDataSummary: widgetDataSummaryText
+    readonly property alias widgetDataCancelButton: cancelWidgetDataAction
+    readonly property alias widgetDataConfirmButton: confirmWidgetDataActionButton
+
+    function requestPageRemoval(index) {
+        var ps = store.pages()
+        if (store.pageCount() <= 1 || index < 0 || index >= ps.length) return false
+        var p = ps[index]
+        dashboard.pendingPageRemovalIndex = index
+        dashboard.pendingPageRemovalRevision = store.structureRevision
+        dashboard.pendingPageRemovalName = p.name || ("Screen " + (index + 1))
+        dashboard.pendingPageRemovalWidgetCount = (p.tiles || []).length
+        dashboard.pageRemovalError = ""
+        pageDeleteConfirm.open()
+        return true
+    }
+
+    function confirmPageRemoval() {
+        var i = dashboard.pendingPageRemovalIndex
+        var ps = store.pages()
+        if (store.structureRevision !== dashboard.pendingPageRemovalRevision
+                || i < 0 || i >= ps.length || store.pageCount() <= 1) {
+            dashboard.pageRemovalError = "The screen changed. Review it again before removing it."
+            return false
+        }
+        store.removePage(i)
+        swipeView.goToPage(Math.max(0, Math.min(i, store.pageCount() - 1)))
+        dashboard.pendingPageRemovalIndex = -1
+        dashboard.pendingPageRemovalRevision = -1
+        dashboard.pageRemovalError = ""
+        return true
+    }
+
+    function requestWidgetDataAction(action) {
+        if (dashboard.shownId === "" || dashboard.shownType === "") return false
+        if (action !== "reset" && action !== "erase") return false
+        var keys = catalog.personalDataKeys(dashboard.shownType)
+        if (action === "erase" && keys.length === 0) return false
+        dashboard.pendingWidgetDataAction = action
+        dashboard.pendingWidgetDataId = dashboard.shownId
+        dashboard.pendingWidgetDataType = dashboard.shownType
+        dashboard.pendingWidgetDataLabel = catalog.personalDataLabel(dashboard.shownType)
+        widgetDataConfirm.open()
+        return true
+    }
+
+    function confirmWidgetDataAction() {
+        var id = dashboard.pendingWidgetDataId
+        var type = dashboard.pendingWidgetDataType
+        if (id === "" || type === "" || !dashboard._tileExists(id)) return false
+        var keys = catalog.personalDataKeys(type)
+        if (dashboard.pendingWidgetDataAction === "reset")
+            store.resetConfiguration(id, catalog.defaults(type), keys)
+        else if (dashboard.pendingWidgetDataAction === "erase") {
+            if (keys.length === 0) return false
+            store.erasePersonalData(id, keys)
+        } else return false
+        dashboard.cfgStatus = dashboard.pendingWidgetDataAction === "reset"
+            ? "Configuration reset. Personal content was kept."
+            : "Personal data erased. Configuration was kept."
+        dashboard.pendingWidgetDataAction = ""
+        dashboard.pendingWidgetDataId = ""
+        dashboard.pendingWidgetDataType = ""
+        dashboard.pendingWidgetDataLabel = ""
+        return true
+    }
 
     // Expanded overlay state (empty type = nothing expanded).
     property string expandedType: ""
@@ -52,10 +142,7 @@ Item {
         // type → the Loader never reloads, so onLoaded will not refire):
         // re-inject so the live item is bound to the CURRENT instance id and
         // re-registered as the overlay item.
-        if (ovlLoader.item) {
-            dashboard.injectWidget(ovlLoader.item, shownId, shownType, true)
-            dashboard.overlayLoaderItem = ovlLoader.item
-        }
+        if (ovlLoader.item) dashboard.overlayLoaderItem = ovlLoader.item
     }
     // Per-widget accent of the expanded tile (S7): resolve the instance's own
     // accent name to a colour, reactive to store.revision so an accent edit in
@@ -242,6 +329,8 @@ Item {
 
     DashboardStore { id: store }
     WidgetCatalog { id: catalog }
+    readonly property alias widgetStore: store
+    readonly property alias widgetCatalog: catalog
     WidgetSizes { id: sizes }
     WidgetPacker { id: packer }
     // The curated screen library - consumed post-setup by the PresetPicker
@@ -365,7 +454,7 @@ Item {
         textPrimary: theme.textPrimary, textSecondary: theme.textSecondary,
         bg: theme.backgroundColor, accent: theme.accent, border: theme.cardBorder,
         panel: theme.cardBackground, panelAlt: theme.cardBackgroundAlt,
-        radius: theme.radiusMd, ctlH: 58, fontBase: 17
+        radius: theme.radiusMd, ctlH: theme.touchSecondary, fontBase: theme.fontLabel
     })
 
     // Geocode status shown in the weather config panel.
@@ -376,6 +465,10 @@ Item {
             if (!place.trim().length) { cfgStatus = "Type a place name first."; return }
             cfgStatus = "Searching for “" + place + "”…"
             overlayLoaderItem.geocode(place)
+        } else if (action === "testConnection" && overlayLoaderItem
+                   && overlayLoaderItem.hasOwnProperty("testConnection")) {
+            cfgStatus = ""
+            overlayLoaderItem.testConnection(netHub)
         }
     }
     property var overlayLoaderItem: null
@@ -388,18 +481,14 @@ Item {
     //    lives HERE so no other caller can ever bypass the policy.
     //  • "Your theme stays" - and it must stay across RESTART, not just live.
     //    A preset document carries only its character keys (bgStyle/
-    //    animatedBg/reduceMotion/glow/presetSurface), so resetTo() would drop
+    //    animatedBg/glow/presetSurface), so resetTo() would drop
     //    every other persisted appearance key: themeMode/accent would fall
     //    back to the stale legacy [theme] values on the next launch (W5
     //    finding 15), and - worse - a user's netOffline/updateCheck/
     //    enableUserWidgets choices would silently revert to defaults. So every
     //    prior appearance key the preset does not define is carried over.
-    //  • Accessibility beats character: an explicit prior reduce-motion
-    //    choice survives even though presets DO define reduceMotion. Post-
-    //    setup, that flag is the user's a11y setting; a preset that silently
-    //    re-enabled motion would repeat the W3 bug class the calm work fixed.
-    //    (In the wizard the preset's character applies untouched - there is
-    //    no prior choice to protect there.)
+    //  • Accessibility is never preset character. Reduced motion is an explicit
+    //    user or OS preference and no screen is allowed to set it implicitly.
     //
     // Returns whether the preset was applied.
     function applyPreset(presetId) {
@@ -414,8 +503,6 @@ Item {
         for (var kk in keep)
             if (store.appearance()[kk] === undefined)
                 store.setAppearance(kk, keep[kk])
-        if (keep.reduceMotion !== undefined)
-            store.setAppearance("reduceMotion", keep.reduceMotion)
         applyAppearance()
         // Land the user on the new layout's first page, not an out-of-range
         // index left over from a longer document.
@@ -517,19 +604,19 @@ Item {
     }
 
     function applyExternalState(json) {
-        if (store.applyExternal(json)) {
-            applyAppearance()
-            // The pushed appearance may have flipped `enableUserWidgets` (e.g.
-            // a managed config forcing it off): re-run the loader so the flag
-            // takes effect live - off clears the registry without any scan.
-            _loadUserWidgets()
-            // A live push may have removed (or replaced) the tile we're currently
-            // expanded on. Leaving the overlay open would let its config panel keep
-            // writing to an instanceId that no longer exists on any page - an orphan
-            // settings entry. Close the overlay when its tile is gone.
-            if (dashboard.hasExpanded && !_tileExists(dashboard.expandedId))
-                closeExpanded()
-        }
+        if (!store.applyExternal(json)) return false
+        applyAppearance()
+        // The pushed appearance may have flipped `enableUserWidgets` (e.g.
+        // a managed config forcing it off): re-run the loader so the flag
+        // takes effect live - off clears the registry without any scan.
+        _loadUserWidgets()
+        // A live push may have removed (or replaced) the tile we're currently
+        // expanded on. Leaving the overlay open would let its config panel keep
+        // writing to an instanceId that no longer exists on any page - an orphan
+        // settings entry. Close the overlay when its tile is gone.
+        if (dashboard.hasExpanded && !_tileExists(dashboard.expandedId))
+            closeExpanded()
+        return true
     }
 
     // True if a tile with this instance id still exists on some page.
@@ -554,6 +641,8 @@ Item {
         if (a.glass !== undefined) root.glassOpacity = a.glass
         if (a.glow !== undefined) root.showWidgetGlow = a.glow
         if (a.reduceMotion !== undefined) root.reduceMotion = a.reduceMotion
+        theme.textScale = a.textScale !== undefined ? a.textScale : 1.15
+        theme.fontChoice = a.fontChoice || "hyperlegible"
         if (a.animatedBg !== undefined) root.animatedBackground = a.animatedBg
         if (a.orientation) root.orientationMode = a.orientation
         _applyingAppearance = false
@@ -567,6 +656,8 @@ Item {
         function onGlassOpacityChanged() { store.setAppearance("glass", root.glassOpacity) }
         function onShowWidgetGlowChanged() { store.setAppearance("glow", root.showWidgetGlow) }
         function onReduceMotionChanged() { store.setAppearance("reduceMotion", root.reduceMotion) }
+        function onTextScaleChanged() { store.setAppearance("textScale", root.textScale) }
+        function onFontChoiceChanged() { store.setAppearance("fontChoice", root.fontChoice) }
         function onThemeModeChanged() { store.setAppearance("themeMode", root.themeMode) }
         function onAnimatedBackgroundChanged() { store.setAppearance("animatedBg", root.animatedBackground) }
         function onOrientationModeChanged() { store.setAppearance("orientation", root.orientationMode) }
@@ -586,7 +677,7 @@ Item {
                 anchors.centerIn: parent; width: parent.width * 0.85
                 horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
                 text: "This widget isn't available."
-                color: theme.textSecondary; font.pixelSize: 13
+                color: theme.textSecondary; font.pixelSize: theme.fontMinimum
             }
         }
     }
@@ -614,50 +705,6 @@ Item {
         if (!legal.length) return ""
         var i = legal.indexOf(current)
         return legal[(i + 1) % legal.length]          // indexOf -1 → wraps to legal[0]
-    }
-
-    // Inject the shared bindings into a freshly-loaded widget instance. Used by
-    // both the tile loaders and the expanded overlay so they share state.
-    //
-    // sizeClassFn is a getter, BOUND rather than read once: a resize rewrites the
-    // tile's size (and a rotation reshapes it), and a value captured at load would
-    // silently go stale.
-    function injectWidget(item, id, type, isExpanded, sizeClassFn) {
-        if (!item) return
-        store.ensureSettings(id, catalog.defaults(type))
-        item.instanceId = id
-        item.store = store
-        // How much room it has. The overlay is the whole screen; a tile gets its
-        // span's class. This is DELIBERATELY not `expanded`: see WidgetChrome -
-        // expanded is a mode, sizeClass is room, and every widget used to conflate
-        // them by declaring `big: expanded`.
-        if (item.hasOwnProperty("sizeClass")) {
-            if (isExpanded) item.sizeClass = "full"
-            else if (sizeClassFn) item.sizeClass = Qt.binding(sizeClassFn)
-        }
-        if (item.hasOwnProperty("netHub")) item.netHub = netHub
-        // Real IANA zones (app/src/timezone_bridge.h). Absent in the QML test
-        // harness and in any standalone host, where the clock falls back to its
-        // stored fixed offset rather than rendering a confidently wrong time.
-        if (item.hasOwnProperty("timeZones"))
-            item.timeZones = (typeof timeZones !== "undefined") ? timeZones : null
-        item.expanded = isExpanded
-        item.metrics = Qt.binding(function () { return dashboard.metrics })
-        if (item.hasOwnProperty("titleOverride"))
-            item.titleOverride = Qt.binding(function () {
-                store.revision; var s = store.settingsFor(id); return (s && s.title) ? s.title : ""
-            })
-        // Per-widget appearance (universal - any widget's WidgetChrome honours these).
-        if (item.hasOwnProperty("accentName"))
-            item.accentName = Qt.binding(function () {
-                store.revision; var s = store.settingsFor(id); return (s && s.accent) ? s.accent : ""
-            })
-        if (item.hasOwnProperty("cardBackdrop"))
-            item.cardBackdrop = Qt.binding(function () {
-                store.revision; var s = store.settingsFor(id); return (s && s.cardBackdrop) ? s.cardBackdrop : "none"
-            })
-        if (item.hasOwnProperty("tick"))
-            item.tick = Qt.binding(function () { return dashboard._tick })
     }
 
     // ── Pages ────────────────────────────────────────────────────────────────
@@ -1181,20 +1228,28 @@ Item {
                                     enabled: false
                                 }
 
-                                Loader {
+                                WidgetHost {
                                     id: tileLd
                                     anchors.fill: parent
-                                    clip: true
                                     property string wId: cell.tileId
                                     property string wType: cell.tileType
-                                    active: wId !== "" && wType !== "" && catalog.source(wType) !== ""
-                                            && dashboard.policyAllowsWidget(wType)
-                                    source: active ? catalog.source(wType) : ""
-                                    onLoaded: {
-                                        dashboard.injectWidget(item, wId, wType, false,
-                                            function () { return dashboard.sizeClassFor(cell.tileSize, pageItem.landscape) })
-                                        if (item) item.active = Qt.binding(function () { return !dashboard.hasExpanded && !dashboard.editMode })
-                                    }
+                                    widgetId: wId
+                                    widgetType: wType
+                                    widgetSource: catalog.source(wType)
+                                    loadEnabled: wId !== "" && wType !== "" && widgetSource !== ""
+                                                 && dashboard.policyAllowsWidget(wType)
+                                    store: dashboard.widgetStore
+                                    catalog: dashboard.widgetCatalog
+                                    metrics: dashboard.metrics
+                                    netHub: dashboard.netGate
+                                    timeZones: dashboard.availableTimeZones
+                                    tick: dashboard._tick
+                                    expanded: false
+                                    sizeClass: dashboard.sizeClassFor(cell.tileSize, pageItem.landscape)
+                                    driverActive: !dashboard.hasExpanded && !dashboard.editMode
+                                    foreground: pageItem.index === swipeView.currentIndex
+                                                && !dashboard.hasExpanded && !dashboard.editMode
+                                    acceptsInput: true
                                 }
 
                                 // Error boundary: a tile whose type is unknown/removed -
@@ -1233,6 +1288,7 @@ Item {
                                 // icon is a glanceable hint kept from fighting a widget's
                                 // own top-right status. Hidden in edit mode.
                                 Item {
+                                    objectName: "widgetConfigButton-" + cell.tileId
                                     anchors.right: parent.right; anchors.top: parent.top
                                     width: theme.touchSecondary; height: theme.touchSecondary
                                     z: 20
@@ -1413,7 +1469,7 @@ Item {
                                 Column {
                                     anchors.centerIn: parent; spacing: 6
                                     AppIcon { anchors.horizontalCenter: parent.horizontalCenter; name: "ui-plus"; size: 40; color: theme.accent }
-                                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Add widget"; font.pixelSize: 14; color: theme.textSecondary }
+                                    Text { anchors.horizontalCenter: parent.horizontalCenter; text: "Add widget"; font.pixelSize: theme.fontMinimum; color: theme.textSecondary }
                                 }
                                 MouseArea { anchors.fill: parent; onClicked: { picker.pageIndex = pageItem.index; picker.shown = true } }
                             }
@@ -1430,7 +1486,9 @@ Item {
                         anchors.centerIn: parent
                         visible: pageItem.tiles.length === 0 && !dashboard.editMode
                                  && pageItem.index === swipeView.currentIndex
-                        text: "This page is empty.\nTap Edit to add widgets."
+                        text: dashboard.showHubBar
+                              ? "This page is empty.\nTap Edit to add widgets."
+                              : "This screen is empty.\nAdd widgets from EdgeHub Manager."
                         horizontalAlignment: Text.AlignHCenter
                         color: theme.textTertiary; font.pixelSize: 16
                     }
@@ -1440,6 +1498,11 @@ Item {
 
         // ── Bottom bar ───────────────────────────────────────────────────────
         RowLayout {
+            objectName: "hubBottomBar"
+            // If Manager hides the bar while an on-device edit is already in
+            // progress, keep it until the user taps Done. Immersive mode then
+            // takes effect without trapping the Hub in edit mode.
+            visible: dashboard.showHubBar || dashboard.editMode
             Layout.fillWidth: true
             Layout.preferredHeight: theme.touchPrimary
             spacing: theme.spacingSm
@@ -1482,9 +1545,11 @@ Item {
                 // so the dots are actually tappable on a touchscreen.
                 delegate: Item {
                     required property int index
+                    objectName: "pageIndicatorDelegate-" + index
                     implicitWidth: (index === swipeView.currentIndex ? 36 : 16) + 10
-                    implicitHeight: 44
+                    implicitHeight: theme.touchTertiary
                     Rectangle {
+                        objectName: "pageIndicatorChip-" + index
                         anchors.centerIn: parent
                         width: index === swipeView.currentIndex ? 36 : 14
                         height: 14; radius: 7; color: theme.accent
@@ -1509,8 +1574,7 @@ Item {
             // Remove current page (edit mode, keep ≥1) - re-clamp the index so the
             // view never points past the new end after deleting the last page.
             BarButton { iconName: "ui-del-page"; visible: dashboard.editMode && store.pageCount() > 1
-                        onClicked: { var i = swipeView.currentIndex; store.removePage(i)
-                                     swipeView.goToPage(Math.max(0, Math.min(i, store.pageCount() - 1))) } }
+                        onClicked: dashboard.requestPageRemoval(swipeView.currentIndex) }
             // Edit toggle
             BarButton {
                 iconName: dashboard.editMode ? "ui-check" : "ui-edit"
@@ -1556,6 +1620,205 @@ Item {
         AppIcon { anchors.centerIn: parent; name: barBtn.iconName; size: theme.iconLg
             color: barBtn.highlighted ? theme.accent : theme.textPrimary }
         MouseArea { id: bMA; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: barBtn.clicked() }
+    }
+
+    component ConfirmButton: Button {
+        id: confirmButtonRoot
+        property bool danger: false
+        implicitHeight: theme.touchSecondary
+        implicitWidth: 150
+        hoverEnabled: true
+        contentItem: Text {
+            text: confirmButtonRoot.text
+            color: theme.textPrimary
+            font.pixelSize: theme.fontLabel
+            font.bold: confirmButtonRoot.danger
+            font.family: theme.fontDisplay
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+        }
+        background: Rectangle {
+            radius: theme.radiusMd
+            color: confirmButtonRoot.danger
+                ? (confirmButtonRoot.down ? Qt.darker(theme.error, 1.18) : theme.error)
+                : (confirmButtonRoot.down ? theme.cardBackgroundAlt : theme.cardBackground)
+            border.width: 1
+            border.color: confirmButtonRoot.danger ? theme.error : theme.cardBorder
+        }
+    }
+
+    Dialog {
+        id: pageDeleteConfirm
+        objectName: "pageDeleteConfirm"
+        anchors.centerIn: parent
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        width: Math.min(parent ? parent.width - theme.spacingXl * 2 : 520, 520)
+        title: "Remove screen?"
+        background: Rectangle {
+            color: theme.cardBackground
+            radius: theme.radiusLg
+            border.width: 1
+            border.color: theme.cardBorder
+        }
+        header: Rectangle {
+            color: "transparent"
+            implicitHeight: theme.touchSecondary
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: theme.spacingLg
+                anchors.rightMargin: theme.spacingLg
+                spacing: theme.spacingSm
+                AppIcon {
+                    name: "ui-warning"
+                    size: theme.iconMd
+                    color: theme.error
+                    Layout.alignment: Qt.AlignVCenter
+                }
+                Text {
+                    text: pageDeleteConfirm.title
+                    color: theme.textPrimary
+                    font.pixelSize: theme.fontTitle
+                    font.bold: true
+                    font.family: theme.fontDisplay
+                    Layout.fillWidth: true
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+        }
+        contentItem: ColumnLayout {
+            spacing: theme.spacingMd
+            Text {
+                id: pageDeleteSummaryText
+                objectName: "pageDeleteSummary"
+                Layout.fillWidth: true
+                text: {
+                    var n = dashboard.pendingPageRemovalWidgetCount
+                    return "Remove screen \"" + dashboard.pendingPageRemovalName + "\""
+                        + (n > 0 ? " and its " + n + " widget" + (n === 1 ? "" : "s") : "")
+                        + "? The screen, its widgets, and their saved data will be removed."
+                }
+                color: theme.textPrimary
+                font.pixelSize: theme.fontLabel
+                font.family: theme.fontDisplay
+                wrapMode: Text.WordWrap
+            }
+            Text {
+                Layout.fillWidth: true
+                text: "This cannot be undone."
+                color: theme.textSecondary
+                font.pixelSize: theme.fontCaption
+                font.family: theme.fontDisplay
+            }
+            Text {
+                objectName: "pageDeleteError"
+                Layout.fillWidth: true
+                visible: dashboard.pageRemovalError.length > 0
+                text: dashboard.pageRemovalError
+                color: theme.error
+                font.pixelSize: theme.fontCaption
+                font.family: theme.fontDisplay
+                wrapMode: Text.WordWrap
+            }
+        }
+        footer: RowLayout {
+            spacing: theme.spacingSm
+            Item { Layout.fillWidth: true }
+            ConfirmButton {
+                id: cancelPageDelete
+                objectName: "cancelPageDelete"
+                text: "Cancel"
+                implicitWidth: 128
+                implicitHeight: theme.touchSecondary
+                onClicked: pageDeleteConfirm.close()
+            }
+            ConfirmButton {
+                id: confirmPageDelete
+                objectName: "confirmPageDelete"
+                text: "Remove screen"
+                danger: true
+                implicitWidth: 172
+                implicitHeight: theme.touchSecondary
+                onClicked: if (dashboard.confirmPageRemoval()) pageDeleteConfirm.close()
+            }
+        }
+    }
+
+    Dialog {
+        id: widgetDataConfirm
+        objectName: "widgetDataConfirm"
+        anchors.centerIn: parent
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        width: Math.min(parent ? parent.width - theme.spacingXl * 2 : 560, 560)
+        title: dashboard.pendingWidgetDataAction === "erase"
+            ? "Erase personal data?" : "Reset configuration?"
+        background: Rectangle {
+            color: theme.cardBackground
+            radius: theme.radiusLg
+            border.width: 1
+            border.color: theme.cardBorder
+        }
+        header: Rectangle {
+            color: "transparent"
+            implicitHeight: theme.touchSecondary
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: theme.spacingLg
+                anchors.rightMargin: theme.spacingLg
+                spacing: theme.spacingSm
+                AppIcon {
+                    name: dashboard.pendingWidgetDataAction === "erase" ? "ui-warning" : "ui-settings"
+                    size: theme.iconMd
+                    color: dashboard.pendingWidgetDataAction === "erase" ? theme.error : theme.accent
+                    Layout.alignment: Qt.AlignVCenter
+                }
+                Text {
+                    text: widgetDataConfirm.title
+                    color: theme.textPrimary
+                    font.pixelSize: theme.fontTitle
+                    font.bold: true
+                    font.family: theme.fontDisplay
+                    Layout.fillWidth: true
+                }
+            }
+        }
+        contentItem: Text {
+            id: widgetDataSummaryText
+            objectName: "widgetDataSummary"
+            text: {
+                var title = catalog.title(dashboard.pendingWidgetDataType)
+                var label = dashboard.pendingWidgetDataLabel
+                if (dashboard.pendingWidgetDataAction === "erase")
+                    return "Erase " + label + " from " + title
+                        + "? Widget configuration and appearance will be kept. This cannot be undone."
+                return "Reset " + title + " configuration to its defaults?"
+                    + (label.length > 0 ? " Your " + label + " will be kept." : "")
+            }
+            color: theme.textPrimary
+            font.pixelSize: theme.fontLabel
+            font.family: theme.fontDisplay
+            wrapMode: Text.WordWrap
+        }
+        footer: RowLayout {
+            spacing: theme.spacingSm
+            Item { Layout.fillWidth: true }
+            ConfirmButton {
+                id: cancelWidgetDataAction
+                objectName: "cancelWidgetDataAction"
+                text: "Cancel"
+                implicitWidth: 128
+                onClicked: widgetDataConfirm.close()
+            }
+            ConfirmButton {
+                id: confirmWidgetDataActionButton
+                objectName: "confirmWidgetDataAction"
+                text: dashboard.pendingWidgetDataAction === "erase" ? "Erase data" : "Reset configuration"
+                danger: dashboard.pendingWidgetDataAction === "erase"
+                implicitWidth: dashboard.pendingWidgetDataAction === "erase" ? 150 : 210
+                onClicked: if (dashboard.confirmWidgetDataAction()) widgetDataConfirm.close()
+            }
+        }
     }
 
     // ── Expanded overlay (shares the tile's persisted settings) ──────────────
@@ -1681,7 +1944,7 @@ Item {
                     color: theme.cardFill()
                     border.width: 1; border.color: theme.cardBorder
                     clip: true
-                    Loader {
+                    WidgetHost {
                         id: ovlLoader
                         anchors.fill: parent
                         anchors.margins: theme.spacingLg
@@ -1689,45 +1952,61 @@ Item {
                         // (frozen, inactive) through the close fade instead of
                         // popping to an empty card on frame 1, and unloads only
                         // once the overlay is fully hidden.
-                        active: dashboard.shownType !== "" && catalog.source(dashboard.shownType) !== ""
-                                && dashboard.policyAllowsWidget(dashboard.shownType)
-                        source: active ? catalog.source(dashboard.shownType) : ""
-                        onLoaded: {
-                            // expanded=true → the widget shows its full, INTERACTIVE
-                            // layout (e.g. Focus's Start/preset controls), usable here.
-                            dashboard.injectWidget(item, dashboard.shownId, dashboard.shownType, true)
+                        widgetId: dashboard.shownId
+                        widgetType: dashboard.shownType
+                        widgetSource: catalog.source(dashboard.shownType)
+                        loadEnabled: dashboard.shownType !== "" && widgetSource !== ""
+                                     && dashboard.policyAllowsWidget(dashboard.shownType)
+                        store: dashboard.widgetStore
+                        catalog: dashboard.widgetCatalog
+                        metrics: dashboard.metrics
+                        netHub: dashboard.netGate
+                        timeZones: dashboard.availableTimeZones
+                        tick: dashboard._tick
+                        expanded: true
+                        sizeClass: "full"
+                        driverActive: dashboard.hasExpanded
+                        foreground: dashboard.hasExpanded
+                        acceptsInput: true
+                        chromeless: true
+                        suppressHeader: true
+                        onWidgetLoaded: function(item) {
                             dashboard.overlayLoaderItem = item
-                            if (item) {
-                                // Bound (not set once): the instant the overlay
-                                // starts closing this drops to false, so the
-                                // fading copy can never drive shared state in
-                                // parallel with the re-activated tile behind it
-                                // (the single-driver rule).
-                                item.active = Qt.binding(function () { return dashboard.hasExpanded })
-                                if (item.hasOwnProperty("chromeless")) item.chromeless = true
-                                // The overlay header already shows the title/icon.
-                                if (item.hasOwnProperty("showHeader")) item.showHeader = false
-                            }
                         }
                     }
                 }
-                // Reset this widget to its defaults.
+                // Reset configuration without deleting classified personal data.
                 Rectangle {
                     Layout.fillWidth: true; Layout.preferredHeight: theme.touchSecondary
                     radius: theme.radiusMd; color: resetMA.pressed ? theme.cardBackgroundAlt : theme.cardBackground
                     border.width: 1; border.color: theme.cardBorder
                     Text {
-                        anchors.centerIn: parent; text: "Reset to defaults"
+                        anchors.centerIn: parent; text: "Reset configuration"
                         color: theme.textSecondary; font.pixelSize: theme.fontLabel
                     }
                     MouseArea {
                         id: resetMA; anchors.fill: parent
-                        // Deep-clones the defaults (so array/object defaults aren't
-                        // shared across widgets) + drops stale keys - see the store.
-                        onClicked: {
-                            store.resetSettings(dashboard.shownId, catalog.defaults(dashboard.shownType))
-                            dashboard.cfgStatus = ""
-                        }
+                        onClicked: dashboard.requestWidgetDataAction("reset")
+                    }
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: theme.touchSecondary
+                    visible: catalog.hasPersonalData(dashboard.shownType)
+                    radius: theme.radiusMd
+                    color: eraseDataMA.pressed ? Qt.rgba(theme.error.r, theme.error.g, theme.error.b, 0.2) : "transparent"
+                    border.width: 1
+                    border.color: theme.error
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Erase personal data"
+                        color: theme.error
+                        font.pixelSize: theme.fontLabel
+                    }
+                    MouseArea {
+                        id: eraseDataMA
+                        anchors.fill: parent
+                        onClicked: dashboard.requestWidgetDataAction("erase")
                     }
                 }
             }
@@ -1742,13 +2021,31 @@ Item {
                 // User widgets carry their form in the manifest; shipped ones
                 // in WidgetConfigSchema. Both compose the same General/About/
                 // Appearance sections.
-                schema: userCatalog.isUser(dashboard.shownType)
-                        ? userCatalog.schemaFor(dashboard.shownType, cfgSchema)
-                        : cfgSchema.schemaFor(dashboard.shownType)
+                schema: {
+                    var _ = store.revision
+                    if (userCatalog.isUser(dashboard.shownType))
+                        return userCatalog.schemaFor(dashboard.shownType, cfgSchema)
+                    var settings = dashboard.shownId
+                                   ? store.settingsFor(dashboard.shownId) : ({})
+                    var selected = dashboard.shownType === "gpu" ? settings.gpuDevice
+                                 : dashboard.shownType === "sensors" ? settings.gpuDevice
+                                 : dashboard.shownType === "net" ? settings.interfaceName
+                                 : dashboard.shownType === "disk" ? settings.mountPath : ""
+                    return cfgSchema.schemaFor(dashboard.shownType, dashboard.metrics, selected)
+                }
                 st: store
                 instanceId: dashboard.shownId
                 col: dashboard.cfgCol
-                statusText: dashboard.cfgStatus
+                statusText: {
+                    var item = dashboard.overlayLoaderItem
+                    if (item && item.hasOwnProperty("connectionStatus")
+                            && item.connectionStatus.length)
+                        return item.connectionStatus
+                    if (item && item.hasOwnProperty("geocodeStatus")
+                            && item.geocodeStatus.length)
+                        return item.geocodeStatus
+                    return dashboard.cfgStatus
+                }
                 onActionRequested: (a) => dashboard.cfgAction(a)
             }
         }
@@ -1822,7 +2119,7 @@ Item {
                         Text {
                             Layout.fillWidth: true; wrapMode: Text.WordWrap
                             text: "This screen is full - your next widget will start a new screen."
-                            font.pixelSize: 14; color: theme.textPrimary
+                            font.pixelSize: theme.fontMinimum; color: theme.textPrimary
                         }
                     }
                 }
@@ -1840,7 +2137,7 @@ Item {
                                 property var allowedItems: dashboard.policyFilteredWidgets(modelData)
                                 visible: allowedItems.length > 0
                                 Layout.fillWidth: true; spacing: theme.spacingSm
-                                Text { text: modelData; font.pixelSize: 14; font.bold: true; color: theme.textSecondary }
+                                Text { text: modelData; font.pixelSize: theme.fontMinimum; font.bold: true; color: theme.textSecondary }
                                 Flow {
                                     Layout.fillWidth: true; spacing: theme.spacingSm
                                     Repeater {
@@ -1911,6 +2208,7 @@ Item {
     PresetPicker {
         id: presetPicker
         catalog: presetLib
+        widgetCatalog: catalog
         locked: store.policyLockedPreset !== ""
         onApplyRequested: (pid) => { if (dashboard.appendPreset(pid)) presetPicker.shown = false }
         onCloseRequested: shown = false

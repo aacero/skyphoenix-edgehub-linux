@@ -47,6 +47,7 @@
         <file alias="ui-play.svg">icons/ui-play.svg</file>
         <file alias="ui-plus.svg">icons/ui-plus.svg</file>
         <file alias="ui-resize.svg">icons/ui-resize.svg</file>
+        <file alias="ui-refresh.svg">icons/ui-refresh.svg</file>
         <file alias="ui-settings.svg">icons/ui-settings.svg</file>
         <file alias="ui-skip-back.svg">icons/ui-skip-back.svg</file>
         <file alias="ui-skip-fwd.svg">icons/ui-skip-fwd.svg</file>

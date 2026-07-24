@@ -39,15 +39,13 @@ QtObject {
           sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5"], dflt: "1x1" },
         { type: "net",     title: "Network",  category: "System", source: "qrc:/qml/NetWidget.qml",     defaults: {},
           sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5"], dflt: "1x1" },
-        // Disk deliberately draws NO sparkline ("usage barely changes"), so it is a
-        // lone static ring - it has strictly less to show than the tiles above and
-        // earns nothing past the baseline.
         { type: "disk",    title: "Disk",     category: "System", source: "qrc:/qml/DiskWidget.qml",    defaults: {},
           sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5"], dflt: "1x1" },
-        // At most 6 rows (CPU/GPU/RAM/DISK + 2 temps) - they share the height, so it
-        // survives a 1/12 tile but runs out of rows past half the screen.
+        // The sensor board starts at half-screen sizes. Its shortest projection
+        // prioritizes four rows and discloses the hidden count; larger footprints
+        // add temperature, power, fan, source, and semantic-state context.
         { type: "sensors", title: "Sensors",  category: "System", source: "qrc:/qml/SensorsWidget.qml", defaults: {},
-          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5"], dflt: "1x1" },
+          sizes: ["0.5x1", "1x0.5", "1x1", "1x1.5"], dflt: "1x1" },
 
         // Installed-package count + system age, read from the package manager's
         // own database (never mutated). Both are ONE number plus a caption - the
@@ -56,22 +54,20 @@ QtObject {
         // it (a lone number at 1x2 is a stretched card, not more information).
         { type: "packages",     title: "Packages",   category: "System", source: "qrc:/qml/PackagesWidget.qml",
           defaults: { showDistro: true },
-          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5"], dflt: "1x1" },
+          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1"], dflt: "1x1" },
         { type: "sinceinstall", title: "System Age", category: "System", source: "qrc:/qml/SinceInstallWidget.qml",
           defaults: { ageUnit: "auto", showDate: true },
-          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5"], dflt: "1x1" },
+          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1"], dflt: "1x1" },
 
         // Time / ambient
         { type: "clock",   title: "Clock",       category: "Time", source: "qrc:/qml/ClockWidget.qml",   defaults: {},
           sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5"], dflt: "1x1" },
         { type: "analog",  title: "Analog Clock",category: "Time", source: "qrc:/qml/AnalogClockWidget.qml", defaults: {},
           sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5"], dflt: "1x1" },
-        // Was "illumination/next-new/next-full are expanded-only, so a larger tile
-        // would just scale the emoji" - no longer true since wave 2a: a tall tile
-        // earns the illumination and the next-new/next-full dates, so the size
-        // list is honest rather than a shrug. It could now justify 1x1.5 too.
+        // Rich Moon layouts add the cycle position, next phase dates, and optional
+        // local rise/set context, so 1x1.5 has distinct useful content.
         { type: "moon",    title: "Moon Phase",  category: "Time", source: "qrc:/qml/MoonWidget.qml",    defaults: {},
-          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1"], dflt: "1x1" },
+          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5"], dflt: "1x1" },
 
         // Focus / productivity (persisted user data)
         // The ring is min(w,h)-scaled with the Start/Skip row anchored over its
@@ -114,7 +110,9 @@ QtObject {
         // Doses + a "mark taken" target. Half sizes carry the one focused dose, the
         // taller ones carry the day's schedule.
         { type: "meds",     title: "Meds",        category: "Focus", source: "qrc:/qml/MedsWidget.qml",
-          defaults: { schedule: "", dueWindowMin: 60, taken: [], takenDay: "" },
+          defaults: { schedule: "", scheduleItems: [], dueWindowMin: 60,
+                      notifyWhenHidden: false, notificationDetails: false,
+                      taken: [], takenDay: "", notified: [], notifiedDay: "" },
           sizes: ["0.5x1", "1x0.5", "1x1", "1x1.5", "1x2"], dflt: "1x1" },
         // Capture queue. The add field + ＋ button is a fixed ~40px row in both
         // orientations of every declared size, which is what rules out 0.5x0.5.
@@ -123,7 +121,7 @@ QtObject {
           sizes: ["0.5x1", "1x0.5", "1x1", "1x1.5", "1x2"], dflt: "1x1" },
         // Daily checklist. Same shape as meds: a list of tappable rows.
         { type: "routine",  title: "Routine",     category: "Focus", source: "qrc:/qml/RoutineWidget.qml",
-          defaults: { steps: "", done: [], day: "" },
+          defaults: { steps: "", routineItems: [], done: [], day: "" },
           sizes: ["0.5x1", "1x0.5", "1x1", "1x1.5", "1x2"], dflt: "1x1" },
 
         // Media
@@ -153,18 +151,18 @@ QtObject {
         // air. Not 1/12 either: NOW and NEXT are two labelled blocks, and dropping
         // one to fit would make it a worse `calendar` rather than a Now/Next.
         { type: "nownext",  title: "Now / Next",  category: "Info", source: "qrc:/qml/NowNextWidget.qml",  defaults: { url: "" },
-          sizes: ["0.5x1", "1x0.5", "1x1", "1x1.5"], dflt: "1x1" },
+          sizes: ["0.5x1", "1x0.5", "1x1"], dflt: "1x1" },
         // The forecast request asks for `current` + `daily` only (never `hourly`) and
         // forecastDays caps at 7, so the content is a reading plus a few day columns.
-        { type: "weather",  title: "Weather",     category: "Info", source: "qrc:/qml/WeatherWidget.qml",  defaults: { lat: 52.52, lon: 13.405, place: "Berlin" },
+        { type: "weather",  title: "Weather",     category: "Info", source: "qrc:/qml/WeatherWidget.qml",  defaults: {},
           sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5"], dflt: "1x1" },
         { type: "countdown",title: "Countdown",   category: "Info", source: "qrc:/qml/CountdownWidget.qml", defaults: { label: "", date: "", repeatYearly: false },
-          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5"], dflt: "1x1" },
+          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1"], dflt: "1x1" },
         { type: "eod",      title: "End of Day",  category: "Info", source: "qrc:/qml/EndOfDayWidget.qml",  defaults: { startHour: 9, endHour: 17, progressStyle: "bar" },
           sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5"], dflt: "1x1" },
         // One quote, capped at 4 lines collapsed.
         { type: "quote",    title: "Daily Quote", category: "Info", source: "qrc:/qml/QuoteWidget.qml",    defaults: { category: "focus", customText: "" },
-          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5"], dflt: "1x1" }
+          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1"], dflt: "1x1" }
     ]
 
     // One-line descriptions shown in the expanded (full-screen) view header.
@@ -176,20 +174,20 @@ QtObject {
         "disk": "How full your root filesystem is.",
         "sensors": "CPU, GPU, memory, disk and temperatures together at a glance.",
         "packages": "How many packages are installed, counted from your package manager's own database. Read-only - nothing here installs, removes or updates anything.",
-        "sinceinstall": "How long this system has been installed, measured from the first install recorded in your package manager's log.",
-        "clock": "The current time and date.",
+        "sinceinstall": "System age from a confirmed installer record or the earliest visible package-history record, with source and confidence shown.",
+        "clock": "A locale-aware digital clock with DST-correct IANA zones, fixed offsets, and up to three additional world clocks.",
         "analog": "A classic analog clock face.",
-        "moon": "Tonight's moon phase and how illuminated it is.",
+        "moon": "A deterministic moon phase, illumination, cycle position, and optional local rise and set times.",
         "focus": "A Pomodoro focus timer with work and break cycles. Pick a preset and press Start - it keeps running even if you close this view.",
         "tasks": "A simple checklist. Type a task and press Add; tap the circle to complete, ✕ to remove.",
         "rightnow": "The single most important thing you're doing right now. Type it and press Save.",
         "notes": "A quick scratchpad - type anything and it saves automatically.",
         "habit": "Build a daily streak. Press Check in each day you do the habit.",
         "hydration": "Count glasses of water toward a daily goal; use − / + to adjust.",
-        "break": "A repeating reminder to take a break. Set the interval with − / +.",
-        "meds": "Your doses for the day, and which ones you've marked as taken. It tracks taps, not pills - an unmarked dose is shown quietly, never as an alarm, because only you know whether you took it.",
-        "braindump": "Somewhere to put a thought the moment you have it. Type it, press Enter, forget it. Each line is stamped with the time; clear them once they're handled.",
-        "routine": "A checklist that starts fresh every day. Nothing is counted across days and nothing is lost by skipping one - there is no streak to break.",
+        "break": "A schedule-aware break timer with snooze, weekday controls, and optional off-page notifications.",
+        "meds": "Your weekday-aware dose schedule and the entries you've marked as taken today. Optional private-by-default reminders can notify you when this Hub screen is hidden. It tracks taps, not pills, so an unmarked dose stays neutral.",
+        "braindump": "Capture a thought immediately, keep the newest at the top, and edit, remove, clear, or undo from any connected Hub or Manager view. The bounded queue always discloses its 100-item limit.",
+        "routine": "A calm daily checklist with reorderable, rename-safe steps and structured active weekdays. It resets each morning, exposes hidden rows, and keeps no cross-day score.",
         "nownext": "What's on right now and what's coming up next, from an ICS calendar you subscribe to.",
         "httpjson": "Poll any URL and show a value from its JSON - as a number, a gauge, or a list. Colour-codes against thresholds.",
         "kpi": "One headline number from a URL or a local file, with a label, unit and colour-coded thresholds.",
@@ -199,6 +197,33 @@ QtObject {
         "eod": "How much of your workday is left. Adjust your start and end hours.",
         "media": "Now Playing - controls Spotify, YouTube Music, or any player on this machine.",
         "quote": "A fresh bit of motivation each day."
+    })
+
+    // LOSS-001: content and progress that must survive a configuration reset.
+    // These keys may only be removed through the separately confirmed personal-
+    // data action. Labels are deliberately concrete so confirmation copy states
+    // exactly what will be erased instead of using a vague "all data" warning.
+    readonly property var _personalData: ({
+        "focus": { keys: ["phase", "running", "endEpoch", "pausedRemaining", "doneToday", "day", "points"],
+                   label: "timer state, today's completed sessions, and points" },
+        "tasks": { keys: ["items", "nextId"], label: "tasks and their ordering" },
+        "rightnow": { keys: ["text", "startedAt", "finishedToday", "day"],
+                      label: "current focus and today's completion count" },
+        "notes": { keys: ["text", "history"], label: "note text and recovery history" },
+        "habit": { keys: ["checkins", "streak", "bestStreak", "lastCheckinDay"],
+                   label: "check-ins and streak history" },
+        "hydration": { keys: ["count", "day", "streak", "lastGoalDay", "previousCount"],
+                       label: "today's hydration record and streak history" },
+        "break": { keys: ["running", "endEpoch", "pausedRemaining", "scheduleSuspended",
+                           "snoozed", "due", "breaksToday", "day"],
+                   label: "timer state and today's acknowledged breaks" },
+        "meds": { keys: ["schedule", "scheduleItems", "scheduleFormat", "taken", "takenDay",
+                          "notified", "notifiedDay"],
+                  label: "medication schedule and user-marked records" },
+        "braindump": { keys: ["entries", "undoEntries", "undoLabel"],
+                       label: "captured thoughts and their undo recovery state" },
+        "routine": { keys: ["steps", "routineItems", "routineFormat", "done", "day"],
+                     label: "routine steps and today's marks" }
     })
 
     // ── Tier-0 user widgets (E3) ─────────────────────────────────────────────
@@ -285,6 +310,16 @@ QtObject {
     // plain data table, reused as-is by the Manager); tst_widget_catalog asserts it
     // equals WidgetSizes.baseline, so the two cannot drift apart unnoticed.
     function defaultSize(type) { var d = def(type); return (d && d.dflt) ? d.dflt : "1x1" }
+
+    function personalDataKeys(type) {
+        var d = _personalData[type]
+        return d && d.keys ? d.keys.slice() : []
+    }
+    function personalDataLabel(type) {
+        var d = _personalData[type]
+        return d && d.label ? d.label : ""
+    }
+    function hasPersonalData(type) { return personalDataKeys(type).length > 0 }
 
     // Distinct category names, in declaration order - shipped first, then any
     // categories only user widgets introduce.

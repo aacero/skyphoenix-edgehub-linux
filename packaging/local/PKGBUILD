@@ -7,7 +7,7 @@
 # It must stay TAG-derived: a hardcoded base silently rots the moment a release
 # tag moves past it (it did - see the comment on pkgver()).
 pkgname=xeneon-edge-hub
-pkgver=1.0.0.alpha.2.r246.g684cddb   # overwritten by pkgver() at build time
+pkgver=1.0.0.beta.1.r11.g2526cf5   # overwritten by pkgver() at build time
 pkgrel=1
 pkgdesc="Native Linux widget dashboard for the Corsair Xeneon Edge (local working-tree build)"
 arch=('x86_64')

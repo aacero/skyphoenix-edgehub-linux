@@ -30,9 +30,25 @@ WidgetChrome {
         var _ = store ? store.revision : 0
         return (store && instanceId) ? JSON.parse(JSON.stringify(store.settingsFor(instanceId))) : ({})
     }
-    readonly property string label: cfg.label || ""
-    readonly property string dateStr: cfg.date || ""
+    readonly property string label: String(cfg.label || "")
+    // Preset settings can cross a QJSValue boundary before DashboardStore
+    // serializes them. Coerce explicitly so an empty preset date remains an
+    // empty string instead of producing a runtime assignment warning.
+    readonly property string dateStr: String(cfg.date || "")
+    readonly property bool hasStructuredTime: cfg.targetHour !== undefined
+                                               || cfg.targetMinute !== undefined
+    readonly property int targetHour: cfg.targetHour !== undefined
+        ? Number(cfg.targetHour) : Number((cfg.time || "00:00").split(":")[0])
+    readonly property int targetMinute: cfg.targetMinute !== undefined
+        ? Number(cfg.targetMinute) : Number((cfg.time || "00:00").split(":")[1])
+    readonly property string timeStr: (targetHour < 10 ? "0" : "") + targetHour
+                                      + ":" + (targetMinute < 10 ? "0" : "") + targetMinute
+    readonly property string precision: cfg.precision || "days"
+    readonly property string afterEvent: cfg.afterEvent || "passed"
     readonly property bool repeatYearly: cfg.repeatYearly !== undefined ? cfg.repeatYearly : false
+    readonly property string leapDayPolicy: cfg.leapDayPolicy || "nextLeap"
+    property double nowMsOverride: -1
+    function currentDate() { return new Date(w.nowMsOverride >= 0 ? w.nowMsOverride : Date.now()) }
     function dayStart(d) { var x = new Date(d); x.setHours(0, 0, 0, 0); return x }
     // Parse "YYYY-MM-DD" into a LOCAL-midnight Date, or null when malformed -
     // new Date(str) would treat it as UTC midnight and, west of UTC, land the
@@ -50,31 +66,96 @@ WidgetChrome {
             target.getMonth() !== mo || target.getDate() !== d) return null
         return target
     }
+    function parseTime(str) {
+        var m = /^(\d{1,2}):(\d{2})$/.exec(String(str || ""))
+        if (!m) return null
+        var h = Number(m[1]), minute = Number(m[2])
+        return h >= 0 && h <= 23 && minute >= 0 && minute <= 59 ? [h, minute] : null
+    }
     // The date the countdown is actually aiming at: the stored date, or - for a
     // yearly repeat - its next occurrence on or after today (skipping non-leap
     // years for a Feb-29 anniversary, where new Date(y,1,29) rolls to Mar-1).
     function nextTarget() {
         var target = parseDate(dateStr)
         if (!target) return null
+        var clock = parseTime(w.timeStr)
+        if (!clock) return null
+        target.setHours(clock[0], clock[1], 0, 0)
         if (!w.repeatYearly) return target
-        var today0 = dayStart(new Date())
+        var now = w.currentDate()
+        var today0 = dayStart(now)
         var mo = target.getMonth(), d = target.getDate()
         for (var i = 0; i < 12; i++) {
-            var c = new Date(today0.getFullYear() + i, mo, d)
-            if (c.getMonth() !== mo || c.getDate() !== d) continue
-            if (dayStart(c) >= today0) return c
+            var year = today0.getFullYear() + i
+            var c = new Date(year, mo, d)
+            var substituted = false
+            if (mo === 1 && d === 29 && c.getMonth() !== mo) {
+                if (w.leapDayPolicy === "feb28") {
+                    c = new Date(year, 1, 28)
+                    substituted = true
+                } else if (w.leapDayPolicy === "mar1") {
+                    c = new Date(year, 2, 1)
+                    substituted = true
+                }
+                else continue
+            }
+            c.setHours(clock[0], clock[1], 0, 0)
+            if (!substituted && (c.getMonth() !== mo || c.getDate() !== d)) continue
+            if (c >= now) return c
         }
         return null
     }
     // Validity is derived from parsing, NOT from `days`: a real date exactly 999
     // days in the past legitimately yields days === -999, which must not be
     // mistaken for the invalid sentinel.
-    property bool valid: parseDate(dateStr) !== null
+    property bool valid: parseDate(dateStr) !== null && parseTime(timeStr) !== null
+                         && targetHour >= 0 && targetHour <= 23
+                         && targetMinute >= 0 && targetMinute <= 59
     property int days: {
         w.tick
         var target = nextTarget()
         if (!target) return -999   // -999 sentinel = invalid/unset
-        return Math.round((dayStart(target) - dayStart(new Date())) / 86400000)
+        return Math.round((dayStart(target) - dayStart(w.currentDate())) / 86400000)
+    }
+    readonly property int hoursRemaining: {
+        w.tick
+        var target = w.nextTarget()
+        return target ? Math.ceil((target.getTime() - w.currentDate().getTime()) / 3600000) : 0
+    }
+    readonly property string heroText: {
+        if (!w.valid) return "-"
+        if (w.days < 0 && w.afterEvent === "complete") return "✓"
+        if (w.days === 0 && w.hoursRemaining <= 0) return "NOW"
+        if (w.precision === "auto" && w.hoursRemaining > 0 && w.hoursRemaining < 48)
+            return w.hoursRemaining + "h"
+        return "" + Math.abs(w.days)
+    }
+    readonly property string milestoneText: w.days === 30 ? "One month to go"
+        : w.days === 7 ? "One week to go" : w.days === 1 ? "Tomorrow" : ""
+    readonly property string eventIdentity: w.label.length ? w.label
+        : (w.repeatYearly ? "Yearly event" : "Upcoming event")
+    readonly property string timezoneText: {
+        var offset = -w.currentDate().getTimezoneOffset()
+        var sign = offset >= 0 ? "+" : "-"
+        var abs = Math.abs(offset)
+        var hh = Math.floor(abs / 60), mm = abs % 60
+        return "Device local UTC" + sign + (hh < 10 ? "0" : "") + hh
+               + ":" + (mm < 10 ? "0" : "") + mm
+    }
+    readonly property string leapPolicyText: {
+        if (!w.repeatYearly || w.parseDate(w.dateStr) === null
+                || w.parseDate(w.dateStr).getMonth() !== 1
+                || w.parseDate(w.dateStr).getDate() !== 29) return ""
+        if (w.leapDayPolicy === "feb28") return "In non-leap years: February 28"
+        if (w.leapDayPolicy === "mar1") return "In non-leap years: March 1"
+        return "Only occurs in leap years"
+    }
+    function occurrenceExplanation() {
+        var target = w.nextTarget()
+        if (!target) return "Choose a valid local date and time."
+        var prefix = w.repeatYearly ? "Next yearly occurrence" : "Target"
+        return prefix + ": " + Qt.formatDate(target, "ddd, d MMM yyyy")
+               + " at " + w.timeStr + " (" + w.timezoneText + ")"
     }
 
     // ── Progress context (an honest baseline or none at all) ────────────────
@@ -99,7 +180,7 @@ WidgetChrome {
             start = cfg.dateSetEpoch
         }
         if (start < 0 || end <= start) return -1
-        return Math.max(0, Math.min(1, (Date.now() - start) / (end - start)))
+        return Math.max(0, Math.min(1, (w.currentDate().getTime() - start) / (end - start)))
     }
     // Stamp when a (valid) date is stored so the one-time progress bar has a real
     // starting line. Keyed to the date string, so re-saving the same date never
@@ -118,7 +199,7 @@ WidgetChrome {
     // side is ~344-416px in either orientation vs ~690px+ for a full cell.
     readonly property bool micro: sizeClass === "compact" && Math.min(width, height) < 480
     readonly property bool horiz: sizeClass === "wide"
-    readonly property bool showDateRow: valid && days >= 0 && !micro
+    readonly property bool showDateRow: valid && !micro
     readonly property bool showProgress: progress >= 0 && sizeClass !== "compact"
     readonly property real numPx: {
         if (sizeClass === "full") return 120
@@ -151,9 +232,9 @@ WidgetChrome {
             Layout.maximumWidth: w.horiz ? Math.round(tileLayout.width * 0.42)
                                          : tileLayout.width
             horizontalAlignment: Text.AlignHCenter
-            text: !w.valid ? "-" : (w.days > 0 ? w.days : (w.days === 0 ? "🎉" : Math.abs(w.days)))
+            text: w.heroText
             font.pixelSize: w.numPx
-            fontSizeMode: Text.HorizontalFit; minimumPixelSize: 12; elide: Text.ElideRight
+            fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum; elide: Text.ElideRight
             font.bold: true; font.family: theme.fontMono; color: w.effAccent
         }
 
@@ -163,13 +244,30 @@ WidgetChrome {
             spacing: w.micro ? 0 : theme.spacingXs
 
             Text {
+                visible: w.valid && !w.micro
                 Layout.fillWidth: true
                 horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
-                text: !w.valid ? "Set a date below" :
-                      (w.days > 0 ? (w.days === 1 ? "day until " : "days until ") + (w.label || "the day")
+                text: w.eventIdentity
+                color: theme.textPrimary
+                font.pixelSize: w.sizeClass === "full" ? 28
+                    : Math.max(theme.fontTitle, Math.min(w.width * 0.05, 24))
+                font.bold: true
+                elide: Text.ElideRight
+            }
+            Text {
+                Layout.fillWidth: true
+                horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
+                text: !w.valid ? (w.expanded ? "Set a valid date and time in the configuration panel"
+                                            : "Set a date in settings") :
+                      (w.precision === "auto" && w.hoursRemaining > 0 && w.hoursRemaining < 48
+                       ? "hours until " + (w.label || "the event")
+                       : w.days > 0 ? (w.days === 1 ? "day until " : "days until ") + (w.label || "the day")
                        : w.days === 0 ? (w.label || "Today") + "!"
+                       : w.afterEvent === "complete" ? (w.label || "Event") + " complete"
                        : (w.label || "the day") + " passed")
-                font.pixelSize: w.sizeClass === "full" ? 22 : (w.micro ? 11 : (w.sizeClass === "compact" ? 14 : 16))
+                font.pixelSize: w.sizeClass === "full" ? 22
+                                : (w.micro ? theme.fontMinimum
+                                           : Math.max(theme.fontLabel, Math.min(w.width * 0.04, 19)))
                 color: theme.textSecondary
                 wrapMode: Text.WordWrap; maximumLineCount: w.micro ? 1 : 2; elide: Text.ElideRight
             }
@@ -177,16 +275,22 @@ WidgetChrome {
                 visible: w.showDateRow
                 Layout.fillWidth: true
                 horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
-                text: {
-                    w.tick
-                    var target = w.nextTarget()
-                    return target ? Qt.formatDate(target, "ddd, d MMM yyyy") : ""
-                }
+                text: w.occurrenceExplanation()
+                      + (w.milestoneText.length ? " · " + w.milestoneText : "")
                 font.pixelSize: w.sizeClass === "full" ? 18
-                                : Math.max(12, Math.min(w.width * 0.035, 17))
+                                : Math.max(theme.fontLabel, Math.min(w.width * 0.038, 20))
                 font.family: theme.fontMono
-                color: theme.textTertiary
+                color: theme.textSecondary
                 elide: Text.ElideRight; maximumLineCount: 1
+            }
+            Text {
+                visible: w.showDateRow && w.leapPolicyText.length > 0
+                Layout.fillWidth: true
+                horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
+                text: w.leapPolicyText
+                color: theme.textSecondary
+                font.pixelSize: Math.max(theme.fontLabel, Math.min(w.width * 0.034, 18))
+                elide: Text.ElideRight
             }
             // Progress toward the day: only with room (never in compact) and only
             // when a real baseline exists.
@@ -207,30 +311,27 @@ WidgetChrome {
         }
     }
 
-    // Settings (expanded overlay only - a mode, not a size)
+    // The shared WidgetConfigPanel beside this preview owns the structured
+    // controls. The preview states exactly what will be counted.
     ColumnLayout {
         anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
         visible: w.expanded; spacing: theme.spacingSm
-        RowLayout {
-            Layout.fillWidth: true; spacing: theme.spacingSm
-            TextField {
-                id: labelField; Layout.fillWidth: true; Layout.preferredHeight: theme.touchSecondary; text: w.label
-                placeholderText: "Label (e.g. Vacation)"; placeholderTextColor: theme.textTertiary
-                color: theme.textPrimary; font.pixelSize: 15
-                background: Rectangle { radius: theme.radiusSm; color: theme.backgroundColor
-                    border.color: labelField.activeFocus ? theme.accent : theme.cardBorder; border.width: 1 }
-                onEditingFinished: if (w.store) w.store.setSetting(w.instanceId, "label", text)
-            }
-            TextField {
-                id: dateField; Layout.preferredWidth: 150; Layout.preferredHeight: theme.touchSecondary; text: w.dateStr
-                placeholderText: "YYYY-MM-DD"; placeholderTextColor: theme.textTertiary
-                color: theme.textPrimary; font.pixelSize: 15; inputMask: "9999-99-99"
-                background: Rectangle { radius: theme.radiusSm; color: theme.backgroundColor
-                    border.color: dateField.activeFocus ? theme.accent : theme.cardBorder; border.width: 1 }
-                onEditingFinished: if (w.store) w.store.setSetting(w.instanceId, "date", text)
-            }
-            PillButton { label: "Save"; primary: true; tint: w.effAccent
-                onClicked: if (w.store) w.store.patchSettings(w.instanceId, { "label": labelField.text, "date": dateField.text }) }
+        Text {
+            Layout.fillWidth: true
+            text: w.valid ? w.occurrenceExplanation()
+                          : "Complete the event date and bounded local-time controls."
+            color: w.valid ? theme.textSecondary : theme.warning
+            font.pixelSize: theme.fontLabel
+            wrapMode: Text.WordWrap
+            horizontalAlignment: Text.AlignHCenter
+        }
+        Text {
+            visible: w.leapPolicyText.length > 0
+            Layout.fillWidth: true
+            text: w.leapPolicyText
+            color: theme.textSecondary
+            font.pixelSize: theme.fontLabel
+            horizontalAlignment: Text.AlignHCenter
         }
     }
 }

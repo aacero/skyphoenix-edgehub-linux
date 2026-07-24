@@ -14,8 +14,8 @@ import QtQuick
 //
 // A tile spec is { type, size?, settings? }. `size` is a name from WidgetSizes and
 // MUST be one the type declares in WidgetCatalog; omit it for the type's default.
-// Appearance only sets the preset's *character* (bgStyle / animatedBg /
-// reduceMotion) - never themeMode/accent, so applying a preset preserves the user's
+// Appearance only sets the preset's *character* (bgStyle / animatedBg / glow),
+// never themeMode, accent, or accessibility preferences, so applying a preset preserves the user's
 // chosen colours; appendPreset carries the character as a per-page background so it
 // rides on the page, not the global look. Every tile `type` MUST exist in
 // WidgetCatalog (a QML test asserts both).
@@ -37,40 +37,50 @@ QtObject {
     id: presets
 
     // Character presets kept DRY.
-    readonly property var _calm:  ({ bgStyle: "none",  animatedBg: false, reduceMotion: true,  glow: false })
-    readonly property var _ambient: ({ bgStyle: "orbs",  animatedBg: true,  reduceMotion: false, glow: true })
-    readonly property var _tech:  ({ bgStyle: "grid",  animatedBg: true,  reduceMotion: false, glow: true })
-    readonly property var _soft:  ({ bgStyle: "orbs",  animatedBg: false, reduceMotion: false, glow: true })
+    readonly property var _calm:  ({ bgStyle: "none",  animatedBg: false, glow: false })
+    readonly property var _ambient: ({ bgStyle: "orbs",  animatedBg: true,  glow: true })
+    readonly property var _tech:  ({ bgStyle: "grid",  animatedBg: true,  glow: true })
+    readonly property var _soft:  ({ bgStyle: "orbs",  animatedBg: false, glow: true })
 
     property var items: [
         // ── Local, no online config needed ──────────────────────────────────
         // `focus` tops out at 1x1.5 - the hero timer is the largest it renders.
         { id: "calm-focus", title: "Calm Focus", icon: "flower-lotus",
           blurb: "Deep work, quietly. A big timer beside your one thing.",
+          purpose: "Protect a deep-work block while keeping the single intention that matters visible.",
+          setup: "Ready immediately. Choose a timer profile or write your current focus when you want to personalize it.",
           appearance: _calm, surfaced: ["Focus"],
           pages: [ { name: "Focus", tiles: [
               { type: "focus", size: "1x1.5" }, { type: "rightnow", size: "1x1.5" } ] } ] },
 
         { id: "notes-streak", title: "Notes & Streak", icon: "note-pencil",
           blurb: "A scratchpad that saves itself, next to your daily streak.",
+          purpose: "Capture thoughts without leaving the flow and keep one daily habit visible beside them.",
+          setup: "Ready immediately. Name the habit in its widget settings when you are ready.",
           appearance: _calm, surfaced: ["Focus"],
           pages: [ { name: "Notes", tiles: [
               { type: "notes", size: "1x1.5" }, { type: "habit", size: "1x1.5" } ] } ] },
 
         { id: "home-ambient", title: "Home", icon: "house",
           blurb: "A beautiful desk companion - the time and the weather, up front.",
+          purpose: "Turn the Edge into an everyday desk companion with the current time and local conditions.",
+          setup: "Set your weather location once. The clock works immediately.",
           appearance: _ambient, surfaced: ["Time", "Info"],
           pages: [ { name: "Home", tiles: [
               { type: "clock", size: "1x1.5" }, { type: "weather", size: "1x1.5" } ] } ] },
 
         { id: "ambient", title: "Ambient", icon: "moon-stars",
           blurb: "When it's not working hard - what's playing and tonight's moon.",
+          purpose: "Give idle desk time a calm now-playing view with tonight's moon phase beside it.",
+          setup: "Moon phase works immediately. Start any MPRIS-compatible media player for live playback details.",
           appearance: _ambient, surfaced: ["Media", "Time"],
           pages: [ { name: "Ambient", tiles: [
               { type: "media", size: "1x1.5" }, { type: "moon", size: "1x1" } ] } ] },
 
         { id: "minimal", title: "Minimalist", icon: "sparkle",
           blurb: "Almost nothing. A beautiful clock, the weather, and the moon.",
+          purpose: "Keep only the three quiet facts that matter at a glance: time, local weather, and moon phase.",
+          setup: "Set your weather location once. Time and moon phase work immediately.",
           appearance: _calm, surfaced: ["Time"],
           pages: [ { name: "Home", tiles: [
               { type: "clock", size: "1x1.5" },
@@ -78,6 +88,8 @@ QtObject {
 
         { id: "health", title: "Health & Routine", icon: "heartbeat",
           blurb: "Gentle nudges toward a good day - water, breaks, and a daily streak.",
+          purpose: "Keep small wellbeing intentions visible without turning them into a noisy productivity dashboard.",
+          setup: "Ready immediately. Adjust water, break, and habit goals to match your routine.",
           appearance: _soft, surfaced: ["Focus"],
           pages: [ { name: "Health", tiles: [
               { type: "hydration", size: "1x1" }, { type: "break", size: "1x1" },
@@ -85,25 +97,33 @@ QtObject {
 
         { id: "creator", title: "Creator / Media", icon: "film-slate",
           blurb: "For making things - now-playing front and centre, and a focus timer.",
+          purpose: "Keep the soundtrack and a protected creative work block together in one studio screen.",
+          setup: "The timer works immediately. Start an MPRIS-compatible media player for live playback details.",
           appearance: _ambient, surfaced: ["Media", "Focus"],
           pages: [ { name: "Studio", tiles: [
               { type: "media", size: "1x1.5" }, { type: "focus", size: "1x1.5" } ] } ] },
 
         { id: "study", title: "Student / Study", icon: "books",
-          blurb: "Study sessions that stick - a focus timer and a countdown to the exam.",
+          blurb: "Study sessions that stick with a focus timer, today's tasks, and an exam countdown.",
+          purpose: "Plan a study session, keep the next tasks visible, and maintain awareness of the exam date.",
+          setup: "Set the exam date in Countdown. The focus timer and tasks are ready immediately.",
           appearance: _soft, surfaced: ["Focus", "Info"],
           pages: [ { name: "Study", tiles: [
-              { type: "focus", size: "1x1.5" },
-              { type: "countdown", size: "1x1.5", settings: { label: "Exam", date: "", repeatYearly: false } } ] } ] },
+              { type: "focus", size: "1x1" }, { type: "tasks", size: "1x1" },
+              { type: "countdown", size: "1x1", settings: { label: "Exam", date: "", repeatYearly: false } } ] } ] },
 
         { id: "productivity", title: "Productivity", icon: "check-circle",
           blurb: "Get things done - a focus timer beside today's tasks.",
+          purpose: "Run a focused work block while keeping the concrete task list visible beside it.",
+          setup: "Ready immediately. Add tasks and start the timer directly on the Edge.",
           appearance: _soft, surfaced: ["Focus", "Time"],
           pages: [ { name: "Focus", tiles: [
               { type: "focus", size: "1x1.5" }, { type: "tasks", size: "1x1.5" } ] } ] },
 
         { id: "remote-work", title: "Remote Work", icon: "briefcase",
           blurb: "The working day - today's tasks and how much of the workday is left.",
+          purpose: "Anchor a remote workday around today's commitments and a calm view of remaining work time.",
+          setup: "Ready with a 09:00 to 17:00 workday. Adjust work hours and weekdays if needed.",
           appearance: _calm, surfaced: ["Focus", "Info"],
           pages: [ { name: "Day", tiles: [
               { type: "tasks", size: "1x1.5" },
@@ -111,6 +131,8 @@ QtObject {
 
         { id: "gaming", title: "Gaming Cockpit", icon: "game-controller",
           blurb: "Rig telemetry beside your game - the GPU front and centre, CPU and memory.",
+          purpose: "Keep the graphics card prominent while retaining compact CPU and memory context during play.",
+          setup: "Uses local Linux telemetry immediately. Available GPU details depend on what the active driver exposes.",
           appearance: _tech, surfaced: ["System", "Media"],
           pages: [ { name: "GPU", tiles: [
               { type: "gpu", size: "1x1.5" },
@@ -118,6 +140,8 @@ QtObject {
 
         { id: "system-monitor", title: "System Core", icon: "gauge",
           blurb: "The classic - CPU, GPU and memory at a glance.",
+          purpose: "Provide a balanced health overview of the three core compute resources.",
+          setup: "Ready immediately using local Linux metrics. No network connection is required.",
           appearance: _tech, surfaced: ["System"],
           pages: [ { name: "Core", tiles: [
               { type: "cpu", size: "1x1" }, { type: "gpu", size: "1x1" },
@@ -125,6 +149,8 @@ QtObject {
 
         { id: "system-io", title: "System I/O", icon: "compass",
           blurb: "The other half - network, disk, and temperatures.",
+          purpose: "Show movement and thermal context that complements the core CPU, GPU, and memory screen.",
+          setup: "Ready immediately using local Linux metrics. Sensor rows depend on available hardware sources.",
           appearance: _tech, surfaced: ["System"],
           pages: [ { name: "I/O", tiles: [
               { type: "net", size: "1x1" }, { type: "disk", size: "1x1" },
@@ -133,12 +159,16 @@ QtObject {
         // ── Screens with a labelled online slot (blank endpoint → self-explains) ─
         { id: "day-plan", title: "Day Plan", icon: "calendar-dots",
           blurb: "The time and your agenda - connect a calendar (ICS URL) in settings.",
+          purpose: "Keep the current time beside the upcoming agenda so the shape of the day stays visible.",
+          setup: "Connect an ICS calendar URL in Calendar settings. The clock works immediately.",
           appearance: _calm, surfaced: ["Time", "Info"],
           pages: [ { name: "Agenda", tiles: [
               { type: "clock", size: "1x1" }, { type: "calendar", size: "1x2" } ] } ] },
 
         { id: "developer", title: "Developer", icon: "code",
           blurb: "Your build and a number you watch - CI status and open PRs. Add your URLs.",
+          purpose: "Turn build status and one engineering delivery number into a focused development signal board.",
+          setup: "Connect your CI feed and pull-request KPI endpoints. Nothing polls until you add those URLs.",
           appearance: _tech, surfaced: ["Data", "System"],
           pages: [ { name: "Dev", tiles: [
               { type: "httpjson", size: "1x1.5", settings: { title: "CI status", mode: "list", listMax: 5, pollSec: 120 } },
@@ -146,6 +176,8 @@ QtObject {
 
         { id: "homelab", title: "Homelab Ops", icon: "hard-drives",
           blurb: "Watch the lab - service uptime and container health. Add your endpoints.",
+          purpose: "Keep service availability and container health visible without opening the full monitoring stack.",
+          setup: "Connect your uptime and container endpoints. Nothing polls until you add those URLs.",
           appearance: _tech, surfaced: ["Data", "System"],
           pages: [ { name: "Services", tiles: [
               { type: "httpjson", size: "1x1.5", settings: { title: "Uptime", mode: "list", listMax: 6, pollSec: 60 } },
@@ -153,6 +185,8 @@ QtObject {
 
         { id: "trading-desk", title: "Trading Desk", icon: "chart-line-up",
           blurb: "Two clocks and your P&L - local and New York, beside one headline number.",
+          purpose: "Keep local and New York market time beside the one portfolio number you monitor most closely.",
+          setup: "Connect the P&L KPI endpoint. Both clocks work immediately.",
           appearance: _calm, surfaced: ["Time", "Data"],
           pages: [ { name: "Desk", tiles: [
               // The two zones sit side by side - one glance, two clocks.
@@ -162,6 +196,8 @@ QtObject {
 
         { id: "analyst", title: "Analyst / Data", icon: "chart-line-down",
           blurb: "A calm data corner - two headline numbers (one from a local file) and a feed.",
+          purpose: "Combine two headline measures with one monitoring feed for a compact analytical overview.",
+          setup: "Connect the HTTP KPI and monitoring feed, then choose a local file for the daily total.",
           appearance: _calm, surfaced: ["Data", "Time"],
           pages: [ { name: "Data", tiles: [
               { type: "kpi", size: "1x1.5", settings: { title: "Headline metric", label: "Headline metric", source: "http", pollSec: 300 } },
@@ -171,6 +207,8 @@ QtObject {
 
         { id: "enterprise", title: "Team / Enterprise", icon: "buildings",
           blurb: "A clean managed baseline - your workday and one approved team number.",
+          purpose: "Provide a restrained team baseline with workday progress and one organization-approved measure.",
+          setup: "Connect the approved team KPI endpoint. Workday progress is ready with default office hours.",
           appearance: _calm, surfaced: ["Info", "Data"],
           pages: [ { name: "Team", tiles: [
               { type: "eod", size: "1x1.5" },

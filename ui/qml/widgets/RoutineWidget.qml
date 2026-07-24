@@ -53,6 +53,10 @@ WidgetChrome {
     // One step per line. Same reasoning as Meds' schedule: a small adjustment
     // surface beats a structured editor.
     readonly property string steps: cfg.steps !== undefined ? cfg.steps : ""
+    readonly property var routineItems:
+        Array.isArray(cfg.routineItems) ? cfg.routineItems : []
+    readonly property string activeDays: cfg.activeDays !== undefined ? cfg.activeDays : "0,1,2,3,4,5,6"
+    property int dayOfWeekOverride: -1
 
     function todayKey() { return Qt.formatDate(new Date(), "yyyy-MM-dd") }
     property string dayKey: (w.tick, todayKey())
@@ -60,31 +64,66 @@ WidgetChrome {
     // the daily reset.
     readonly property var doneToday: (cfg.day === dayKey && cfg.done) ? cfg.done : []
 
-    // A step's identity is its own text, not its index: inserting a line above
-    // must not silently re-point the ticks below it onto different steps.
-    // Duplicate lines therefore share one tick - acceptable, and better than
-    // index drift, which corrupts state invisibly.
-    readonly property var stepList: {
+    readonly property var stepItems: {
         var out = []
+        if (cfg.routineFormat === "structured" || w.routineItems.length) {
+            for (var r = 0; r < w.routineItems.length; r++) {
+                var item = w.routineItems[r] || ({})
+                var label = String(item.text || "").trim()
+                if (!label.length) continue
+                out.push({
+                    text: label,
+                    key: String(item.id || ("routine-" + r))
+                })
+            }
+            return out
+        }
         var lines = String(w.steps).split("\n")
+        var occurrences = ({})
         for (var i = 0; i < lines.length; i++) {
             var t = lines[i].trim()
-            if (t.length) out.push(t)
+            if (!t.length) continue
+            var occurrence = occurrences[t] || 0
+            occurrences[t] = occurrence + 1
+            out.push({
+                text: t,
+                key: occurrence === 0 ? t : t + "\u001f" + (occurrence + 1)
+            })
         }
         return out
     }
+    readonly property var stepList: {
+        var out = []
+        for (var i = 0; i < w.stepItems.length; i++)
+            out.push(w.stepItems[i].text)
+        return out
+    }
 
-    function isDone(step) { return w.doneToday.indexOf(step) >= 0 }
+    function currentWeekday() {
+        return w.dayOfWeekOverride >= 0 ? w.dayOfWeekOverride : new Date().getDay()
+    }
+    function isActiveToday() {
+        var configured = String(w.activeDays).split(",")
+        for (var i = 0; i < configured.length; i++)
+            if (Number(configured[i].trim()) === w.currentWeekday()) return true
+        return false
+    }
+    function keyOf(step) { return typeof step === "object" ? step.key : String(step) }
+
+    function isDone(step) { return w.doneToday.indexOf(w.keyOf(step)) >= 0 }
     readonly property int doneCount: {
         var n = 0
-        for (var i = 0; i < w.stepList.length; i++) if (w.isDone(w.stepList[i])) n++
+        for (var i = 0; i < w.stepItems.length; i++) if (w.isDone(w.stepItems[i])) n++
         return n
     }
-    readonly property bool allDone: w.stepList.length > 0 && w.doneCount === w.stepList.length
+    readonly property bool allDone: w.isActiveToday() && w.stepItems.length > 0
+                                    && w.doneCount === w.stepItems.length
     status: w.expanded || !w.stepList.length ? "" : w.doneCount + "/" + w.stepList.length
 
     // ── Per-size layout (sizeClass injected by Dashboard) ────────────────────
     readonly property bool horiz: sizeClass === "wide"
+                                  || ((sizeClass === "large" || sizeClass === "full")
+                                      && width > height * 1.25)
     // The summary (a neutral fill bar + the count) is real content, so every size
     // with room shows it rather than keeping it behind the overlay. Only a micro
     // tile falls back to the bare footer count - and routine declares no 0.5x0.5,
@@ -92,17 +131,19 @@ WidgetChrome {
     readonly property bool showSummary: !w.micro
     // Every row is a real touch target. This is NOT scaled down for small tiles:
     // a tick is the only thing you do here.
-    readonly property real rowH: theme.touchTertiary
-    readonly property real rowFont: w.expanded ? 17
-        : Math.max(13, Math.min((w.horiz ? width * 0.5 : width) * 0.032, 17))
+    readonly property real rowH: Math.max(theme.touchTertiary, 60)
+    readonly property real rowFont: w.expanded ? Math.max(theme.fontLabel, 17)
+        : Math.max(17,
+                   Math.min((w.horiz ? width * 0.5 : width) * 0.038, 21))
     readonly property real boxSize: w.expanded ? 28 : Math.max(20, Math.min(w.rowH * 0.5, 28))
 
     function toggle(step) {
-        if (!store) return
+        if (!store || !w.isActiveToday()) return
+        var key = w.keyOf(step)
         var a = w.doneToday.slice()
-        var i = a.indexOf(step)
+        var i = a.indexOf(key)
         if (i >= 0) a.splice(i, 1)
-        else a.push(step)
+        else a.push(key)
         store.patchSettings(instanceId, { day: w.dayKey, done: a })
     }
 
@@ -111,9 +152,11 @@ WidgetChrome {
         anchors.centerIn: parent
         width: parent.width - 2 * theme.spacingSm
         visible: w.stepList.length === 0
-        text: w.expanded ? "Add your steps in settings - one per line."
+        text: w.expanded ? "Add and arrange routine steps in settings."
                          : "Add steps\nin settings"
-        color: theme.textTertiary; font.pixelSize: w.expanded ? 15 : 12
+        color: theme.textPrimary
+        font.pixelSize: w.expanded ? Math.max(theme.fontLabel, 18) : 17
+        font.bold: true
         horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
     }
 
@@ -138,10 +181,12 @@ WidgetChrome {
 
             Text {
                 Layout.fillWidth: true
-                text: w.allDone ? "All done for today ✓"
+                text: !w.isActiveToday() ? "Rest day, nothing scheduled"
+                      : w.allDone ? "All done for today ✓"
                                 : w.doneCount + " of " + w.stepList.length + " done"
-                color: w.allDone ? theme.success : theme.textSecondary
+                color: w.allDone ? theme.success : theme.textPrimary
                 font.pixelSize: Math.round(w.rowFont * 0.95)
+                font.bold: true
                 elide: Text.ElideRight
             }
             // A neutral fill bar: it shows what IS done and simply stays short
@@ -168,17 +213,24 @@ WidgetChrome {
             Layout.fillWidth: true; Layout.fillHeight: true
             ListView {
             id: stepList
+            objectName: "routineStepList"
             readonly property real rowPitch: w.rowH + spacing
+            readonly property int visibleCapacity:
+                Math.max(1, Math.floor(height / rowPitch))
+            readonly property int hiddenStepCount:
+                Math.max(0, w.stepItems.length - visibleCapacity)
             width: parent.width
             height: Math.max(w.rowH,
                              Math.floor(parent.height / rowPitch) * rowPitch - spacing)
             anchors.top: parent.top
             clip: true; spacing: w.expanded ? theme.spacingSm : 2
             interactive: w.expanded
-            model: w.stepList
+            model: w.stepItems
             delegate: Item {
                 id: stepRow
+                required property int index
                 required property var modelData
+                objectName: "routineStep-" + stepRow.modelData.key
                 readonly property bool done: w.isDone(stepRow.modelData)
                 width: ListView.view ? ListView.view.width : 0
                 // A full touch target at EVERY size. This row used to be 22px on
@@ -189,34 +241,76 @@ WidgetChrome {
                 RowLayout {
                     anchors.fill: parent
                     spacing: theme.spacingSm
-                    Rectangle {
-                        Layout.preferredWidth: Math.round(w.boxSize)
-                        Layout.preferredHeight: Math.round(w.boxSize)
-                        Layout.alignment: Qt.AlignVCenter
-                        radius: width / 2
-                        color: stepRow.done ? w.effAccent : "transparent"
-                        border.width: 2
-                        border.color: stepRow.done ? w.effAccent : theme.cardBorder
-                        Text {
-                            anchors.centerIn: parent; visible: stepRow.done
-                            text: "✓"; color: "#0D1117"; font.bold: true
-                            font.pixelSize: Math.round(w.boxSize * 0.58)
+                    Item {
+                        objectName: "routineStepAction-" + stepRow.modelData.key
+                        Layout.preferredWidth: theme.touchTertiary
+                        Layout.fillHeight: true
+                        activeFocusOnTab: w.isActiveToday()
+                        Accessible.role: Accessible.CheckBox
+                        Accessible.name: (stepRow.done ? "Mark incomplete: " : "Complete: ")
+                                         + stepRow.modelData.text
+                        Accessible.checked: stepRow.done
+                        Accessible.onPressAction: w.toggle(stepRow.modelData)
+                        Keys.onSpacePressed: w.toggle(stepRow.modelData)
+                        Keys.onReturnPressed: w.toggle(stepRow.modelData)
+
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: Math.round(w.boxSize)
+                            height: width
+                            radius: width / 2
+                            color: stepRow.done ? w.effAccent : "transparent"
+                            border.width: 2
+                            border.color: stepRow.done ? w.effAccent : theme.cardBorder
+                            Text {
+                                anchors.centerIn: parent; visible: stepRow.done
+                                text: "✓"; color: "#0D1117"; font.bold: true
+                                font.pixelSize: Math.round(w.boxSize * 0.58)
+                            }
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: w.isActiveToday()
+                            onClicked: w.toggle(stepRow.modelData)
                         }
                     }
                     Text {
+                        objectName: "routineStepLabel-" + stepRow.modelData.key
                         Layout.fillWidth: true; Layout.fillHeight: true
                         verticalAlignment: Text.AlignVCenter
-                        text: stepRow.modelData
+                        text: stepRow.modelData.text
                         // A done step is de-emphasised; an undone one is just
                         // normal text. Neither is an error.
-                        color: stepRow.done ? theme.textTertiary : theme.textPrimary
+                        color: theme.textPrimary
+                        opacity: stepRow.done ? 0.72 : 1
                         font.pixelSize: Math.round(w.rowFont)
                         font.strikeout: stepRow.done
                         elide: Text.ElideRight
                     }
                 }
-                MouseArea { anchors.fill: parent; onClicked: w.toggle(stepRow.modelData) }
             }
+            }
+
+            Rectangle {
+                objectName: "routineOverflow"
+                visible: stepList.hiddenStepCount > 0
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                width: routineOverflowLabel.implicitWidth + 20
+                height: 34
+                radius: 17
+                color: w.effAccent
+                Text {
+                    id: routineOverflowLabel
+                    anchors.centerIn: parent
+                    text: "+" + stepList.hiddenStepCount + " more"
+                    color: "#0D1117"
+                    font.pixelSize: 14
+                    font.bold: true
+                }
+                Accessible.role: Accessible.StaticText
+                Accessible.name: stepList.hiddenStepCount
+                                 + " more routine steps are below"
             }
         }
 
@@ -227,7 +321,8 @@ WidgetChrome {
             Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
             text: w.allDone ? "All done ✓" : w.doneCount + " of " + w.stepList.length
             color: w.allDone ? theme.success : theme.textSecondary
-            font.pixelSize: Math.max(11, Math.round(w.rowFont * 0.8)); elide: Text.ElideRight
+            font.pixelSize: Math.max(theme.fontMinimum,
+                                     Math.round(w.rowFont * 0.8)); elide: Text.ElideRight
         }
     }
     // The content width the wide summary measures against (the chrome's body).

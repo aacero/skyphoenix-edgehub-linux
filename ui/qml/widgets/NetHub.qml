@@ -46,6 +46,54 @@ QtObject {
     property int blocked: 0      // requests refused by the gate
     property var byHost: ({})    // { host: count } of sent requests
 
+    // Volatile provider cache and request lease. This is intentionally owned by
+    // the app-global gate: Calendar and Now/Next can render the same subscription
+    // without each opening a socket. Keys and payloads live in memory only.
+    property int sharedRevision: 0
+    property var _sharedProviders: ({})
+
+    function _sharedId(kind, key) { return (kind || "") + "\n" + (key || "") }
+    function sharedProvider(kind, key) {
+        return hub._sharedProviders[hub._sharedId(kind, key)] || null
+    }
+    function claimSharedProvider(kind, key, owner, reuseMs) {
+        var id = hub._sharedId(kind, key)
+        var entry = hub._sharedProviders[id]
+        var now = Date.now()
+        if (entry && entry.loading && entry.owner !== owner) return false
+        if (entry && !entry.loading && entry.lastSuccessAt > 0
+                && now - entry.lastSuccessAt < Math.max(0, reuseMs || 0))
+            return false
+        var next = entry || ({})
+        next.loading = true
+        next.owner = owner
+        hub._sharedProviders[id] = next
+        hub.sharedRevision++
+        return true
+    }
+    function publishSharedProvider(kind, key, owner, values) {
+        var id = hub._sharedId(kind, key)
+        var entry = hub._sharedProviders[id] || ({})
+        if (entry.loading && entry.owner !== owner) return false
+        for (var k in values) entry[k] = values[k]
+        entry.loading = false
+        entry.owner = null
+        hub._sharedProviders[id] = entry
+        hub.sharedRevision++
+        return true
+    }
+    function releaseSharedProvider(kind, key, owner, errorText) {
+        var id = hub._sharedId(kind, key)
+        var entry = hub._sharedProviders[id]
+        if (!entry || entry.owner !== owner) return false
+        entry.loading = false
+        entry.owner = null
+        entry.errorText = errorText || ""
+        hub._sharedProviders[id] = entry
+        hub.sharedRevision++
+        return true
+    }
+
     // Is this a LOCAL read (not egress)? This must be an allowlist of local forms,
     // never "anything that isn't http(s)": the old shape treated EVERY unknown
     // scheme as local, so `webcal://…` - a real Apple/iCloud calendar URL - skipped
@@ -128,8 +176,24 @@ QtObject {
         return { ok: true, value: "" + raw }
     }
 
+    // Resolve a stored capability URL without ever assigning the plaintext URL
+    // to a widget property. Legacy literal URLs remain supported for upgrades.
+    function _resolveUrl(raw) {
+        if (!raw || !("" + raw).length) return { ok: true, value: "" }
+        if (!_looksLikeRef(raw)) return { ok: true, value: "" + raw }
+        var r = hub.secretResolver
+        if (!r || !r.resolveSecret)
+            return { ok: false, value: "", error: "no secret resolver is available" }
+        var res = r.resolveSecret("" + raw)
+        return { ok: !!res.ok, value: res.value || "", error: res.error || "" }
+    }
+
     // request(opts): the single egress entry point.
     //   opts.url        (required) http(s):// for remote, anything else = local file
+    //   opts.urlIsSecretRef resolve ${env:}, file:, or secret:// URL references
+    //                       inside this call. The resolved URL never reaches the
+    //                       widget store or a widget property.
+    //   opts.normalizeWebcal map a resolved webcal:// subscription to HTTPS.
     //   opts.method     default "GET"
     //   opts.headers    { name: value } (applied when the XHR supports it)
     //   opts.authToken  the STORED credential (a "${env:}"/"file:" ref or a legacy
@@ -138,6 +202,7 @@ QtObject {
     //                   secret: that is what keeps it out of ui_state.
     //   opts.body       request body (string)
     //   opts.timeout    ms, default 8000
+    //   opts.maxResponseBytes maximum responseText size, default 1 MiB
     //   opts.allow      per-request host allowlist (augments the global one)
     //   opts.xhrFactory per-request XHR factory (test seam; wins over hub.xhrFactory)
     //   opts.onDone(status, responseText)
@@ -148,6 +213,17 @@ QtObject {
     function request(opts) {
         opts = opts || {}
         var url = opts.url || ""
+        if (opts.urlIsSecretRef) {
+            var urlSecret = _resolveUrl(url)
+            if (!urlSecret.ok) {
+                hub.blocked++
+                if (opts.onError) opts.onError("url-secret: " + urlSecret.error)
+                return null
+            }
+            url = urlSecret.value
+        }
+        if (opts.normalizeWebcal && /^webcal:/i.test(url))
+            url = url.replace(/^webcal:/i, "https:")
         var local = _isLocal(url)
 
         // Neither a local read nor http(s): a scheme the gate cannot reason about
@@ -170,6 +246,17 @@ QtObject {
         if (!local && effAllow && effAllow.length && effAllow.indexOf(hostOf(url)) < 0) {
             hub.blocked++
             if (opts.onError) opts.onError("blocked")
+            return null
+        }
+
+        // A bearer token on plain HTTP is exposed to the network. Legacy widgets
+        // may still use HTTP without authentication, but adding a credential
+        // makes HTTPS mandatory.
+        if (!local && /^http:\/\//i.test(url)
+                && opts.authToken !== undefined && opts.authToken !== null
+                && ("" + opts.authToken).length > 0) {
+            hub.blocked++
+            if (opts.onError) opts.onError("insecure-auth")
             return null
         }
 
@@ -204,6 +291,12 @@ QtObject {
         xhr.onreadystatechange = function () {
             if (xhr.readyState !== XMLHttpRequest.DONE) return
             var st = xhr.status
+            var maxResponseBytes = opts.maxResponseBytes !== undefined
+                ? Math.max(1024, Number(opts.maxResponseBytes)) : 1048576
+            if (xhr.responseText && xhr.responseText.length > maxResponseBytes) {
+                if (opts.onError) opts.onError("response-too-large")
+                return
+            }
             // A local file read succeeds with status 0 (no HTTP layer). A remote
             // request succeeds on ANY 2xx, not just 200: a transforming proxy
             // legitimately answers 203, and CalendarWidget accepted 203/206 before

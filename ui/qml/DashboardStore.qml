@@ -36,7 +36,7 @@ Item {
 
     // The full document. Structural changes reassign this (clone) to fire
     // bindings; per-widget settings changes mutate in place + bump `revision`.
-    property var data: ({ "version": 1, "appearance": {}, "pages": [], "settings": {} })
+    property var document: ({ "version": 1, "appearance": {}, "pages": [], "settings": {} })
     property int revision: 0
     // Bumps ONLY on structural changes (pages/tiles added/removed/moved/resized,
     // page rename/bg/cols, load/applyExternal). The dashboard's page+tile Repeater
@@ -70,14 +70,16 @@ Item {
     // `peakTx` back the metric sparklines; `http*` back the HTTP/JSON + KPI polling
     // primitives (value/text/error/list) - a poll every N seconds must not rewrite
     // the config (flash wear + a save race with the Manager).
-    readonly property var _ephemeralKeys: ({ "hist": true, "peakRx": true, "peakTx": true,
-        "httpVal": true, "httpText": true, "httpErr": true, "httpList": true, "httpAt": true })
+    readonly property var _ephemeralKeys: ({ "hist": true, "histRaw": true, "histDevice": true,
+        "peakRx": true, "peakTx": true,
+        "httpVal": true, "httpText": true, "httpErr": true, "httpList": true, "httpAt": true,
+        "quoteManualIdx": true, "quotePinnedText": true, "quoteManualDay": true })
     function _isEphemeralKey(k) { return store._ephemeralKeys[k] === true }
 
     // Deep copy of the document with all ephemeral runtime keys removed - the exact
     // bytes written to disk.
     function _persistableData() {
-        var d = _clone(store.data)
+        var d = _clone(store.document)
         if (d.settings) {
             for (var id in d.settings) {
                 var b = d.settings[id]
@@ -270,6 +272,9 @@ Item {
     }
     function _normaliseDoc(doc) {
         if (!_isPlainObject(doc.appearance)) doc.appearance = {}
+        if (doc.appearance.hubControlsMode !== "immersive"
+                && doc.appearance.hubControlsMode !== "standard")
+            doc.appearance.hubControlsMode = "standard"
         if (!_isPlainObject(doc.settings)) doc.settings = {}
         // Pages MUST be an array; anything else (number/object/string/null) is junk.
         if (!Array.isArray(doc.pages)) doc.pages = []
@@ -297,7 +302,7 @@ Item {
             for (var j = 0; j < srcTiles.length; j++) {
                 var t = srcTiles[j]
                 if (_isPlainObject(t) && typeof t.id === "string" && t.id !== "") {
-                    // Every tile entering `data` leaves here with a legal, supported
+                    // Every tile entering `document` leaves here with a legal, supported
                     // `size` - migrated from w/h, or coerced if the document handed
                     // us junk. This runs on load AND applyExternal (another process
                     // pushes that one), so it is the hostile-input boundary too.
@@ -376,11 +381,11 @@ Item {
         if (persist === undefined || persist) saveTimer.restart()
     }
 
-    // Reassign `data` (clone) for structural mutations so Repeaters refresh.
+    // Reassign `document` (clone) for structural mutations so Repeaters refresh.
     // Structural edits are force-flushed (not debounced) so a page/tile added
     // outside edit mode survives an abrupt power-off.
     function _commitStructure() {
-        data = _clone(data)
+        document = _clone(document)
         revision++
         structureRevision++
         changed()
@@ -405,7 +410,7 @@ Item {
         var id = String(presetId || "")
         if (id === "") return false
         policyLockedPreset = id
-        data = _normaliseDoc(seed(policyLockedPreset))
+        document = _normaliseDoc(seed(policyLockedPreset))
         loaded = true
         revision++
         structureRevision++
@@ -424,13 +429,13 @@ Item {
         // pages:[] - consistently with applyExternal(); only re-seed when there
         // is no usable document at all.
         if (parsed && parsed.pages) {
-            data = _normaliseDoc(parsed)
+            document = _normaliseDoc(parsed)
         } else {
             // Seeded docs are normalised too: the curated presets still declare the
             // old w/h vocabulary, so this is what gives a fresh install's tiles a
-            // `size` - the invariant "every tile in `data` has one" must hold on
-            // EVERY path into `data`, not just the load-from-disk one.
-            data = _normaliseDoc(seed(seedLayout && seedLayout.length ? seedLayout : "starter"))
+            // `size` - the invariant "every tile in `document` has one" must hold on
+            // EVERY path into `document`, not just the load-from-disk one.
+            document = _normaliseDoc(seed(seedLayout && seedLayout.length ? seedLayout : "starter"))
             _flush()
         }
         loaded = true
@@ -440,7 +445,7 @@ Item {
     }
 
     // Apply a UI-state document pushed from the companion Manager app (over the
-    // hub's control socket). Reassigns `data` and bumps reactivity so the live
+    // hub's control socket). Reassigns `document` and bumps reactivity so the live
     // dashboard rebuilds - WITHOUT persisting again (the hub already saved it).
     function applyExternal(json) {
         // E9: a Manager push must not override an org-forced preset any more
@@ -452,7 +457,7 @@ Item {
         // Cancel any pending debounced save so the externally-applied doc is
         // never echoed back to the hub 400ms later.
         saveTimer.stop()
-        data = _normaliseDoc(parsed)
+        document = _normaliseDoc(parsed)
         loaded = true
         revision++
         structureRevision++
@@ -461,10 +466,12 @@ Item {
     }
 
     // ── Appearance ─────────────────────────────────────────────────────────
-    function appearance() { return data.appearance || {} }
+    function appearance() { return document.appearance || {} }
     function setAppearance(key, val) {
-        if (!data.appearance) data.appearance = {}
-        data.appearance[key] = val
+        if (!document.appearance) document.appearance = {}
+        if (key === "hubControlsMode" && val !== "standard" && val !== "immersive")
+            val = "standard"
+        document.appearance[key] = val
         _touchSettings()
     }
 
@@ -474,15 +481,15 @@ Item {
     // inside widget bindings (with a possibly-empty instanceId), and materialising
     // ghost `{}`/`settings['']` entries would grow and poison the document.
     function settingsFor(id) {
-        if (!id || !data.settings || !data.settings[id]) return ({})
-        return data.settings[id]
+        if (!id || !document.settings || !document.settings[id]) return ({})
+        return document.settings[id]
     }
     // Get-or-create the persisted bucket for a MUTATION. Empty ids are rejected.
     function _bucket(id) {
         if (!id) return null
-        if (!data.settings) data.settings = {}
-        if (!data.settings[id]) data.settings[id] = {}
-        return data.settings[id]
+        if (!document.settings) document.settings = {}
+        if (!document.settings[id]) document.settings[id] = {}
+        return document.settings[id]
     }
     // Seed defaults for an instance without clobbering existing values. Bumps
     // revision (so a second instance - the expanded overlay - re-reads the seeded
@@ -520,16 +527,54 @@ Item {
     // reference would share one instance across every reset (e.g. every widget's
     // tasks:[] becoming the same list). Used by "Reset to defaults".
     function resetSettings(id, defaults) {
-        var s = _bucket(id)
-        if (!s) return
-        for (var k in s) delete s[k]
-        var d = _clone(defaults || {})
-        for (var kk in d) s[kk] = d[kk]
+        if (!id) return
+        if (!document.settings) document.settings = {}
+        // Replace the bucket atomically. Repeatedly deleting and re-inserting
+        // differently shaped widget settings can crash Qt 6.11 inside
+        // QV4::Object::insertMember after enough resets.
+        document.settings[id] = _clone(defaults || {})
         _touchSettings()
     }
 
+    // Reset presentation and configuration without deleting classified personal
+    // content or progress. The caller gets the classification from WidgetCatalog.
+    // Both defaults and retained values are cloned so no instance can acquire a
+    // shared nested array/object through the reset path.
+    function resetConfiguration(id, defaults, personalKeys) {
+        var s = _bucket(id)
+        if (!s) return false
+        var keep = ({})
+        var keys = personalKeys || []
+        for (var i = 0; i < keys.length; i++) {
+            var key = keys[i]
+            if (s[key] !== undefined) keep[key] = _clone(s[key])
+        }
+        var d = _clone(defaults || {})
+        for (var kk in keep) d[kk] = keep[kk]
+        document.settings[id] = d
+        _touchSettings()
+        return true
+    }
+
+    // Erase only the explicitly classified personal keys. Configuration,
+    // appearance, endpoints and other unrelated values remain untouched.
+    function erasePersonalData(id, personalKeys) {
+        if (!id || !document.settings || !document.settings[id]) return 0
+        var s = document.settings[id]
+        var keys = personalKeys || []
+        var removed = 0
+        for (var i = 0; i < keys.length; i++) {
+            if (s[keys[i]] !== undefined) {
+                delete s[keys[i]]
+                removed++
+            }
+        }
+        if (removed > 0) _touchSettings()
+        return removed
+    }
+
     // ── Pages / tiles ────────────────────────────────────────────────────────
-    function pages() { return data.pages || [] }
+    function pages() { return document.pages || [] }
     function pageCount() { return pages().length }
 
     function _newId(type) {
@@ -544,9 +589,9 @@ Item {
     // still fits within the screen's long axis (longHalves). Half-width tiles pair
     // across the short axis, so this is measured by real placement, not an area sum.
     function pageHasRoomFor(pageIdx, size) {
-        if (pageIdx < 0 || pageIdx >= data.pages.length) return false
+        if (pageIdx < 0 || pageIdx >= document.pages.length) return false
         if (!store._sizes.isLegal(size)) return false
-        var tiles = (data.pages[pageIdx].tiles || []).slice()
+        var tiles = (document.pages[pageIdx].tiles || []).slice()
         tiles.push({ "id": "__probe__", "type": "__probe__", "size": size })
         return store._packer.longExtent(store._packer.pack(tiles)) <= store._sizes.longHalves
     }
@@ -589,10 +634,10 @@ Item {
     // reflow still fits one screen (it must never create overflow). Narrowing to 2
     // columns always fits; widening to 1 column is applied only when it does.
     function setPageColumns(pageIdx, n) {
-        if (pageIdx < 0 || pageIdx >= data.pages.length) return
+        if (pageIdx < 0 || pageIdx >= document.pages.length) return
         var cols = (n >= 2) ? 2 : 1
         var targetShort = (cols === 2) ? 0.5 : 1
-        var page = data.pages[pageIdx]
+        var page = document.pages[pageIdx]
         var tiles = page.tiles || []
         var reflowed = tiles.map(function (t) {
             var ns = store._sizeAtShort(t.type, t.size, targetShort)
@@ -646,14 +691,14 @@ Item {
     // Append a fresh, blank single-column screen and return its index. No commit -
     // the caller (addTile) commits once after placing the tile.
     function _appendBlankPage() {
-        data.pages.push({ "name": _uniquePageName(), "tiles": [], "columns": 1 })
-        return data.pages.length - 1
+        document.pages.push({ "name": _uniquePageName(), "tiles": [], "columns": 1 })
+        return document.pages.length - 1
     }
     // Which page holds `tileId`, or -1. Lets a caller follow a freshly-added tile to
     // whatever screen it landed on (its own page, or a new one addTile created).
     function pageIndexForTile(tileId) {
-        for (var p = 0; p < data.pages.length; p++) {
-            var tiles = data.pages[p].tiles || []
+        for (var p = 0; p < document.pages.length; p++) {
+            var tiles = document.pages[p].tiles || []
             for (var t = 0; t < tiles.length; t++)
                 if (tiles[t].id === tileId) return p
         }
@@ -666,7 +711,7 @@ Item {
     // scrolls, and adding never fails for lack of room (only a bad index returns
     // null). Use pageIndexForTile(id) to follow the tile to its screen.
     function addTile(pageIdx, type) {
-        if (pageIdx < 0 || pageIdx >= data.pages.length) return null
+        if (pageIdx < 0 || pageIdx >= document.pages.length) return null
         var size = _fitSizeFor(pageIdx, type)
         var target = pageIdx
         if (size === "") {                    // this screen is full → start a new one
@@ -674,17 +719,17 @@ Item {
             size = _defaultSizeFor(type)      // a fresh screen fits the default size
         }
         var id = _newId(type)
-        data.pages[target].tiles.push({ "id": id, "type": type, "size": size })
+        document.pages[target].tiles.push({ "id": id, "type": type, "size": size })
         _commitStructure()
         return id
     }
     function removeTile(pageIdx, tileId) {
-        if (pageIdx < 0 || pageIdx >= data.pages.length) return
-        var tiles = data.pages[pageIdx].tiles || []
+        if (pageIdx < 0 || pageIdx >= document.pages.length) return
+        var tiles = document.pages[pageIdx].tiles || []
         for (var i = 0; i < tiles.length; i++) {
             if (tiles[i].id === tileId) {
                 tiles.splice(i, 1)
-                if (data.settings) delete data.settings[tileId]
+                if (document.settings) delete document.settings[tileId]
                 _commitStructure()
                 return
             }
@@ -701,8 +746,8 @@ Item {
     // stays one screen" true DURING the drag, not just on release. Always
     // includes the tile's current size so the preview never snaps to nothing.
     function fittingSizesFor(pageIdx, tileId) {
-        if (pageIdx < 0 || pageIdx >= data.pages.length) return []
-        var tiles = data.pages[pageIdx].tiles
+        if (pageIdx < 0 || pageIdx >= document.pages.length) return []
+        var tiles = document.pages[pageIdx].tiles
         var target = null
         for (var i = 0; i < tiles.length; i++)
             if (tiles[i].id === tileId) { target = tiles[i]; break }
@@ -723,8 +768,8 @@ Item {
     }
 
     function setTileSize(pageIdx, tileId, size) {
-        if (pageIdx < 0 || pageIdx >= data.pages.length) return false
-        var tiles = data.pages[pageIdx].tiles
+        if (pageIdx < 0 || pageIdx >= document.pages.length) return false
+        var tiles = document.pages[pageIdx].tiles
         for (var i = 0; i < tiles.length; i++) {
             if (tiles[i].id === tileId) {
                 if (!_sizeSupported(tiles[i].type, size)) return false
@@ -742,8 +787,8 @@ Item {
         return false
     }
     function moveTile(pageIdx, fromIdx, toIdx) {
-        if (pageIdx < 0 || pageIdx >= data.pages.length) return
-        var tiles = data.pages[pageIdx].tiles || []
+        if (pageIdx < 0 || pageIdx >= document.pages.length) return
+        var tiles = document.pages[pageIdx].tiles || []
         if (fromIdx < 0 || fromIdx >= tiles.length) return
         toIdx = Math.max(0, Math.min(tiles.length - 1, toIdx))
         if (fromIdx === toIdx) return
@@ -752,53 +797,53 @@ Item {
         _commitStructure()
     }
     function addPage(name) {
-        data.pages.push({ "name": name || _uniquePageName(), "tiles": [] })
+        document.pages.push({ "name": name || _uniquePageName(), "tiles": [] })
         _commitStructure()
     }
     // Generate a "Page N" name that doesn't collide with existing page names.
     function _uniquePageName() {
         var existing = Object.create(null)
-        for (var i = 0; i < data.pages.length; i++) existing[data.pages[i].name] = true
-        var n = data.pages.length + 1
+        for (var i = 0; i < document.pages.length; i++) existing[document.pages[i].name] = true
+        var n = document.pages.length + 1
         while (existing["Page " + n]) n++
         return "Page " + n
     }
     function removePage(pageIdx) {
-        if (pageIdx < 0 || pageIdx >= data.pages.length) return   // ignore out-of-range
-        if (data.pages.length <= 1) return   // keep at least one page
-        var removed = data.pages.splice(pageIdx, 1)[0]
-        if (removed && data.settings)
+        if (pageIdx < 0 || pageIdx >= document.pages.length) return   // ignore out-of-range
+        if (document.pages.length <= 1) return   // keep at least one page
+        var removed = document.pages.splice(pageIdx, 1)[0]
+        if (removed && document.settings)
             for (var i = 0; i < removed.tiles.length; i++)
-                delete data.settings[removed.tiles[i].id]
+                delete document.settings[removed.tiles[i].id]
         _commitStructure()
     }
     // Validated: trims, keeps the old name if blank, and de-duplicates against the
     // other pages (so the tab bar never gets an empty or ambiguous label).
     function renamePage(pageIdx, name) {
-        if (pageIdx < 0 || pageIdx >= data.pages.length) return
+        if (pageIdx < 0 || pageIdx >= document.pages.length) return
         var trimmed = String(name || "").trim()
-        if (trimmed === "") trimmed = data.pages[pageIdx].name
+        if (trimmed === "") trimmed = document.pages[pageIdx].name
         var others = Object.create(null)
-        for (var i = 0; i < data.pages.length; i++)
-            if (i !== pageIdx) others[data.pages[i].name] = true
+        for (var i = 0; i < document.pages.length; i++)
+            if (i !== pageIdx) others[document.pages[i].name] = true
         if (others[trimmed]) {
             var base = trimmed, n = 2
             while (others[base + " " + n]) n++
             trimmed = base + " " + n
         }
-        data.pages[pageIdx].name = trimmed
+        document.pages[pageIdx].name = trimmed
         _commitStructure()
     }
 
     // Per-page background override: key ∈ {"style","wallpaper"}. Empty value
     // clears the override so the page falls back to the global appearance.
     function setPageBackground(pageIdx, key, val) {
-        if (pageIdx < 0 || pageIdx >= data.pages.length) return
-        if (!data.pages[pageIdx].bg) data.pages[pageIdx].bg = {}
+        if (pageIdx < 0 || pageIdx >= document.pages.length) return
+        if (!document.pages[pageIdx].bg) document.pages[pageIdx].bg = {}
         if (val === "" || val === null || val === undefined)
-            delete data.pages[pageIdx].bg[key]
+            delete document.pages[pageIdx].bg[key]
         else
-            data.pages[pageIdx].bg[key] = val
+            document.pages[pageIdx].bg[key] = val
         _commitStructure()
     }
     function pageBackground(pageIdx) {
@@ -816,14 +861,14 @@ Item {
     // Reset the whole dashboard to a named starter layout (default: the recommended
     // few-screen starter bundle).
     function resetTo(seedLayout) {
-        data = _normaliseDoc(seed(seedLayout || "starter"))
+        document = _normaliseDoc(seed(seedLayout || "starter"))
         loaded = true
         _commitStructure()   // force-flushes; no extra save needed
     }
 
     // Append a single-page preset ("screen") as a NEW page. Additive - unlike
     // resetTo, it never replaces the user's other pages and NEVER writes
-    // data.appearance (the global theme/accent/offline/reduceMotion stay put). It
+    // document.appearance (the global theme/accent/offline/reduceMotion stay put). It
     // re-keys tile ids against the live document (so they can't collide with an
     // existing tile/settings bucket), merges the screen's per-tile settings, and
     // carries the screen's character as a per-page BACKGROUND so a calm screen
@@ -832,11 +877,11 @@ Item {
     // forced-preset lock.
     function appendPreset(presetId) {
         if (policyLockedPreset !== "") return -1
-        if (!data || !data.pages) return -1
+        if (!document || !document.pages) return -1
         var doc = _presetCatalog.buildDoc(presetId)
         if (!doc || !doc.pages || !doc.pages.length) return -1
         var src = doc.pages[0]                       // screens are single-page
-        if (!data.settings) data.settings = {}
+        if (!document.settings) document.settings = {}
         var tiles = []
         for (var i = 0; i < src.tiles.length; i++) {
             var st = src.tiles[i]
@@ -845,21 +890,21 @@ Item {
             if (st.size) tile.size = st.size
             tiles.push(tile)
             if (doc.settings && doc.settings[st.id] !== undefined)
-                data.settings[nid] = JSON.parse(JSON.stringify(doc.settings[st.id]))
+                document.settings[nid] = JSON.parse(JSON.stringify(doc.settings[st.id]))
         }
         var page = { "name": _dedupPageName(src.name), "tiles": tiles }
         if (doc.appearance && doc.appearance.bgStyle)
             page.bg = { "style": doc.appearance.bgStyle }
-        data.pages.push(page)
+        document.pages.push(page)
         _commitStructure()
-        return data.pages.length - 1
+        return document.pages.length - 1
     }
     // Dedup a proposed page name against existing pages (mirrors renamePage's rule).
     function _dedupPageName(proposed) {
         var want = String(proposed || "").trim()
         if (want === "") return _uniquePageName()
         var existing = Object.create(null)
-        for (var i = 0; i < data.pages.length; i++) existing[data.pages[i].name] = true
+        for (var i = 0; i < document.pages.length; i++) existing[document.pages[i].name] = true
         if (!existing[want]) return want
         var base = want, n = 2
         while (existing[base + " " + n]) n++
@@ -875,7 +920,7 @@ Item {
         // Guard the fresh-launch counter reset: if a persisted settings bucket
         // still owns this id from a prior session, drop it so the freshly-seeded
         // tile can't silently inherit stale state.
-        if (data.settings && data.settings.hasOwnProperty(id)) delete data.settings[id]
+        if (document.settings && document.settings.hasOwnProperty(id)) delete document.settings[id]
         return { "id": id, "type": type }
     }
     function _page(name, types) {

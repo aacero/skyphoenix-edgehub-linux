@@ -20,6 +20,16 @@ Item {
     property bool editable: true
     signal configRequested(string tileId, string tileType)
 
+    // Explicit references avoid relying on dynamic id lookup inside the shared
+    // WidgetHost component.
+    property var widgetStore: store
+    property var widgetCatalog: catalog
+    readonly property var widgetTimeZones: (typeof timeZones !== "undefined") ? timeZones : null
+
+    // Manager previews never perform widget egress. The Hub is the sole active
+    // driver and pushes persisted state back through the shared store.
+    NetHub { id: passivePreviewHub; offline: true }
+
     WidgetSizes { id: sizes }
     WidgetPacker { id: packer }
 
@@ -51,6 +61,15 @@ Item {
         var r = (typeof backend !== "undefined" && backend && backend.hubRotation !== undefined)
                 ? backend.hubRotation : -1
         return r === 90 || r === 270
+    }
+    // The Manager must preview the same usable widget area as the Hub. Standard
+    // mode reserves the Hub's bottom controls; Immersive mode gives that space
+    // back to the widgets. Missing values stay compatible with existing configs.
+    readonly property bool showHubBar: {
+        store.revision
+        var a = (typeof store !== "undefined" && store && store.appearance)
+                ? (store.appearance() || ({})) : ({})
+        return (a.hubControlsMode || "standard") !== "immersive"
     }
     // How long the device drawn here must be, in half-cells: a full screen (6), or
     // the page if it is longer. An over-long page is shown WHOLE - a taller device
@@ -293,34 +312,6 @@ Item {
     // rendered a tile `wide` and the Manager rendered the same tile `tall` - a
     // different layout variant with different information density, which is exactly
     // the "widgets are not WYSIWYG in the Manager" report. Call it; never copy it.
-    function injectInto(item, id, type, sizeFn) {
-        if (!item) return
-        store.ensureSettings(id, catalog.defaults(type))
-        item.instanceId = id
-        item.store = store
-        item.expanded = false
-        // Bound, not read once: a resize PREVIEW (pvSize) must reflow the widget
-        // live, exactly as committing the size would on the hub.
-        if (item.hasOwnProperty("sizeClass") && sizeFn)
-            item.sizeClass = Qt.binding(sizeFn)
-        if (item.hasOwnProperty("active")) item.active = true
-        item.metrics = Qt.binding(function () { return clone.metricsObj })
-        if (item.hasOwnProperty("titleOverride"))
-            item.titleOverride = Qt.binding(function () {
-                store.revision; var s = store.settingsFor(id); return (s && s.title) ? s.title : ""
-            })
-        if (item.hasOwnProperty("accentName"))
-            item.accentName = Qt.binding(function () {
-                store.revision; var s = store.settingsFor(id); return (s && s.accent) ? s.accent : ""
-            })
-        if (item.hasOwnProperty("cardBackdrop"))
-            item.cardBackdrop = Qt.binding(function () {
-                store.revision; var s = store.settingsFor(id); return (s && s.cardBackdrop) ? s.cardBackdrop : "none"
-            })
-        if (item.hasOwnProperty("tick"))
-            item.tick = Qt.binding(function () { return clone.tick })
-    }
-
     // ── Drag-move state ──
     // These are indices into the STORE's tile array (the placement's `idx`) - the
     // thing moveTile addresses and the thing `tiles` is indexed by. They are NOT
@@ -366,15 +357,17 @@ Item {
         height: screen.height + 16
         // Scale the entire device so the full page is visible at once. Grows and
         // shrinks with the Manager window (the fit ratio tracks clone.width/height),
-        // capped at 1.6x so a short page doesn't upscale to blur, and floored so a
-        // narrow window can't shrink the preview toward nothing - a minimum
-        // readable size (~0.42 => ~170px short axis on the 404px reference).
-        scale: Math.max(0.42, Math.min(clone.width / width, clone.height / height, 1.6))
+        // capped at 1.6x so a short page doesn't upscale to blur. The scene inside
+        // stays at the Edge's real 720 logical-pixel short axis, then this outer
+        // transform alone fits it into the Manager. Keeping true internal geometry
+        // is required for the widgets' pixel-based micro/readability boundaries.
+        scale: Math.max(0.22, Math.min(clone.width / width, clone.height / height, 1.6))
         radius: 26; color: "#050507"; border.width: 2; border.color: "#000000"
         Behavior on scale { NumberAnimation { duration: 150 } }
 
         Rectangle {
             id: screen
+            objectName: "cloneDashboardScreen"
             anchors.centerIn: parent
             // The Edge's real 2560x720 aspect, extended when the page runs longer than
             // one screen. `_deviceAspect` makes a cell here the same SHAPE as a cell on
@@ -386,11 +379,26 @@ Item {
             // portrait draws tall (short axis = width), landscape draws wide (short
             // axis = height, long axis = width) - mirroring the panel so a landscape
             // preview is not cut off by a portrait-shaped frame.
-            readonly property real _shortPx: 404          // the short axis (2 half-cells)
-            readonly property real cellShort: _shortPx / sizes.shortHalves
-            readonly property real cellLong: (_shortPx * _deviceAspect) / sizes.longHalves
-            width: clone.landscape ? cellLong * clone.longExtent : _shortPx
-            height: clone.landscape ? _shortPx : cellLong * clone.longExtent
+            readonly property real _shortPx: 720          // real Edge logical short axis
+            readonly property real _longPx: _shortPx * _deviceAspect
+            readonly property real _uiScale: _shortPx / 720
+            readonly property real contentMargin: theme.spacingMd * _uiScale
+            readonly property real barHeight: theme.touchPrimary * _uiScale
+            readonly property real barGap: theme.spacingSm * _uiScale
+            readonly property real barReserve: clone.showHubBar ? barHeight + barGap : 0
+            // Derive cells from the Hub's real widget viewport, not the bare
+            // panel. The control bar reduces the physical vertical axis, which
+            // is the semantic long axis in portrait and short axis in landscape.
+            readonly property real cellShort:
+                (_shortPx - 2 * contentMargin - (clone.landscape ? barReserve : 0))
+                / sizes.shortHalves
+            readonly property real cellLong:
+                (_longPx - 2 * contentMargin - (clone.landscape ? 0 : barReserve))
+                / sizes.longHalves
+            readonly property real _overflowPx:
+                Math.max(0, clone.longExtent - sizes.longHalves) * cellLong
+            width: clone.landscape ? _longPx + _overflowPx : _shortPx
+            height: clone.landscape ? _shortPx : _longPx + _overflowPx
             radius: 20; clip: true
             gradient: Gradient {
                 GradientStop { position: 0.0; color: theme.backgroundColor }
@@ -433,10 +441,34 @@ Item {
                 anchors.fill: parent; visible: cloneWall.visible
                 color: Qt.rgba(theme.backgroundColor.r, theme.backgroundColor.g, theme.backgroundColor.b, 0.28)
             }
+            // Match Dashboard.qml's final colour layer exactly. Omitting this
+            // made a blue-accent Midnight Hub look purple or red in Manager even
+            // though both sides had loaded the same stored theme.
+            Rectangle {
+                objectName: "cloneAccentWash"
+                property color startColor: theme.accent
+                property color endColor: theme.accent2
+                anchors.fill: parent
+                opacity: theme.decorative ? 0.10 : 0.0
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.0; color: theme.accent }
+                    GradientStop { position: 0.5; color: "transparent" }
+                    GradientStop { position: 1.0; color: theme.accent2 }
+                }
+            }
 
             Item {
                 id: grid
-                anchors.fill: parent
+                objectName: "cloneDashboardArea"
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.leftMargin: screen.contentMargin
+                anchors.rightMargin: screen.contentMargin
+                anchors.topMargin: screen.contentMargin
+                anchors.bottom: clone.showHubBar ? hubBar.top : parent.bottom
+                anchors.bottomMargin: clone.showHubBar ? screen.barGap : screen.contentMargin
 
                     Repeater {
                         id: rep
@@ -475,14 +507,11 @@ Item {
                             // The hub eases the EXTENT here too, and separates the ease
                             // from ROTATION that way (a turn re-projects the slot, so it
                             // stays instant). Neither half of that carries over:
-                            //   • the clone's cell grid is a CONSTANT - the frame is a
-                            //     fixed 420 on the short axis and fits to view by
-                            //     scaling as a whole, so cellShort/cellLong never
-                            //     change even when `clone.landscape` flips the frame's
-                            //     proportions. There is no projection change to keep
-                            //     instant. (This bullet once read "the clone is always
-                            //     upright"; it is not, and that stale claim is what
-                            //     licensed the hardcoded-portrait size class.)
+                            //   • the clone's grid follows the same available viewport
+                            //     as the Hub. Rotation re-projects it directly, while a
+                            //     Standard/Immersive change intentionally updates the
+                            //     available room. There is no delayed projection state
+                            //     to keep in sync.
                             //   • the thing that must stay instant here is the resize
                             //     PREVIEW. A reorder never changes an extent; only a
                             //     resize does, and here a resize is a live corner DRAG
@@ -515,7 +544,8 @@ Item {
                             readonly property var _u: sizes.semiUnits(tile.effSize)
                             readonly property var _r: packer.rect(
                                 { s: tile.animS, l: tile.animL, es: _u.s, el: _u.l },
-                                clone.landscape, screen.cellShort, screen.cellLong, 10)
+                                clone.landscape, screen.cellShort, screen.cellLong,
+                                theme.spacingMd * screen._uiScale)
                             x: _r.x; y: _r.y
                             width: _r.width; height: _r.height
 
@@ -624,19 +654,30 @@ Item {
                                     AppIcon { anchors.horizontalCenter: parent.horizontalCenter
                                         name: tile.tileType; size: 28; color: theme.textSecondary }
                                     Text { anchors.horizontalCenter: parent.horizontalCenter
-                                        text: catalog.title(tile.tileType); color: theme.textSecondary; font.pixelSize: 12 }
+                                        text: catalog.title(tile.tileType); color: theme.textSecondary
+                                        font.pixelSize: theme.fontMinimum }
                                 }
                             }
-                            Loader {
+                            WidgetHost {
                                 id: wl
                                 anchors.fill: parent
                                 property string wId: tile.tileId
-                                source: clone.wsrc(tile.tileType)
+                                widgetId: tile.tileId
+                                widgetType: tile.tileType
+                                widgetSource: clone.wsrc(tile.tileType)
+                                store: clone.widgetStore
+                                catalog: clone.widgetCatalog
+                                metrics: clone.metricsObj
+                                netHub: passivePreviewHub
+                                timeZones: clone.widgetTimeZones
+                                tick: clone.tick
+                                expanded: false
                                 // Bound on BOTH the previewed size and the live
                                 // orientation, so a rotation re-classes the tile
                                 // exactly as it does on the hub.
-                                onLoaded: clone.injectInto(item, tile.tileId, tile.tileType,
-                                                           function () { return sizes.classFor(tile.effSize, clone.landscape) })
+                                sizeClass: sizes.classFor(tile.effSize, clone.landscape)
+                                driverActive: false
+                                acceptsInput: false
                             }
 
                             // Drop-target highlight.
@@ -703,15 +744,15 @@ Item {
                                 anchors.top: parent.top; anchors.right: parent.right; anchors.margins: 8
                                 spacing: 6; z: 5
                                 Rectangle {
-                                    width: 32; height: 32; radius: 16; color: Qt.rgba(0, 0, 0, 0.55)
-                                    AppIcon { anchors.centerIn: parent; name: "ui-settings"; color: "#fff"; size: 16 }
+                                    width: 52; height: 52; radius: 26; color: Qt.rgba(0, 0, 0, 0.55)
+                                    AppIcon { anchors.centerIn: parent; name: "ui-settings"; color: "#fff"; size: 20 }
                                     MouseArea { anchors.fill: parent
                                         onClicked: clone.configRequested(tile.tileId, tile.tileType) }
                                 }
                                 Rectangle {
-                                    width: 32; height: 32; radius: 16
+                                    width: 52; height: 52; radius: 26
                                     color: Qt.rgba(theme.error.r, theme.error.g, theme.error.b, 0.7)
-                                    AppIcon { anchors.centerIn: parent; name: "ui-close"; color: "#fff"; size: 15 }
+                                    AppIcon { anchors.centerIn: parent; name: "ui-close"; color: "#fff"; size: 20 }
                                     MouseArea { anchors.fill: parent
                                         onClicked: store.removeTile(clone.pageIndex, tile.tileId) }
                                 }
@@ -726,7 +767,7 @@ Item {
                             // thing the size model has. Previews live; commits on release.
                             Rectangle {
                                 anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 5
-                                width: 24; height: 24; radius: 7; z: 6
+                                width: 36; height: 36; radius: 10; z: 6
                                 visible: clone.editable && catalog.sizesFor(tile.tileType).length > 1
                                 color: Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.75)
                                 AppIcon { anchors.centerIn: parent; name: "ui-resize"; color: "#0D1117"; size: 15 }
@@ -780,11 +821,98 @@ Item {
                 }
 
             Text {
-                anchors.centerIn: parent
+                anchors.centerIn: grid
                 visible: clone.tiles.length === 0
                 text: "This page is empty.\nUse “Add widget”."
                 horizontalAlignment: Text.AlignHCenter
-                color: theme.textTertiary; font.pixelSize: 15
+                color: theme.textTertiary; font.pixelSize: theme.fontMinimum
+            }
+
+            // Passive representation of the real Hub controls. EdgeClone is a
+            // preview, so these controls do not compete with the Manager editor,
+            // but their footprint and information remain visible in Standard mode.
+            Item {
+                id: hubBar
+                objectName: "cloneHubBottomBar"
+                visible: clone.showHubBar
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                anchors.leftMargin: screen.contentMargin
+                anchors.rightMargin: screen.contentMargin
+                anchors.bottomMargin: screen.contentMargin
+                height: screen.barHeight
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Math.max(4, theme.radiusMd * screen._uiScale)
+                    color: Qt.rgba(theme.cardBackgroundAlt.r,
+                                   theme.cardBackgroundAlt.g,
+                                   theme.cardBackgroundAlt.b, 0.72)
+                    border.width: 1
+                    border.color: theme.cardBorder
+                }
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: theme.spacingMd * screen._uiScale
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width * 0.25
+                    text: {
+                        store.structureRevision
+                        var ps = store.pages()
+                        return clone.pageIndex >= 0 && clone.pageIndex < ps.length
+                               ? (ps[clone.pageIndex].name || "Screen") : "Screen"
+                    }
+                    elide: Text.ElideRight
+                    color: theme.textSecondary
+                    font.pixelSize: Math.max(7, theme.fontLabel * screen._uiScale)
+                    font.weight: Font.DemiBold
+                }
+
+                Row {
+                    anchors.centerIn: parent
+                    spacing: theme.spacingXs * screen._uiScale
+                    Repeater {
+                        model: {
+                            store.structureRevision
+                            return Math.max(1, store.pageCount())
+                        }
+                        delegate: Rectangle {
+                            required property int index
+                            width: index === clone.pageIndex ? 18 * screen._uiScale : 7 * screen._uiScale
+                            height: 7 * screen._uiScale
+                            radius: height / 2
+                            color: theme.accent
+                            opacity: index === clone.pageIndex ? 0.95 : 0.3
+                        }
+                    }
+                }
+
+                Row {
+                    anchors.right: parent.right
+                    anchors.rightMargin: theme.spacingMd * screen._uiScale
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: theme.spacingSm * screen._uiScale
+                    Repeater {
+                        model: ["ui-edit", "ui-palette", "ui-settings"]
+                        delegate: Rectangle {
+                            required property string modelData
+                            width: screen.barHeight * 0.64
+                            height: width
+                            radius: width / 2
+                            color: theme.cardBackgroundAlt
+                            border.width: 1
+                            border.color: theme.cardBorder
+                            AppIcon {
+                                anchors.centerIn: parent
+                                name: modelData
+                                size: Math.max(8, parent.width * 0.42)
+                                color: theme.textSecondary
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -808,7 +936,7 @@ Item {
                       ? clone.tiles[clone.dragIdx].type : "" }
             Text { text: clone.dragIdx >= 0 && clone.dragIdx < clone.tiles.length
                 ? catalog.title(clone.tiles[clone.dragIdx].type) : ""
-                color: theme.textPrimary; font.pixelSize: 15 }
+                color: theme.textPrimary; font.pixelSize: theme.fontMinimum }
         }
     }
 }

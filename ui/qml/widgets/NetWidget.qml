@@ -26,6 +26,8 @@ WidgetChrome {
 
     title: "Network"; iconName: "net"; accentColor: theme.catServices
     showHeader: !micro
+    Accessible.role: Accessible.StaticText
+    Accessible.name: w.accessibleSummary
 
     // Live per-instance config (see WidgetConfigSchema "net").
     readonly property var cfg: {
@@ -33,10 +35,130 @@ WidgetChrome {
         return (store && instanceId) ? JSON.parse(JSON.stringify(store.settingsFor(instanceId))) : ({})
     }
     readonly property bool showHistory: cfg.showHistory !== undefined ? cfg.showHistory : true
+    readonly property string historyWindow: cfg.historyWindow !== undefined
+                                            ? cfg.historyWindow : "2m"
     readonly property string unit: cfg.unit !== undefined ? cfg.unit : "bytes"
+    readonly property bool showDetails: cfg.showDetails !== undefined ? cfg.showDetails : true
+    readonly property string interfaceName: String(cfg.interfaceName || "").trim()
+    readonly property string scaleMode: cfg.scaleMode !== undefined ? cfg.scaleMode : "auto"
+    readonly property real fixedScaleMbps: Math.max(1, Number(cfg.fixedScaleMbps || 100))
+    readonly property string selectionKey: interfaceName
+    property bool componentReady: false
+    Component.onCompleted: componentReady = true
+    onSelectionKeyChanged: if (componentReady) {
+        hist = []
+        peakRx = 0
+        peakTx = 0
+        spark.requestPaint()
+        Qt.callLater(_persist)
+    }
+    onScaleModeChanged: if (componentReady) spark.requestPaint()
+    onFixedScaleMbpsChanged: if (componentReady) spark.requestPaint()
+    onHistoryWindowChanged: if (componentReady) {
+        if (hist.length > historyLimit) hist = hist.slice(hist.length - historyLimit)
+        Qt.callLater(_persist)
+        spark.requestPaint()
+    }
 
-    property real rx: metrics.net_rx_bytes_per_sec || 0
-    property real tx: metrics.net_tx_bytes_per_sec || 0
+    readonly property bool hasCatalog: metrics.net_interfaces !== undefined
+    readonly property var interfaceCatalog: Array.isArray(metrics.net_interfaces)
+                                                    ? metrics.net_interfaces : []
+    function _included(netif) {
+        if (w.interfaceName.length) return String(netif.name) === w.interfaceName
+        return netif.category === "physical"
+    }
+    readonly property var selectedInterfaces: {
+        var selected = []
+        for (var i = 0; i < w.interfaceCatalog.length; i++)
+            if (w._included(w.interfaceCatalog[i])) selected.push(w.interfaceCatalog[i])
+        return selected
+    }
+    readonly property bool explicitAvailable: metrics.net_metrics_available !== undefined
+    readonly property bool sourceAvailable: explicitAvailable
+                                                    ? metrics.net_metrics_available === true
+                                                    : metrics.net_rx_bytes_per_sec !== undefined
+                                                      || metrics.net_tx_bytes_per_sec !== undefined
+    readonly property bool rateAvailable: {
+        if (!w.sourceAvailable) return false
+        if (!w.hasCatalog) return true
+        if (!w.selectedInterfaces.length) return false
+        for (var i = 0; i < w.selectedInterfaces.length; i++)
+            if (w.selectedInterfaces[i].rate_available === true) return true
+        return false
+    }
+    function _sum(field, fallback) {
+        if (!w.hasCatalog) return Number(metrics[fallback] || 0)
+        var total = 0
+        for (var i = 0; i < w.selectedInterfaces.length; i++)
+            total += Number(w.selectedInterfaces[i][field] || 0)
+        return total
+    }
+    property real rx: w._sum("rx_bytes_per_sec", "net_rx_bytes_per_sec")
+    property real tx: w._sum("tx_bytes_per_sec", "net_tx_bytes_per_sec")
+    readonly property real rxTotal: w._sum("rx_total_bytes", "net_rx_total_bytes")
+    readonly property real txTotal: w._sum("tx_total_bytes", "net_tx_total_bytes")
+    readonly property real dropped: w._sum("rx_dropped", "net_rx_dropped")
+                                    + w._sum("tx_dropped", "net_tx_dropped")
+    readonly property real errors: w._sum("rx_errors", "net_rx_errors")
+                                   + w._sum("tx_errors", "net_tx_errors")
+    function interfaceIdentity(netif) {
+        var name = String(netif.name || "interface")
+        var friendly = String(netif.friendly_name || "")
+        return friendly.length ? friendly + " (" + name + ")" : name
+    }
+    readonly property string selectedLabel: {
+        if (w.selectedInterfaces.length === 1)
+            return w.interfaceIdentity(w.selectedInterfaces[0])
+        if (w.interfaceName.length) return w.interfaceName
+        if (!w.hasCatalog) return "physical links"
+        return w.selectedInterfaces.length + " physical links"
+    }
+    readonly property string linkDetail: {
+        if (w.selectedInterfaces.length !== 1) return ""
+        var netif = w.selectedInterfaces[0]
+        var parts = [String(netif.link_state || "unknown"),
+                     String(netif.category || "interface")]
+        if (netif.speed_mbps !== undefined && netif.speed_mbps !== null)
+            parts.push(String(netif.speed_mbps) + " Mbps link")
+        return parts.join(" · ")
+    }
+    readonly property string unavailableReason: {
+        if (!w.sourceAvailable)
+            return String(metrics.net_unavailable_reason || "Network metrics are unavailable")
+        if (w.interfaceName.length && !w.selectedInterfaces.length)
+            return "Interface " + w.interfaceName + " is not available"
+        if (!w.selectedInterfaces.length)
+            return String(metrics.net_unavailable_reason || "No matching network interfaces")
+        return "Waiting for a second network sample"
+    }
+    readonly property string freshness: {
+        if (!w.sourceAvailable) return "unavailable"
+        if (String(metrics.net_sample_status || "") === "warming") return "sampling"
+        if (w.hasCatalog && !w.selectedInterfaces.length) return "unavailable"
+        if (w.hasCatalog && !w.rateAvailable) return "sampling"
+        var stamp = Number(metrics.net_sample_unix_ms || 0)
+        if (stamp <= 0) return "live"
+        var age = Math.max(0, Math.floor((Date.now() - stamp) / 1000))
+        return age < 2 ? "updated now" : "updated " + age + "s ago"
+    }
+    readonly property string sourceMode: w.interfaceName.length
+                                         ? "Selected interface" : "Physical aggregate"
+    readonly property string accessibleSummary: {
+        var parts = ["Network", w.sourceMode, w.selectedLabel]
+        if (w.rateAvailable) {
+            parts.push("download " + w.fmt(w.rx))
+            parts.push("upload " + w.fmt(w.tx))
+            if (w.linkDetail.length) parts.push(w.linkDetail)
+        } else {
+            parts.push(w.unavailableReason)
+        }
+        if (w.showHistory)
+            parts.push(w.historyLabel + " history, " + w.graphScaleLabel)
+        return parts.join(", ")
+    }
+    status: w.explicitAvailable ? w.freshness : ""
+    statusColor: w.rateAvailable ? theme.textSecondary : theme.warning
+
     property real peakRx: 0
     property real peakTx: 0
     property var hist: []
@@ -49,9 +171,24 @@ WidgetChrome {
         // Round to whole bytes FIRST, then pick the unit - otherwise a value like
         // 1023.7 takes the B/s branch and rounds up to a nonsensical "1024 B/s".
         var b = Math.round(bps)
-        if (b >= 1048576) return (b / 1048576).toFixed(1) + " MB/s"
-        if (b >= 1024) return (b / 1024).toFixed(0) + " KB/s"
+        if (b >= 1048576) return (b / 1048576).toFixed(1) + " MiB/s"
+        if (b >= 1024) return (b / 1024).toFixed(0) + " KiB/s"
         return b + " B/s"
+    }
+    function fmtTotal(bytes) {
+        var b = Math.max(0, Number(bytes || 0))
+        if (b >= 1e12) return (b / 1e12).toFixed(1) + " TB"
+        if (b >= 1e9) return (b / 1e9).toFixed(1) + " GB"
+        if (b >= 1e6) return (b / 1e6).toFixed(1) + " MB"
+        if (b >= 1e3) return (b / 1e3).toFixed(1) + " KB"
+        return Math.round(b) + " B"
+    }
+    function resetSession() {
+        w.hist = []
+        w.peakRx = 0
+        w.peakTx = 0
+        w._persist()
+        spark.requestPaint()
     }
 
     // Session peaks + sparkline history live in the shared store (keyed by
@@ -64,12 +201,13 @@ WidgetChrome {
     function _restoreState() {
         if (!store || !instanceId) return
         var s = store.settingsFor(instanceId)
-        if (s.hist !== undefined) w.hist = JSON.parse(JSON.stringify(s.hist))
-        if (s.peakRx !== undefined) w.peakRx = s.peakRx
-        if (s.peakTx !== undefined) w.peakTx = s.peakTx
+        w.hist = Array.isArray(s.hist) ? JSON.parse(JSON.stringify(s.hist)) : []
+        w.peakRx = s.peakRx !== undefined ? Number(s.peakRx) : 0
+        w.peakTx = s.peakTx !== undefined ? Number(s.peakTx) : 0
         spark.requestPaint()
     }
     onStoreChanged: _restoreState()
+    onInstanceIdChanged: _restoreState()
 
     onMetricsChanged: {
         // Honour `active`: an off-page/hidden instance must not keep accumulating
@@ -77,13 +215,26 @@ WidgetChrome {
         // bindings lag one frame behind this handler.
         if (!w.active) return
         var m = w.metrics || ({})
-        var r = m.net_rx_bytes_per_sec
-        var t = m.net_tx_bytes_per_sec
-        // Skip frames with no net data so history isn't poisoned with fake 0s (S4).
-        if (r === undefined && t === undefined) return
-        r = r || 0; t = t || 0
-        hist.push({ r: r, t: t })
-        if (hist.length > 60) hist.shift()
+        if (m.net_metrics_available === false || m.net_sample_status === "warming") return
+        var r = 0, t = 0, found = false
+        if (Array.isArray(m.net_interfaces)) {
+            for (var i = 0; i < m.net_interfaces.length; i++) {
+                var netif = m.net_interfaces[i]
+                if (!w._included(netif) || netif.rate_available !== true) continue
+                r += Number(netif.rx_bytes_per_sec || 0)
+                t += Number(netif.tx_bytes_per_sec || 0)
+                found = true
+            }
+        } else {
+            found = m.net_rx_bytes_per_sec !== undefined || m.net_tx_bytes_per_sec !== undefined
+            r = Number(m.net_rx_bytes_per_sec || 0)
+            t = Number(m.net_tx_bytes_per_sec || 0)
+        }
+        if (!found) return
+        var nextHistory = hist.slice()
+        nextHistory.push({ r: r, t: t })
+        while (nextHistory.length > w.historyLimit) nextHistory.shift()
+        hist = nextHistory
         if (r > peakRx) peakRx = r
         if (t > peakTx) peakTx = t
         _persist()
@@ -113,6 +264,24 @@ WidgetChrome {
     // injected as sizeClass "full", which `big` already covers - but it said the
     // decision was partly the overlay's, which is the habit being removed.
     readonly property bool showPeaks: !micro && (big || horiz)
+    readonly property int historyLimit: w.historyWindow === "1m" ? 30
+                                        : w.historyWindow === "5m" ? 150 : 60
+    readonly property string historyLabel: w.historyWindow === "1m" ? "1 minute"
+                                           : w.historyWindow === "5m" ? "5 minutes"
+                                                                      : "2 minutes"
+    readonly property real graphMaxBytesPerSecond: {
+        if (w.scaleMode === "fixed") return w.fixedScaleMbps * 1000000 / 8
+        var maximum = 0
+        for (var i = 0; i < w.hist.length; i++)
+            maximum = Math.max(maximum, Number(w.hist[i].r || 0),
+                               Number(w.hist[i].t || 0))
+        return maximum
+    }
+    readonly property string graphScaleLabel: w.scaleMode === "fixed"
+                                              ? "Fixed ceiling " + w.fmt(w.graphMaxBytesPerSecond)
+                                              : w.graphMaxBytesPerSecond > 0
+                                                ? "Auto ceiling " + w.fmt(w.graphMaxBytesPerSecond)
+                                                : "Auto scale"
 
     // Rate text scales with the box: the micro tile IS the two numbers.
     //
@@ -132,6 +301,7 @@ WidgetChrome {
 
     GridLayout {
         id: lay
+        objectName: "netOuterLayout"
         anchors.fill: parent
         anchors.margins: theme.spacingSm
         columns: w.horiz ? 2 : 1
@@ -166,16 +336,55 @@ WidgetChrome {
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignVCenter
                 spacing: w.micro ? 2 : 0
-                Text { text: "↓ " + w.fmt(w.rx); color: theme.success; font.bold: true
+                Text { text: "↓ " + (w.micro ? "" : "Download  ")
+                              + (w.rateAvailable ? w.fmt(w.rx)
+                                                 : w.freshness === "sampling" ? "Sampling" : "N/A")
+                    color: w.rateAvailable ? theme.success : theme.textSecondary; font.bold: true
                     font.family: theme.fontMono; font.pixelSize: Math.round(w.rateFont)
-                    fontSizeMode: Text.HorizontalFit; minimumPixelSize: 10
+                    fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum
                     Layout.fillWidth: true; elide: Text.ElideRight
-                    horizontalAlignment: w.micro ? Text.AlignHCenter : Text.AlignLeft }
-                Text { text: "↑ " + w.fmt(w.tx); color: w.effAccent; font.bold: true
+                    horizontalAlignment: w.micro ? Text.AlignHCenter : Text.AlignLeft
+                    Accessible.name: w.rateAvailable ? "Download " + w.fmt(w.rx)
+                                                     : "Download " + w.unavailableReason }
+                Text { text: "↑ " + (w.micro ? "" : "Upload  ")
+                              + (w.rateAvailable ? w.fmt(w.tx)
+                                                 : w.freshness === "sampling" ? "Sampling" : "N/A")
+                    color: w.rateAvailable ? w.effAccent : theme.textSecondary; font.bold: true
                     font.family: theme.fontMono; font.pixelSize: Math.round(w.rateFont)
-                    fontSizeMode: Text.HorizontalFit; minimumPixelSize: 10
+                    fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum
                     Layout.fillWidth: true; elide: Text.ElideRight
-                    horizontalAlignment: w.micro ? Text.AlignHCenter : Text.AlignLeft }
+                    horizontalAlignment: w.micro ? Text.AlignHCenter : Text.AlignLeft
+                    Accessible.name: w.rateAvailable ? "Upload " + w.fmt(w.tx)
+                                                     : "Upload " + w.unavailableReason }
+                Text {
+                    visible: w.showDetails && !w.micro
+                    text: w.rateAvailable
+                          ? w.selectedLabel
+                            + (w.linkDetail.length ? " · " + w.linkDetail : "")
+                            + " · " + w.sourceMode
+                          : w.unavailableReason
+                    color: w.rateAvailable ? theme.textPrimary : theme.warning
+                    font.pixelSize: theme.fontLabel
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+                Text {
+                    visible: w.showDetails && (w.expanded || w.roomy) && w.rateAvailable
+                    text: "total ↓ " + w.fmtTotal(w.rxTotal) + "  ↑ " + w.fmtTotal(w.txTotal)
+                    color: theme.textPrimary
+                    font.family: theme.fontMono
+                    font.pixelSize: w.roomy ? theme.fontLabel : theme.fontMinimum
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+                Text {
+                    visible: w.showDetails && (w.expanded || w.roomy) && w.rateAvailable
+                    text: "drops " + w.dropped + "  errors " + w.errors
+                    color: (w.dropped + w.errors) > 0 ? theme.warning : theme.textSecondary
+                    font.family: theme.fontMono
+                    font.pixelSize: w.roomy ? theme.fontLabel : theme.fontMinimum
+                    Layout.fillWidth: true
+                }
             }
             // Session peaks - "best so far". Right-aligned beside the rates in
             // the overlay; a quiet line under them on tall/wide tiles.
@@ -189,43 +398,102 @@ WidgetChrome {
             ColumnLayout {
                 visible: w.showPeaks; spacing: 0
                 Layout.alignment: w.expanded ? (Qt.AlignRight | Qt.AlignVCenter) : Qt.AlignLeft
-                Text { text: "peak ↓ " + w.fmt(w.peakRx); color: theme.textTertiary
+                Text { text: "peak ↓ " + w.fmt(w.peakRx); color: theme.textPrimary
                     font.family: theme.fontMono
-                    font.pixelSize: Math.round(Math.max(11, Math.min(w.rateFont * 0.52, 20)))
+                    font.pixelSize: Math.round(Math.max(theme.fontMinimum,
+                                                       Math.min(w.rateFont * 0.52, theme.fontTitle)))
                     horizontalAlignment: w.expanded ? Text.AlignRight : Text.AlignLeft
                     Layout.alignment: w.expanded ? Qt.AlignRight : Qt.AlignLeft }
-                Text { text: "peak ↑ " + w.fmt(w.peakTx); color: theme.textTertiary
+                Text { text: "peak ↑ " + w.fmt(w.peakTx); color: theme.textPrimary
                     font.family: theme.fontMono
-                    font.pixelSize: Math.round(Math.max(11, Math.min(w.rateFont * 0.52, 20)))
+                    font.pixelSize: Math.round(Math.max(theme.fontMinimum,
+                                                       Math.min(w.rateFont * 0.52, theme.fontTitle)))
                     horizontalAlignment: w.expanded ? Text.AlignRight : Text.AlignLeft
                     Layout.alignment: w.expanded ? Qt.AlignRight : Qt.AlignLeft }
+                Rectangle {
+                    objectName: "resetNetworkSession"
+                    visible: w.expanded
+                    Layout.alignment: Qt.AlignRight
+                    Layout.topMargin: 6
+                    Layout.minimumWidth: 128
+                    Layout.minimumHeight: 48
+                    implicitWidth: 128
+                    implicitHeight: 48
+                    activeFocusOnTab: true
+                    radius: theme.radiusMd
+                    color: resetTap.pressed ? theme.cardBorder : theme.cardBackground
+                    border.width: activeFocus ? 2 : 1
+                    border.color: activeFocus ? w.effAccent : theme.cardBorder
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Reset network session"
+                    Keys.onSpacePressed: w.resetSession()
+                    Keys.onReturnPressed: w.resetSession()
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Reset session"
+                        color: theme.textPrimary
+                        font.pixelSize: theme.fontMinimum
+                        font.bold: true
+                    }
+                    TapHandler {
+                        id: resetTap
+                        onTapped: w.resetSession()
+                    }
+                }
             }
         }
 
-        Canvas {
-            id: spark
+        ColumnLayout {
             visible: w.showHistory && !w.micro
-            Layout.fillWidth: true; Layout.fillHeight: true
-            onPaint: {
-                var ctx = getContext('2d'); ctx.clearRect(0, 0, width, height)
-                if (w.hist.length < 2 || width <= 0 || height <= 0) return
-                var max = 1
-                for (var i = 0; i < w.hist.length; i++)
-                    max = Math.max(max, w.hist[i].r, w.hist[i].t)
-                function line(key, color) {
-                    ctx.beginPath()
-                    for (var j = 0; j < w.hist.length; j++) {
-                        var x = j * width / (w.hist.length - 1)
-                        var y = height - (w.hist[j][key] / max) * height * 0.92 - 2
-                        j === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
-                    }
-                    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke()
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: theme.spacingXs
+
+            GridLayout {
+                Layout.fillWidth: true
+                columns: width >= 520 ? 2 : 1
+                Text {
+                    text: w.historyLabel.toUpperCase() + " THROUGHPUT"
+                    color: theme.textPrimary
+                    font.pixelSize: theme.fontLabel
+                    font.bold: true
+                    font.letterSpacing: 0.8
+                    Layout.fillWidth: true
                 }
-                line("r", theme.success)
-                line("t", w.effAccent)
+                Text {
+                    text: w.graphScaleLabel
+                    color: theme.textPrimary
+                    font.pixelSize: theme.fontLabel
+                    font.family: theme.fontMono
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                    horizontalAlignment: parent.columns === 2 ? Text.AlignRight : Text.AlignLeft
+                }
             }
-            onWidthChanged: requestPaint()
-            onHeightChanged: requestPaint()
+            Canvas {
+                id: spark
+                visible: w.showHistory && !w.micro
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                onPaint: {
+                    var ctx = getContext('2d'); ctx.clearRect(0, 0, width, height)
+                    if (w.hist.length < 2 || width <= 0 || height <= 0) return
+                    var max = Math.max(1, w.graphMaxBytesPerSecond)
+                    function line(key, color) {
+                        ctx.beginPath()
+                        for (var j = 0; j < w.hist.length; j++) {
+                            var x = j * width / (w.hist.length - 1)
+                            var y = height - (w.hist[j][key] / max) * height * 0.92 - 2
+                            j === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+                        }
+                        ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke()
+                    }
+                    line("r", theme.success)
+                    line("t", w.effAccent)
+                }
+                onWidthChanged: requestPaint()
+                onHeightChanged: requestPaint()
+            }
         }
     }
 }
