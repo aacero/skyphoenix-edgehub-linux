@@ -285,7 +285,6 @@ private slots:
                  QString(),
                  QStringLiteral("relative/value"),
                  QStringLiteral("https://example.test/value"),
-                 QStringLiteral("file://remote-host/value"),
                  root.path() + QString(QChar::Null) + QStringLiteral("/value"),
                  root.filePath(QStringLiteral("./value")),
                  root.filePath(QStringLiteral("nested/.."))}) {
@@ -294,6 +293,12 @@ private slots:
             QVERIFY(!result.value(QStringLiteral("ok")).toBool());
             QVERIFY(!result.value(QStringLiteral("error")).toString().isEmpty());
         }
+
+        const QVariantMap remoteFile =
+            ConfigBridge::readMetricFileFromRoots(
+                QStringLiteral("file://remote-host/value"), roots);
+        QCOMPARE(remoteFile.value(QStringLiteral("error")).toString(),
+                 QStringLiteral("invalid-path"));
     }
 
     void metricFileReaderAcceptsLocalFileUrlAndCleanedRoot() {
@@ -312,6 +317,15 @@ private slots:
         QVERIFY(result.value(QStringLiteral("ok")).toBool());
         QCOMPARE(result.value(QStringLiteral("body")).toString(),
                  QStringLiteral("7"));
+    }
+
+    void metricFileReaderUsesProductionAllowlist() {
+        ConfigBridge bridge(cfg_);
+        const QVariantMap result =
+            bridge.readMetricFile(QStringLiteral("/proc/uptime"));
+        QVERIFY(result.value(QStringLiteral("ok")).toBool());
+        QVERIFY(!result.value(QStringLiteral("body")).toString().isEmpty());
+        QVERIFY(result.value(QStringLiteral("error")).toString().isEmpty());
     }
 
     void metricFileOpenErrorsAreClassified() {
@@ -471,6 +485,14 @@ private slots:
         QVERIFY(!valid.value(QStringLiteral("active")).toBool());
         QCOMPARE(valid.value(QStringLiteral("source")).toString(),
                  QStringLiteral("absent"));
+    }
+
+    void policyFfiResultIsCached() {
+        ConfigBridge bridge(cfg_);
+        const QVariantMap first = bridge.policy();
+        QVERIFY(first.contains(QStringLiteral("active")));
+        const QVariantMap second = bridge.policy();
+        QCOMPARE(second, first);
     }
 
     // --- E7 Phase A: credential-reference resolution -------------------------

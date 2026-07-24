@@ -316,7 +316,7 @@ public:
         QString path = rawPath.trimmed();
         if (path.startsWith(QStringLiteral("file:"), Qt::CaseInsensitive)) {
             const QUrl url(path);
-            if (!url.isLocalFile())
+            if (!url.isLocalFile() || !url.host().isEmpty())
                 return fail(QStringLiteral("invalid-path"),
                             QStringLiteral("Use an absolute local file path."));
             path = url.toLocalFile();
