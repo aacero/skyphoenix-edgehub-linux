@@ -1,0 +1,537 @@
+{
+  "case_count": 50,
+  "entries": [
+    {
+      "crop": null,
+      "file": "widget-cpu.png",
+      "height": 818,
+      "id": "widget-cpu",
+      "kind": "widget",
+      "sha256": "09cffb4f0d8a4bb38168751016a5ee259b8b2bd2f124060cf711f31c453af296",
+      "source": "wsysa_cpu_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-gpu.png",
+      "height": 818,
+      "id": "widget-gpu",
+      "kind": "widget",
+      "sha256": "7b0139f2825356044347606085258275b6ef3f3d0eff2b6e3bb13f35894d1aa3",
+      "source": "wsysa_gpu_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-ram.png",
+      "height": 818,
+      "id": "widget-ram",
+      "kind": "widget",
+      "sha256": "26cd359aa06fcac453358d679d89d64b5b3e7a9e14fedb46f10f9a1dbc980da6",
+      "source": "wsysa_ram_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-net.png",
+      "height": 818,
+      "id": "widget-net",
+      "kind": "widget",
+      "sha256": "6bcc161f4face6fc8849b2758f22ebf6f781dba4d92c7efc99f0c215e99c716b",
+      "source": "wsysb_net_NET-SZ_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-disk.png",
+      "height": 818,
+      "id": "widget-disk",
+      "kind": "widget",
+      "sha256": "57acfbbff8af7d3940e13771965b194431f4ed98e0c6eaaad43fa927d43f1924",
+      "source": "wsysb_dsk_DSK-SZ_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-sensors.png",
+      "height": 818,
+      "id": "widget-sensors",
+      "kind": "widget",
+      "sha256": "24de07e7953b1ec9f3ea30fb7881c73e2b5f02ea92b0678421b3420fb6a4dcb2",
+      "source": "wsysb_sns_SNS-SZ_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-packages.png",
+      "height": 818,
+      "id": "widget-packages",
+      "kind": "widget",
+      "sha256": "7174fec95d7ada586a112061ed556842e8766a79545ed4e20365631bb269fe30",
+      "source": "sysc_pkg_sz_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-sinceinstall.png",
+      "height": 818,
+      "id": "widget-sinceinstall",
+      "kind": "widget",
+      "sha256": "4d9e63848cd711153b7ea8442b644be56976082b71105f857c17e495d472ffbb",
+      "source": "sysc_sia_sz_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": [
+        0,
+        0,
+        696,
+        818
+      ],
+      "file": "widget-clock.png",
+      "height": 818,
+      "id": "widget-clock",
+      "kind": "widget",
+      "sha256": "bfa8c0b6e04c3bdf0295142d6dc4c1c47a55b9ed27bff4072a822fcaba38179c",
+      "source": "wtime_clk_size_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": [
+        0,
+        0,
+        696,
+        818
+      ],
+      "file": "widget-analog.png",
+      "height": 818,
+      "id": "widget-analog",
+      "kind": "widget",
+      "sha256": "c02aee701a97c8b927d6b1f9e58b3dab08727fb9ef853cd700a5aa0b1ce6379b",
+      "source": "wtime_anl_size_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": [
+        0,
+        0,
+        696,
+        818
+      ],
+      "file": "widget-moon.png",
+      "height": 818,
+      "id": "widget-moon",
+      "kind": "widget",
+      "sha256": "61a85988ff91d868915378608391ba6d18609c111f1dfa67d692c5f60cd60c98",
+      "source": "wtime_moon_size_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-focus.png",
+      "height": 818,
+      "id": "widget-focus",
+      "kind": "widget",
+      "sha256": "970c30e81e9be52113a8bcee281d88fd19e82444c1ac11a841bea43a181e1308",
+      "source": "wfocus_focus_size_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-tasks.png",
+      "height": 818,
+      "id": "widget-tasks",
+      "kind": "widget",
+      "sha256": "b0c93a8eb4f878a5a9ec19023aaa88fb216790d733cf7f1cf95faeb26d6f42b3",
+      "source": "wfocus_tasks_size_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-rightnow.png",
+      "height": 818,
+      "id": "widget-rightnow",
+      "kind": "widget",
+      "sha256": "34cf929a09afdc23297e9d8fd2c7b9293744fc2d2fdf7638263c27bb18fb3d72",
+      "source": "wfocus_rn_size_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-notes.png",
+      "height": 818,
+      "id": "widget-notes",
+      "kind": "widget",
+      "sha256": "1454a8658906c50cec6684ba7290626d2fc5021b899992566f874e87641dd3bc",
+      "source": "foc_notes_size_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-habit.png",
+      "height": 818,
+      "id": "widget-habit",
+      "kind": "widget",
+      "sha256": "fed54633e9447e3c2a70c70fa21621ad0dd56af8117fe2c8ea24a6657406f926",
+      "source": "foc_habit_size_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-hydration.png",
+      "height": 818,
+      "id": "widget-hydration",
+      "kind": "widget",
+      "sha256": "0d2d372423918f47ad7da0d1a9f95b2dadc83d5c20ef882c16784270d647ee5e",
+      "source": "hyd_size_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-break.png",
+      "height": 818,
+      "id": "widget-break",
+      "kind": "widget",
+      "sha256": "763b76c9284939ee12b99abbedb76c405ea9241cbb13b7ba115a99540a96dc54",
+      "source": "foc_break_size_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-meds.png",
+      "height": 818,
+      "id": "widget-meds",
+      "kind": "widget",
+      "sha256": "ab6a2d9cb78216ca35611bd4bef74ab8ecb50d07050a5bce05abf19f4245f75f",
+      "source": "fh_meds_sz_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-braindump.png",
+      "height": 818,
+      "id": "widget-braindump",
+      "kind": "widget",
+      "sha256": "ce385e9013d5607e3c7f98b61fcd5031274d85da1cd13ab9a758292a5ca3517d",
+      "source": "fh_braindump_sz_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-routine.png",
+      "height": 818,
+      "id": "widget-routine",
+      "kind": "widget",
+      "sha256": "c827f55877dab5e62c68f3a2a1a303193f215c84e2ef357acc7229008ab9a2fd",
+      "source": "fh_routine_sz_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": [
+        0,
+        0,
+        696,
+        818
+      ],
+      "file": "widget-media.png",
+      "height": 818,
+      "id": "widget-media",
+      "kind": "widget",
+      "sha256": "8a9036b3f211a8301354c1fad0df1ac64b7a1b3381d5c920620906a7a27792aa",
+      "source": "wmedia_size_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": [
+        800,
+        0,
+        696,
+        818
+      ],
+      "file": "widget-httpjson.png",
+      "height": 818,
+      "id": "widget-httpjson",
+      "kind": "widget",
+      "sha256": "bd1d8bbeeb2e7c20d55963e4c319699ccff37e75df9a11ff673c774e4d438b93",
+      "source": "whttp_size_p_1x1.png",
+      "width": 696
+    },
+    {
+      "crop": [
+        1600,
+        0,
+        696,
+        818
+      ],
+      "file": "widget-kpi.png",
+      "height": 818,
+      "id": "widget-kpi",
+      "kind": "widget",
+      "sha256": "1a8cc1dd2b287433558d909aac31e76a5b74d6b84c0e944233719e04ce5b2b0f",
+      "source": "wkpi_size_p_1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-calendar.png",
+      "height": 818,
+      "id": "widget-calendar",
+      "kind": "widget",
+      "sha256": "849a85a6f6d20f163f7691dcef02bacb72fa4aa753c73218941c0d12cea0ee0f",
+      "source": "wcalwx_cal_size_p_1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-nownext.png",
+      "height": 818,
+      "id": "widget-nownext",
+      "kind": "widget",
+      "sha256": "e3be36b916355c381a9c295baf50f26c2b7e6840fd05f0b5ce5349a5eb2d2d15",
+      "source": "wcalwx_nn_size_p_1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-weather.png",
+      "height": 818,
+      "id": "widget-weather",
+      "kind": "widget",
+      "sha256": "e0a08775df2d31344c87b5332279161c3ee5ee02734def3d48b9a07f8f6dbea1",
+      "source": "wcalwx_wx_size_p_1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-countdown.png",
+      "height": 818,
+      "id": "widget-countdown",
+      "kind": "widget",
+      "sha256": "cea063ca8f7477e3ca8c5ee4b9831f4596eb6406f9df200de37e062119454cdf",
+      "source": "wmisc_cd_size_p_1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-eod.png",
+      "height": 818,
+      "id": "widget-eod",
+      "kind": "widget",
+      "sha256": "731db27c751814fde4be6bb5073cdc4e48f593b1eb1669c943cab081e34c5489",
+      "source": "wmisc_eod_size_p_1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-quote.png",
+      "height": 818,
+      "id": "widget-quote",
+      "kind": "widget",
+      "sha256": "c1cb135d346c0bf6ab0b636c8948450f54d63741c7bb3486970c67a93b2d7925",
+      "source": "wmisc_qt_size_p_1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "preset-ambient.png",
+      "height": 720,
+      "id": "preset-ambient",
+      "kind": "preset",
+      "sha256": "a1e5ac85291f44e8da71d4f702011f3097329e70ba87a3b8a77e8994778b1af1",
+      "source": "shellpreset_append_ambient.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-analyst.png",
+      "height": 720,
+      "id": "preset-analyst",
+      "kind": "preset",
+      "sha256": "7c3fab1c6fd9c8592c642efab98e3bac588fe40acd7f091d89e21f1dea360ebc",
+      "source": "shellpreset_append_analyst.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-calm-focus.png",
+      "height": 720,
+      "id": "preset-calm-focus",
+      "kind": "preset",
+      "sha256": "34e70d3102e0bafc9559ee6a918b0de541aa1f6513df42e5032e64872732af1a",
+      "source": "shellpreset_append_calm-focus.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-creator.png",
+      "height": 720,
+      "id": "preset-creator",
+      "kind": "preset",
+      "sha256": "f295c1f90bec751f799d052e3813b87fab257486e108d3f2c9fc13f2fb19f1ee",
+      "source": "shellpreset_append_creator.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-day-plan.png",
+      "height": 720,
+      "id": "preset-day-plan",
+      "kind": "preset",
+      "sha256": "ef5bcc5a906e92ede291d77b546b2c94db93c1b1e167cb12011389d69fb90cca",
+      "source": "shellpreset_append_day-plan.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-developer.png",
+      "height": 720,
+      "id": "preset-developer",
+      "kind": "preset",
+      "sha256": "b54ea8947dd16ee963f18d9a6285cac0a097fc857c39f03d3b28278e3a4b4a24",
+      "source": "shellpreset_append_developer.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-enterprise.png",
+      "height": 720,
+      "id": "preset-enterprise",
+      "kind": "preset",
+      "sha256": "ac6e38f1def5f2957b0d1e764f5155ad9d37e0d6fa38f7a7854dbba9f8d7d18b",
+      "source": "shellpreset_append_enterprise.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-gaming.png",
+      "height": 720,
+      "id": "preset-gaming",
+      "kind": "preset",
+      "sha256": "38fb6b7225bd8b110908c7f6d739efa51017452189f9aebcb01cbfc578091178",
+      "source": "shellpreset_append_gaming.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-health.png",
+      "height": 720,
+      "id": "preset-health",
+      "kind": "preset",
+      "sha256": "e2eef8d85cdcaf8fe9c96643ae24338ea9b133dad3c872ae3008031c5d5fffbe",
+      "source": "shellpreset_append_health.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-home-ambient.png",
+      "height": 720,
+      "id": "preset-home-ambient",
+      "kind": "preset",
+      "sha256": "4624291b5d3455f889e50c577f03d15c78d7e9fb807c007c636e14e1484059c1",
+      "source": "shellpreset_append_home-ambient.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-homelab.png",
+      "height": 720,
+      "id": "preset-homelab",
+      "kind": "preset",
+      "sha256": "195db39b222e316b4ef96064dda16fcadb1be566f68f22cc27aa01b1c51b54bc",
+      "source": "shellpreset_append_homelab.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-minimal.png",
+      "height": 720,
+      "id": "preset-minimal",
+      "kind": "preset",
+      "sha256": "19dff695453e2c6adf27adbc76f2aba6cacc8498808ff29c05cc71ec0af7d3f6",
+      "source": "shellpreset_append_minimal.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-notes-streak.png",
+      "height": 720,
+      "id": "preset-notes-streak",
+      "kind": "preset",
+      "sha256": "c157383ba8aee45b77c578187b58de80381692bc1e5e86731b40a80a5d7975f9",
+      "source": "shellpreset_append_notes-streak.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-productivity.png",
+      "height": 720,
+      "id": "preset-productivity",
+      "kind": "preset",
+      "sha256": "3291a33a00e4ac4114b814365bc627eb6a1178cf6add102e17927027e069e5c7",
+      "source": "shellpreset_append_productivity.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-remote-work.png",
+      "height": 720,
+      "id": "preset-remote-work",
+      "kind": "preset",
+      "sha256": "f46f3467fb71a7e6035cc6f23e1b81b134cec50093e24425697366a59ac73b61",
+      "source": "shellpreset_append_remote-work.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-study.png",
+      "height": 720,
+      "id": "preset-study",
+      "kind": "preset",
+      "sha256": "dca6a65d148991863ad32c727a33e3920f93f7f6e6ecf281fae9616dfc240bf0",
+      "source": "shellpreset_append_study.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-system-io.png",
+      "height": 720,
+      "id": "preset-system-io",
+      "kind": "preset",
+      "sha256": "15872e56c79fa6981bb6f2bdb7a86bfa3d1e3ca61cd656adbad4f98935e2720f",
+      "source": "shellpreset_append_system-io.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-system-monitor.png",
+      "height": 720,
+      "id": "preset-system-monitor",
+      "kind": "preset",
+      "sha256": "731a57e971e46eb23e56f53169de02685fb1ff5a15ba49c7acb03c0d3b8c2baa",
+      "source": "shellpreset_append_system-monitor.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-trading-desk.png",
+      "height": 720,
+      "id": "preset-trading-desk",
+      "kind": "preset",
+      "sha256": "f054510408a81d2c8bb69cc295b62e31987eb1e5dcedb129a95a03e255ab9a75",
+      "source": "shellpreset_append_trading-desk.png",
+      "width": 2560
+    },
+    {
+      "crop": null,
+      "file": "preset-landscape.png",
+      "height": 720,
+      "id": "preset-landscape",
+      "kind": "preset",
+      "sha256": "df435ed5732844997125765aa65af95f49c6b0bef1cd896a2dcbe75a4c89f694",
+      "source": "shellpreset_append_landscape.png",
+      "width": 2560
+    }
+  ],
+  "source_commit": "0c74b9e11f2bf876fb8fef47ed7386fccd7a753b",
+  "version": 1
+}
