@@ -9,6 +9,9 @@
 #include <QTemporaryDir>
 #include <QVariantMap>
 
+#include <cstring>
+#include <utility>
+
 #include "config_bridge.h"
 #include "xeneon_core.h"
 
@@ -272,6 +275,202 @@ private slots:
             ConfigBridge::readMetricFileFromRoots(fifoPath, {root.path()});
         QCOMPARE(fifo.value(QStringLiteral("error")).toString(),
                  QStringLiteral("not-regular-file"));
+    }
+
+    void metricFileReaderRejectsInvalidPathShapes() {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QStringList roots{root.path()};
+        for (const QString& path : {
+                 QString(),
+                 QStringLiteral("relative/value"),
+                 QStringLiteral("https://example.test/value"),
+                 QStringLiteral("file://remote-host/value"),
+                 root.path() + QString(QChar::Null) + QStringLiteral("/value"),
+                 root.filePath(QStringLiteral("./value")),
+                 root.filePath(QStringLiteral("nested/.."))}) {
+            const QVariantMap result =
+                ConfigBridge::readMetricFileFromRoots(path, roots);
+            QVERIFY(!result.value(QStringLiteral("ok")).toBool());
+            QVERIFY(!result.value(QStringLiteral("error")).toString().isEmpty());
+        }
+    }
+
+    void metricFileReaderAcceptsLocalFileUrlAndCleanedRoot() {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QString metric = root.filePath(QStringLiteral("metric"));
+        QFile file(metric);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        QCOMPARE(file.write("7"), qint64(1));
+        file.close();
+
+        const QString noncanonicalRoot =
+            root.filePath(QStringLiteral("missing/.."));
+        const QVariantMap result = ConfigBridge::readMetricFileFromRoots(
+            QUrl::fromLocalFile(metric).toString(), {noncanonicalRoot});
+        QVERIFY(result.value(QStringLiteral("ok")).toBool());
+        QCOMPARE(result.value(QStringLiteral("body")).toString(),
+                 QStringLiteral("7"));
+    }
+
+    void metricFileOpenErrorsAreClassified() {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QString metric = root.filePath(QStringLiteral("metric"));
+        QFile file(metric);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("1");
+        file.close();
+
+        for (const auto entry : {
+                 std::pair{ELOOP, QStringLiteral("symlink")},
+                 std::pair{EACCES, QStringLiteral("unreadable")}}) {
+            ConfigBridge::MetricFileOps ops;
+            ops.openFile = [error = entry.first](const char*, int) {
+                errno = error;
+                return -1;
+            };
+            const QVariantMap result =
+                ConfigBridge::readMetricFileFromRootsWithOps(
+                    metric, {root.path()}, ops);
+            QCOMPARE(result.value(QStringLiteral("error")).toString(),
+                     entry.second);
+        }
+    }
+
+    void metricFileFstatFailureClosesDescriptor() {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QString metric = root.filePath(QStringLiteral("metric"));
+        QFile file(metric);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("1");
+        file.close();
+
+        int closed = -1;
+        ConfigBridge::MetricFileOps ops;
+        ops.openFile = [](const char*, int) { return 77; };
+        ops.statFile = [](int, struct stat*) {
+            errno = EIO;
+            return -1;
+        };
+        ops.closeFile = [&closed](int fd) {
+            closed = fd;
+            return 0;
+        };
+        const QVariantMap result =
+            ConfigBridge::readMetricFileFromRootsWithOps(
+                metric, {root.path()}, ops);
+        QCOMPARE(result.value(QStringLiteral("error")).toString(),
+                 QStringLiteral("unreadable"));
+        QCOMPARE(closed, 77);
+    }
+
+    void metricFileReadRetriesEintr() {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QString metric = root.filePath(QStringLiteral("metric"));
+        QFile file(metric);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("seed");
+        file.close();
+
+        int reads = 0;
+        int closes = 0;
+        ConfigBridge::MetricFileOps ops;
+        ops.openFile = [](const char*, int) { return 88; };
+        ops.statFile = [](int, struct stat* out) {
+            out->st_mode = S_IFREG | 0600;
+            out->st_size = 0;
+            return 0;
+        };
+        ops.readFile = [&reads](int, void* bytes, size_t) -> ssize_t {
+            ++reads;
+            if (reads == 1) {
+                errno = EINTR;
+                return -1;
+            }
+            if (reads == 2) {
+                static_cast<char*>(bytes)[0] = '9';
+                return 1;
+            }
+            return 0;
+        };
+        ops.closeFile = [&closes](int) {
+            ++closes;
+            return 0;
+        };
+        const QVariantMap result =
+            ConfigBridge::readMetricFileFromRootsWithOps(
+                metric, {root.path()}, ops);
+        QVERIFY(result.value(QStringLiteral("ok")).toBool());
+        QCOMPARE(result.value(QStringLiteral("body")).toString(),
+                 QStringLiteral("9"));
+        QCOMPARE(reads, 3);
+        QCOMPARE(closes, 1);
+    }
+
+    void metricFileReadFailureAndGrowthFailClosed() {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QString metric = root.filePath(QStringLiteral("metric"));
+        QFile file(metric);
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("seed");
+        file.close();
+
+        ConfigBridge::MetricFileOps readFailure;
+        readFailure.openFile = [](const char*, int) { return 91; };
+        readFailure.statFile = [](int, struct stat* out) {
+            out->st_mode = S_IFREG | 0600;
+            out->st_size = 0;
+            return 0;
+        };
+        readFailure.readFile = [](int, void*, size_t) -> ssize_t {
+            errno = EIO;
+            return -1;
+        };
+        readFailure.closeFile = [](int) { return 0; };
+        const QVariantMap failed =
+            ConfigBridge::readMetricFileFromRootsWithOps(
+                metric, {root.path()}, readFailure);
+        QCOMPARE(failed.value(QStringLiteral("error")).toString(),
+                 QStringLiteral("unreadable"));
+
+        int reads = 0;
+        ConfigBridge::MetricFileOps growing = readFailure;
+        growing.readFile = [&reads](int, void* bytes, size_t size) -> ssize_t {
+            ++reads;
+            std::memset(bytes, 'x', size);
+            return static_cast<ssize_t>(size);
+        };
+        const QVariantMap tooLarge =
+            ConfigBridge::readMetricFileFromRootsWithOps(
+                metric, {root.path()}, growing);
+        QCOMPARE(tooLarge.value(QStringLiteral("error")).toString(),
+                 QStringLiteral("too-large"));
+        QCOMPARE(reads, 129);
+    }
+
+    void unusablePolicyJsonFailsClosed() {
+        QTest::ignoreMessage(
+            QtWarningMsg,
+            QRegularExpression(QStringLiteral(
+                "Policy FFI returned an unusable answer.*")));
+        const QVariantMap failed =
+            ConfigBridge::policyFromJson(QStringLiteral("{not-json"));
+        QVERIFY(failed.value(QStringLiteral("active")).toBool());
+        QCOMPARE(failed.value(QStringLiteral("source")).toString(),
+                 QStringLiteral("fail-closed"));
+        QVERIFY(failed.value(QStringLiteral("netOffline")).toBool());
+        QVERIFY(failed.value(QStringLiteral("disableUserWidgets")).toBool());
+
+        const QVariantMap valid = ConfigBridge::policyFromJson(
+            QStringLiteral("{\"active\":false,\"source\":\"absent\"}"));
+        QVERIFY(!valid.value(QStringLiteral("active")).toBool());
+        QCOMPARE(valid.value(QStringLiteral("source")).toString(),
+                 QStringLiteral("absent"));
     }
 
     // --- E7 Phase A: credential-reference resolution -------------------------

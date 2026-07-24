@@ -15,6 +15,7 @@
 
 #include <cerrno>
 #include <fcntl.h>
+#include <functional>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -96,6 +97,19 @@ private:
 class ConfigBridge : public QObject {
     Q_OBJECT
 public:
+    struct MetricFileOps {
+        std::function<int(const char*, int)> openFile =
+            [](const char* path, int flags) { return ::open(path, flags); };
+        std::function<int(int, struct stat*)> statFile =
+            [](int fd, struct stat* out) { return ::fstat(fd, out); };
+        std::function<ssize_t(int, void*, size_t)> readFile =
+            [](int fd, void* bytes, size_t size) {
+                return ::read(fd, bytes, size);
+            };
+        std::function<int(int)> closeFile =
+            [](int fd) { return ::close(fd); };
+    };
+
     explicit ConfigBridge(ConfigHandle* config, QObject* parent = nullptr)
         : QObject(parent), m_config(config) {}
 
@@ -286,6 +300,13 @@ public:
 
     static QVariantMap readMetricFileFromRoots(const QString& rawPath,
                                                const QStringList& approvedRoots) {
+        return readMetricFileFromRootsWithOps(
+            rawPath, approvedRoots, MetricFileOps{});
+    }
+
+    static QVariantMap readMetricFileFromRootsWithOps(
+        const QString& rawPath, const QStringList& approvedRoots,
+        const MetricFileOps& ops) {
         auto fail = [](const QString& code, const QString& message) {
             return QVariantMap{{QStringLiteral("ok"), false},
                                {QStringLiteral("body"), QString()},
@@ -333,7 +354,9 @@ public:
                         QStringLiteral("Metric files must stay under an approved system metric directory."));
 
         const QByteArray encoded = QFile::encodeName(path);
-        const int fd = ::open(encoded.constData(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+        const int fd = ops.openFile(
+            encoded.constData(),
+            O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
         if (fd < 0)
             return fail(errno == ELOOP ? QStringLiteral("symlink")
                                        : QStringLiteral("unreadable"),
@@ -342,19 +365,19 @@ public:
                             : QStringLiteral("The metric file could not be opened."));
 
         struct stat st {};
-        if (::fstat(fd, &st) != 0) {
-            ::close(fd);
+        if (ops.statFile(fd, &st) != 0) {
+            ops.closeFile(fd);
             return fail(QStringLiteral("unreadable"),
                         QStringLiteral("The metric file could not be inspected."));
         }
         if (!S_ISREG(st.st_mode)) {
-            ::close(fd);
+            ops.closeFile(fd);
             return fail(QStringLiteral("not-regular-file"),
                         QStringLiteral("The path must be a regular file."));
         }
         constexpr qint64 kMaxBytes = 1024 * 1024;
         if (st.st_size > kMaxBytes) {
-            ::close(fd);
+            ops.closeFile(fd);
             return fail(QStringLiteral("too-large"),
                         QStringLiteral("Metric files may be at most 1 MiB."));
         }
@@ -363,24 +386,24 @@ public:
         bytes.reserve(st.st_size > 0 ? int(st.st_size) : 4096);
         char chunk[8192];
         while (true) {
-            const ssize_t got = ::read(fd, chunk, sizeof(chunk));
+            const ssize_t got = ops.readFile(fd, chunk, sizeof(chunk));
             if (got == 0)
                 break;
             if (got < 0) {
                 if (errno == EINTR)
                     continue;
-                ::close(fd);
+                ops.closeFile(fd);
                 return fail(QStringLiteral("unreadable"),
                             QStringLiteral("The metric file could not be read."));
             }
             if (qint64(bytes.size()) + qint64(got) > kMaxBytes) {
-                ::close(fd);
+                ops.closeFile(fd);
                 return fail(QStringLiteral("too-large"),
                             QStringLiteral("Metric files may be at most 1 MiB."));
             }
             bytes.append(chunk, qsizetype(got));
         }
-        ::close(fd);
+        ops.closeFile(fd);
         return QVariantMap{{QStringLiteral("ok"), true},
                            {QStringLiteral("body"), QString::fromUtf8(bytes)},
                            {QStringLiteral("error"), QString()},
@@ -406,15 +429,10 @@ public:
     //
     // Never log the returned map wholesale - allowedHosts may name internal
     // infrastructure (same discipline as core/src/secrets.rs).
-    Q_INVOKABLE QVariantMap policy() const {
-        if (m_policyLoaded) return m_policy;
-        XeneonString s(xeneon_policy_json());
-        const QJsonDocument doc = QJsonDocument::fromJson(s.qstring().toUtf8());
+    static QVariantMap policyFromJson(const QString& json) {
+        const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
         QVariantMap p = doc.object().toVariantMap();
         if (!p.contains("active")) {
-            // The core guarantees a JSON object; an empty/broken answer means
-            // the FFI itself misbehaved. Same doctrine as the core: we cannot
-            // prove there is no policy, so fail CLOSED, not open.
             qWarning() << "Policy FFI returned an unusable answer; failing closed";
             p.clear();
             p["active"] = true;
@@ -426,7 +444,13 @@ public:
             p["disableUserWidgets"] = true;
             p["disabledWidgetTypes"] = QVariantList();
         }
-        m_policy = p;
+        return p;
+    }
+
+    Q_INVOKABLE QVariantMap policy() const {
+        if (m_policyLoaded) return m_policy;
+        XeneonString s(xeneon_policy_json());
+        m_policy = policyFromJson(s.qstring());
         m_policyLoaded = true;
         return m_policy;
     }
