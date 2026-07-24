@@ -250,6 +250,7 @@ QtObject {
     // (~0.03 → ~0.26 white). A second visible cue that reads as "more glass" - with
     // a wider range for more pezazz between low and high glass.
     readonly property real cardSheen: decorative ? (0.02 + glassOpacity * 0.08) : 0.0
+    readonly property real widgetBackdropOpacity: decorative ? 0.10 : 0.0
 
     property int motionPage: effectiveReduceMotion ? 0 : 250
     property int motionAdd: effectiveReduceMotion ? 0 : 200
