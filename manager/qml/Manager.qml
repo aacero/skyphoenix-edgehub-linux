@@ -332,15 +332,15 @@ ApplicationWindow {
     // editor debounce, so flush every loaded WidgetHost before forcing the
     // Manager's shared store through its single-writer backend.
     function flushPendingUiState() {
-        function visit(node) {
-            if (!node) return
+        var pending = [win.contentItem]
+        while (pending.length > 0) {
+            var node = pending.pop()
             if (node !== win && typeof node.flushPendingState === "function")
                 node.flushPendingState()
             var children = node.children || []
             for (var i = 0; i < children.length; i++)
-                visit(children[i])
+                pending.push(children[i])
         }
-        visit(win.contentItem)
         return store.flushNow()
     }
 

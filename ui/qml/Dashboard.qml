@@ -41,15 +41,15 @@ Item {
     // shared store. Called by main.qml during clean shutdown while configBridge
     // is still attached.
     function flushPendingUiState() {
-        function visit(node) {
-            if (!node) return
+        var pending = [dashboard]
+        while (pending.length > 0) {
+            var node = pending.pop()
             if (node !== dashboard && typeof node.flushPendingState === "function")
                 node.flushPendingState()
             var children = node.children || []
             for (var i = 0; i < children.length; i++)
-                visit(children[i])
+                pending.push(children[i])
         }
-        visit(dashboard)
         return store.flushNow()
     }
 
