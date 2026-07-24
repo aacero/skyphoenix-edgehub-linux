@@ -9,8 +9,8 @@ import "../../ui/qml/widgets" as W
 // the final card pixels that text can sit on.
 Item {
     id: root
-    width: 320
-    height: 220
+    width: 280
+    height: 180
 
     property alias theme: scanTheme
     App.Theme {
@@ -23,8 +23,8 @@ Item {
 
     W.WidgetChrome {
         id: chrome
-        x: 20
-        y: 20
+        x: 0
+        y: 0
         width: 280
         height: 180
         title: ""
