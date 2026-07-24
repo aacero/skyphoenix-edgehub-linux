@@ -135,7 +135,7 @@ Item {
             visible: theme.decorative
             anchors.fill: parent
             radius: parent.radius
-            opacity: 0.10
+            opacity: 0.06
             gradient: Gradient {
                 orientation: Gradient.Horizontal
                 GradientStop { position: 0.0; color: chrome.effAccent }
