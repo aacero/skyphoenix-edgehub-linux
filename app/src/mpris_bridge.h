@@ -40,6 +40,7 @@ class MprisBridge : public QObject {
 
 public:
     explicit MprisBridge(QObject* parent = nullptr);
+    explicit MprisBridge(const QDBusConnection& bus, QObject* parent = nullptr);
     ~MprisBridge() override;
 
     bool available() const { return m_available; }
@@ -79,6 +80,9 @@ public:
     // a session bus. In production it is only ever called from refresh()'s
     // async GetAll reply. See tests/cpp/tst_mpris_state.cpp.
     void applyProps(const QVariantMap& props);
+    bool applyPropsReply(const QString& service, const QVariantMap& props);
+    bool applyPositionReply(const QString& service, bool valid,
+                            qlonglong positionUs);
 
     // The currently exposed state, in resolveTrack()'s shape.
     mpris::TrackState currentTrack() const;

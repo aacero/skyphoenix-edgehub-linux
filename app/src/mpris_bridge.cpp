@@ -27,18 +27,9 @@ static const char* kPropsIface = "org.freedesktop.DBus.Properties";
 static constexpr int kDbusTimeoutMs = 800;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Coverage note: everything from here to the STOP marker before applyProps() is
-// D-Bus plumbing - it only executes once a real session bus has answered a real
-// method call from a real media player, which no unit test may summon (and which
-// must never be the developer's own bus/players). It is excluded on the same
-// grounds as the hidraw glue in orientation_sensor.cpp.
-//
-// This is a marker on the CONVERSATION, not on the logic. Every decision this
-// plumbing used to make inline - which player wins, what a reply means, whether
-// QML must be told - now lives in mpris_state.{h,cpp} and is counted and tested
-// (tests/cpp/tst_mpris_state.cpp). If you add a *decision* below, it belongs
-// over there instead; do not grow this region.
-// GCOVR_EXCL_START
+// The asynchronous D-Bus conversation is exercised against isolated mock
+// players in tst_mpris_bridge.cpp. That suite runs under dbus-run-session and
+// cannot discover or control the developer's desktop players.
 
 // Build a Properties.Get(iface, prop) call message.
 static QDBusMessage propGetMsg(const QString& service, const QString& iface, const QString& prop) {
@@ -50,7 +41,10 @@ static QDBusMessage propGetMsg(const QString& service, const QString& iface, con
 }
 
 MprisBridge::MprisBridge(QObject* parent)
-    : QObject(parent), m_bus(QDBusConnection::sessionBus()) {
+    : MprisBridge(QDBusConnection::sessionBus(), parent) {}
+
+MprisBridge::MprisBridge(const QDBusConnection& bus, QObject* parent)
+    : QObject(parent), m_bus(bus) {
     if (!m_bus.isConnected()) {
         qWarning() << "MprisBridge: no session D-Bus connection; media controls disabled";
         return;   // leave the timers stopped → stays permanently unavailable
@@ -187,19 +181,18 @@ void MprisBridge::refresh() {
     connect(w, &QDBusPendingCallWatcher::finished, this,
             [this, service](QDBusPendingCallWatcher* self) {
         self->deleteLater();
+        QDBusPendingReply<QVariantMap> reply = *self;
         if (service != m_service)
             return;   // player changed since we asked; drop the stale reply
-        QDBusPendingReply<QVariantMap> reply = *self;
         if (!reply.isValid()) {
             if (m_available) { m_available = false; emit changed(); }
             return;
         }
-        applyProps(reply.value());
+        if (!applyPropsReply(service, reply.value()))
+            return;
         fetchPosition();
     });
 }
-
-// GCOVR_EXCL_STOP
 
 // Fold one GetAll reply into the exposed state. The two decisions here - what
 // the reply MEANS (mpris::resolveTrack: artist list-or-string, art-URL
@@ -231,6 +224,23 @@ void MprisBridge::applyProps(const QVariantMap& m) {
         emit changed();
 }
 
+bool MprisBridge::applyPropsReply(const QString& service,
+                                  const QVariantMap& props) {
+    if (service != m_service)
+        return false;
+    applyProps(props);
+    return true;
+}
+
+bool MprisBridge::applyPositionReply(const QString& service, bool valid,
+                                     qlonglong positionUs) {
+    if (service != m_service || !valid)
+        return false;
+    m_positionUs = positionUs;
+    emit positionChanged();
+    return true;
+}
+
 // The exposed state, in the same shape resolveTrack() produces, so the two can
 // be compared field-for-field.
 mpris::TrackState MprisBridge::currentTrack() const {
@@ -260,7 +270,6 @@ void MprisBridge::setPreferredPlayer(const QString& player) {
         reevaluate();
 }
 
-// GCOVR_EXCL_START (D-Bus plumbing - see the note above propGetMsg)
 void MprisBridge::fetchPosition() {
     if (m_service.isEmpty())
         return;
@@ -273,13 +282,10 @@ void MprisBridge::fetchPosition() {
     connect(w, &QDBusPendingCallWatcher::finished, this,
             [this, service](QDBusPendingCallWatcher* self) {
         self->deleteLater();
-        if (service != m_service)
-            return;   // stale reply from a replaced player; drop it
         QDBusPendingReply<QDBusVariant> reply = *self;
-        if (reply.isValid()) {
-            m_positionUs = reply.value().variant().toLongLong();
-            emit positionChanged();
-        }
+        applyPositionReply(
+            service, reply.isValid(),
+            reply.isValid() ? reply.value().variant().toLongLong() : 0);
     });
 }
 
@@ -353,4 +359,3 @@ void MprisBridge::seekFraction(double fraction) {
 void MprisBridge::playPause() { callPlayer("PlayPause"); }
 void MprisBridge::next() { callPlayer("Next"); }
 void MprisBridge::previous() { callPlayer("Previous"); }
-// GCOVR_EXCL_STOP

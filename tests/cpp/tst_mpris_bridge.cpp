@@ -105,7 +105,7 @@ struct RegisteredPlayer {
             bus.unregisterService(service);
             bus.unregisterObject(QString::fromLatin1(kPath));
         }
-        QDBusConnection::disconnectFromBus(connectionName);
+        QDBusConnection::disconnectFromPeer(connectionName);
     }
 };
 
@@ -129,6 +129,28 @@ private slots:
         bridge.previous();
         bridge.seekFraction(0.5);
         QVERIFY(!bridge.available());
+    }
+
+    void listNamesFailureSettlesUnavailable() {
+        const QString runtimeDir = qEnvironmentVariable("XDG_RUNTIME_DIR");
+        QVERIFY(!runtimeDir.isEmpty());
+        QDBusServer server(
+            QStringLiteral("unix:tmpdir=") + runtimeDir);
+        QVERIFY(server.isConnected());
+
+        const QString connectionName =
+            QStringLiteral("xeneon-mpris-test-nonbus-peer");
+        QDBusConnection peer = QDBusConnection::connectToPeer(
+            server.address(), connectionName);
+        QVERIFY(peer.isConnected());
+
+        MprisBridge bridge(peer);
+        QVERIFY(bridge.busConnected());
+        QTRY_VERIFY_WITH_TIMEOUT(!bridge.scanning(), 2000);
+        QVERIFY(!bridge.available());
+        QVERIFY(bridge.availablePlayers().isEmpty());
+
+        QDBusConnection::disconnectFromBus(connectionName);
     }
 
     void discoversPlayerAndReadsProperties() {
@@ -187,6 +209,48 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(&bridge, "poll"));
         QTest::qWait(150);
         QCOMPARE(bridge.positionMs(), qlonglong(400));
+    }
+
+    void staleRepliesCannotOverwriteTheSelectedPlayer() {
+        MockPlayer player;
+        RegisteredPlayer registration(QStringLiteral("current"), &player);
+        QVERIFY(registration.valid());
+
+        MprisBridge bridge;
+        QTRY_VERIFY_WITH_TIMEOUT(bridge.available(), 3000);
+        QTRY_COMPARE_WITH_TIMEOUT(bridge.positionMs(), 250, 2000);
+        const QString currentService =
+            QStringLiteral("org.mpris.MediaPlayer2.current");
+
+        QVariantMap replacementMetadata{
+            {QStringLiteral("xesam:title"), QStringLiteral("Replacement")}};
+        QVariantMap replacementProps{
+            {QStringLiteral("PlaybackStatus"), QStringLiteral("Playing")},
+            {QStringLiteral("Metadata"), replacementMetadata}};
+        QSignalSpy changes(&bridge, &MprisBridge::changed);
+        const int changesBefore = changes.count();
+
+        QVERIFY(!bridge.applyPropsReply(
+            QStringLiteral("org.mpris.MediaPlayer2.stale"),
+            replacementProps));
+        QCOMPARE(bridge.title(), player.title);
+        QCOMPARE(changes.count(), changesBefore);
+
+        QVERIFY(bridge.applyPropsReply(currentService, replacementProps));
+        QCOMPARE(bridge.title(), QStringLiteral("Replacement"));
+        QCOMPARE(changes.count(), changesBefore + 1);
+
+        QSignalSpy positions(&bridge, &MprisBridge::positionChanged);
+        const int positionsBefore = positions.count();
+        QVERIFY(!bridge.applyPositionReply(
+            QStringLiteral("org.mpris.MediaPlayer2.stale"), true, 900'000));
+        QVERIFY(!bridge.applyPositionReply(currentService, false, 900'000));
+        QCOMPARE(bridge.positionMs(), qlonglong(250));
+        QCOMPARE(positions.count(), positionsBefore);
+
+        QVERIFY(bridge.applyPositionReply(currentService, true, 900'000));
+        QCOMPARE(bridge.positionMs(), qlonglong(900));
+        QCOMPARE(positions.count(), positionsBefore + 1);
     }
 
     void dispatchesSupportedControlsAndClampedSeek() {
