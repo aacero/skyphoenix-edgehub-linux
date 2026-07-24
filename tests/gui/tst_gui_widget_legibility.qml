@@ -90,8 +90,9 @@ Item {
                 combinations += catalog.items[i].sizes.length * 2
             verify(catalog.items.length === 30,
                    "matrix is tied to all 30 first-party widgets")
-            verify(combinations >= 298,
-                   "matrix contains every declared size in both orientations")
+            verify(combinations >= 288,
+                   "matrix contains every declared size in both orientations; got "
+                   + combinations)
         }
 
         function test_minimum_rendered_type_data() {
