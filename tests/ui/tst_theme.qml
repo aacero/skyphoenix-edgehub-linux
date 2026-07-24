@@ -524,7 +524,8 @@ Item {
                         for (var g = 0; g < glassValues.length; g++) {
                             theme.glassOpacity = glassValues[g]
                             var card = _over(theme.cardFill(), page.color)
-                            var ratio = _contrast(theme.accent, card)
+                            var renderedAccent = theme.readableAccentFor(accentName)
+                            var ratio = _contrast(renderedAccent, card)
                             verify(ratio >= 3.0,
                                    mode + "/" + accentName + " on " + page.name
                                    + " at glass=" + glassValues[g] + " is "

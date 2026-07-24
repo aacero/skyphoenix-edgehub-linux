@@ -327,12 +327,91 @@ QtObject {
         accent = p.a; accent2 = p.b; accentName = name
     }
 
+    // Keep stored and swatch colours canonical while deriving a rendered tone
+    // that remains visible on every page gradient stop and at both glass
+    // extremes. WidgetChrome uses this seam for global, category, and per-widget
+    // accents. A failing hue is moved only as far toward black or white as the
+    // 3:1 non-text threshold requires.
+    function _colorValue(value) {
+        if (typeof value !== "string")
+            return value
+        var h = value.replace("#", "")
+        if (h.length !== 6)
+            return Qt.rgba(0, 0, 0, 1)
+        return Qt.rgba(parseInt(h.substr(0, 2), 16) / 255,
+                       parseInt(h.substr(2, 2), 16) / 255,
+                       parseInt(h.substr(4, 2), 16) / 255, 1)
+    }
+    function _relativeLuminance(color) {
+        function linear(value) {
+            return value <= 0.03928
+                    ? value / 12.92
+                    : Math.pow((value + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * linear(color.r)
+             + 0.7152 * linear(color.g)
+             + 0.0722 * linear(color.b)
+    }
+    function contrastRatio(first, second) {
+        var a = _relativeLuminance(_colorValue(first))
+        var b = _relativeLuminance(_colorValue(second))
+        return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+    }
+    function _overColor(foreground, background) {
+        return Qt.rgba(foreground.a * foreground.r + (1 - foreground.a) * background.r,
+                       foreground.a * foreground.g + (1 - foreground.a) * background.g,
+                       foreground.a * foreground.b + (1 - foreground.a) * background.b, 1)
+    }
+    function _minimumCardContrast(color) {
+        var pages = [backgroundColor, backgroundColor2, backgroundColor3]
+        var glasses = [0.0, 1.0]
+        var minimum = 21.0
+        for (var p = 0; p < pages.length; p++) {
+            for (var g = 0; g < glasses.length; g++) {
+                var alpha = decorative ? 0.22 + (1.0 - glasses[g]) * 0.62 : 1.0
+                var fill = Qt.rgba(cardBackground.r, cardBackground.g, cardBackground.b, alpha)
+                minimum = Math.min(minimum,
+                                   contrastRatio(color, _overColor(fill, pages[p])))
+            }
+        }
+        return minimum
+    }
+    function _blendColor(from, to, amount) {
+        return Qt.rgba(from.r + (to.r - from.r) * amount,
+                       from.g + (to.g - from.g) * amount,
+                       from.b + (to.b - from.b) * amount, 1)
+    }
+    function ensureNonTextContrast(value) {
+        var source = _colorValue(value)
+        if (_minimumCardContrast(source) >= 3.0)
+            return source
+        var black = Qt.rgba(0, 0, 0, 1)
+        var white = Qt.rgba(1, 1, 1, 1)
+        var target = _minimumCardContrast(black) >= _minimumCardContrast(white)
+                ? black : white
+        var low = 0.0
+        var high = 1.0
+        for (var i = 0; i < 14; i++) {
+            var middle = (low + high) / 2
+            if (_minimumCardContrast(_blendColor(source, target, middle)) >= 3.0)
+                high = middle
+            else
+                low = middle
+        }
+        return _blendColor(source, target, high)
+    }
+    function readableAccentFor(name) {
+        var preset = accentPresets[name] || accentPresets["blue"]
+        return ensureNonTextContrast(preset.a)
+    }
+    readonly property color accentReadable: ensureNonTextContrast(accent)
+
     function applyTheme(mode) {
         switch (mode) {
         case "light":
             backgroundColor = "#FFFFFF"; backgroundColor2 = "#EEF1F5"; backgroundColor3 = "#E4E9F0"
             cardBackground = "#F6F8FA"; cardBackgroundAlt = "#ECEFF3"; cardBorder = "#D0D7DE"
-            textPrimary = "#1F2328"; textSecondary = "#656D76"; textTertiary = "#8C959F"
+            textPrimary = "#1F2328"; textSecondary = "#59616B"; textTertiary = "#8C959F"
             radiusSm = 6; radiusMd = 9; radiusLg = 12; radiusXl = 16; decorative = true; cardBorderWidth = 1; break
         case "oled":
             backgroundColor = "#000000"; backgroundColor2 = "#000000"; backgroundColor3 = "#000000"

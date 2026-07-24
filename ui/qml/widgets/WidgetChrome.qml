@@ -32,7 +32,7 @@ Item {
     property string title: ""
     property string titleOverride: ""   // user-set custom title (from config), wins if set
     property string iconName: ""        // professional SVG icon (qrc:/icons/<name>.svg)
-    property color accentColor: theme.accent
+    property color accentColor: theme.accentReadable
     // Per-widget appearance (set per-instance via config; applies to ANY widget):
     //   accentName  - a theme accent preset name that overrides accentColor.
     //   cardBackdrop - an animated backdrop rendered INSIDE this card so the widget
@@ -45,8 +45,9 @@ Item {
     // an invalid/transparent colour - use theme.accent so content never renders
     // black/invisible.
     readonly property color effAccent: (accentName !== "" && theme.accentPresets[accentName])
-                                       ? theme.accentPresets[accentName].a
-                                       : (accentColor.a > 0 ? accentColor : theme.accent)
+                                       ? theme.readableAccentFor(accentName)
+                                       : theme.ensureNonTextContrast(
+                                             accentColor.a > 0 ? accentColor : theme.accent)
     property string status: ""          // small trailing status text (top-right)
     property color statusColor: theme.textPrimary
     // How much room this instance has. WidgetHost sets it from the
