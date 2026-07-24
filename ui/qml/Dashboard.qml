@@ -668,6 +668,10 @@ Item {
     Connections {
         target: root
         enabled: store.loaded && !dashboard._applyingAppearance
+        // Reduced harness roots do not necessarily expose every ApplicationWindow
+        // appearance alias. Production root does. Missing optional signals must
+        // not turn an otherwise valid user-widget test into warning noise.
+        ignoreUnknownSignals: true
         function onAccentNameChanged() { store.setAppearance("accent", root.accentName) }
         function onGlassOpacityChanged() { store.setAppearance("glass", root.glassOpacity) }
         function onShowWidgetGlowChanged() { store.setAppearance("glow", root.showWidgetGlow) }
