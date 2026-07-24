@@ -101,6 +101,18 @@ def load_spec(path: Path) -> dict:
             or crop[3] < 1
         ):
             raise ValueError(f"{path}: invalid crop for {case_id!r}: {crop!r}")
+        overrides = case.get("thresholds", {})
+        if not isinstance(overrides, dict) or any(
+            key not in {"channel_tolerance", "max_changed_fraction", "max_rms"}
+            for key in overrides
+        ):
+            raise ValueError(
+                f"{path}: invalid threshold override for {case_id!r}: {overrides!r}"
+            )
+        if overrides and not str(case.get("variance_reason", "")).strip():
+            raise ValueError(
+                f"{path}: {case_id!r} overrides thresholds without variance_reason"
+            )
         ids.add(case_id)
         sources.add(source)
     expected = raw.get("expected", {})
@@ -229,11 +241,13 @@ def compare(spec: dict, current: Path, baselines: Path, diffs: Path) -> int:
         return 1
 
     thresholds = spec["thresholds"]
-    channel_tolerance = int(thresholds["channel_tolerance"])
-    max_changed = float(thresholds["max_changed_fraction"])
-    max_rms = float(thresholds["max_rms"])
     failures = 0
     for case in spec["cases"]:
+        case_thresholds = dict(thresholds)
+        case_thresholds.update(case.get("thresholds", {}))
+        channel_tolerance = int(case_thresholds["channel_tolerance"])
+        max_changed = float(case_thresholds["max_changed_fraction"])
+        max_rms = float(case_thresholds["max_rms"])
         entry = entries.get(case["id"])
         baseline = baselines / f"{case['id']}.png"
         current_image = current / case["source"]
