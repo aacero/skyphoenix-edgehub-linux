@@ -32,6 +32,7 @@ Item {
 
     readonly property alias item: widgetLoader.item
     readonly property alias status: widgetLoader.status
+    readonly property bool loadFailed: widgetLoader.status === Loader.Error
     signal widgetLoaded(var item)
 
     function _ensureCurrent() {
@@ -111,6 +112,52 @@ Item {
         source: host.widgetComponent === null && host.loadEnabled ? host.widgetSource : ""
         sourceComponent: host.widgetComponent
         onLoaded: host.configure(item)
+    }
+
+    // A known catalog entry can still fail to compile or load after packaging,
+    // an incompatible Qt update, or a damaged user-widget file. Loader.Error
+    // previously left the allocated tile completely blank. Keep the failure
+    // local to this host and show a safe, noninteractive replacement without
+    // exposing filesystem paths or engine diagnostics.
+    Rectangle {
+        objectName: "widgetLoadError"
+        anchors.fill: parent
+        z: 900
+        visible: host.loadFailed
+        radius: 18
+        color: "#171b24"
+        border.width: 2
+        border.color: "#e3a84f"
+        Accessible.role: Accessible.StaticText
+        Accessible.name: "Widget unavailable. "
+                         + (host.widgetType.length ? host.widgetType + " could not load." : "The widget could not load.")
+
+        Column {
+            anchors.centerIn: parent
+            width: Math.max(80, parent.width - 40)
+            spacing: 8
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: "Widget unavailable"
+                color: "#ffffff"
+                font.pixelSize: 20
+                font.bold: true
+                wrapMode: Text.WordWrap
+            }
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: host.widgetType.length
+                      ? host.widgetType + " could not be loaded."
+                      : "This widget could not be loaded."
+                color: "#d4d8e2"
+                font.pixelSize: 16
+                wrapMode: Text.WordWrap
+            }
+        }
     }
 
     // Manager previews must remain visually accurate but cannot execute widget

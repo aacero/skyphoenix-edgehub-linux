@@ -62,6 +62,29 @@ Item {
         acceptsInput: false
     }
 
+    W.WidgetHost {
+        id: failedHost
+        width: 360
+        height: 220
+        x: root.width + 20
+        loadEnabled: false
+        widgetId: "broken-1"
+        widgetType: "broken-widget"
+        widgetSource: "file:///definitely-missing/WidgetThatDoesNotExist.qml"
+        acceptsInput: true
+    }
+
+    function findByObjectName(node, wanted) {
+        if (!node) return null
+        if (node.objectName === wanted) return node
+        var children = node.children || []
+        for (var i = 0; i < children.length; i++) {
+            var found = findByObjectName(children[i], wanted)
+            if (found) return found
+        }
+        return null
+    }
+
     TestCase {
         name: "WidgetHost"
         when: windowShown
@@ -123,6 +146,22 @@ Item {
             mouseClick(host, host.width / 2, host.height / 2)
             compare(root.taps, 1, "interactive Hub host delivered the action")
             host.acceptsInput = false
+        }
+
+        function test_loader_error_isolated_to_visible_fallback() {
+            ignoreWarning(/.*WidgetThatDoesNotExist.qml.*/)
+            failedHost.loadEnabled = true
+            tryCompare(failedHost, "status", Loader.Error, 3000)
+            compare(failedHost.item, null, "failed widget created no unsafe partial item")
+            compare(failedHost.loadFailed, true, "host exposes the Loader error state")
+            var fallback = findByObjectName(failedHost, "widgetLoadError")
+            verify(fallback !== null && fallback.visible,
+                   "the failed widget is replaced by a visible local fallback")
+            verify(fallback.Accessible.name.indexOf("broken-widget") >= 0,
+                   "assistive output identifies the failed widget type")
+            compare(host.status, Loader.Ready,
+                    "a second healthy host remains ready after one widget fails")
+            failedHost.loadEnabled = false
         }
     }
 }
