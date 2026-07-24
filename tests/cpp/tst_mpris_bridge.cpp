@@ -120,6 +120,9 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!bridge.scanning(), 2000);
         QVERIFY(!bridge.available());
         QVERIFY(bridge.availablePlayers().isEmpty());
+        QVERIFY(bridge.busConnected());
+        QCOMPARE(bridge.position(), 0.0);
+        QCOMPARE(bridge.preferredPlayer(), QString());
 
         bridge.playPause();
         bridge.next();
@@ -140,6 +143,8 @@ private slots:
         QCOMPARE(bridge.playerName(), QStringLiteral("discover"));
         QCOMPARE(bridge.title(), player.title);
         QCOMPARE(bridge.artist(), QStringLiteral("Test Artist"));
+        QCOMPARE(bridge.album(), QString());
+        QCOMPARE(bridge.artUrl(), QString());
         QVERIFY(bridge.playing());
         QVERIFY(bridge.canPlayPause());
         QVERIFY(bridge.canGoNext());
@@ -147,6 +152,7 @@ private slots:
         QVERIFY(bridge.canSeek());
         QCOMPARE(bridge.durationMs(), 1000);
         QTRY_COMPARE_WITH_TIMEOUT(bridge.positionMs(), 250, 2000);
+        QCOMPARE(bridge.position(), 0.25);
     }
 
     void samePlayerRescanRefreshesAndPlayingPollUpdatesPosition() {
