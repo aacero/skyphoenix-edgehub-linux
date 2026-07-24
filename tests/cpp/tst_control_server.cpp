@@ -436,6 +436,11 @@ private slots:
         QVERIFY2(QFileInfo::exists(path),
                  qPrintable(QStringLiteral("no socket node at %1").arg(path)));
         QCOMPARE(QFileInfo(path).canonicalPath(), QFileInfo(runtimeDir).canonicalFilePath());
+        struct stat socketStat {};
+        QCOMPARE(::lstat(QFile::encodeName(path).constData(), &socketStat), 0);
+        QVERIFY(S_ISSOCK(socketStat.st_mode));
+        QCOMPARE(socketStat.st_uid, ::getuid());
+        QCOMPARE(socketStat.st_mode & 0077, 0u);
 
         // …and it is a real, serving endpoint there, not just a leftover node.
         const auto r = exchange("{\"type\":\"ping\"}");
