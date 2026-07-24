@@ -848,6 +848,78 @@ broken = = toml
     }
 
     #[test]
+    fn fault_truncated_config_recovers_layout_and_preserves_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let ui_state = r#"{"pages":[{"name":"Mine","tiles":[{"type":"focus"}]}]}"#;
+        let truncated =
+            format!("schema_version = 1\nfirst_run_complete = true\nui_state = '{ui_state}'\n[display");
+        fs::write(&path, &truncated).unwrap();
+
+        let loaded = load_config_from(&path).unwrap();
+        assert!(loaded.first_run_complete);
+        assert_eq!(loaded.ui_state.as_deref(), Some(ui_state));
+
+        let backups: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("config.toml.corrupt-")
+            })
+            .collect();
+        assert_eq!(backups.len(), 1);
+        assert_eq!(fs::read_to_string(backups[0].path()).unwrap(), truncated);
+    }
+
+    #[test]
+    fn fault_invalid_toml_recovers_defaults_and_preserves_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let invalid = "this is not = = TOML";
+        fs::write(&path, invalid).unwrap();
+
+        let loaded = load_config_from(&path).unwrap();
+        assert!(!loaded.first_run_complete);
+        assert!(loaded.ui_state.is_none());
+
+        let backup = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("config.toml.corrupt-")
+            })
+            .expect("invalid source must be preserved");
+        assert_eq!(fs::read_to_string(backup.path()).unwrap(), invalid);
+    }
+
+    #[test]
+    fn fault_newer_schema_clamps_without_corruption_recovery() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut config = AppConfig::default();
+        config.schema_version = CURRENT_SCHEMA_VERSION + 10;
+        config.first_run_complete = true;
+        config.ui_state = Some(r#"{"pages":[{"name":"Future"}]}"#.to_string());
+        fs::write(&path, toml::to_string_pretty(&config).unwrap()).unwrap();
+
+        let loaded = load_config_from(&path).unwrap();
+        assert_eq!(loaded.schema_version, CURRENT_SCHEMA_VERSION);
+        assert!(loaded.first_run_complete);
+        assert_eq!(loaded.ui_state, config.ui_state);
+        assert_eq!(
+            fs::read_dir(dir.path()).unwrap().count(),
+            1,
+            "valid future schema must not be treated as corrupt"
+        );
+    }
+
+    #[test]
     fn salvage_ignores_empty_ui_state_and_unknown_flag() {
         // Empty ui_state stays None; a non-true/false flag value is left default.
         let cfg = salvage_partial_config("first_run_complete = maybe\nui_state = \"\"\n");

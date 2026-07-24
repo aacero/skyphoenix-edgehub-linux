@@ -41,8 +41,10 @@ EOF
 # A pre-existing GOOD backup that corruption must never clobber.
 printf 'sentinel-good-backup-do-not-touch\n' > "$RT_CFG/config.toml.bak"
 
-# Torn write: valid head, garbage tail (whole-file TOML parse fails).
-printf '\ngarbage = = torn-write\n' >> "$RT_CFG/config.toml"
+# Torn write: physically remove the final bytes so the last TOML value is
+# incomplete while the earlier Hub-authored ui_state remains recoverable.
+config_size="$(stat -c %s "$RT_CFG/config.toml")"
+truncate -s "$((config_size - 4))" "$RT_CFG/config.toml"
 cp "$RT_CFG/config.toml" "$RT_WORK/corrupt-as-written.toml"
 
 echo "Launching hub over the corrupted config"
