@@ -261,7 +261,7 @@ WidgetChrome {
     readonly property real namePx: Math.max(roomy ? 18 : 14,
                                              Math.min(width * (roomy ? 0.065 : 0.045), height * 0.06,
                                                          roomy ? 34 : 24))
-    readonly property real illumPx: Math.max(roomy ? 14 : 12,
+    readonly property real illumPx: Math.max(theme.fontMinimum,
                                               Math.min(width * 0.032, height * 0.042,
                                                           roomy ? 22 : 16))
 
