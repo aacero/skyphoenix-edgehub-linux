@@ -353,6 +353,13 @@ After the clean commit:
    calibration matrix, proving a landing target on DP-3, and retaining
    refuse-on-uncertainty behavior.
 
+Run `./scripts/manual_touch_audit.sh check` before the session, then
+`./scripts/manual_touch_audit.sh run` to record it. The guided audit refuses a
+dirty tree or ambiguous panel detection, requires an explicit result and note
+for every action, crops timestamped evidence to the detected physical panel,
+requires an auditor attestation, and writes a SHA-256 manifest below
+`artifacts/<short-sha>/manual-touch/<UTC timestamp>/`. It never injects input.
+
 ### P1D: behavior-based C++ coverage and bridge proof
 
 Implement the branch assertions listed above. Report line and branch coverage
