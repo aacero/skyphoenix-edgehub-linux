@@ -2256,7 +2256,7 @@ ApplicationWindow {
                     }
                 }
             }
-            PresetPreview {
+            ManagerPresetPreview {
                 objectName: "managerPresetPreview"
                 Layout.fillWidth: true
                 Layout.fillHeight: true

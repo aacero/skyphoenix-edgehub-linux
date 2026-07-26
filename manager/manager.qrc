@@ -12,7 +12,7 @@
         <file alias="DashboardStore.qml">../ui/qml/DashboardStore.qml</file>
         <file alias="WidgetCatalog.qml">../ui/qml/WidgetCatalog.qml</file>
         <file alias="PresetCatalog.qml">../ui/qml/PresetCatalog.qml</file>
-        <file alias="PresetPreview.qml">../ui/qml/widgets/PresetPreview.qml</file>
+        <file alias="ManagerPresetPreview.qml">../ui/qml/widgets/PresetPreview.qml</file>
         <file alias="WidgetSizes.qml">../ui/qml/WidgetSizes.qml</file>
         <file alias="WidgetPacker.qml">../ui/qml/WidgetPacker.qml</file>
         <file alias="WallpaperCatalog.qml">../ui/qml/WallpaperCatalog.qml</file>

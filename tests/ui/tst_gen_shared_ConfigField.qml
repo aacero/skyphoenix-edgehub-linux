@@ -225,7 +225,10 @@ Item {
                 return n.objectName === "move-down-ram"
             }, [])
             compare(buttons.length, 1)
-            buttons[0].click()
+            // Qt 6.7 has the clicked signal but not the later Button.click()
+            // helper. Real pointer delivery is covered by the touch-target test
+            // above; this assertion targets legacy row canonicalization.
+            buttons[0].clicked()
             tryVerify(function () {
                 var value = cstore.settingsFor("reorder").rowOrder
                 return Array.isArray(value) && value[0] === "cpu"
