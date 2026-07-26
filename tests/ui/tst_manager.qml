@@ -363,6 +363,31 @@ Item {
             compare(_theme.fontChoice, "lexend", "Manager preview follows Hub typeface")
         }
 
+        function test_clone_preserves_bundled_wallpaper_url() {
+            _store.setAppearance("wallpaper", "qrc:/wallpapers/techdots.png")
+            var clones = findAll(win, function (x) {
+                return x && x.wallpaperSource !== undefined
+                       && x.pageBg !== undefined && x.editable !== undefined
+            })
+            compare(clones.length, 2, "found both live EdgeClone previews")
+            for (var i = 0; i < clones.length; i++)
+                compare(clones[i].wallpaperSource,
+                        "qrc:/wallpapers/techdots.png",
+                        "bundled wallpaper remains a qrc source in clone " + i)
+        }
+
+        function test_clone_rejects_remote_wallpaper_url() {
+            _store.setAppearance("wallpaper", "https://example.invalid/private.png")
+            var clones = findAll(win, function (x) {
+                return x && x.wallpaperSource !== undefined
+                       && x.pageBg !== undefined && x.editable !== undefined
+            })
+            compare(clones.length, 2, "found both live EdgeClone previews")
+            for (var i = 0; i < clones.length; i++)
+                compare(clones[i].wallpaperSource, "",
+                        "remote wallpaper cannot bypass NetHub in clone " + i)
+        }
+
         // ── currentPageName ───────────────────────────────────────────────────
         function test_currentPageName_tracks_selected_page() {
             compare(win.currentPageName(), "Home", "currentPageName returns the blank layout's Home page")

@@ -249,15 +249,21 @@ Item {
         if (pbg.style)     return { wallpaper: "", style: pbg.style }
         return { wallpaper: a.wallpaper || "", style: a.bgStyle || "orbs" }
     }
-    // Wallpapers are stored as file:// URLs into the Manager's images dir. Re-derive
-    // a properly percent-encoded URL from the basename via backend.imageUrl(name) so
-    // names with spaces / non-ASCII characters load (mirrors the hub, fixes raw paths).
+    // Preserve bundled qrc wallpapers and already-resolved local file URLs. The
+    // old basename-only rewrite turned qrc:/wallpapers/techdots.png into
+    // ~/.config/xeneon-edge-hub/images/techdots.png, so the Manager showed a
+    // missing image while the Hub correctly rendered the bundled wallpaper.
+    // Reject every other explicit scheme: previews must never create a second,
+    // ungated network path. Legacy bare names/paths still resolve through the
+    // audited images-directory helper.
     property string wallpaperSource: {
         var wp = clone.pageBg.wallpaper
-        if (!wp || !wp.length) return ""
+        if (wp === null || wp === undefined) return ""
         var s = String(wp)
-        var name = s.substring(s.lastIndexOf("/") + 1)
-        return name.length ? backend.imageUrl(name) : ""
+        if (!s.length) return ""
+        if (/^qrc:\//i.test(s) || /^file:\//i.test(s)) return s
+        if (/^[a-z][a-z0-9+.-]*:/i.test(s) || s.indexOf("//") === 0) return ""
+        return backend && backend.imageUrl ? backend.imageUrl(s) : s
     }
     property bool animatedBg: {
         store.revision
