@@ -7,7 +7,7 @@
       "height": 818,
       "id": "widget-cpu",
       "kind": "widget",
-      "sha256": "328aa8e342bf7f2adba4d418d9a1e90b796db4da2e0bf7aef3e501a76b437abc",
+      "sha256": "93656d4b64d574f7065c012b432d80066229b598a697cdad87427a2f77f89cea",
       "source": "wsysa_cpu_portrait-1x1.png",
       "width": 696
     },
@@ -17,7 +17,7 @@
       "height": 818,
       "id": "widget-gpu",
       "kind": "widget",
-      "sha256": "e29dea81c9abbaad56f36402f5594337d66538c6bb6194e625dcbc171dc385f0",
+      "sha256": "02b1888608f9d6445750c6508414f3b333f890e174a255a0f796b9287dccbb04",
       "source": "wsysa_gpu_portrait-1x1.png",
       "width": 696
     },
@@ -532,6 +532,6 @@
       "width": 2560
     }
   ],
-  "source_commit": "9ed906671dee5d8aed3cde5f4708805356eb0925",
+  "source_commit": "cb49758c738877aba7ffe976ab9d84a29d3efb8b",
   "version": 1
 }
