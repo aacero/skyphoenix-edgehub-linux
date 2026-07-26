@@ -111,8 +111,8 @@ Item {
             compare(JSON.stringify(h.storeCtl.settingsFor(iid()).histRaw),
                     JSON.stringify([10, 20, 30]),
                     "the shared raw history is the source of truth")
-            compare(JSON.stringify(h.item.histNorm), JSON.stringify([0, 0.5, 1]),
-                    "normalisation is derived from the shared raw series")
+            compare(JSON.stringify(h.item.chartHistory), JSON.stringify([10, 20, 30]),
+                    "the chart receives raw values so its labelled scale stays truthful")
         }
 
         function test_poll_interval_honors_schema_minimum() {

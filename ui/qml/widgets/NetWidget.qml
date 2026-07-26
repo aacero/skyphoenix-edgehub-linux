@@ -42,6 +42,7 @@ WidgetChrome {
     readonly property string interfaceName: String(cfg.interfaceName || "").trim()
     readonly property string scaleMode: cfg.scaleMode !== undefined ? cfg.scaleMode : "auto"
     readonly property real fixedScaleMbps: Math.max(1, Number(cfg.fixedScaleMbps || 100))
+    readonly property string graphStyle: cfg.graphStyle !== undefined ? cfg.graphStyle : "smooth"
     readonly property string selectionKey: interfaceName
     property bool componentReady: false
     Component.onCompleted: componentReady = true
@@ -277,10 +278,20 @@ WidgetChrome {
                                Number(w.hist[i].t || 0))
         return maximum
     }
+    readonly property var rxHistory: {
+        var out = []
+        for (var i = 0; i < w.hist.length; i++) out.push(Number(w.hist[i].r || 0))
+        return out
+    }
+    readonly property var txHistory: {
+        var out = []
+        for (var i = 0; i < w.hist.length; i++) out.push(Number(w.hist[i].t || 0))
+        return out
+    }
     readonly property string graphScaleLabel: w.scaleMode === "fixed"
                                               ? "Fixed ceiling " + w.fmt(w.graphMaxBytesPerSecond)
-                                              : w.graphMaxBytesPerSecond > 0
-                                                ? "Auto ceiling " + w.fmt(w.graphMaxBytesPerSecond)
+                                              : w.graphMaxBytesPerSecond > 0 && spark.domain
+                                                ? "Auto ceiling " + w.fmt(spark.domain.max)
                                                 : "Auto scale"
 
     // Rate text scales with the box: the micro tile IS the two numbers.
@@ -472,29 +483,24 @@ WidgetChrome {
                     horizontalAlignment: parent.columns === 2 ? Text.AlignRight : Text.AlignLeft
                 }
             }
-            Canvas {
+            Sparkline {
                 id: spark
                 visible: w.showHistory && !w.micro
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                onPaint: {
-                    var ctx = getContext('2d'); ctx.clearRect(0, 0, width, height)
-                    if (w.hist.length < 2 || width <= 0 || height <= 0) return
-                    var max = Math.max(1, w.graphMaxBytesPerSecond)
-                    function line(key, color) {
-                        ctx.beginPath()
-                        for (var j = 0; j < w.hist.length; j++) {
-                            var x = j * width / (w.hist.length - 1)
-                            var y = height - (w.hist[j][key] / max) * height * 0.92 - 2
-                            j === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
-                        }
-                        ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke()
-                    }
-                    line("r", theme.success)
-                    line("t", w.effAccent)
-                }
-                onWidthChanged: requestPaint()
-                onHeightChanged: requestPaint()
+                values: w.rxHistory
+                comparisonValues: w.txHistory
+                color: theme.success
+                comparisonColor: w.effAccent
+                primaryLabel: "↓ Download"
+                comparisonLabel: "↑ Upload"
+                chartStyle: w.graphStyle
+                scaleMode: w.scaleMode === "fixed" ? "fixed" : "auto"
+                minimumValue: 0
+                maximumValue: Math.max(1, w.graphMaxBytesPerSecond)
+                includeZero: true
+                sampleIntervalSeconds: 2
+                valueFormatter: function(value) { return w.fmt(value) }
             }
         }
     }

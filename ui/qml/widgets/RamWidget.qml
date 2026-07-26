@@ -23,6 +23,7 @@ WidgetChrome {
     readonly property bool showHistory: cfg.showHistory !== undefined ? cfg.showHistory : true
     readonly property string historyWindow: cfg.historyWindow !== undefined
                                             ? cfg.historyWindow : "2m"
+    readonly property string graphStyle: cfg.graphStyle !== undefined ? cfg.graphStyle : "smooth"
     readonly property bool showDetails: cfg.showDetails !== undefined ? cfg.showDetails : true
     readonly property real warnPercent: Math.max(50, Math.min(95,
         Number(cfg.warnPercent !== undefined ? cfg.warnPercent : 75)))
@@ -205,6 +206,9 @@ WidgetChrome {
                                   + w.gib(w.displayAvailableBytes) + " GiB"
         color: w.col(w.v)
         history: w.showHistory && !w.micro ? w.hist : []
+        chartStyle: w.graphStyle
+        chartSampleIntervalSeconds: 2
+        chartPrimaryLabel: "Memory"
         detailItems: w.glanceDetails
         detailLabelPixelSize: theme.fontLabel
         detailValuePixelSize: theme.fontTitle

@@ -36,6 +36,29 @@ QtObject {
                 { value: "bokeh", label: "Bokeh" }, { value: "grid", label: "Grid" } ] } ] }
     }
 
+    function graphStyleField(visibleWhen) {
+        var field = { key: "graphStyle", label: "Graph style", type: "segmented",
+            dflt: "smooth",
+            help: "Smooth keeps the raw samples faintly visible and overlays a stable trend, so real spikes are never hidden.",
+            options: [
+                { value: "smooth", label: "Smooth" },
+                { value: "line", label: "Line" },
+                { value: "bars", label: "Bars" } ] }
+        if (visibleWhen) field.visibleWhen = visibleWhen
+        return field
+    }
+
+    function graphScaleField(visibleWhen) {
+        var field = { key: "graphScale", label: "Graph range", type: "segmented",
+            dflt: "zero",
+            help: "From zero shows the true size of changes. Rolling range magnifies variation and labels the exact range on the axis.",
+            options: [
+                { value: "zero", label: "From zero" },
+                { value: "range", label: "Rolling range" } ] }
+        if (visibleWhen) field.visibleWhen = visibleWhen
+        return field
+    }
+
     function gpuDeviceOptions(runtimeMetrics, selectedValue) {
         var devices = runtimeMetrics && Array.isArray(runtimeMetrics.gpu_devices)
                       ? runtimeMetrics.gpu_devices : []
@@ -295,6 +318,7 @@ QtObject {
                     { value: "1m", label: "1 minute" },
                     { value: "2m", label: "2 minutes" },
                     { value: "5m", label: "5 minutes" } ] },
+                graphStyleField({ key: "showHistory", equals: true, dflt: true }),
                 { key: "showFrequency", label: "Show CPU frequency", type: "toggle", dflt: true,
                   help: "Adds the average current frequency when the widget has enough room." },
                 { key: "showLoadAverage", label: "Show load averages", type: "toggle", dflt: true,
@@ -316,6 +340,7 @@ QtObject {
                 { key: "showTemp", label: "Show temperature label", type: "toggle", dflt: true,
                   help: "Hides the numeric temperature label only. Thermal warnings remain active." },
                 { key: "showHistory", label: "Show the history graph", type: "toggle", dflt: true },
+                graphStyleField({ key: "showHistory", equals: true, dflt: true }),
                 { key: "showDetails", label: "Show hardware details", type: "toggle", dflt: true,
                   help: "Large and expanded views show supported VRAM, power, clock, fan, driver and device information." },
                 { key: "warnTemp", label: "Warn above", type: "slider", min: 60, max: 110, step: 1, suffix: " °C", dflt: 90,
@@ -334,6 +359,7 @@ QtObject {
                     { value: "1m", label: "1 minute" },
                     { value: "2m", label: "2 minutes" },
                     { value: "5m", label: "5 minutes" } ] },
+                graphStyleField({ key: "showHistory", equals: true, dflt: true }),
                 { key: "showDetails", label: "Show memory details", type: "toggle", dflt: true,
                   help: "Large and expanded views show available memory, cache, buffers, swap and Linux pressure." },
                 { key: "warnPercent", label: "Warn above", type: "slider", min: 50, max: 95,
@@ -360,7 +386,8 @@ QtObject {
                     { value: "fixed", label: "Fixed" } ] },
                 { key: "fixedScaleMbps", label: "Fixed graph maximum", type: "slider",
                   min: 10, max: 10000, step: 10, suffix: " Mbps", dflt: 100,
-                  visibleWhen: { key: "scaleMode", equals: "fixed", dflt: "auto" } } ] },
+                  visibleWhen: { key: "scaleMode", equals: "fixed", dflt: "auto" } },
+                graphStyleField({ key: "showHistory", equals: true, dflt: true }) ] },
             { title: "Interfaces", cols: 1, fields: [
                 { key: "interfaceName", label: "Traffic source", type: "select", dflt: "",
                   help: "Aggregate counts physical links once. Select exactly one VPN, bridge, container, or virtual interface to inspect it without also counting its encapsulated physical traffic.",
@@ -703,7 +730,9 @@ QtObject {
                   help: "Full-scale value for the gauge ring." },
                 { key: "listMax", label: "List rows", type: "number", min: 1, max: 12, step: 1, dflt: 5,
                   visibleWhen: { key: "mode", equals: "list", dflt: "value" },
-                  help: "At most this many. A smaller tile shows fewer - it never overflows, and never shows more than you ask for." } ] },
+                  help: "At most this many. A smaller tile shows fewer - it never overflows, and never shows more than you ask for." },
+                graphStyleField({ key: "mode", notEquals: "list", dflt: "value" }),
+                graphScaleField({ key: "mode", notEquals: "list", dflt: "value" }) ] },
             { title: "Thresholds (colour)", cols: 2,
               desc: "Colour the value amber at “Warn” and red at “Critical”. Leave blank to disable.", fields: [
                 { key: "warnAt", label: "Warn ≥", type: "text", placeholder: "80", dflt: "",
@@ -741,7 +770,9 @@ QtObject {
                 { key: "unit", label: "Suffix / unit", type: "text", placeholder: "ms · %", dflt: "" },
                 { key: "decimals", label: "Decimal places", type: "number", min: 0, max: 6, step: 1, dflt: 1 },
                 { key: "target", label: "Target", type: "text", placeholder: "(optional)", dflt: "",
-                  help: "Shows the current difference from this target." } ] },
+                  help: "Shows the current difference from this target." },
+                graphStyleField(),
+                graphScaleField() ] },
             { title: "Thresholds (colour)", cols: 1,
               desc: "The widget shows Normal, Warning, or Critical text as well as colour. Warning must come before Critical in the selected direction.", fields: [
                 { key: "invert", label: "Lower is worse", type: "toggle", dflt: false,

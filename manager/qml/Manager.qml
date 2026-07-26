@@ -121,6 +121,7 @@ ApplicationWindow {
         implicitHeight: m.touch
         implicitWidth: Math.max(m.touch, mbtnRow.implicitWidth + 32)
         leftPadding: 16; rightPadding: 16
+        topPadding: 10; bottomPadding: 10
         hoverEnabled: true
         contentItem: Item {
             implicitWidth: mbtnRow.implicitWidth; implicitHeight: mbtnRow.implicitHeight
@@ -251,16 +252,28 @@ ApplicationWindow {
         color: m.border
     }
 
-    // PresetMini - a small LANDSCAPE thumbnail of a preset screen's layout, so the
+    // PresetMini is a small thumbnail of a preset screen's real semantic layout.
     // preset picker shows what you'd actually get before you add it. It packs the
     // screen's tiles with the real WidgetPacker (same arrangement the device uses)
-    // and draws each as a mini accent cell with the widget's icon. Landscape because
-    // the panel's 720x2560 portrait aspect is too thin to read as a small strip.
+    // and draws each as a mini accent cell with the widget's icon.
     component PresetMini: Rectangle {
         id: mini
         objectName: "presetMini"
         property var tiles: []
-        readonly property var placements: miniPacker.pack(mini.tiles)
+        property bool landscape: true
+        // Catalog preset tiles intentionally have no runtime id. WidgetPacker uses
+        // ids as occupancy markers, so passing those raw tiles made every occupied
+        // cell look empty and stacked all thumbnail widgets at the origin.
+        readonly property var identifiedTiles: {
+            var out = []
+            var sourceTiles = mini.tiles || []
+            for (var i = 0; i < sourceTiles.length; i++) {
+                var source = sourceTiles[i] || ({})
+                out.push({ id: "preset-mini-" + i, type: source.type, size: source.size })
+            }
+            return out
+        }
+        readonly property var placements: miniPacker.pack(mini.identifiedTiles)
         radius: m.radius; color: Qt.rgba(0, 0, 0, 0.28)
         border.width: 1; border.color: m.border; clip: true
         WidgetPacker { id: miniPacker }
@@ -284,8 +297,13 @@ ApplicationWindow {
         Repeater {
             model: mini.placements
             delegate: Rectangle {
+                required property int index
                 required property var modelData
-                readonly property var r: miniPacker.rect(modelData, true, mini.height / 2, mini.width / 6, 3)
+                objectName: "presetMiniTile-" + index
+                readonly property real cellShort: mini.landscape ? mini.height / 2 : mini.width / 2
+                readonly property real cellLong: mini.landscape ? mini.width / 6 : mini.height / 6
+                readonly property var r: miniPacker.rect(modelData, mini.landscape,
+                                                         cellShort, cellLong, 3)
                 readonly property color cc: mini.catColor(modelData.type)
                 x: r.x; y: r.y; width: r.width; height: r.height
                 radius: 3
@@ -2165,6 +2183,7 @@ ApplicationWindow {
         height: Math.min(parent ? parent.height * 0.9 : 760, 820)
         standardButtons: Dialog.NoButton
         property string selectedId: ""
+        readonly property bool landscape: edgeClone.landscape
         readonly property var selectedPreset: selectedId !== "" ? presetLib.def(selectedId) : null
         onOpened: selectedId = ""
         background: Rectangle { color: m.panel; radius: m.radius; border.width: 1; border.color: m.border }
@@ -2181,111 +2200,139 @@ ApplicationWindow {
                 }
             }
         }
-        contentItem: RowLayout {
-            spacing: 14
-            MScroll {
-                Layout.preferredWidth: 520
-                Layout.fillHeight: true
-                clip: true
-                ColumnLayout {
-                    width: 500
-                    spacing: 10
-                    Repeater {
-                        model: presetLib.list()
-                        delegate: Rectangle {
-                            id: managerPresetCard
-                            required property var modelData
-                            objectName: "managerPresetCard-" + modelData.id
-                            readonly property bool selected: presetDialog.selectedId === modelData.id
-                            Layout.fillWidth: true
-                            implicitHeight: presetRow.implicitHeight + 24
-                            radius: m.radius
-                            color: selected ? Qt.rgba(m.accent.r, m.accent.g, m.accent.b, 0.14)
-                                            : (presetMA.containsMouse ? m.panelAlt : m.bg)
-                            border.width: selected ? 2 : 1
-                            border.color: selected ? m.accent : m.border
-                            RowLayout {
-                                id: presetRow
-                                anchors.fill: parent
-                                anchors.margins: 12
-                                spacing: 12
-                                PresetMini {
-                                    Layout.alignment: Qt.AlignVCenter
-                                    Layout.preferredWidth: 176
-                                    Layout.preferredHeight: 58
-                                    tiles: (modelData.pages && modelData.pages[0])
-                                           ? modelData.pages[0].tiles : []
-                                }
-                                ColumnLayout {
-                                    spacing: 3
-                                    Layout.fillWidth: true
-                                    RowLayout {
-                                        spacing: 8
-                                        AppIcon {
-                                            name: modelData.icon || "ui-layout"
-                                            size: 18
-                                            color: m.accent
-                                            Layout.alignment: Qt.AlignVCenter
+        contentItem: Item {
+            objectName: "managerPresetContent"
+            RowLayout {
+                anchors.fill: parent
+                anchors.margins: 20
+                spacing: 14
+                MScroll {
+                    id: presetScroll
+                    Layout.preferredWidth: 520
+                    Layout.fillHeight: true
+                    clip: true
+                    ColumnLayout {
+                        width: presetScroll.availableWidth
+                        spacing: 10
+                        Repeater {
+                            model: presetLib.list()
+                            delegate: Rectangle {
+                                id: managerPresetCard
+                                required property var modelData
+                                objectName: "managerPresetCard-" + modelData.id
+                                readonly property bool selected:
+                                    presetDialog.selectedId === modelData.id
+                                Layout.fillWidth: true
+                                implicitHeight: presetRow.implicitHeight + 24
+                                radius: m.radius
+                                color: selected
+                                    ? Qt.rgba(m.accent.r, m.accent.g, m.accent.b, 0.14)
+                                    : (presetMA.containsMouse ? m.panelAlt : m.bg)
+                                border.width: selected ? 2 : 1
+                                border.color: selected ? m.accent : m.border
+                                RowLayout {
+                                    id: presetRow
+                                    anchors.fill: parent
+                                    anchors.margins: 12
+                                    spacing: 12
+                                    PresetMini {
+                                        Layout.alignment: Qt.AlignVCenter
+                                        readonly property real previewWidth:
+                                            presetDialog.landscape ? 176 : 58
+                                        readonly property real previewHeight:
+                                            presetDialog.landscape ? 58 : 176
+                                        Layout.minimumWidth: previewWidth
+                                        Layout.preferredWidth: previewWidth
+                                        Layout.maximumWidth: previewWidth
+                                        Layout.minimumHeight: previewHeight
+                                        Layout.preferredHeight: previewHeight
+                                        Layout.maximumHeight: previewHeight
+                                        landscape: presetDialog.landscape
+                                        tiles: (modelData.pages && modelData.pages[0])
+                                               ? modelData.pages[0].tiles : []
+                                    }
+                                    ColumnLayout {
+                                        spacing: 3
+                                        Layout.fillWidth: true
+                                        RowLayout {
+                                            spacing: 8
+                                            AppIcon {
+                                                name: modelData.icon || "ui-layout"
+                                                size: 18
+                                                color: m.accent
+                                                Layout.alignment: Qt.AlignVCenter
+                                            }
+                                            Text {
+                                                text: modelData.title
+                                                color: m.textPrimary
+                                                font.pixelSize: 16
+                                                font.bold: true
+                                            }
                                         }
                                         Text {
-                                            text: modelData.title
-                                            color: m.textPrimary
-                                            font.pixelSize: 16
-                                            font.bold: true
+                                            text: modelData.blurb || ""
+                                            color: m.textSecondary
+                                            font.pixelSize: m.fontMinimum
+                                            Layout.fillWidth: true
+                                            wrapMode: Text.WordWrap
+                                            maximumLineCount: 3
+                                            elide: Text.ElideRight
                                         }
                                     }
-                                    Text {
-                                        text: modelData.blurb || ""
-                                        color: m.textSecondary
-                                        font.pixelSize: m.fontMinimum
-                                        Layout.fillWidth: true
-                                        wrapMode: Text.WordWrap
-                                        maximumLineCount: 3
-                                        elide: Text.ElideRight
-                                    }
                                 }
-                            }
-                            MouseArea {
-                                id: presetMA
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: presetDialog.selectedId = managerPresetCard.modelData.id
+                                MouseArea {
+                                    id: presetMA
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked:
+                                        presetDialog.selectedId = managerPresetCard.modelData.id
+                                }
                             }
                         }
                     }
                 }
-            }
-            ManagerPresetPreview {
-                objectName: "managerPresetPreview"
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.minimumWidth: 430
-                preset: presetDialog.selectedPreset
-                widgetCatalog: catalog
-                landscape: true
+                ManagerPresetPreview {
+                    objectName: "managerPresetPreview"
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.minimumWidth: 430
+                    preset: presetDialog.selectedPreset
+                    widgetCatalog: catalog
+                    landscape: presetDialog.landscape
+                }
             }
         }
-        footer: RowLayout {
-            spacing: 10
-            Item { Layout.fillWidth: true }
-            MButton {
-                objectName: "managerPresetCancel"
-                text: "Cancel"
-                Layout.preferredHeight: m.touch
-                onClicked: presetDialog.close()
-            }
-            MButton {
-                objectName: "managerPresetAdd"
-                text: "Add selected screen"
-                iconName: "ui-check"
-                primary: true
-                enabled: presetDialog.selectedPreset !== null
-                Layout.preferredHeight: m.touch
-                onClicked: {
-                    var id = presetDialog.selectedId
-                    presetDialog.close()
-                    win.applyPresetScreen(id)
+        footer: Rectangle {
+            objectName: "managerPresetFooter"
+            color: "transparent"
+            implicitHeight: m.touch + 32
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 20
+                anchors.rightMargin: 20
+                anchors.topMargin: 16
+                anchors.bottomMargin: 16
+                spacing: 10
+                Item { Layout.fillWidth: true }
+                MButton {
+                    objectName: "managerPresetCancel"
+                    text: "Cancel"
+                    Layout.preferredHeight: m.touch
+                    onClicked: presetDialog.close()
+                }
+                MButton {
+                    objectName: "managerPresetAdd"
+                    text: "Add selected screen"
+                    iconName: "ui-check"
+                    primary: true
+                    enabled: presetDialog.selectedPreset !== null
+                    Layout.preferredHeight: m.touch
+                    onClicked: {
+                        var id = presetDialog.selectedId
+                        presetDialog.close()
+                        win.applyPresetScreen(id)
+                    }
                 }
             }
         }

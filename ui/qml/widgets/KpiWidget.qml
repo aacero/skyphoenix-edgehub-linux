@@ -68,6 +68,8 @@ WidgetChrome {
     readonly property string prefix: cfg.prefix || ""
     readonly property int decimals: Math.max(0, Math.min(6,
         Number(cfg.decimals !== undefined ? cfg.decimals : 1)))
+    readonly property string graphStyle: cfg.graphStyle !== undefined ? cfg.graphStyle : "smooth"
+    readonly property string graphScale: cfg.graphScale !== undefined ? cfg.graphScale : "zero"
     readonly property real target: cfg.target !== undefined && cfg.target !== ""
         ? Number(cfg.target) : NaN
     readonly property int pollSec: cfg.pollSec !== undefined ? Math.max(5, cfg.pollSec) : 60
@@ -123,9 +125,8 @@ WidgetChrome {
     readonly property int ageSec: provider.ageSec
     readonly property bool stale: provider.isStale
     readonly property string freshnessText: provider.freshnessText
-    // Both raw and normalised histories live in the shared ephemeral store.
-    // Keeping raw values only on one QML instance lets the tile and overlay
-    // auto-range from different series and overwrite one another.
+    // Raw history lives in the shared ephemeral store. Keeping it only on one
+    // QML instance would let the tile and overlay diverge.
     property var hist: cfg.histRaw || []
     property string connectionStatus: ""
     property bool testingConnection: false
@@ -347,12 +348,8 @@ WidgetChrome {
             patch.httpVal = v
             patch.httpText = w.formatNumber(v)
             var h = (cfg.histRaw || []).slice(); h.push(v); if (h.length > 48) h.shift()
-            // Normalise the sparkline against the observed range so a flat-ish KPI
-            // still reads as a line (store raw in hist; Sparkline maps 0..1, so we
-            // pre-normalise here against a rolling min/max).
             w.hist = h
             patch.histRaw = h
-            patch.hist = _normalise(h)
         } else if (v === null || v === undefined) {
             patch.httpVal = undefined; patch.httpText = "-"
         } else {
@@ -360,19 +357,9 @@ WidgetChrome {
         }
         _put(patch)
     }
-    // Map a raw numeric series to 0..1 against its own min/max (a KPI has no fixed
-    // scale like a percentage, so auto-range it for the trend line).
-    function _normalise(arr) {
-        var lo = Infinity, hi = -Infinity
-        for (var i = 0; i < arr.length; i++) { if (arr[i] < lo) lo = arr[i]; if (arr[i] > hi) hi = arr[i] }
-        var span = hi - lo
-        var out = []
-        for (var j = 0; j < arr.length; j++) out.push(span > 0 ? (arr[j] - lo) / span : 0.5)
-        return out
-    }
-    // hist holds RAW values for range tracking; the sparkline reads the normalised
-    // copy persisted alongside. Keep a normalised view for the chart.
-    readonly property var histNorm: cfg.hist || []
+    // The chart consumes raw values and labels its own domain. Rolling-range mode
+    // remains available, but it is explicit and its axis discloses the narrow range.
+    readonly property var chartHistory: w.hist || []
 
     // ── Per-size layout (sizeClass injected by Dashboard) ────────────────────
     // `large` (1x2 / 1x3) is large in BOTH orientations, and `wide` projects to
@@ -407,7 +394,7 @@ WidgetChrome {
         : Math.max(theme.fontMinimum, Math.min(w.valuePx * 0.16, 44))
     // Micro is a readout: the number is the whole tile.
     readonly property bool showLabel: !w.micro
-    readonly property bool showSpark: !w.micro && w.histNorm.length > 1 && !w.errText.length
+    readonly property bool showSpark: !w.micro && w.chartHistory.length > 1 && !w.errText.length
     // min / avg / max over the trend window - genuinely MORE information, so it
     // is earned by the sizes with room instead of being overlay-only.
     readonly property bool showStats: (w.expanded || w.roomy) && w.hist.length > 1
@@ -568,7 +555,18 @@ WidgetChrome {
                 Layout.preferredHeight: w.expanded ? 70
                     : Math.max(20, Math.min(w.height * (w.roomy ? 0.26 : 0.16),
                                             w.roomy ? 640 : 120))
-                values: w.histNorm; color: w.valColor
+                values: w.chartHistory
+                color: w.valColor
+                chartStyle: w.graphStyle
+                scaleMode: "auto"
+                includeZero: w.graphScale !== "range"
+                sampleIntervalSeconds: w.pollSec
+                valueFormatter: function(value) {
+                    return w.prefix + w.formatNumber(value)
+                           + (w.unit.length ? " " + w.unit : "")
+                }
+                primaryLabel: w.label.length ? w.label : w.title
+                showStatistics: !w.showStats
             }
             // min / avg / max over the window - the large sizes' extra content.
             RowLayout {

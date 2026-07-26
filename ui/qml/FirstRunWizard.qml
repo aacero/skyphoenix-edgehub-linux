@@ -298,7 +298,7 @@ Item {
                         Layout.preferredHeight: 390
                         preset: wizard.selectedLayoutPreview
                         widgetCatalog: wizardWidgets
-                        landscape: true
+                        landscape: wizard.width >= wizard.height
                     }
 
                     Text {

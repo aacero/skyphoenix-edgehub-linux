@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- History charts now show readable value and elapsed-time axes when the tile has
+  enough room, plus current-window averages and raw peak markers.
+- CPU, GPU, Memory, Network, HTTP/JSON, and KPI graphs can be shown as a smooth
+  trend with the raw trace preserved, a direct line, or individual bars.
+- Arbitrary HTTP/JSON and KPI values can use a truthful scale from zero or an
+  explicitly labelled rolling range.
+
+### Fixed
+
+- KPI variations are no longer silently stretched across the full graph height,
+  and Network automatic scaling now leaves labelled headroom above a peak.
+- Preset thumbnails in the Manager no longer overlap when catalog tiles have no
+  runtime IDs.
+- Manager preset thumbnails and the detailed preset preview now follow the
+  Hub's reported orientation, including after a live rotation.
+- The Manager preset dialog now keeps its content and footer actions clear of
+  every dialog edge with consistent button padding.
+
 ## [1.0.0-beta.2] - 2026-07-26
 
 ### Added

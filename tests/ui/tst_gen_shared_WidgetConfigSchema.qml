@@ -140,6 +140,22 @@ Item {
             compare(bad, [], "segmented defaults must be a listed option")
         }
 
+        function test_every_history_chart_offers_the_shared_visual_styles() {
+            var types = ["cpu", "gpu", "ram", "net", "httpjson", "kpi"]
+            for (var i = 0; i < types.length; i++) {
+                var field = root.fieldByKey(sc.schemaFor(types[i]), "graphStyle")
+                verify(field !== null, types[i] + " exposes graphStyle")
+                compare(field.dflt, "smooth", types[i] + " defaults to the stable trend")
+                compare(field.options.map(function (option) { return option.value }).join(","),
+                        "smooth,line,bars", types[i] + " offers Smooth, Line, and Bars")
+            }
+            var httpScale = root.fieldByKey(sc.schemaFor("httpjson"), "graphScale")
+            var kpiScale = root.fieldByKey(sc.schemaFor("kpi"), "graphScale")
+            verify(httpScale && kpiScale, "arbitrary numeric charts expose their range policy")
+            compare(httpScale.dflt, "zero")
+            compare(kpiScale.dflt, "zero")
+        }
+
         // BUG: eod start/end hours are type "hour" with no min/max, so ConfigField
         // clamps to ±1e9 instead of 0..23 like EndOfDayWidget.setHours does.
         function test_eod_hours_declare_0_to_23() {

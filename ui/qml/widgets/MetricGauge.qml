@@ -20,7 +20,20 @@ Item {
     property string big: ""         // centre value, e.g. "42%"
     property string sub: ""         // supporting line, e.g. "avg 34% · peak 87%"
     property color color: theme.accent
-    property var history: []        // 0..1 samples for the sparkline
+    property var history: []        // raw samples for the history chart
+    property string chartStyle: "smooth"
+    property string chartScaleMode: "fixed"
+    property real chartMinimum: 0
+    property real chartMaximum: 1
+    property bool chartIncludeZero: true
+    property real chartSampleIntervalSeconds: 2
+    property real chartDisplayScale: 100
+    property string chartUnit: "%"
+    property int chartDecimals: 0
+    property var chartValueFormatter: null
+    property string chartPrimaryLabel: ""
+    property bool chartShowAxes: true
+    property bool chartShowStatistics: true
     property bool expanded: false
     property bool ok: true          // false → dim (e.g. GPU N/A)
     // Optional glanceable context supplied by a metric widget. This lives with
@@ -274,6 +287,19 @@ Item {
                         anchors.fill: parent
                         values: g.history
                         color: g.color
+                        chartStyle: g.chartStyle
+                        scaleMode: g.chartScaleMode
+                        minimumValue: g.chartMinimum
+                        maximumValue: g.chartMaximum
+                        includeZero: g.chartIncludeZero
+                        sampleIntervalSeconds: g.chartSampleIntervalSeconds
+                        displayScale: g.chartDisplayScale
+                        unit: g.chartUnit
+                        decimals: g.chartDecimals
+                        valueFormatter: g.chartValueFormatter
+                        primaryLabel: g.chartPrimaryLabel
+                        showAxes: g.chartShowAxes
+                        showStatistics: g.chartShowStatistics
                         visible: g.ok && g.history && g.history.length > 1
                     }
                     Text {

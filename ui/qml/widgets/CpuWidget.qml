@@ -33,6 +33,7 @@ WidgetChrome {
     readonly property string tempSource: cfg.tempSource !== undefined ? cfg.tempSource : "auto"
     readonly property bool showHistory: cfg.showHistory !== undefined ? cfg.showHistory : true
     readonly property string historyWindow: cfg.historyWindow !== undefined ? cfg.historyWindow : "2m"
+    readonly property string graphStyle: cfg.graphStyle !== undefined ? cfg.graphStyle : "smooth"
     readonly property bool showLoadAverage: cfg.showLoadAverage !== undefined ? cfg.showLoadAverage : true
     readonly property bool showFrequency: cfg.showFrequency !== undefined ? cfg.showFrequency : true
     readonly property bool showPerCore: cfg.showPerCore !== undefined ? cfg.showPerCore : true
@@ -275,6 +276,9 @@ WidgetChrome {
              : (w.avail && w.big ? w.histStats : "")
         color: w.col(w.v)
         history: w.showHistory && !w.micro ? w.hist : []
+        chartStyle: w.graphStyle
+        chartSampleIntervalSeconds: 2
+        chartPrimaryLabel: "CPU"
         expanded: w.expanded
         // Per-size layout (sizeClass injected by Dashboard; micro derived by chrome).
         showSpark: (w.showHistory || corePanel.visible) && !w.micro

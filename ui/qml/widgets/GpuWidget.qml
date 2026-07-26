@@ -23,6 +23,7 @@ WidgetChrome {
     readonly property string gpuDevice: cfg.gpuDevice !== undefined ? cfg.gpuDevice : "auto"
     readonly property bool showTemp: cfg.showTemp !== undefined ? cfg.showTemp : true
     readonly property bool showHistory: cfg.showHistory !== undefined ? cfg.showHistory : true
+    readonly property string graphStyle: cfg.graphStyle !== undefined ? cfg.graphStyle : "smooth"
     readonly property bool showDetails: cfg.showDetails !== undefined ? cfg.showDetails : true
     readonly property real warnTemp: cfg.warnTemp !== undefined ? cfg.warnTemp : 90
 
@@ -238,6 +239,9 @@ WidgetChrome {
              : (!w.expanded && w.avail ? w.histStats : "")
         color: w.col(w.v)
         history: w.showHistory && !w.micro ? w.visibleHistory : []
+        chartStyle: w.graphStyle
+        chartSampleIntervalSeconds: 2
+        chartPrimaryLabel: "GPU"
         expanded: w.expanded
         showSpark: (w.showHistory || detailPanel.visible) && !w.micro
         horizontal: w.sizeClass === "wide"

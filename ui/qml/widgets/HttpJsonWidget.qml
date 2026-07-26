@@ -92,6 +92,8 @@ WidgetChrome {
     readonly property string mode: cfg.mode || "value"          // value | gauge | list
     readonly property string unit: cfg.unit || ""
     readonly property real gaugeMax: cfg.gaugeMax !== undefined ? cfg.gaugeMax : 100
+    readonly property string graphStyle: cfg.graphStyle !== undefined ? cfg.graphStyle : "smooth"
+    readonly property string graphScale: cfg.graphScale !== undefined ? cfg.graphScale : "zero"
     readonly property int listMax: cfg.listMax !== undefined
         ? Math.max(1, Math.min(12, cfg.listMax)) : 5
     readonly property string authToken: cfg.authToken || ""
@@ -134,7 +136,7 @@ WidgetChrome {
     function _seedHist() {
         if (w.store && w.instanceId && (!w.hist || w.hist.length === 0)) {
             var s = w.store.settingsFor(w.instanceId)
-            if (s.hist && s.hist.length) w.hist = s.hist.slice()
+            if (s.histRaw && s.histRaw.length) w.hist = s.histRaw.slice()
         }
     }
     onStoreChanged: _seedHist()
@@ -310,12 +312,12 @@ WidgetChrome {
             patch.httpVal = v
             patch.httpText = w.formatNumber(v)
             patch.httpList = []
-            // Sparkline history (normalised against the gauge max) - shared + ephemeral.
+            // Keep raw values. The chart owns and labels its domain, so a tiny
+            // variation can never masquerade as a full-scale spike.
             var h = w.hist.slice()
-            var norm = w.gaugeMax > 0 ? Math.max(0, Math.min(1, v / w.gaugeMax)) : 0
-            h.push(norm); if (h.length > 48) h.shift()
+            h.push(v); if (h.length > 48) h.shift()
             w.hist = h
-            patch.hist = h
+            patch.histRaw = h
         } else if (typeof v === "boolean") {
             patch.httpVal = undefined; patch.httpList = []
             patch.httpText = v ? "true" : "false"
@@ -534,7 +536,18 @@ WidgetChrome {
                 Layout.fillHeight: w.horiz || w.tallish
                 Layout.preferredHeight: (w.horiz || w.tallish) ? -1
                                         : (w.expanded ? 60 : Math.max(22, w.height * 0.14))
-                values: w.hist; color: w.valColor
+                values: w.hist
+                color: w.valColor
+                chartStyle: w.graphStyle
+                scaleMode: w.mode === "gauge" ? "fixed" : "auto"
+                minimumValue: 0
+                maximumValue: Math.max(1, w.gaugeMax)
+                includeZero: w.graphScale !== "range"
+                sampleIntervalSeconds: w.pollSec
+                valueFormatter: function(value) {
+                    return w.formatNumber(value) + (w.unit.length ? " " + w.unit : "")
+                }
+                primaryLabel: w.jsonPath.length ? w.jsonPath : "Value"
             }
 
             ColumnLayout {

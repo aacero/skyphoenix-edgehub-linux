@@ -1002,6 +1002,29 @@ Item {
                    "catColor maps Focus widgets to the productivity category colour")
             verify(Qt.colorEqual(mini.catColor("not-a-widget"), _theme.accent),
                    "catColor falls back to the active accent for an unknown type")
+            var minis = findAll(win, function (x) {
+                return x && x.objectName === "presetMini"
+            })
+            verify(minis.length >= 19, "every catalog screen has a mini preview")
+            for (var miniIndex = 0; miniIndex < minis.length; miniIndex++) {
+                var occupied = ({})
+                for (var placementIndex = 0;
+                        placementIndex < minis[miniIndex].placements.length;
+                        placementIndex++) {
+                    var placement = minis[miniIndex].placements[placementIndex]
+                    for (var longCell = placement.l;
+                            longCell < placement.l + placement.el; longCell++) {
+                        for (var shortCell = placement.s;
+                                shortCell < placement.s + placement.es; shortCell++) {
+                            var cellKey = shortCell + ":" + longCell
+                            verify(!occupied[cellKey],
+                                   "mini " + miniIndex
+                                   + " widgets do not overlap at " + cellKey)
+                            occupied[cellKey] = true
+                        }
+                    }
+                }
+            }
 
             var before = _store.pageCount()
             dlg.selectedId = "developer"
@@ -1014,6 +1037,45 @@ Item {
             verify(detail.setupItem.text.indexOf("CI") >= 0)
             tryCompare(detail, "previewTileCount", 2, 3000,
                        "the real Developer widgets finish loading in the preview")
+            _store.setAppearance("orientation", "portrait")
+            tryCompare(dlg, "landscape", false, 1000)
+            compare(detail.landscape, false,
+                    "the detailed preset preview follows the reported portrait orientation")
+            compare(mini.landscape, false,
+                    "the preset list thumbnail follows the same portrait orientation")
+            for (var portraitIndex = 0; portraitIndex < minis.length; portraitIndex++)
+                compare(minis[portraitIndex].landscape, false,
+                        "every preset thumbnail follows portrait")
+            verify(mini.height > mini.width, "portrait thumbnail is visibly portrait")
+            _store.setAppearance("orientation", "landscape")
+            tryCompare(dlg, "landscape", true, 1000)
+            compare(detail.landscape, true,
+                    "the detailed preset preview follows the reported landscape orientation")
+            compare(mini.landscape, true,
+                    "the preset list thumbnail follows the same landscape orientation")
+            for (var landscapeIndex = 0; landscapeIndex < minis.length; landscapeIndex++)
+                compare(minis[landscapeIndex].landscape, true,
+                        "every preset thumbnail follows landscape")
+            tryVerify(function () { return mini.width > mini.height }, 1000,
+                      "landscape thumbnail is visibly landscape ("
+                      + mini.width + "x" + mini.height + ")")
+
+            var footer = findPred(win, function (x) {
+                return x && x.objectName === "managerPresetFooter"
+            })
+            var cancel = findPred(win, function (x) {
+                return x && x.objectName === "managerPresetCancel"
+            })
+            verify(footer && cancel && add, "preset footer and both actions exist")
+            var addTopLeft = add.mapToItem(footer, 0, 0)
+            var addBottomRight = add.mapToItem(footer, add.width, add.height)
+            var cancelTopLeft = cancel.mapToItem(footer, 0, 0)
+            verify(cancelTopLeft.y >= 15 && addTopLeft.y >= 15,
+                   "footer actions have top padding")
+            verify(addBottomRight.x <= footer.width - 19,
+                   "the primary action has right-edge padding")
+            verify(addBottomRight.y <= footer.height - 15,
+                   "footer actions have bottom padding")
             compare(_store.pageCount(), before, "selecting and previewing changes no pages")
             verify(add.enabled, "Add becomes available after review")
             add.clicked()
