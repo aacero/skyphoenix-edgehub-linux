@@ -17,6 +17,7 @@ import os
 import uinput_touch as u
 from e2e_harness import (doc, page, tile, InjectionRefused, UserActivityAbort,
                          PROBE_FOCUS_START, PROBE_HYDRATION_PLUS,
+                         PROBE_HYDRATION_UNDO,
                          PAGE_SWIPE_NEXT, PAGE_SWIPE_PREVIOUS)
 
 
@@ -81,9 +82,10 @@ def _run_gestures(h):
     h.tap(*PROBE_HYDRATION_PLUS); h.tap(*PROBE_HYDRATION_PLUS)
     st = h.settings()
     h.check("hydration_plus_touch", st["hydration-1"].get("count") == 2, "count=%s" % st["hydration-1"].get("count"))
-    # The QML row is vertical in the rotated output grab: minus is one control
-    # diameter above +, at the same x.
-    h.tap(PROBE_HYDRATION_PLUS[0], PROBE_HYDRATION_PLUS[1] - 66)
+    # The QML row is vertical in the rotated output grab. The refined tile puts
+    # a wider Add pill beside a narrower Undo pill, so their output-space centres
+    # are no longer one fixed control diameter apart.
+    h.tap(*PROBE_HYDRATION_UNDO)
     st = h.settings()
     h.check("hydration_minus_touch", st["hydration-1"].get("count") == 1, "count=%s" % st["hydration-1"].get("count"))
 

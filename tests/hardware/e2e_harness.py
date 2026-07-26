@@ -72,7 +72,11 @@ class InjectionRefused(RuntimeError):
 # Re-measured from a real DP-3 grab on 2026-07-20 after the per-size widget
 # layouts landed (720x2560 KScreen geometry, current 1x1 tile layout).
 PROBE_FOCUS_START = (140, 392)
-PROBE_HYDRATION_PLUS = (320, 1314)
+# Re-measured from the exact b1cb2dd physical-panel grab after the hydration
+# layout gained its detail strip. The old x=320 lands outside both pill buttons;
+# fail-closed landing verification caught that drift before general injection.
+PROBE_HYDRATION_PLUS = (264, 1330)
+PROBE_HYDRATION_UNDO = (264, 1206)
 # KScreen exposes the physically portrait panel as a rotated 720x2560 output.
 # The Hub's horizontal SwipeView axis therefore appears vertical in an output
 # grab: bottom-to-top advances, top-to-bottom returns.
