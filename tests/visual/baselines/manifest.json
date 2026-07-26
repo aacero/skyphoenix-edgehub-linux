@@ -57,7 +57,7 @@
       "height": 818,
       "id": "widget-sensors",
       "kind": "widget",
-      "sha256": "b9793aaf3810f5c331a7ef296da9b6887385a73847b00b56fc2536e73c5ab67d",
+      "sha256": "3a20e645a1959017499808016e723bd83992c794d4ca57021868dbee66f7bfe8",
       "source": "wsysb_sns_SNS-SZ_portrait-1x1.png",
       "width": 696
     },
@@ -532,6 +532,6 @@
       "width": 2560
     }
   ],
-  "source_commit": "8550fbf8ec9ee6a6a9ff561d9b087c611bd37947",
+  "source_commit": "9ed906671dee5d8aed3cde5f4708805356eb0925",
   "version": 1
 }
