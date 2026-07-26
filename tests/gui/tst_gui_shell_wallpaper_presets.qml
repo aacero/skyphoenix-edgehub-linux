@@ -584,7 +584,22 @@ Item {
                     "found every End of Day clock seam for " + d.tag)
             for (var i = 0; i < eods.length; i++)
                 eods[i].nowOverride = new Date(2026, 6, 20, 18, 0, 0, 0)
-            if (eods.length) wait(60)
+            // Ambient and Minimal contain Moon widgets whose live phase changes
+            // every day. Pin the existing widget test seam before taking a
+            // reviewed image so the baseline measures layout and rendering,
+            // not the wall-clock date on the machine running the suite.
+            var moons = G.collectPred(dash, function (n) {
+                try {
+                    return n && n._cyclePos !== undefined
+                           && n.illum !== undefined && n.names !== undefined
+                } catch (e) { return false }
+            })
+            var expectedMoons = d.id === "ambient" || d.id === "minimal" ? 1 : 0
+            compare(moons.length, expectedMoons,
+                    "found every Moon phase seam for " + d.tag)
+            for (var m = 0; m < moons.length; m++)
+                moons[m]._cyclePos = 0.35
+            if (eods.length || moons.length) wait(60)
             snap(dash, "append_" + d.tag)
         }
 
