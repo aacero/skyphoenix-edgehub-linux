@@ -161,8 +161,25 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // Native Wayland top-level placement is compositor-controlled: setScreen()
+    // and setPosition() cannot guarantee which output receives the first map.
+    // On this KDE multi-monitor setup KWin consequently mapped the Manager on
+    // the active Edge even after we selected DP-1, and the fail-closed guard had
+    // to terminate it. XWayland honours the exact pre-map geometry, so prefer
+    // Qt's xcb backend for the Manager only. The Hub stays native Wayland. An
+    // explicit QT_QPA_PLATFORM remains authoritative for tests and users.
+    const bool usingManagerXwayland = managerShouldPreferXcbPlatform(
+        qEnvironmentVariable("XDG_SESSION_TYPE"),
+        qEnvironmentVariable("XDG_CURRENT_DESKTOP"),
+        qEnvironmentVariable("DISPLAY"),
+        qEnvironmentVariable("QT_QPA_PLATFORM"));
+    if (usingManagerXwayland)
+        qputenv("QT_QPA_PLATFORM", "xcb");
+
     xeneon_logging_init("info");
     QGuiApplication app(argc, argv);
+    if (usingManagerXwayland)
+        qInfo() << "Manager: using XWayland for deterministic non-Edge placement";
     app.setApplicationName("Xeneon Edge Manager");
     // XENEON_VERSION, not a literal: CMakeLists passes the git-describe string
     // (or the packaged pkgver via XENEON_VERSION_OVERRIDE). This used to be a

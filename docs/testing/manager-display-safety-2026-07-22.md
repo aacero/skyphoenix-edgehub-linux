@@ -25,6 +25,23 @@ The locally installed package was also older than the current repository build:
 - Moved all Manager theme and accent capture to a private Xvfb display. That
   capture path starts no Hub and touches no physical output or input device.
 
+## KDE Wayland follow-up, 2026-07-26
+
+Real-hardware validation found a second placement failure. KWin mapped the
+Manager's first native Wayland surface on the active DP-3 output even though Qt
+had selected and logged DP-1 before showing the window. The runtime guard hid
+and closed the Manager, so it did not remain visible on the Edge, but the
+Manager was unusable and its backend had already started.
+
+Wayland intentionally does not provide ordinary top-level clients with a
+portable first-output placement API. For KDE Wayland sessions with XWayland
+available, the Manager now selects Qt's `xcb` platform before constructing
+`QGuiApplication`. X11 geometry is enforceable, so the existing non-Edge target
+selection can place the first frame on the desktop monitor. This applies only
+when `QT_QPA_PLATFORM` is unset; explicit platform choices, offscreen tests,
+non-KDE desktops, and non-Wayland sessions are unchanged. The Hub remains
+native Wayland.
+
 ## Focused verification
 
 - `xeneon-edge-manager` Release build: PASS.

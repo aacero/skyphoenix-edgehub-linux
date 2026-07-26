@@ -34,6 +34,37 @@ private slots:
         QCOMPARE(managerSafeScreenIndex({edge, desktopA, desktopB}, 2), 2);
         QCOMPARE(managerSafeScreenIndex({edge, desktopA, desktopB}, 0), 1);
     }
+
+    void prefersXcbOnlyForImplicitKdeWaylandWithDisplay() {
+        QVERIFY(managerShouldPreferXcbPlatform(
+            QStringLiteral("wayland"), QStringLiteral("KDE"),
+            QStringLiteral(":0"), QString()));
+        QVERIFY(managerShouldPreferXcbPlatform(
+            QStringLiteral("WAYLAND"), QStringLiteral("KDE;plasma"),
+            QStringLiteral(":1"), QStringLiteral("  ")));
+
+        QVERIFY(!managerShouldPreferXcbPlatform(
+            QStringLiteral("x11"), QStringLiteral("KDE"),
+            QStringLiteral(":0"), QString()));
+        QVERIFY(!managerShouldPreferXcbPlatform(
+            QStringLiteral("wayland"), QStringLiteral("GNOME"),
+            QStringLiteral(":0"), QString()));
+        QVERIFY(!managerShouldPreferXcbPlatform(
+            QStringLiteral("wayland"), QStringLiteral("KDE"),
+            QString(), QString()));
+    }
+
+    void explicitQtPlatformAlwaysWins() {
+        for (const QString& platform : {
+                 QStringLiteral("wayland"),
+                 QStringLiteral("xcb"),
+                 QStringLiteral("offscreen"),
+             }) {
+            QVERIFY(!managerShouldPreferXcbPlatform(
+                QStringLiteral("wayland"), QStringLiteral("KDE"),
+                QStringLiteral(":0"), platform));
+        }
+    }
 };
 
 QTEST_GUILESS_MAIN(TstManagerDisplayPolicy)
