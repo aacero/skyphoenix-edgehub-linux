@@ -1025,6 +1025,19 @@ Item {
                     }
                 }
             }
+            var calmCard = findPred(win, function (x) {
+                return x && x.objectName === "managerPresetCard-calm-focus"
+            })
+            verify(calmCard, "the Calm Focus preset card exists")
+            verify(calmCard.activeFocusOnTab,
+                   "preset cards participate in keyboard focus")
+            compare(calmCard.Accessible.role, Accessible.Button)
+            compare(calmCard.Accessible.name, "Preview preset: Calm Focus")
+            calmCard.forceActiveFocus()
+            verify(calmCard.activeFocus, "the preset card accepts keyboard focus")
+            keyClick(Qt.Key_Return)
+            compare(dlg.selectedId, "calm-focus",
+                    "Return selects the focused preset for its real preview")
 
             var before = _store.pageCount()
             dlg.selectedId = "developer"

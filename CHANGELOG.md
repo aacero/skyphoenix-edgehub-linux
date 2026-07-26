@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Hub's reported orientation, including after a live rotation.
 - The Manager preset dialog now keeps its content and footer actions clear of
   every dialog edge with consistent button padding.
+- Manager preset cards now support keyboard focus, Return/Space selection, and
+  named assistive-technology actions.
 
 ## [1.0.0-beta.2] - 2026-07-26
 

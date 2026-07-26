@@ -2230,6 +2230,16 @@ ApplicationWindow {
                                     : (presetMA.containsMouse ? m.panelAlt : m.bg)
                                 border.width: selected ? 2 : 1
                                 border.color: selected ? m.accent : m.border
+                                activeFocusOnTab: true
+                                Accessible.role: Accessible.Button
+                                Accessible.name: "Preview preset: " + modelData.title
+                                Accessible.description: modelData.blurb || ""
+                                Accessible.onPressAction: managerPresetCard.previewPreset()
+                                Keys.onSpacePressed: managerPresetCard.previewPreset()
+                                Keys.onReturnPressed: managerPresetCard.previewPreset()
+                                function previewPreset() {
+                                    presetDialog.selectedId = managerPresetCard.modelData.id
+                                }
                                 RowLayout {
                                     id: presetRow
                                     anchors.fill: parent
@@ -2285,8 +2295,7 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked:
-                                        presetDialog.selectedId = managerPresetCard.modelData.id
+                                    onClicked: managerPresetCard.previewPreset()
                                 }
                             }
                         }
