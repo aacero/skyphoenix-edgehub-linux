@@ -123,6 +123,8 @@ WidgetChrome {
             result.push({ label: "BUFFERS", value: w.gib(w.buffersBytes) + " GiB" })
         return result
     }
+    readonly property int detailColumnCount:
+        w.expanded ? Math.max(1, Math.min(5, w.detailMetrics.length)) : 2
     readonly property var glanceDetails: {
         if (w.micro || w.expanded || w.roomyTile || !w.showDetails
                 || (w.sizeClass !== "wide" && w.sizeClass !== "tall"))
@@ -134,10 +136,6 @@ WidgetChrome {
                       value: w.swapTotalBytes > 0
                              ? w.gib(w.swapUsedBytes) + " / " + w.gib(w.swapTotalBytes)
                              : "None" })
-        if (w.pressureText.length)
-            result.push({ label: "STALLS, 10S", value: w.pressureText })
-        if (w.cachedBytes > 0)
-            result.push({ label: "CACHE, GiB", value: w.gib(w.cachedBytes) })
         return result
     }
     readonly property string detailLine: {
@@ -216,6 +214,7 @@ WidgetChrome {
         subTextColor: theme.textPrimary
         historyCaption: w.showHistory && !w.micro
                         ? w.historyLabel.toUpperCase() + " UTILIZATION" : ""
+        detailColumns: w.width < 520 ? 1 : 2
         expanded: w.expanded
         showSpark: w.showHistory && !w.micro
         horizontal: w.sizeClass === "wide"
@@ -242,7 +241,7 @@ WidgetChrome {
             visible: w.avail
             anchors.fill: parent
             anchors.margins: 10
-            columns: w.expanded ? Math.min(5, w.detailMetrics.length) : 3
+            columns: w.detailColumnCount
             columnSpacing: 8
             rowSpacing: 8
             Repeater {
@@ -261,9 +260,9 @@ WidgetChrome {
                     }
                     Text {
                         Layout.alignment: Qt.AlignHCenter
-                        Layout.maximumWidth: w.expanded ? 260 : 190
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignHCenter
                         text: modelData.value
-                        elide: Text.ElideRight
                         font.pixelSize: theme.fontTitle
                         font.family: theme.fontMono
                         color: w.effAccent

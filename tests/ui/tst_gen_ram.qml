@@ -527,13 +527,19 @@ Item {
         WidgetHarness { id: hWide; anchors.fill: parent; widgetFile: "RamWidget.qml"; expanded: false } }
     Item { width: 344; height: 840
         WidgetHarness { id: hTall; anchors.fill: parent; widgetFile: "RamWidget.qml"; expanded: false } }
+    Item { width: 696; height: 1227
+        WidgetHarness { id: hRoomyTall; anchors.fill: parent; widgetFile: "RamWidget.qml"; expanded: false } }
 
     TestCase {
         name: "RamSizes"
         when: windowShown
         readonly property var m: ({ ram_usage_percent: 68,
                                     ram_used_bytes: 23218000000,
-                                    ram_total_bytes: 34359738368 })
+                                    ram_total_bytes: 34359738368,
+                                    ram_cached_bytes: 173946175488,
+                                    swap_total_bytes: 274877906944,
+                                    swap_used_bytes: 13636521164,
+                                    ram_pressure_some_avg10: 100 })
 
         // 0.5x0.5 - headerless bare ring: only the one number.
         function test_micro_is_bare_ring() {
@@ -559,6 +565,10 @@ Item {
             var g = gaugeOf(w)
             compare(g.horizontal, true, "wide lays ring and sparkline side by side")
             compare(g.showSpark, true, "the sparkline is the point of going wide")
+            compare(g.detailColumns, 2,
+                    "wide memory details use two readable columns")
+            compare(g.detailItems.length, 2,
+                    "compact details prioritise available and swap")
             verify(g.sub.length > 0, "wide keeps the used/total context inside the ring")
             compare(g.detailLabelPixelSize, hWide.theme.fontLabel,
                     "supporting labels meet the arm-length legibility floor")
@@ -575,12 +585,45 @@ Item {
             hTall.metricsJson = JSON.stringify(m)
             var g = gaugeOf(w)
             compare(g.sparkFills, true, "tall hands the sparkline all the height below the ring")
+            compare(g.detailColumns, 1,
+                    "a narrow tall memory tile stacks long values in one column")
+            compare(g.detailItems.length, 2,
+                    "narrow details do not crowd in cache and pressure")
             verify(g.sub.length > 0, "tall keeps the used/total context")
             compare(g.stackedRingMaxFraction, 0.52,
                     "the taller card gives context more room instead of inflating the ring")
             w.sizeClass = "full"
             compare(g.sparkFills, false, "the overlay keeps the classic expanded gauge")
             compare(w.micro, false, "full is never micro")
+        }
+
+        function test_roomy_portrait_keeps_a_large_swap_value_complete() {
+            tryVerify(function () { return hRoomyTall.ready }, 3000)
+            var w = hRoomyTall.item
+            w.sizeClass = "tall"
+            hRoomyTall.metricsJson = JSON.stringify({
+                ram_metrics_available: true,
+                ram_usage_percent: 29,
+                ram_total_bytes: 274877906944,
+                ram_used_bytes: 78490567434,
+                ram_available_bytes: 189321322496,
+                ram_cached_bytes: 173946175488,
+                ram_buffers_bytes: 0,
+                swap_total_bytes: 267683125248,
+                swap_used_bytes: 11059540787,
+                ram_pressure_some_avg10: 0
+            })
+            tryCompare(w, "detailColumnCount", 2, 2000,
+                       "portrait details use readable two-column rows")
+            var expected = "10.3 / 249.3 GiB"
+            var swapValue = findOne(w, function (o) {
+                return isText(o) && o.text === expected
+            })
+            verify(swapValue, "the full real-world swap value is rendered")
+            compare(swapValue.truncated, false,
+                    "the full swap value is not elided")
+            verify(swapValue.contentWidth <= swapValue.width + 1,
+                   "the full swap value fits its allocated column")
         }
     }
 

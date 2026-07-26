@@ -41,8 +41,14 @@ Item {
     // Zero keeps the legacy one-row behavior. CPU uses two columns because four
     // narrow cards made ordinary values such as "rustc 18%" truncate.
     property int horizontalDetailColumns: 0
+    // Explicit column count for consumers whose value width matters more than
+    // the default shape-derived grid. This applies in both stacked and
+    // side-by-side layouts. Zero preserves the legacy choice below.
+    property int detailColumns: 0
     readonly property int effectiveDetailColumns: {
         var count = detailItems ? detailItems.length : 0
+        if (detailColumns > 0)
+            return Math.max(1, Math.min(detailColumns, count))
         if (!horizontal) return 2
         if (horizontalDetailColumns > 0)
             return Math.max(1, Math.min(horizontalDetailColumns, count))
