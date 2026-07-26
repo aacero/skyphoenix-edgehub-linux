@@ -9,6 +9,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.2] - 2026-07-26
+
+### Added
+
+- Real widget and preset golden-image baselines, contrast scans, minimum type
+  size checks, compiled-resource warning gates, and a 503-item enumerated QML
+  behavior matrix.
+- Focused physical-panel workflows for touch, Manager-to-Hub reflection,
+  page mirroring, drag reorder, orientation, notification, and MPRIS checks.
+- Instrumented resource, cold-start, and rotation frame measurements plus
+  configuration, HTTP, and widget fault-injection coverage.
+- An immersive Hub option that hides global navigation while preserving each
+  widget's own settings access.
+
+### Changed
+
+- Every first-party widget now has a content hierarchy designed around its
+  supported size instead of stretching one layout into every tile.
+- Preset selection renders real widgets and explains the intended audience and
+  purpose before adding a screen.
+- Manager previews use the same theme, accent, wallpaper, orientation, packing,
+  and active-screen state as the Hub.
+- Text, secondary labels, controls, and backdrop treatments use shared
+  readability and density rules across themes and accents.
+
+### Fixed
+
+- Text clipping and ancestor clipping across compact, wide, tall, portrait, and
+  landscape widget layouts.
+- Abrupt orientation changes, startup HID enumeration races, and stale Manager
+  orientation reflection.
+- Manager placement on the Edge panel under KDE Wayland.
+- Missing bundled wallpapers in Manager previews.
+- Pending widget data being lost during clean shutdown.
+- A widget runtime exception affecting more than the throwing handler.
+- Configuration recovery for truncated, invalid, and schema-mismatched files.
+- Qt 6.7 compatibility in the compiled QML test and Manager preview adapters.
+- The Weather no-egress attestation now supplies the explicit location required
+  by the current widget contract.
+
+### Security
+
+- Strengthened control-socket permission tests, secret-reference handling,
+  remote file-authority rejection, network containment, and bridge failure-path
+  coverage.
+- Owner-issued Pro keys continue to verify offline against the shipped issuer
+  public key.
+
 ## [1.0.0-beta.1] - 2026-07-21
 
 Stability, fidelity and correctness pass. Everything below is user-visible unless
@@ -137,7 +185,8 @@ display matching, and the CI/coverage gates.
 
 | Version | Date | Description |
 |---------|------|-------------|
-| Unreleased | - | Development after beta.1 |
+| Unreleased | - | Development after beta.2 |
+| 1.0.0-beta.2 | 2026-07-26 | Widget readability, Manager fidelity, hardware behavior and release evidence |
 | 1.0.0-beta.1 | 2026-07-21 | Hub/Manager integration, hardware lifecycle, widget fidelity and release hardening |
 | 1.0.0-alpha.2 | 2026-07-16 | First signed release tag |
 | 1.0.0-alpha.1 | 2026-07 | Initial alpha |

@@ -10,8 +10,8 @@ Modes:
   seeded    first_run_complete + no ui_state -> the hub seeds its default
             starter layout ("productivity"). This is the post-wizard default
             dashboard, which `default` (still on the wizard) never reaches.
-  weather   One Weather tile. Weather has no required settings (it defaults to
-            Berlin) and fetches ~350 ms after load, so this needs no interaction.
+  weather   One Weather tile with an explicit Berlin location. Weather fetches
+            about 350 ms after load, so this needs no interaction.
   url       One HTTP/JSON tile pointed at <url>. This is the negative control:
             an arbitrary host is exactly what "the app phones home" looks like.
 
@@ -30,7 +30,13 @@ import sys
 def ui_state_for(mode: str, url: str) -> str:
     if mode == "weather":
         tiles = [{"id": "weather-1", "type": "weather", "w": 1, "h": 2}]
-        settings = {}
+        settings = {
+            "weather-1": {
+                "lat": 52.52,
+                "lon": 13.405,
+                "place": "Berlin",
+            }
+        }
     elif mode == "url":
         tiles = [{"id": "httpjson-1", "type": "httpjson", "w": 1, "h": 2}]
         settings = {"httpjson-1": {"url": url, "jsonPath": "value", "pollSec": 2, "mode": "value"}}

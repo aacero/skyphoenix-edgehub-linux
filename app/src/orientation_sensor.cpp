@@ -140,8 +140,7 @@ void OrientationSensor::scheduleStartupRetry() {
             windowMs += qMax(1, delay);
         qWarning() << "OrientationSensor: no startup HID orientation after"
                    << m_startupAttemptCount << "attempts over" << windowMs
-                   << "ms; keeping the"
-                      "remembered/default orientation and following pushed reports";
+                   << "ms; keeping the remembered/default orientation and following pushed reports";
         return;
     }
     const int delay = qMax(1, m_startupRetryDelays.at(m_startupRetryIndex));
