@@ -112,6 +112,11 @@ printf '%s\n' \
     > "$diagnostic_log"
 check "exact Qt Virtual Keyboard dependency warning is separately dispositioned" \
     "$QML_DIAGNOSTIC_CHECKER" "$diagnostic_log" --tier compiled
+printf '%s\n' \
+    'QWARN  : suite::case() QUnifiedTimer::stopAnimationDriver: driver is not running' \
+    > "$diagnostic_log"
+check "exact Qt animation-driver dependency warning is separately dispositioned" \
+    "$QML_DIAGNOSTIC_CHECKER" "$diagnostic_log" --tier compiled
 rm -f "$diagnostic_log"
 
 echo "==> Nested-runner skip detection"
