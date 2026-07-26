@@ -883,7 +883,13 @@ Item {
             var s = store(), db = dash()
             var id = s.addTile(0, "hydration"); wait(150)
             clickIcon(cellFor(id), "ui-expand"); tryVerify(function () { return db.hasExpanded }, 4000); wait(150)
-            s.setSetting(id, "goal", 99); verify(s.settingsFor(id).goal === 99, "seeded a non-default value")
+            // Stay inside Hydration's real schema (goal 1..20). The previous
+            // value of 99 bypassed ConfigField validation and made this reset
+            // test create and immediately destroy 99 glass delegates. Under
+            // parallel nested compositors that could trip Qt's animation driver
+            // warning even though the reset itself passed.
+            s.setSetting(id, "goal", 12)
+            verify(s.settingsFor(id).goal === 12, "seeded a valid non-default value")
             var rev0 = s.revision
             verify(clickText(overlayItem(), "Reset configuration"), "clicked Reset configuration")
             tryVerify(function () { return db.widgetDataDialog.visible }, 3000,
