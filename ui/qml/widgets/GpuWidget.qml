@@ -102,7 +102,12 @@ WidgetChrome {
     }
     status: {
         var temperature = (w.showTemp && w.tempAvailable) ? w.temp.toFixed(0) + "°C" : ""
-        var state = w.alertLevel === "normal" ? "" : w.alertText
+        var state = w.alertLevel === "normal" ? ""
+                  : w.width < 480 && w.alertLevel === "unsupported" ? "Unsupported"
+                  : w.width < 480 && w.alertLevel === "disconnected" ? "GPU offline"
+                  : w.width < 480 && w.alertText === "Critical temperature" ? "Temp critical"
+                  : w.width < 480 && w.alertText === "High temperature" ? "High temp"
+                  : w.alertText
         return state.length ? (temperature.length ? temperature + " · " + state : state)
                             : temperature
     }

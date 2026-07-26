@@ -206,7 +206,16 @@ Item {
                 font.family: theme.fontMono
                 color: chrome.statusColor
                 elide: Text.ElideRight
-                Layout.maximumWidth: Math.max(72, chrome.width * 0.30)
+                // Status is glance-critical state, not decorative metadata. The
+                // old 30% cap cut ordinary shipped strings such as "No track
+                // loaded", "Outside active hours", and "Utilization
+                // unsupported" even when the header had enough total width.
+                // Keep the title flexible and let the status use its natural
+                // width up to 55% of the card. Custom overlong titles still
+                // yield first because they are the less urgent information.
+                Layout.maximumWidth: Math.max(120, chrome.width * 0.55)
+                Layout.preferredWidth: Math.min(implicitWidth, Layout.maximumWidth)
+                horizontalAlignment: Text.AlignRight
             }
         }
 

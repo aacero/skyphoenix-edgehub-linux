@@ -232,7 +232,7 @@ WidgetChrome {
     readonly property real barH: expanded ? 12
         : Math.max(6, Math.min(height * 0.022, 14))
     readonly property real labelW: expanded ? 62
-        : Math.max(68, Math.min(colW * 0.18, 104))
+        : Math.max(92, Math.min(colW * 0.22, 112))
     readonly property real valueW: expanded ? 64
         : Math.max(74, Math.min(colW * 0.19, 112))
 
@@ -321,7 +321,13 @@ WidgetChrome {
                     color: sensorRow.row && sensorRow.row.available
                            ? theme.textPrimary : theme.warning
                     font.pixelSize: w.roomy ? theme.fontLabel : theme.fontMinimum
-                    Layout.preferredWidth: w.roomy ? Math.min(230, w.colW * 0.28) : 190
+                    Layout.preferredWidth: w.roomy
+                        ? Math.min(280, Math.max(210, w.colW * 0.36))
+                        : Math.min(250, Math.max(190, w.colW * 0.30))
+                    Layout.fillHeight: !w.expanded
+                    verticalAlignment: Text.AlignVCenter
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 2
                     elide: Text.ElideRight
                 }
             }

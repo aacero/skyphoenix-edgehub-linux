@@ -343,7 +343,7 @@ WidgetChrome {
                 return [
                     { label: "TODAY", value: w.formatAt("ddd") },
                     { label: "WEEK", value: "" + w.isoWeek(n) },
-                    { label: w.customZone ? "OFFSET" : "DAY OF YEAR",
+                    { label: w.customZone ? "OFFSET" : "YEAR DAY",
                       value: w.customZone ? w.offsetLabel() : "" + w.dayOfYear(n) }
                 ]
             }

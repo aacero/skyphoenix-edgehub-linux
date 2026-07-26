@@ -266,8 +266,15 @@ WidgetChrome {
             }
             Text {
                 Layout.fillWidth: true
-                text: w.capacityState + " · warn " + w.warnPercent.toFixed(0)
-                      + "% · crit " + w.critPercent.toFixed(0) + "%"
+                // The unavailable state already has a full explanation directly
+                // below this line. Keep its threshold summary concise enough for
+                // the supported 348px portrait column instead of eliding the
+                // critical limit.
+                text: w.avail
+                      ? w.capacityState + " · warn " + w.warnPercent.toFixed(0)
+                        + "% · crit " + w.critPercent.toFixed(0) + "%"
+                      : "Unavailable · limits " + w.warnPercent.toFixed(0)
+                        + " / " + w.critPercent.toFixed(0) + "%"
                 elide: Text.ElideRight
                 horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
                 font.pixelSize: theme.fontLabel

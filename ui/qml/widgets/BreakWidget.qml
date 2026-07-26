@@ -78,7 +78,12 @@ WidgetChrome {
         if (w.snoozed) return "Snoozed until the next reminder"
         return "until next break"
     }
-    status: w.stateLabel
+    // The body carries the full schedule explanation. Keep the header state
+    // glanceable in the narrow supported column without squeezing the widget
+    // title out of its own header.
+    status: w.stateLabel === "Outside active hours" ? "Off hours"
+            : w.stateLabel === "Schedule disabled" ? "Disabled"
+            : w.stateLabel
     readonly property var breakIdeas: [
         "Stand up & stretch", "Drink some water", "Look 20ft away for 20s",
         "Roll your shoulders", "Take 5 slow breaths", "Quick walk around"
@@ -322,6 +327,7 @@ WidgetChrome {
                     // duplicate mention there.
                     visible: w.micro || w.stateLabel !== "Running"
                     text: w.micro && w.stateLabel === "Running" ? "break"
+                        : w.stateLabel === "Outside active hours" ? "off hours"
                         : w.stateLabel.toLowerCase()
                     font.pixelSize: Math.max(18,
                                              Math.min(ringBox.width * 0.075, theme.fontLabel))

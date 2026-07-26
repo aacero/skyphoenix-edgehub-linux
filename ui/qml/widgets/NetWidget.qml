@@ -365,6 +365,8 @@ WidgetChrome {
                           : w.unavailableReason
                     color: w.rateAvailable ? theme.textPrimary : theme.warning
                     font.pixelSize: theme.fontLabel
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 2
                     elide: Text.ElideRight
                     Layout.fillWidth: true
                 }

@@ -472,7 +472,7 @@ Item {
             var n = w.zonedNow()
             var weekLabel = textEquals(hTallSz, "WEEK")
             var weekValue = textEquals(hTallSz, "" + w.isoWeek(n))
-            var dayLabel = textEquals(hTallSz, "DAY OF YEAR")
+            var dayLabel = textEquals(hTallSz, "YEAR DAY")
             var dayValue = textEquals(hTallSz, "" + w.dayOfYear(n))
             verify(weekLabel !== null && weekLabel.visible && weekValue !== null && weekValue.visible,
                    "the calendar cards show the ISO week")

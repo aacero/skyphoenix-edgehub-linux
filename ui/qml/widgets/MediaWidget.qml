@@ -143,7 +143,10 @@ WidgetChrome {
     // what a media tile shows most of the day, so it scales with the box like
     // any other content instead of floating a 34px glyph in a 819px tile.
     ColumnLayout {
-        anchors.centerIn: parent; visible: !w.avail; spacing: theme.spacingXs
+        anchors.centerIn: parent
+        width: Math.max(60, w.width - 2 * theme.spacingMd)
+        visible: !w.avail
+        spacing: theme.spacingXs
         AppIcon {
             Layout.alignment: Qt.AlignHCenter
             name: "media"
@@ -153,7 +156,7 @@ WidgetChrome {
                                         w.expanded ? 96 : 72))
         }
         Text { Layout.alignment: Qt.AlignHCenter; text: w.emptyStateLabel
-            Layout.preferredWidth: Math.max(60, w.width - 2 * theme.spacingMd)
+            Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
             fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum; elide: Text.ElideRight
             color: theme.textSecondary

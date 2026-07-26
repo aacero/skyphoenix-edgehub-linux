@@ -77,6 +77,49 @@ Item {
         return violations
     }
 
+    function clippingViolations(node) {
+        var violations = []
+        G.eachItem(node, function (candidate) {
+            try {
+                if (candidate.text === undefined || candidate.font === undefined
+                        || candidate.truncated === undefined
+                        || !effectiveVisible(candidate)
+                        || candidate.width <= 0 || candidate.height <= 0
+                        || printable(candidate.text).length === 0)
+                    return
+
+                var reasons = []
+                if (candidate.truncated === true)
+                    reasons.push("truncated")
+
+                var contentWidth = Number(candidate.contentWidth)
+                var contentHeight = Number(candidate.contentHeight)
+                if (isFinite(contentWidth) && contentWidth > candidate.width + 1
+                        && candidate.wrapMode === Text.NoWrap)
+                    reasons.push("contentWidth " + Math.ceil(contentWidth)
+                                 + " > width " + Math.floor(candidate.width))
+                if (isFinite(contentHeight) && contentHeight > candidate.height + 1)
+                    reasons.push("contentHeight " + Math.ceil(contentHeight)
+                                 + " > height " + Math.floor(candidate.height))
+
+                if (reasons.length > 0) {
+                    violations.push({
+                        text: ("" + candidate.text).replace(/\n/g, " ").slice(0, 64),
+                        reasons: reasons.join("; "),
+                        objectName: candidate.objectName || ""
+                    })
+                }
+            } catch (error) {
+                violations.push({
+                    text: "scene-scan error: " + error,
+                    reasons: "scan failed",
+                    objectName: ""
+                })
+            }
+        })
+        return violations
+    }
+
     TestCase {
         name: "WidgetLegibilityMatrix"
         when: windowShown
@@ -139,7 +182,7 @@ Item {
             harness.active = false
             if (harness.item.hasOwnProperty("sizeClass"))
                 harness.item.sizeClass = sizes.classFor(row.size, row.landscape)
-            wait(20)
+            wait(100)
 
             compare(harness.item.width, box.width, row.tag + " projected width")
             compare(harness.item.height, box.height, row.tag + " projected height")
@@ -153,6 +196,17 @@ Item {
             compare(failures.length, 0,
                     row.tag + " has no visible text below " + minimum
                     + "px" + (details ? ": " + details : ""))
+
+            var clipping = clippingViolations(harness.item)
+            if (clipping.length > 0)
+                grabImage(harness.item).save("gui-evidence/clipping-" + row.tag + ".png")
+            var clippingDetails = clipping.map(function (failure) {
+                return "'" + failure.text + "' (" + failure.reasons + ")"
+                       + (failure.objectName ? " [" + failure.objectName + "]" : "")
+            }).join(", ")
+            compare(clipping.length, 0,
+                    row.tag + " has no cut-off visible text"
+                    + (clippingDetails ? ": " + clippingDetails : ""))
         }
     }
 }
