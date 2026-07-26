@@ -888,7 +888,9 @@ Item {
             verify(clickText(overlayItem(), "Reset configuration"), "clicked Reset configuration")
             tryVerify(function () { return db.widgetDataDialog.visible }, 3000,
                       "scoped reset confirmation opened")
-            db.widgetDataConfirmButton.clicked()
+            clickItem(db.widgetDataConfirmButton)
+            tryVerify(function () { return !db.widgetDataDialog.visible }, 3000,
+                      "scoped reset confirmation closed")
             tryVerify(function () { return s.settingsFor(id).goal === 8 }, 4000, "config reset persisted (goal back to default 8)")
             verify(s.revision > rev0, "store revision bumped by the config action")
         }
