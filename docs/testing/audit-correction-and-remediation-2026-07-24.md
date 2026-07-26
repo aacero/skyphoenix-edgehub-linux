@@ -24,21 +24,23 @@ edit:
 - 181 of the untracked files were generated files below `build-install/`.
 - The resulting file-by-file inventory contains 375 paths plus its header.
 
-Evidence:
+Local private evidence:
 
-- [Original porcelain status](../../artifacts/2526cf584012-dirty-20260724/integrity/WORKTREE_STATUS.txt)
-- [Original tracked diff stat](../../artifacts/2526cf584012-dirty-20260724/integrity/TRACKED_DIFF_STAT.txt)
-- [File-by-file attribution](../../artifacts/2526cf584012-dirty-20260724/integrity/UNCOMMITTED_FILES_FULL.tsv)
-- [Complete tracked patch](../../artifacts/2526cf584012-dirty-20260724/integrity/TRACKED_CHANGES.patch)
-- [Staged rename patch](../../artifacts/2526cf584012-dirty-20260724/integrity/STAGED_CHANGES.patch)
-- [Expanded untracked inventory](../../artifacts/2526cf584012-dirty-20260724/integrity/UNTRACKED_FILES.txt)
-- [Archive description](../../artifacts/2526cf584012-dirty-20260724/README.md)
-- [SHA-256 manifest](../../artifacts/2526cf584012-dirty-20260724/MANIFEST.sha256)
+- `artifacts/2526cf584012-dirty-20260724/integrity/WORKTREE_STATUS.txt`
+- `artifacts/2526cf584012-dirty-20260724/integrity/TRACKED_DIFF_STAT.txt`
+- `artifacts/2526cf584012-dirty-20260724/integrity/UNCOMMITTED_FILES_FULL.tsv`
+- `artifacts/2526cf584012-dirty-20260724/integrity/TRACKED_CHANGES.patch`
+- `artifacts/2526cf584012-dirty-20260724/integrity/STAGED_CHANGES.patch`
+- `artifacts/2526cf584012-dirty-20260724/integrity/UNTRACKED_FILES.txt`
+- `artifacts/2526cf584012-dirty-20260724/README.md`
+- `artifacts/2526cf584012-dirty-20260724/MANIFEST.sha256`
 
 All evidence referenced by the earlier audit was moved out of `/tmp` into
 `artifacts/2526cf584012-dirty-20260724/`. The manifest covers every archived
-file except the manifest itself. The archive key includes `dirty` deliberately:
-it must not be mistaken for evidence produced by the clean base commit.
+file except the manifest itself. This evidence is private and intentionally
+gitignored, so the paths above are not repository links. The archive key
+includes `dirty` deliberately: it must not be mistaken for evidence produced
+by the clean base commit.
 
 After freezing the snapshot, two immediate report-driven edits were made:
 

@@ -16,9 +16,9 @@
 # So this checks every tracked or newly created .md, strips the anchor before
 # the file test, and - when the target is markdown - verifies the anchor actually
 # names a heading, because a link to a renamed heading is broken in the way that
-# matters to a reader even though the file still exists. Including untracked
-# files keeps the local pre-commit check equivalent to CI after those files are
-# added to the commit.
+# matters to a reader even though the file still exists. A resolved target must
+# also be tracked. Otherwise ignored local evidence can make this pass locally
+# and fail in CI after checkout, which is exactly what happened on 2026-07-26.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -61,6 +61,23 @@ while IFS= read -r f; do
         elif [ -e "$path" ]; then resolved="$path"
         else
             echo "BROKEN FILE  $f -> $target"
+            fail=1
+            continue
+        fi
+        resolved="$(realpath --relative-to="$PWD" "$resolved")"
+
+        # A link that resolves only because an ignored or uncommitted file is
+        # present on this workstation will be broken in a clean CI checkout.
+        # Directories have no Git entry of their own, so require at least one
+        # tracked descendant for those.
+        if [ -d "$resolved" ]; then
+            if [ -z "$(git ls-files -- "$resolved")" ]; then
+                echo "UNTRACKED TARGET  $f -> $target  ($resolved)"
+                fail=1
+                continue
+            fi
+        elif ! git ls-files --error-unmatch -- "$resolved" >/dev/null 2>&1; then
+            echo "UNTRACKED TARGET  $f -> $target  ($resolved)"
             fail=1
             continue
         fi
