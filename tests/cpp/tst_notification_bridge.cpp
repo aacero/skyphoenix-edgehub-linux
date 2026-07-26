@@ -74,6 +74,28 @@ private slots:
         QCOMPARE(seen.arguments().size(), 8);
     }
 
+    void priorityReminderIsUrgentAndPersistent() {
+        NotificationRequest seen;
+        NotificationBridge bridge(
+            nullptr, [&seen](const NotificationRequest& request) {
+                seen = request;
+                return true;
+            });
+
+        QVERIFY(bridge.sendPriority(QStringLiteral("Break reminder"),
+                                    QStringLiteral("Time to stand up and reset.")));
+        QCOMPARE(seen.summary, QStringLiteral("Break reminder"));
+        QCOMPARE(seen.body, QStringLiteral("Time to stand up and reset."));
+        QCOMPARE(seen.timeoutMs, 0);
+        QCOMPARE(seen.hints.value(QStringLiteral("urgency")).value<uchar>(),
+                 static_cast<uchar>(2));
+        QCOMPARE(seen.hints.value(QStringLiteral("resident")).toBool(), true);
+        QCOMPARE(seen.hints.value(QStringLiteral("transient")).toBool(), false);
+        QCOMPARE(seen.hints.value(QStringLiteral("category")).toString(),
+                 QStringLiteral("x-edgehub.reminder"));
+        QCOMPARE(seen.arguments().size(), 8);
+    }
+
     void returnsInjectedTransportFailure() {
         NotificationBridge bridge(nullptr, [](const NotificationRequest&) {
             return false;

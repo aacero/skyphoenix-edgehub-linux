@@ -7,8 +7,28 @@ import QtTest
 //  * "+5" never drives the ring fill negative.
 //  * start/pause/skip persist correctly and phases advance.
 Item {
+    id: root
     width: 420; height: 820
     WidgetHarness { id: h; anchors.fill: parent; widgetFile: "FocusWidget.qml"; expanded: true }
+    property int priorityAlertCalls: 0
+    property var lastPriorityAlert: null
+    property int desktopPriorityCalls: 0
+    QtObject {
+        id: prioritySink
+        function showPriorityAlert(request) {
+            root.priorityAlertCalls++
+            root.lastPriorityAlert = request
+            return true
+        }
+    }
+    QtObject {
+        id: notificationSink
+        function send(summary, body) { return true }
+        function sendPriority(summary, body) {
+            root.desktopPriorityCalls++
+            return true
+        }
+    }
 
     TestCase {
         name: "FocusWidget"
@@ -21,6 +41,12 @@ Item {
             var s = h.storeCtl.settingsFor("test-instance")
             for (var k in s) delete s[k]
             h.storeCtl._touchSettings()
+            h.item.priorityAlerts = prioritySink
+            h.item.notificationBridge = notificationSink
+            h.item.foreground = true
+            root.priorityAlertCalls = 0
+            root.lastPriorityAlert = null
+            root.desktopPriorityCalls = 0
         }
 
         function cfg() { return h.storeCtl.settingsFor("test-instance") }
@@ -172,6 +198,27 @@ Item {
             h.storeCtl.patchSettings("test-instance", { points: 0, rewardPoints: false })
             w.advance(true)
             compare(cfg().points, 0, "no points accrue when rewards are disabled")
+        }
+
+        function test_hidden_completion_uses_persistent_hub_and_desktop_alerts() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { notifyWhenHidden: true })
+            w.foreground = false
+            verify(w.notifyCompletion("work", "short"))
+            compare(root.priorityAlertCalls, 1)
+            compare(root.desktopPriorityCalls, 1)
+            compare(root.lastPriorityAlert.title, "Focus session complete")
+            compare(root.lastPriorityAlert.primaryAction, "openWidget")
+            compare(root.lastPriorityAlert.sourceId, "test-instance")
+        }
+
+        function test_visible_completion_keeps_the_existing_in_widget_feedback() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { notifyWhenHidden: true })
+            w.foreground = true
+            compare(w.notifyCompletion("work", "short"), false)
+            compare(root.priorityAlertCalls, 0)
+            compare(root.desktopPriorityCalls, 0)
         }
     }
 }

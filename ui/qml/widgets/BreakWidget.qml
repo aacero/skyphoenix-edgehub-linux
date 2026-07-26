@@ -14,6 +14,7 @@ WidgetChrome {
     property bool foreground: true
     property var notificationBridge:
         (typeof notifications !== "undefined" ? notifications : null)
+    property var priorityAlerts: null
     // Per-minute tick injected by the Dashboard (S6): keeps todayKey/breaksToday
     // rolling over at midnight on a 24/7 device instead of freezing at boot-day.
     property int tick: 0
@@ -37,6 +38,8 @@ WidgetChrome {
     readonly property string message: cfg.message !== undefined ? cfg.message : ""
     readonly property bool showSuggestion: cfg.showSuggestion !== undefined ? cfg.showSuggestion : true
     readonly property bool notifyWhenHidden: cfg.notifyWhenHidden === true
+    readonly property bool priorityAlertEnabled:
+        cfg.priorityAlertEnabled !== undefined ? cfg.priorityAlertEnabled : true
     readonly property int workStartHour: cfg.workStartHour !== undefined ? cfg.workStartHour : 9
     readonly property int workEndHour: cfg.workEndHour !== undefined ? cfg.workEndHour : 17
     readonly property string workDays: cfg.workDays !== undefined ? cfg.workDays : "1,2,3,4,5"
@@ -178,11 +181,36 @@ WidgetChrome {
             return false
         var body = w.message.length ? w.message
             : "Time to stand up, reset, and take a short break."
+        if (w.notificationBridge.sendPriority)
+            return w.notificationBridge.sendPriority("Break reminder", body)
         return w.notificationBridge.send("Break reminder", body)
+    }
+    function showPriorityAlert() {
+        if (!w.priorityAlertEnabled || !w.priorityAlerts
+                || !w.priorityAlerts.showPriorityAlert)
+            return false
+        var title = w.message.length ? w.message : "Time to take a real break"
+        var idea = w.breakIdeas[w.breaksToday % w.breakIdeas.length]
+        return w.priorityAlerts.showPriorityAlert({
+            key: "break:" + w.instanceId,
+            sourceId: w.instanceId,
+            widgetType: "break",
+            eyebrow: "BREAK REMINDER",
+            title: title,
+            body: "Step away for a moment. This reminder will stay here until you choose.",
+            detail: w.showSuggestion ? "Try: " + idea : "",
+            iconName: "break",
+            accent: w.effAccent,
+            primaryLabel: "I took a break",
+            secondaryLabel: "Snooze " + w.snoozeMin + " min",
+            primaryCallback: function() { w.takeBreak() },
+            secondaryCallback: function() { w.snooze() }
+        })
     }
     function markDue() {
         if (w.due || w.remaining > 0 || !w.withinSchedule()) return false
         w.save({ due: true, snoozed: false })
+        w.showPriorityAlert()
         w.notifyDue()
         flash.restart()
         return true

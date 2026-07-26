@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Break, Focus, and medication reminders can now raise a persistent,
+  full-screen Hub alert with a strong visual hierarchy and explicit actions.
+  Reminder-class desktop notifications are urgent and stay present until
+  dismissed by the user.
 - History charts now show readable value and elapsed-time axes when the tile has
   enough room, plus current-window averages and raw peak markers.
 - CPU, GPU, Memory, Network, HTTP/JSON, and KPI graphs can be shown as a smooth

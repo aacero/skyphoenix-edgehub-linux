@@ -41,6 +41,7 @@ WidgetChrome {
     property bool foreground: true
     property var notificationBridge:
         (typeof notifications !== "undefined" ? notifications : null)
+    property var priorityAlerts: null
 
     title: "Focus Timer"; iconName: "focus"; accentColor: theme.catProductivity
     showHeader: expanded
@@ -207,8 +208,7 @@ WidgetChrome {
         skipArmTimeout.restart()
     }
     function notifyCompletion(completedPhase, nextPhase) {
-        if (!notifyWhenHidden || foreground || !notificationBridge
-                || !notificationBridge.send)
+        if (!notifyWhenHidden || foreground)
             return false
         var summary = completedPhase === "work"
                 ? "Focus session complete" : "Break complete"
@@ -216,7 +216,31 @@ WidgetChrome {
                 ? "Ready for another focus session."
                 : (nextPhase === "long" ? "Your long break is ready."
                                         : "Your short break is ready.")
-        return notificationBridge.send(summary, body)
+        var shown = false
+        if (priorityAlerts && priorityAlerts.showPriorityAlert)
+            shown = priorityAlerts.showPriorityAlert({
+                key: "focus:" + instanceId + ":" + Date.now(),
+                sourceId: instanceId,
+                widgetType: "focus",
+                eyebrow: completedPhase === "work"
+                         ? "FOCUS COMPLETE" : "BREAK COMPLETE",
+                title: summary,
+                body: body,
+                detail: "The next phase is ready in your Focus Timer.",
+                iconName: "focus",
+                accent: completedPhase === "work" ? theme.catProductivity
+                                                   : theme.success,
+                primaryLabel: "Open timer",
+                primaryAction: "openWidget"
+            })
+        var sent = false
+        if (notificationBridge && notificationBridge.send) {
+            if (notificationBridge.sendPriority)
+                sent = notificationBridge.sendPriority(summary, body)
+            else
+                sent = notificationBridge.send(summary, body)
+        }
+        return shown || sent
     }
     Timer {
         id: skipArmTimeout

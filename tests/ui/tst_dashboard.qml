@@ -7,6 +7,8 @@ import "../../ui/qml" as App
 // COVERS: fn:Dashboard.onThemeModeChanged, fn:Dashboard.onTextScaleChanged, fn:Dashboard.onFontChoiceChanged, fn:Dashboard.applyPreset, fn:Dashboard.appendPreset
 // COVERS: fn:Dashboard.requestPageRemoval, fn:Dashboard.confirmPageRemoval
 // COVERS: fn:Dashboard.requestWidgetDataAction, fn:Dashboard.confirmWidgetDataAction
+// COVERS: fn:Dashboard.showPriorityAlert, fn:Dashboard.dismissPriorityAlert, fn:Dashboard.triggerPriorityAlertAction
+// COVERS: fn:Dashboard._openPriorityAlertWidget, fn:Dashboard.prunePriorityAlerts
 // COVERS: fn:Dashboard._sweepStaleDying
 //
 // ui/qml/Dashboard.qml -
@@ -186,6 +188,150 @@ Item {
             d.cfgStatus = ""
             if (d.pageDeleteDialog.visible) d.pageDeleteDialog.close()
             if (d.widgetDataDialog.visible) d.widgetDataDialog.close()
+            while (d.dismissPriorityAlert()) {}
+        }
+
+        function test_priority_alert_is_persistent_deduplicated_and_actionable() {
+            var d = ld.item
+            var primaryCalls = 0
+            verify(d.showPriorityAlert({
+                key: "break:one",
+                title: "Time to take a real break",
+                body: "Step away for a moment.",
+                detail: "Try: Stand up and stretch",
+                iconName: "break",
+                primaryLabel: "I took a break",
+                secondaryLabel: "Snooze 5 min",
+                primaryCallback: function() { primaryCalls++ }
+            }))
+            tryVerify(function () { return d.priorityAlertSurface.shown }, 1000)
+            compare(d.priorityAlertQueue.length, 1)
+            verify(d.showPriorityAlert({
+                key: "break:one", title: "Duplicate", body: "Ignored"
+            }))
+            compare(d.priorityAlertQueue.length, 1,
+                    "the same reminder cannot stack duplicate alerts")
+            wait(600)
+            compare(d.priorityAlertSurface.shown, true,
+                    "there is no auto-dismiss timer")
+            compare(d.priorityAlertPrimaryButton.label, "I took a break")
+            compare(d.priorityAlertSecondaryButton.label, "Snooze 5 min")
+            verify(d.priorityAlertPrimaryButton.height >= 52)
+            verify(d.priorityAlertSecondaryButton.height >= 52)
+            verify(d.priorityAlertDismissButton.height >= 52)
+
+            verify(d.triggerPriorityAlertAction("primary"))
+            compare(primaryCalls, 1)
+            compare(d.priorityAlertQueue.length, 0)
+        }
+
+        function test_priority_alert_fits_portrait_and_landscape() {
+            var d = ld.item
+            var card = findPred(d, function(item) {
+                return item && item.objectName === "priorityAlertCard"
+            })
+            verify(card !== null)
+            var cases = [
+                { portrait: true },
+                { portrait: false }
+            ]
+            for (var i = 0; i < cases.length; i++) {
+                orient(cases[i].portrait)
+                verify(d.showPriorityAlert({
+                    key: "visual-" + i,
+                    title: "Time to take a real break",
+                    body: "Step away for a moment. This reminder stays visible until you choose.",
+                    detail: "Try: Stand up and stretch",
+                    iconName: "break",
+                    primaryLabel: "I took a break",
+                    secondaryLabel: "Snooze 5 min"
+                }))
+                tryVerify(function() {
+                    return d.priorityAlertSurface.shown
+                           && card.width > 0 && card.height > 0
+                }, 1000)
+                verify(card.x >= 0 && card.y >= 0)
+                verify(card.x + card.width <= d.width + 1)
+                verify(card.y + card.height <= d.height + 1)
+                var primaryPoint = d.priorityAlertPrimaryButton.mapToItem(
+                    card, 0, 0)
+                var dismissPoint = d.priorityAlertDismissButton.mapToItem(
+                    card, 0, 0)
+                verify(primaryPoint.x >= 0 && primaryPoint.y >= 0)
+                verify(primaryPoint.x + d.priorityAlertPrimaryButton.width
+                       <= card.width + 1)
+                verify(primaryPoint.y + d.priorityAlertPrimaryButton.height
+                       <= card.height + 1)
+                verify(dismissPoint.x >= 0 && dismissPoint.y >= 0)
+                verify(dismissPoint.x + d.priorityAlertDismissButton.width
+                       <= card.width + 1)
+                verify(d.dismissPriorityAlert())
+            }
+            root.width = 900
+            root.height = 600
+        }
+
+        function test_priority_alert_queue_keeps_the_next_reminder() {
+            var d = ld.item
+            verify(d.showPriorityAlert({
+                key: "first", title: "First reminder", body: "First body"
+            }))
+            verify(d.showPriorityAlert({
+                key: "second", title: "Second reminder", body: "Second body"
+            }))
+            compare(d.priorityAlertQueue.length, 2)
+            compare(d.currentPriorityAlert.title, "First reminder")
+            verify(d.dismissPriorityAlert())
+            compare(d.priorityAlertQueue.length, 1)
+            compare(d.currentPriorityAlert.title, "Second reminder")
+            compare(d.priorityAlertSurface.shownAlert.title, "Second reminder",
+                    "the visible card advances with the queue")
+            verify(d.dismissPriorityAlert())
+            compare(d.currentPriorityAlert, null)
+        }
+
+        function test_priority_alert_can_open_its_source_widget() {
+            var d = ld.item
+            var s = root.store()
+            var id = s.addTile(0, "focus")
+            verify(id !== null)
+            verify(d._openPriorityAlertWidget({
+                sourceId: id,
+                widgetType: "focus"
+            }), "_openPriorityAlertWidget opens a valid source")
+            d.closeExpanded()
+            verify(d.showPriorityAlert({
+                key: "focus:" + id,
+                sourceId: id,
+                widgetType: "focus",
+                title: "Focus session complete",
+                body: "Your break is ready.",
+                primaryLabel: "Open timer",
+                primaryAction: "openWidget"
+            }))
+            verify(d.triggerPriorityAlertAction("primary"))
+            compare(d.expandedId, id)
+            compare(d.expandedType, "focus")
+            compare(d.priorityAlertQueue.length, 0)
+            d.closeExpanded()
+        }
+
+        function test_priority_alert_prunes_a_removed_source() {
+            var d = ld.item
+            var s = root.store()
+            var id = s.addTile(0, "break")
+            verify(d.showPriorityAlert({
+                key: "break:" + id,
+                sourceId: id,
+                widgetType: "break",
+                title: "Break reminder",
+                body: "Take a break."
+            }))
+            compare(d.priorityAlertQueue.length, 1)
+            s.removeTile(0, id)
+            tryVerify(function () { return d.priorityAlertQueue.length === 0 }, 1000)
+            compare(d.prunePriorityAlerts(), 0,
+                    "prunePriorityAlerts reports the remaining queue size")
         }
 
         function test_configuration_reset_keeps_personal_content() {

@@ -49,6 +49,7 @@ WidgetChrome {
     property bool foreground: true
     property var notificationBridge:
         (typeof notifications !== "undefined" ? notifications : null)
+    property var priorityAlerts: null
     property int tick: 0
 
     title: "Meds"; iconName: "meds"; accentColor: theme.catServices
@@ -257,8 +258,7 @@ WidgetChrome {
     readonly property var notifiedToday:
         cfg.notifiedDay === dayKey && Array.isArray(cfg.notified) ? cfg.notified : []
     function checkNotifications() {
-        if (!w.active || w.foreground || !w.notifyWhenHidden
-                || !w.notificationBridge || !w.notificationBridge.send)
+        if (!w.active || w.foreground || !w.notifyWhenHidden)
             return false
         var pending = []
         for (var i = 0; i < w.doses.length; i++) {
@@ -272,15 +272,38 @@ WidgetChrome {
         if (w.notificationDetails)
             body = pending.length === 1 ? pending[0].name + " is due now."
                                         : pending.length + " scheduled doses are due now."
-        var sent = w.notificationBridge.send("Medication reminder", body)
-        if (sent !== false && w.store) {
+        var shown = false
+        if (w.priorityAlerts && w.priorityAlerts.showPriorityAlert)
+            shown = w.priorityAlerts.showPriorityAlert({
+                key: "meds:" + w.instanceId + ":" + w.dayKey + ":"
+                     + pending.map(function(dose) { return dose.key }).join("|"),
+                sourceId: w.instanceId,
+                widgetType: "meds",
+                eyebrow: "SCHEDULE REMINDER",
+                title: "Medication reminder",
+                body: body,
+                detail: "Review your schedule. This reminder cannot confirm whether a dose was taken.",
+                iconName: "meds",
+                accent: theme.catServices,
+                primaryLabel: "Review schedule",
+                primaryAction: "openWidget"
+            })
+        var sent = false
+        if (w.notificationBridge && w.notificationBridge.send) {
+            if (w.notificationBridge.sendPriority)
+                sent = w.notificationBridge.sendPriority("Medication reminder", body)
+            else
+                sent = w.notificationBridge.send("Medication reminder", body)
+        }
+        var handled = shown || sent
+        if (handled && w.store) {
             var next = w.notifiedToday.slice()
             for (var j = 0; j < pending.length; j++)
                 if (next.indexOf(pending[j].key) < 0) next.push(pending[j].key)
             w.store.patchSettings(w.instanceId,
                                   { notifiedDay: w.dayKey, notified: next })
         }
-        return sent !== false
+        return handled
     }
     onTickChanged: checkNotifications()
     status: w.expanded || !w.doses.length ? "" : w.takenCount + "/" + w.doses.length

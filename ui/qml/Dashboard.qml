@@ -37,6 +37,98 @@ Item {
         return store.appearance().hubControlsMode !== "immersive"
     }
 
+    // Reminder-class events are not ordinary toasts. Widgets enqueue them here
+    // so an off-page timer or schedule can claim a persistent, unmistakable Hub
+    // surface until the user chooses an action. A queue prevents two reminders
+    // arriving together from silently replacing each other.
+    property var priorityAlertQueue: []
+    readonly property var currentPriorityAlert:
+        priorityAlertQueue.length ? priorityAlertQueue[0] : null
+    onCurrentPriorityAlertChanged: {
+        if (currentPriorityAlert)
+            priorityAlertLayer.shownAlert = currentPriorityAlert
+    }
+    readonly property alias priorityAlertSurface: priorityAlertLayer
+    readonly property alias priorityAlertPrimaryButton: priorityPrimaryButton
+    readonly property alias priorityAlertSecondaryButton: prioritySecondaryButton
+    readonly property alias priorityAlertDismissButton: priorityDismissButton
+
+    function showPriorityAlert(request) {
+        if (!request || typeof request !== "object") return false
+        var title = String(request.title || "").trim()
+        var body = String(request.body || "").trim()
+        if (!title.length || !body.length) return false
+
+        var key = String(request.key || (request.sourceId || "") + ":" + title)
+        for (var i = 0; i < priorityAlertQueue.length; i++)
+            if (priorityAlertQueue[i].key === key) return true
+
+        var next = priorityAlertQueue.slice()
+        next.push({
+            key: key,
+            sourceId: String(request.sourceId || ""),
+            widgetType: String(request.widgetType || ""),
+            eyebrow: String(request.eyebrow || "IMPORTANT REMINDER"),
+            title: title,
+            body: body,
+            detail: String(request.detail || ""),
+            iconName: String(request.iconName || "ui-warning"),
+            accent: request.accent || theme.warning,
+            primaryLabel: String(request.primaryLabel || "Got it"),
+            secondaryLabel: String(request.secondaryLabel || ""),
+            primaryAction: String(request.primaryAction || "dismiss"),
+            secondaryAction: String(request.secondaryAction || ""),
+            primaryCallback: typeof request.primaryCallback === "function"
+                             ? request.primaryCallback : null,
+            secondaryCallback: typeof request.secondaryCallback === "function"
+                               ? request.secondaryCallback : null
+        })
+        priorityAlertQueue = next
+        return true
+    }
+
+    function dismissPriorityAlert() {
+        if (!priorityAlertQueue.length) return false
+        priorityAlertQueue = priorityAlertQueue.slice(1)
+        return true
+    }
+
+    function _openPriorityAlertWidget(alert) {
+        if (!alert || !alert.sourceId || !alert.widgetType) return false
+        var pageIndex = store.pageIndexForTile(alert.sourceId)
+        if (pageIndex < 0) return false
+        swipeView.goToPage(pageIndex)
+        dashboard.expandedId = alert.sourceId
+        dashboard.expandedType = alert.widgetType
+        return true
+    }
+
+    function triggerPriorityAlertAction(which) {
+        var alert = currentPriorityAlert
+        if (!alert) return false
+        var action = which === "secondary" ? alert.secondaryAction
+                                           : alert.primaryAction
+        var callback = which === "secondary" ? alert.secondaryCallback
+                                             : alert.primaryCallback
+        if (action === "openWidget")
+            dashboard._openPriorityAlertWidget(alert)
+        else if (typeof callback === "function")
+            callback()
+        return dashboard.dismissPriorityAlert()
+    }
+
+    function prunePriorityAlerts() {
+        var kept = []
+        for (var i = 0; i < priorityAlertQueue.length; i++) {
+            var alert = priorityAlertQueue[i]
+            if (!alert.sourceId || dashboard._tileExists(alert.sourceId))
+                kept.push(alert)
+        }
+        if (kept.length !== priorityAlertQueue.length)
+            priorityAlertQueue = kept
+        return priorityAlertQueue.length
+    }
+
     // Commit widget-local editor debounces first, then synchronously persist the
     // shared store. Called by main.qml during clean shutdown while configBridge
     // is still attached.
@@ -344,6 +436,8 @@ Item {
     }
 
     DashboardStore { id: store }
+    readonly property int observedStoreStructureRevision: store.structureRevision
+    onObservedStoreStructureRevisionChanged: dashboard.prunePriorityAlerts()
     WidgetCatalog { id: catalog }
     readonly property alias widgetStore: store
     readonly property alias widgetCatalog: catalog
@@ -1263,6 +1357,7 @@ Item {
                                     metrics: dashboard.metrics
                                     netHub: dashboard.netGate
                                     timeZones: dashboard.availableTimeZones
+                                    priorityAlerts: dashboard
                                     tick: dashboard._tick
                                     expanded: false
                                     sizeClass: dashboard.sizeClassFor(cell.tileSize, pageItem.landscape)
@@ -1982,6 +2077,7 @@ Item {
                         metrics: dashboard.metrics
                         netHub: dashboard.netGate
                         timeZones: dashboard.availableTimeZones
+                        priorityAlerts: dashboard
                         tick: dashboard._tick
                         expanded: true
                         sizeClass: "full"
@@ -2206,6 +2302,258 @@ Item {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    // Persistent priority reminder. It deliberately has no auto-close timer and
+    // tapping the scrim does nothing: a break, completed focus phase, or due
+    // schedule must remain perceptible until the user makes an explicit choice.
+    FocusScope {
+        id: priorityAlertLayer
+        objectName: "priorityAlertSurface"
+        anchors.fill: parent
+        z: 1000
+        readonly property bool shown: dashboard.currentPriorityAlert !== null
+        property var shownAlert: ({})
+        visible: shown || opacity > 0.01
+        enabled: shown
+        opacity: shown ? 1.0 : 0.0
+        focus: shown
+        Accessible.role: Accessible.StaticText
+        Accessible.name: "Important reminder. "
+                         + String(shownAlert.title || "") + ". "
+                         + String(shownAlert.body || "")
+        Behavior on opacity {
+            NumberAnimation {
+                duration: theme.motionPage
+                easing.type: Easing.OutCubic
+            }
+        }
+        onShownChanged: {
+            if (shown)
+                shownAlert = dashboard.currentPriorityAlert
+        }
+        onOpacityChanged: {
+            if (!shown && opacity <= 0.01)
+                shownAlert = ({})
+        }
+        Keys.onEscapePressed: function(event) {
+            dashboard.dismissPriorityAlert()
+            event.accepted = true
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            color: Qt.rgba(theme.backgroundColor.r, theme.backgroundColor.g,
+                           theme.backgroundColor.b, 0.90)
+            MouseArea {
+                anchors.fill: parent
+                // Swallow the press without dismissing the reminder.
+                onClicked: priorityAlertLayer.forceActiveFocus()
+            }
+        }
+
+        Rectangle {
+            id: priorityAlertCard
+            objectName: "priorityAlertCard"
+            anchors.centerIn: parent
+            width: Math.min(parent.width - 2 * theme.spacingXl,
+                            parent.width > parent.height ? 1120 : 680)
+            height: Math.min(parent.height - 2 * theme.spacingXl,
+                             priorityAlertContent.implicitHeight
+                             + 2 * theme.spacingXl)
+            radius: theme.radiusXl
+            color: theme.cardBackground
+            border.width: 3
+            border.color: priorityAlertLayer.shownAlert.accent || theme.warning
+            scale: priorityAlertLayer.shown ? 1.0 : 0.95
+            Behavior on scale {
+                NumberAnimation {
+                    duration: theme.motionPage
+                    easing.type: Easing.OutBack
+                    easing.overshoot: 1.05
+                }
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                height: theme.spacingSm
+                radius: parent.radius
+                color: priorityAlertLayer.shownAlert.accent || theme.warning
+            }
+
+            ColumnLayout {
+                id: priorityAlertContent
+                anchors.centerIn: parent
+                width: parent.width - 2 * theme.spacingXl
+                spacing: theme.spacingMd
+
+                Item {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.preferredWidth: 124
+                    Layout.preferredHeight: 124
+
+                    Rectangle {
+                        id: priorityPulse
+                        anchors.centerIn: parent
+                        width: 118
+                        height: 118
+                        radius: width / 2
+                        color: "transparent"
+                        border.width: 4
+                        border.color: priorityAlertLayer.shownAlert.accent
+                                      || theme.warning
+                        opacity: theme.effectiveReduceMotion ? 0.52 : 0.30
+                        scale: 1.0
+                        SequentialAnimation on opacity {
+                            running: priorityAlertLayer.shown
+                                     && !theme.effectiveReduceMotion
+                            loops: Animation.Infinite
+                            NumberAnimation {
+                                from: 0.28
+                                to: 0.78
+                                duration: 1200
+                                easing.type: Easing.InOutSine
+                            }
+                            NumberAnimation {
+                                from: 0.78
+                                to: 0.28
+                                duration: 1200
+                                easing.type: Easing.InOutSine
+                            }
+                        }
+                        SequentialAnimation on scale {
+                            running: priorityAlertLayer.shown
+                                     && !theme.effectiveReduceMotion
+                            loops: Animation.Infinite
+                            NumberAnimation {
+                                from: 0.96
+                                to: 1.10
+                                duration: 1200
+                                easing.type: Easing.InOutSine
+                            }
+                            NumberAnimation {
+                                from: 1.10
+                                to: 0.96
+                                duration: 1200
+                                easing.type: Easing.InOutSine
+                            }
+                        }
+                    }
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 92
+                        height: 92
+                        radius: width / 2
+                        color: Qt.rgba(priorityAlertLayer.shownAlert.accent
+                                       ? priorityAlertLayer.shownAlert.accent.r : theme.warning.r,
+                                       priorityAlertLayer.shownAlert.accent
+                                       ? priorityAlertLayer.shownAlert.accent.g : theme.warning.g,
+                                       priorityAlertLayer.shownAlert.accent
+                                       ? priorityAlertLayer.shownAlert.accent.b : theme.warning.b,
+                                       0.18)
+                        border.width: 2
+                        border.color: priorityAlertLayer.shownAlert.accent
+                                      || theme.warning
+                        AppIcon {
+                            anchors.centerIn: parent
+                            name: priorityAlertLayer.shownAlert.iconName || "ui-warning"
+                            size: 46
+                            color: priorityAlertLayer.shownAlert.accent
+                                   || theme.warning
+                        }
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    text: priorityAlertLayer.shownAlert.eyebrow
+                          || "IMPORTANT REMINDER"
+                    color: priorityAlertLayer.shownAlert.accent || theme.warning
+                    font.pixelSize: Math.max(theme.fontLabel, 18)
+                    font.bold: true
+                    font.letterSpacing: 1.6
+                }
+                Text {
+                    objectName: "priorityAlertTitle"
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    text: priorityAlertLayer.shownAlert.title || ""
+                    color: theme.textPrimary
+                    font.family: theme.fontDisplay
+                    font.pixelSize: Math.max(30, theme.fontData)
+                    font.bold: true
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 3
+                    elide: Text.ElideRight
+                }
+                Text {
+                    objectName: "priorityAlertBody"
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    text: priorityAlertLayer.shownAlert.body || ""
+                    color: theme.textPrimary
+                    font.pixelSize: Math.max(20, theme.fontTitle)
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 4
+                    elide: Text.ElideRight
+                }
+                Text {
+                    Layout.fillWidth: true
+                    visible: text.length > 0
+                    horizontalAlignment: Text.AlignHCenter
+                    text: priorityAlertLayer.shownAlert.detail || ""
+                    color: theme.textSecondary
+                    font.pixelSize: Math.max(18, theme.fontLabel)
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
+                }
+                Text {
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    text: dashboard.priorityAlertQueue.length > 1
+                          ? dashboard.priorityAlertQueue.length
+                            + " reminders waiting"
+                          : "Stays visible until you choose"
+                    color: theme.textTertiary
+                    font.pixelSize: Math.max(16, theme.fontCaption)
+                }
+
+                RowLayout {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.fillWidth: true
+                    spacing: theme.spacingMd
+
+                    PillButton {
+                        id: priorityDismissButton
+                        objectName: "priorityAlertDismiss"
+                        label: "Dismiss"
+                        minWidth: 150
+                        onClicked: dashboard.dismissPriorityAlert()
+                    }
+                    PillButton {
+                        id: prioritySecondaryButton
+                        objectName: "priorityAlertSecondary"
+                        visible: label.length > 0
+                        label: priorityAlertLayer.shownAlert.secondaryLabel || ""
+                        minWidth: 190
+                        onClicked: dashboard.triggerPriorityAlertAction("secondary")
+                    }
+                    PillButton {
+                        id: priorityPrimaryButton
+                        objectName: "priorityAlertPrimary"
+                        label: priorityAlertLayer.shownAlert.primaryLabel || "Got it"
+                        primary: true
+                        tint: priorityAlertLayer.shownAlert.accent || theme.warning
+                        minWidth: 210
+                        onClicked: dashboard.triggerPriorityAlertAction("primary")
                     }
                 }
             }

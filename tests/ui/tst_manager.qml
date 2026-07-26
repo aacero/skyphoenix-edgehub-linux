@@ -11,6 +11,7 @@ import QtTest
 // COVERS: fn:Manager.refreshLicense, fn:Manager.onLicenseChanged, fn:Manager.reVerify
 // COVERS: fn:Manager.addScreen, fn:Manager.addWidget
 // COVERS: fn:Manager.flushPendingUiState
+// COVERS: fn:Manager.previewPreset
 //
 // manager/qml/Manager.qml (hosted with a STUBBED `backend`) -
 //   • the 5-tab StackLayout (Layout/Appearance/Images/Display/About) switches
@@ -1033,6 +1034,9 @@ Item {
                    "preset cards participate in keyboard focus")
             compare(calmCard.Accessible.role, Accessible.Button)
             compare(calmCard.Accessible.name, "Preview preset: Calm Focus")
+            verify(calmCard.previewPreset(),
+                   "previewPreset selects a card without applying it")
+            compare(dlg.selectedId, "calm-focus")
             calmCard.forceActiveFocus()
             verify(calmCard.activeFocus, "the preset card accepts keyboard focus")
             keyClick(Qt.Key_Return)

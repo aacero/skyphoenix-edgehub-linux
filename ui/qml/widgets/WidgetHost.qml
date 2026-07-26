@@ -18,6 +18,7 @@ Item {
     property var metrics: ({})
     property var netHub: null
     property var timeZones: null
+    property var priorityAlerts: null
     property int tick: 0
 
     property bool expanded: false
@@ -82,6 +83,8 @@ Item {
             item.metrics = Qt.binding(function () { return host.metrics })
         if (item.hasOwnProperty("timeZones"))
             item.timeZones = Qt.binding(function () { return host.timeZones })
+        if (item.hasOwnProperty("priorityAlerts"))
+            item.priorityAlerts = Qt.binding(function () { return host.priorityAlerts })
         if (item.hasOwnProperty("tick"))
             item.tick = Qt.binding(function () { return host.tick })
         if (item.hasOwnProperty("chromeless"))

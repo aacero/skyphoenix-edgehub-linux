@@ -23,6 +23,10 @@ Item {
         id: fakeCatalog
         function defaults(type) { return { title: type + " title", accent: "amber", cardBackdrop: "grid" } }
     }
+    QtObject {
+        id: fakePriorityAlerts
+        function showPriorityAlert(request) { return request !== null }
+    }
 
     Component {
         id: probeComponent
@@ -36,6 +40,7 @@ Item {
             property var metrics: ({})
             property var netHub: null
             property var timeZones: null
+            property var priorityAlerts: null
             property int tick: -1
             property bool chromeless: false
             property bool showHeader: true
@@ -71,6 +76,7 @@ Item {
         store: fakeStore
         catalog: fakeCatalog
         metrics: ({ value: 7 })
+        priorityAlerts: fakePriorityAlerts
         tick: 11
         sizeClass: "wide"
         driverActive: false
@@ -138,6 +144,7 @@ Item {
             compare(host.item.active, false)
             compare(host.item.foreground, false)
             compare(host.item.metrics.value, 7)
+            compare(host.item.priorityAlerts, fakePriorityAlerts)
             compare(host.item.tick, 11)
             compare(host.item.titleOverride, "probe title")
             compare(host.item.accentName, "amber")

@@ -27,6 +27,9 @@ Item {
     property int notificationCalls: 0
     property string notificationSummary: ""
     property string notificationBody: ""
+    property bool notificationWasPriority: false
+    property int priorityAlertCalls: 0
+    property var lastPriorityAlert: null
 
     QtObject {
         id: fakeNotifications
@@ -34,6 +37,18 @@ Item {
             root.notificationCalls++
             root.notificationSummary = summary
             root.notificationBody = body
+            return true
+        }
+        function sendPriority(summary, body) {
+            root.notificationWasPriority = true
+            return send(summary, body)
+        }
+    }
+    QtObject {
+        id: prioritySink
+        function showPriorityAlert(request) {
+            root.priorityAlertCalls++
+            root.lastPriorityAlert = request
             return true
         }
     }
@@ -200,7 +215,11 @@ Item {
             root.notificationCalls = 0
             root.notificationSummary = ""
             root.notificationBody = ""
+            root.notificationWasPriority = false
+            root.priorityAlertCalls = 0
+            root.lastPriorityAlert = null
             h.item.notificationBridge = fakeNotifications
+            h.item.priorityAlerts = prioritySink
             h.item.foreground = false
             h.item.active = true
             h.item.todayWeekdayOverride = 1
@@ -228,9 +247,17 @@ Item {
             compare(root.notificationCalls, 1)
             compare(root.notificationSummary, "Medication reminder")
             compare(root.notificationBody, "A scheduled dose is due now.")
+            compare(root.notificationWasPriority, true)
+            compare(root.priorityAlertCalls, 1)
+            compare(root.lastPriorityAlert.primaryAction, "openWidget")
+            compare(root.lastPriorityAlert.body, "A scheduled dose is due now.")
+            verify(root.lastPriorityAlert.body.indexOf("Private name") < 0)
+            verify(root.lastPriorityAlert.detail.indexOf("cannot confirm") >= 0)
             verify(root.notificationBody.indexOf("Private name") < 0)
             compare(h.item.checkNotifications(), false)
             compare(root.notificationCalls, 1, "the same dose is not announced twice")
+            compare(root.priorityAlertCalls, 1,
+                    "the same dose does not enqueue a second Hub alert")
         }
 
         function test_dose_name_is_only_included_after_explicit_opt_in() {

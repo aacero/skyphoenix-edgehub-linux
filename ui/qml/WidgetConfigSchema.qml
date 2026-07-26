@@ -490,7 +490,7 @@ QtObject {
                 { key: "autoStartBreak", label: "Auto-start the break", type: "toggle", dflt: false },
                 { key: "autoStartFocus", label: "Auto-start focus after a break", type: "toggle", dflt: false },
                 { key: "notifyWhenHidden", label: "Notify when an off-page phase finishes", type: "toggle", dflt: false,
-                  help: "Uses the desktop notification service only when this timer is not on the visible Hub screen." } ] },
+                  help: "Shows a persistent Hub alert and a high-priority desktop notification when this timer is not on the visible Hub screen." } ] },
             { title: "Momentum (ADHD-friendly)", cols: 1,
               desc: "Small wins to keep you going.", fields: [
                 { key: "dailyGoal", label: "Daily focus goal", type: "number", min: 1, max: 16, step: 1, suffix: " sessions", dflt: 4,
@@ -537,15 +537,17 @@ QtObject {
                 { key: "message", label: "Reminder message", type: "text", placeholder: "Time to stretch!", dflt: "" },
                 { key: "showSuggestion", label: "Suggest a break activity", type: "toggle", dflt: true,
                   help: "Shows a small “try this” idea when a break is due." },
+                { key: "priorityAlertEnabled", label: "Show a full-screen alert", type: "toggle", dflt: true,
+                  help: "Keeps a large visual reminder on the Hub until you acknowledge, snooze, or dismiss it." },
                 { key: "notifyWhenHidden", label: "Notify when due off-page", type: "toggle", dflt: false,
-                  help: "Uses the desktop notification service only when this reminder is not on the visible Hub screen." } ] },
+                  help: "Shows a persistent high-priority desktop notification when this reminder is not on the visible Hub screen." } ] },
             { title: "Active schedule", cols: 2, fields: [
                 { key: "workStartHour", label: "Start", type: "hour", min: 0, max: 23, dflt: 9 },
                 { key: "workEndHour", label: "End", type: "hour", min: 0, max: 23, dflt: 17 },
                 { key: "workDays", label: "Weekdays", type: "weekdays", dflt: "1,2,3,4,5",
                   help: "Choose active shift-start days. Overnight schedules continue into the following morning." } ] },
             titleSection("Break Reminder"),
-            about("A persistent break timer with structured active hours, overnight schedules, snooze, reduced-motion-safe due feedback, and optional off-page desktop notifications.") ] }
+            about("A persistent break timer with structured active hours, overnight schedules, snooze, a full-screen Hub alert, reduced-motion-safe feedback, and optional off-page desktop notifications.") ] }
 
         case "countdown": return { sections: [
             { title: "Event", cols: 2, fields: [
@@ -633,7 +635,7 @@ QtObject {
                         + "It is never shown as missed or overdue." },
                 { key: "notifyWhenHidden", label: "Notify when a dose becomes due",
                   type: "toggle", dflt: false,
-                  help: "Optional desktop reminder while this Hub screen is not visible." },
+                  help: "Shows a persistent Hub alert and high-priority desktop notification while this Hub screen is not visible." },
                 { key: "notificationDetails", label: "Include the dose name in notifications",
                   type: "toggle", dflt: false,
                   visibleWhen: { key: "notifyWhenHidden", equals: true },

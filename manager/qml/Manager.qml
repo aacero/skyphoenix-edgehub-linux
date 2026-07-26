@@ -2239,6 +2239,7 @@ ApplicationWindow {
                                 Keys.onReturnPressed: managerPresetCard.previewPreset()
                                 function previewPreset() {
                                     presetDialog.selectedId = managerPresetCard.modelData.id
+                                    return true
                                 }
                                 RowLayout {
                                     id: presetRow
