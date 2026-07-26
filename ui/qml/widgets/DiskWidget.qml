@@ -169,7 +169,7 @@ WidgetChrome {
     // half-cell is told apart by the box (~344-416px short side vs ~690px+).
     readonly property bool micro: sizeClass === "compact" && Math.min(width, height) < 480
     readonly property bool horiz: sizeClass === "wide"
-    readonly property bool shortWide: horiz && height < 380
+    readonly property bool shortWide: horiz && height < 460
     readonly property bool roomy: (sizeClass === "tall" || sizeClass === "wide")
                                   && Math.min(width, height) >= 480
     // The detail column earns its place wherever there is room beyond the ring.
@@ -342,7 +342,7 @@ WidgetChrome {
                     Text {
                         text: "↓ Read  " + (w.ioAvailable ? w.humanRate(w.readRate)
                                                          : w.shortWide ? "N/A"
-                                                                       : "Sampling or unsupported")
+                                                                       : "No I/O sample")
                         color: w.ioAvailable ? theme.success : theme.textSecondary
                         font.pixelSize: theme.fontLabel
                         font.family: theme.fontMono
@@ -353,7 +353,7 @@ WidgetChrome {
                     Text {
                         text: "↑ Write  " + (w.ioAvailable ? w.humanRate(w.writeRate)
                                                            : w.shortWide ? "N/A"
-                                                                         : "Sampling or unsupported")
+                                                                         : "No I/O sample")
                         color: w.ioAvailable ? w.effAccent : theme.textSecondary
                         font.pixelSize: theme.fontLabel
                         font.family: theme.fontMono

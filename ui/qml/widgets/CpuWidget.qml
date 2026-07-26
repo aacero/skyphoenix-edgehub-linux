@@ -131,6 +131,10 @@ WidgetChrome {
         var temperature = (w.showTemp && w.tempAvailable) ? w.temp.toFixed(0) + "°C" : ""
         var state = w.alertLevel === "warning" || w.alertLevel === "critical"
                     ? w.alertText : ""
+        if (w.width < 480 && state === "Critical temperature")
+            state = "Temp critical"
+        else if (w.width < 480 && state === "High temperature")
+            state = "High temp"
         var base = !w.hasExplicitState
                    ? temperature
                    : (temperature.length ? temperature + " · " + w.freshness : w.freshness)

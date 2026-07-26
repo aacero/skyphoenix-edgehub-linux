@@ -16,6 +16,31 @@ Item {
     App.WidgetCatalog { id: catalog }
     App.WidgetSizes { id: sizes }
 
+    readonly property var metricSets: ({
+        nominal: '{"cpu_usage_percent":42.5,"cpu_temp_celsius":55,'
+               + '"ram_usage_percent":63,"ram_total_bytes":34359738368,'
+               + '"ram_used_bytes":21646635008,"cpu_core_count":16,'
+               + '"gpu_usage_percent":30,"gpu_temp_celsius":48,'
+               + '"net_rx_bytes_per_sec":1048576,"net_tx_bytes_per_sec":524288,'
+               + '"disk_total_bytes":1099511627776,"disk_used_bytes":549755813888,'
+               + '"disk_usage_percent":50}',
+        zero: '{"cpu_usage_percent":0,"cpu_temp_celsius":0,'
+            + '"ram_usage_percent":0,"ram_total_bytes":0,"ram_used_bytes":0,'
+            + '"cpu_core_count":0,"gpu_usage_percent":0,'
+            + '"net_rx_bytes_per_sec":0,"net_tx_bytes_per_sec":0,'
+            + '"disk_total_bytes":0,"disk_used_bytes":0,"disk_usage_percent":0}',
+        saturated: '{"cpu_usage_percent":100,"cpu_temp_celsius":110,'
+                 + '"ram_usage_percent":100,"ram_total_bytes":137438953472,'
+                 + '"ram_used_bytes":137438953472,"cpu_core_count":128,'
+                 + '"gpu_usage_percent":100,"gpu_temp_celsius":95,'
+                 + '"net_rx_bytes_per_sec":1250000000,'
+                 + '"net_tx_bytes_per_sec":1250000000,'
+                 + '"disk_total_bytes":8796093022208,'
+                 + '"disk_used_bytes":8796093022208,"disk_usage_percent":100}',
+        empty: '{}'
+    })
+    readonly property var metricStates: ["nominal", "zero", "saturated", "empty"]
+
     UI.WidgetHarness {
         id: harness
         anchors.left: parent.left
@@ -128,14 +153,15 @@ Item {
         property string loadedFile: ""
 
         function initTestCase() {
-            var combinations = 0
+            var projections = 0
             for (var i = 0; i < catalog.items.length; i++)
-                combinations += catalog.items[i].sizes.length * 2
+                projections += catalog.items[i].sizes.length * 2
             verify(catalog.items.length === 30,
                    "matrix is tied to all 30 first-party widgets")
-            verify(combinations >= 288,
-                   "matrix contains every declared size in both orientations; got "
-                   + combinations)
+            compare(projections, 288,
+                    "matrix contains every declared size in both orientations")
+            compare(projections * root.metricStates.length, 1152,
+                    "every projection carries all four metric boundary states")
         }
 
         function test_minimum_rendered_type_data() {
@@ -145,20 +171,25 @@ Item {
                 var file = item.source.toString().split("/").pop()
                 for (var s = 0; s < item.sizes.length; s++) {
                     var size = item.sizes[s]
-                    rows.push({
-                        tag: item.type + "-portrait-" + size,
-                        type: item.type,
-                        file: file,
-                        size: size,
-                        landscape: false
-                    })
-                    rows.push({
-                        tag: item.type + "-landscape-" + size,
-                        type: item.type,
-                        file: file,
-                        size: size,
-                        landscape: true
-                    })
+                    for (var m = 0; m < root.metricStates.length; m++) {
+                        var state = root.metricStates[m]
+                        rows.push({
+                            tag: item.type + "-portrait-" + size + "-" + state,
+                            type: item.type,
+                            file: file,
+                            size: size,
+                            landscape: false,
+                            metrics: state
+                        })
+                        rows.push({
+                            tag: item.type + "-landscape-" + size + "-" + state,
+                            type: item.type,
+                            file: file,
+                            size: size,
+                            landscape: true,
+                            metrics: state
+                        })
+                    }
                 }
             }
             return rows
@@ -180,6 +211,7 @@ Item {
             harness.height = box.height
             harness.expanded = false
             harness.active = false
+            harness.metricsJson = root.metricSets[row.metrics]
             if (harness.item.hasOwnProperty("sizeClass"))
                 harness.item.sizeClass = sizes.classFor(row.size, row.landscape)
             wait(100)

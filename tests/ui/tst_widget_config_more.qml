@@ -121,8 +121,8 @@ Item {
 
         // ── segmented: "Center reading" (unit: percent | gb) ─────────────────
         // Observable: the gauge's centre Text and its supporting line SWAP -
-        // percent mode reads "40%" over "8.0 / 16.0 GiB", gb mode reads "8.0 GiB"
-        // over "40%". Both are rendered Text nodes, captured by exact string.
+        // percent mode reads "40%" over a concise used-memory line, gb mode
+        // reads "8.0 GiB" over "40%". Both are rendered Text nodes.
         function test_unit_field_swaps_the_rendered_centre_reading() {
             var w = ramH.item
             feed({ ram_usage_percent: 40,
@@ -135,8 +135,8 @@ Item {
             compare(g.big, "40%", "precondition: percent mode leads with the percentage")
             verify(findExactText(w, "40%") !== null,
                    "the centre Text renders '40%' by default")
-            verify(g.sub.indexOf("used 8.0") === 0,
-                   "and the supporting line explains the used memory by default")
+            compare(g.sub, "8.0 GiB used",
+                    "the supporting line stays concise when detail cards show availability")
 
             ramH.storeCtl.setSetting("test-instance", "unit", "gb")
 

@@ -309,13 +309,13 @@ Item {
             verify(findText("↑ Write  3.0 MiB/s") !== null)
         }
 
-        function test_activity_reports_sampling_or_unsupported_instead_of_fake_zero() {
+        function test_activity_reports_missing_sample_instead_of_fake_zero() {
             var w = h.item
             set("mountPath", "/data")
             feedMountCatalog(true, false)
             compare(w.ioAvailable, false)
-            verify(findText("↓ Read  Sampling or unsupported") !== null)
-            verify(findText("↑ Write  Sampling or unsupported") !== null)
+            verify(findText("↓ Read  No I/O sample") !== null)
+            verify(findText("↑ Write  No I/O sample") !== null)
         }
 
         function test_capacity_state_and_thresholds_are_not_color_only() {
