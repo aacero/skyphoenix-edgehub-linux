@@ -528,7 +528,6 @@ Item {
 
     function _repaint() {
         s._sig = s._paintSignature()
-        s._seriesRevision++
         cv.requestPaint()
     }
     function requestPaint() {

@@ -185,6 +185,22 @@ Item {
             compare(sl._sig, sl._signature(), "_sig is synced when values are reassigned")
         }
 
+        // A reassignment is already observable by every derived binding. Writing
+        // _seriesRevision from onValuesChanged caused Qt 6.7 to reevaluate those
+        // bindings while they were still being constructed and report a loop.
+        // Reserve the manual revision for genuinely invisible in-place mutation.
+        function test_reassignment_does_not_write_the_manual_revision() {
+            var before = sl._seriesRevision
+            sl.values = [0.25, 0.75]
+            compare(sl._seriesRevision, before,
+                    "observable reassignment must not mutate its own dependency")
+            compare(sl.primaryStats.max, 0.75,
+                    "normal QML dependency tracking still refreshes statistics")
+            wait(150)
+            compare(sl._seriesRevision, before,
+                    "the synced signature prevents a redundant poll revision")
+        }
+
         // In-place mutation (history.push) fires no NOTIFY; the 100ms poll picks it
         // up and re-syncs _sig. This is the core "live sparkline" mechanism.
         function test_in_place_mutation_detected_by_poll() {
