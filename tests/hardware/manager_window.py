@@ -59,19 +59,43 @@ def active_row(path, win_w=None, win_h=None):
     None means NO row is accented, i.e. this is not the Manager. Callers must
     treat that as "lost the window", never as "wrong tab".
 
-    The selected row is the accent (~rgb(237,109,31)); the others are the cream
-    page background (~rgb(255,253,250)).
+    The selected row is the ONE colour outlier. The Manager's Default chrome
+    uses corporate orange, but Dark and Light deliberately follow the Hub's
+    selected accent. Hard-coding orange therefore rejected the real Manager as
+    soon as a user chose blue (or any other accent), disabling every guarded
+    real-input test. The four unselected rows share the sidebar background, so
+    a single row separated from every peer by a conservative RGB distance is
+    the stable identity signal across themes.
     """
+    import math
+
     from PIL import Image
     im = Image.open(path).convert("RGB")
-    hits = []
+    samples = []
     for name, y in ROW_Y.items():
         x = ROW_X
         if 0 <= x < im.size[0] and 0 <= y < im.size[1]:
-            r, g, b = im.getpixel((x, y))
-            if r > 180 and g < 160 and b < 130:
-                hits.append(name)
-    return hits[0] if len(hits) == 1 else (hits or None)
+            samples.append((name, im.getpixel((x, y))))
+    if len(samples) != len(ROW_Y):
+        return None
+
+    def distance(a, b):
+        return math.sqrt(sum((left - right) ** 2
+                             for left, right in zip(a, b)))
+
+    # An outlier must be far from even its closest peer. The background rows
+    # are normally identical, while all shipped accents are comfortably beyond
+    # 40 RGB units from both light and dark sidebar backgrounds.
+    separated = []
+    for index, (name, colour) in enumerate(samples):
+        nearest = min(
+            distance(colour, other)
+            for other_index, (_, other) in enumerate(samples)
+            if other_index != index
+        )
+        if nearest >= 40:
+            separated.append(name)
+    return separated[0] if len(separated) == 1 else None
 
 
 def grab_rect(rect, work, tag="frontcheck"):

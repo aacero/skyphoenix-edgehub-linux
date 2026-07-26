@@ -152,19 +152,39 @@ class TestManagerInputLifecycle(unittest.TestCase):
 
 
 class TestManagerWindowProof(unittest.TestCase):
-    def test_fixed_sidebar_row_is_detected_at_supported_window_heights(self):
+    def test_selected_sidebar_row_is_detected_for_every_manager_accent_mode(self):
         from PIL import Image
 
         with tempfile.TemporaryDirectory() as work:
             for height in (1000, 1300):
-                with self.subTest(height=height):
-                    path = os.path.join(work, "manager-%d.png" % height)
-                    image = Image.new("RGB", (1440, height), (255, 253, 250))
-                    image.putpixel((manager_window.ROW_X,
-                                    manager_window.ROW_Y["Screens"]),
-                                   (237, 109, 31))
+                for accent in ((237, 109, 31), (88, 166, 255)):
+                    with self.subTest(height=height, accent=accent):
+                        path = os.path.join(
+                            work, "manager-%d-%s.png"
+                            % (height, "-".join(str(value) for value in accent)))
+                        image = Image.new("RGB", (1440, height), (22, 27, 34))
+                        image.putpixel((manager_window.ROW_X,
+                                        manager_window.ROW_Y["Screens"]),
+                                       accent)
+                        image.save(path)
+                        self.assertEqual("Screens", manager_window.active_row(path))
+
+    def test_sidebar_without_one_selected_row_is_not_the_manager(self):
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as work:
+            for variant in ("none", "two"):
+                with self.subTest(variant=variant):
+                    path = os.path.join(work, "manager-%s.png" % variant)
+                    image = Image.new("RGB", (1440, 1000), (22, 27, 34))
+                    if variant == "two":
+                        for row in ("Screens", "Look"):
+                            image.putpixel(
+                                (manager_window.ROW_X,
+                                 manager_window.ROW_Y[row]),
+                                (88, 166, 255))
                     image.save(path)
-                    self.assertEqual("Screens", manager_window.active_row(path))
+                    self.assertIsNone(manager_window.active_row(path))
 
 
 class TestSoakCompleteness(unittest.TestCase):
