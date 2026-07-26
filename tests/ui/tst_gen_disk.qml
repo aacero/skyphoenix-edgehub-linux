@@ -552,6 +552,14 @@ Item {
             var available = null
             eachItem(w, function (n) { if (!available && n.text === "Available") available = n })
             verify(available !== null && available.visible, "the Available row is rendered")
+            compare(w.showCompositionLegend, false,
+                    "narrow tall omits the duplicate composition legend")
+            var legend = null
+            eachItem(w, function (n) {
+                if (!legend && n.objectName === "diskCapacityLegend") legend = n
+            })
+            verify(legend !== null && !legend.visible,
+                   "the narrow tall composition legend is not painted outside its card")
         }
 
         // full (the overlay) - same rich layout as tall, never the micro one.

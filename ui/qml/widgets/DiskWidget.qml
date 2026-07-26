@@ -172,6 +172,7 @@ WidgetChrome {
     readonly property bool shortWide: horiz && height < 460
     readonly property bool roomy: (sizeClass === "tall" || sizeClass === "wide")
                                   && Math.min(width, height) >= 480
+    readonly property bool showCompositionLegend: roomy && !shortWide
     // The detail column earns its place wherever there is room beyond the ring.
     readonly property bool showDetails: sizeClass === "wide" || sizeClass === "tall"
                                         || sizeClass === "large" || sizeClass === "full"
@@ -407,7 +408,12 @@ WidgetChrome {
                     }
                 }
                 RowLayout {
-                    visible: !w.shortWide
+                    objectName: "diskCapacityLegend"
+                    // The narrow tall projection already presents Used,
+                    // Available, Reserved, and Total as readable value rows.
+                    // Keep the labelled composition bar, but omit this duplicate
+                    // legend unless the tile has enough cross-axis room.
+                    visible: w.showCompositionLegend
                     Layout.fillWidth: true
                     Text { text: "USED"; color: w.col(w.v); font.pixelSize: theme.fontLabel; font.bold: true }
                     Item { Layout.fillWidth: true }

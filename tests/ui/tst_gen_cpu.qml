@@ -596,6 +596,12 @@ Item {
                     "the history window remains readable at display distance")
             verify(g.detailRowHeight >= g.detailLabelPixelSize + g.detailValuePixelSize + 19,
                    "the raised typography expands its row instead of clipping")
+            verify(g.historySlotMinimumHeight > g.height * g.sparkFrac,
+                   "detail rows and captions override the legacy fractional history slot")
+            verify(g.historySlotMinimumHeight
+                   >= g.detailRowHeight * g.effectiveDetailRows
+                      + g.historyCaptionPixelSize + hBase.theme.fontMinimum,
+                   "the history slot reserves height for every readable text section")
         }
 
         // wide - ring beside the sparkline in BOTH projections of the class

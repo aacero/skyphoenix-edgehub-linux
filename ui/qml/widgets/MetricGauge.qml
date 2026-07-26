@@ -53,6 +53,20 @@ Item {
                              / effectiveDetailColumns))
     readonly property real detailRowHeight:
         Math.max(52, detailLabelPixelSize + detailValuePixelSize + 19)
+    readonly property real historySlotMinimumHeight: {
+        var height = theme.fontMinimum + 8
+        var visibleSections = 1
+        if (detailItems && detailItems.length > 0) {
+            height += detailRowHeight * effectiveDetailRows
+                    + theme.spacingXs * Math.max(0, effectiveDetailRows - 1)
+            visibleSections += 1
+        }
+        if (historyCaption.length > 0) {
+            height += historyCaptionPixelSize + 8
+            visibleSections += 1
+        }
+        return height + theme.spacingXs * Math.max(0, visibleSections - 1)
+    }
 
     // Per-size layout knobs (see header note). Defaults = the original layout.
     property bool showSpark: true
@@ -171,7 +185,9 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: g.horizontal || (g.sparkFills && !g.horizontal)
             Layout.preferredHeight: (g.horizontal || g.sparkFills) ? -1
-                                  : (g.expanded ? 110 : Math.max(30, g.height * g.sparkFrac))
+                                  : Math.max(g.historySlotMinimumHeight,
+                                             g.expanded ? 110
+                                                        : Math.max(30, g.height * g.sparkFrac))
             ColumnLayout {
                 anchors.fill: parent
                 spacing: theme.spacingXs

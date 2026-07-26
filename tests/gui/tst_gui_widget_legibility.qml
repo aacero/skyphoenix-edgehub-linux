@@ -127,6 +127,58 @@ Item {
                     reasons.push("contentHeight " + Math.ceil(contentHeight)
                                  + " > height " + Math.floor(candidate.height))
 
+                // A Text can fit its own item while an outer card, detail panel,
+                // or row clips that item. Inspect the mapped rectangle against
+                // every non-scrollable clipping ancestor. Flickable/ListView
+                // viewports deliberately clip delegates while scrolling, so
+                // those are not text-layout defects.
+                var ancestor = candidate.parent
+                while (ancestor && ancestor !== node.parent) {
+                    var scrollingViewport = ancestor.contentX !== undefined
+                                            && ancestor.contentY !== undefined
+                                            && ancestor.contentWidth !== undefined
+                                            && ancestor.contentHeight !== undefined
+                    if (ancestor.clip === true && !scrollingViewport
+                            && ancestor.width > 0 && ancestor.height > 0) {
+                        // Map the painted text bounds, not the Text item's
+                        // allocation. A centered Text often fills a layout
+                        // column whose box legitimately reaches a few pixels
+                        // beyond an inner card, while its glyphs remain inside.
+                        var paintedWidth = Math.min(candidate.width, contentWidth)
+                        var paintedHeight = Math.min(candidate.height, contentHeight)
+                        var paintedX = candidate.horizontalAlignment === Text.AlignHCenter
+                                       ? (candidate.width - paintedWidth) / 2
+                                       : candidate.horizontalAlignment === Text.AlignRight
+                                         ? candidate.width - paintedWidth : 0
+                        var paintedY = candidate.verticalAlignment === Text.AlignVCenter
+                                       ? (candidate.height - paintedHeight) / 2
+                                       : candidate.verticalAlignment === Text.AlignBottom
+                                         ? candidate.height - paintedHeight : 0
+                        var topLeft = candidate.mapToItem(
+                            ancestor, paintedX, paintedY)
+                        var bottomRight = candidate.mapToItem(
+                            ancestor, paintedX + paintedWidth,
+                            paintedY + paintedHeight)
+                        var left = Math.min(topLeft.x, bottomRight.x)
+                        var top = Math.min(topLeft.y, bottomRight.y)
+                        var right = Math.max(topLeft.x, bottomRight.x)
+                        var bottom = Math.max(topLeft.y, bottomRight.y)
+                        if (left < -1 || top < -1
+                                || right > ancestor.width + 1
+                                || bottom > ancestor.height + 1) {
+                            reasons.push("mapped box " + Math.floor(left) + ","
+                                         + Math.floor(top) + " to "
+                                         + Math.ceil(right) + ","
+                                         + Math.ceil(bottom)
+                                         + " exceeds clipped ancestor "
+                                         + Math.floor(ancestor.width) + "x"
+                                         + Math.floor(ancestor.height))
+                            break
+                        }
+                    }
+                    ancestor = ancestor.parent
+                }
+
                 if (reasons.length > 0) {
                     violations.push({
                         text: ("" + candidate.text).replace(/\n/g, " ").slice(0, 64),
