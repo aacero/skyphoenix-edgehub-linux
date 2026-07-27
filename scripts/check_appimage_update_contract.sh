@@ -262,7 +262,7 @@ fi
 #    bare sha, which UpdateChecker.qml's SemVer parse rejects - so the AppImage
 #    reports "no comparable version" and NEVER surfaces an update.
 # ─────────────────────────────────────────────────────────────────────────────
-if printf '%s' "$folded_build" | grep -q -- '-DXENEON_VERSION_OVERRIDE="\$VERSION"'; then
+if grep -q -- '-DXENEON_VERSION_OVERRIDE="\$VERSION"' <<<"$folded_build"; then
     pass "build passes -DXENEON_VERSION_OVERRIDE=\$VERSION (appVersion == filename)"
 else
     fail "build-appimage.sh does not pass -DXENEON_VERSION_OVERRIDE=\"\$VERSION\" to cmake"
@@ -278,7 +278,7 @@ fi
 appimage_job="$(awk '/^  appimage:/{f=1} /^  appimage-smoke:/{f=0} f' "$DISTRO_YML")"
 if [ -z "$appimage_job" ]; then
     fail "could not locate the 'appimage:' job in distro.yml (renamed? this check is now blind)"
-elif printf '%s' "$appimage_job" | grep -q 'fetch-depth: 0'; then
+elif grep -q 'fetch-depth: 0' <<<"$appimage_job"; then
     pass "distro.yml appimage job checks out with tags (fetch-depth: 0)"
 else
     fail "distro.yml appimage job does not set fetch-depth: 0"
@@ -353,7 +353,7 @@ fi
 # 6. release.sh must refuse to publish an AppImage without its .zsync. This is
 #    the guard that keeps a "skipped" zsync from being discovered post-publish.
 # ─────────────────────────────────────────────────────────────────────────────
-if printf '%s' "$folded_release" | grep -q 'command -v zsyncmake'; then
+if grep -q 'command -v zsyncmake' <<<"$folded_release"; then
     pass "release.sh preflights zsyncmake"
 else
     fail "release.sh no longer preflights zsyncmake - an AppImage could publish without its .zsync"
@@ -515,9 +515,9 @@ fi
 release_cmake="$(printf '%s\n' "$folded_release" | grep '^[[:space:]]*cmake -B "$BUILD_DIR"' | head -1)"
 if [ -z "$release_cmake" ]; then
     fail "could not locate release.sh's CMake configure command"
-elif printf '%s' "$release_cmake" | grep -Fq -- '-S "$RELEASE_SOURCE_DIR"' \
-    && printf '%s' "$release_cmake" | grep -q -- '-DXENEON_QA_HOOKS=OFF' \
-    && ! printf '%s' "$release_cmake" | grep -q -- '-DXENEON_QA_HOOKS=ON'; then
+elif grep -Fq -- '-S "$RELEASE_SOURCE_DIR"' <<<"$release_cmake" \
+    && grep -q -- '-DXENEON_QA_HOOKS=OFF' <<<"$release_cmake" \
+    && ! grep -q -- '-DXENEON_QA_HOOKS=ON' <<<"$release_cmake"; then
     pass "release CMake uses the verified snapshot and forces XENEON_QA_HOOKS=OFF"
 else
     fail "release CMake does not use the verified snapshot with XENEON_QA_HOOKS=OFF"

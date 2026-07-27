@@ -333,7 +333,8 @@ WidgetChrome {
             // Text.HorizontalFit can leave implicitHeight based on the
             // pre-fit font (141 px for a 60 px painted line). Constrain the
             // layout through a neutral wrapper so the short-wide column is not
-            // centered as though it were much taller.
+            // centered as though it were much taller. Fit both axes inside the
+            // wrapper because font ascent varies between supported families.
             implicitHeight: w.clockTimeBoxHeight
             Layout.minimumHeight: w.clockTimeBoxHeight
             Layout.preferredHeight: w.clockTimeBoxHeight
@@ -349,9 +350,10 @@ WidgetChrome {
                 // shared binding bounds the time by the tile height so that the
                 // complete stack remains inside the clipped content body.
                 font.pixelSize: w.clockTimePixelSize
-                fontSizeMode: Text.HorizontalFit
+                fontSizeMode: Text.Fit
                 minimumPixelSize: theme.fontMinimum
-                elide: Text.ElideRight
+                maximumLineCount: 1
+                wrapMode: Text.NoWrap
                 font.bold: true
                 font.family: theme.fontMono
                 color: theme.textPrimary
@@ -400,35 +402,56 @@ WidgetChrome {
                     // Let the supporting cards yield space continuously as a
                     // short-wide preview approaches its physical tile height.
                     Layout.preferredHeight: w.sizeClass === "wide"
-                                            ? w.wideContextCardHeight : 58
+                                            ? w.wideContextCardHeight
+                                            : Math.max(58,
+                                                contextLabel.implicitHeight
+                                                + contextValue.implicitHeight
+                                                + contextCardLayout.rowSpacing + 12)
                     radius: theme.radiusSm
                     color: Qt.rgba(theme.cardBackgroundAlt.r, theme.cardBackgroundAlt.g,
                                    theme.cardBackgroundAlt.b, 0.72)
                     border.width: 1
                     border.color: theme.cardBorder
-                    ColumnLayout {
+                    GridLayout {
+                        id: contextCardLayout
                         anchors.fill: parent
                         anchors.margins: 6
-                        spacing: 1
+                        columns: w.sizeClass === "wide" ? 2 : 1
+                        columnSpacing: 6
+                        rowSpacing: 1
                         Text {
+                            id: contextLabel
                             Layout.fillWidth: true
+                            Layout.fillHeight: true
                             text: modelData.label
                             color: theme.textTertiary
                             font.pixelSize: theme.fontMinimum
                             font.bold: true
                             font.letterSpacing: 0.6
-                            horizontalAlignment: Text.AlignHCenter
-                            elide: Text.ElideRight
+                            horizontalAlignment: w.sizeClass === "wide"
+                                                 ? Text.AlignLeft : Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            fontSizeMode: Text.Fit
+                            minimumPixelSize: theme.fontMinimum
+                            maximumLineCount: 1
+                            wrapMode: Text.NoWrap
                         }
                         Text {
+                            id: contextValue
                             Layout.fillWidth: true
+                            Layout.fillHeight: true
                             text: modelData.value
                             color: w.effAccent
                             font.pixelSize: theme.fontLabel
                             font.family: theme.fontMono
                             font.bold: true
-                            horizontalAlignment: Text.AlignHCenter
-                            elide: Text.ElideRight
+                            horizontalAlignment: w.sizeClass === "wide"
+                                                 ? Text.AlignRight : Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            fontSizeMode: Text.Fit
+                            minimumPixelSize: theme.fontMinimum
+                            maximumLineCount: 1
+                            wrapMode: Text.NoWrap
                         }
                     }
                 }
