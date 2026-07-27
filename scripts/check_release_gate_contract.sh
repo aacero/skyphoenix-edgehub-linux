@@ -392,6 +392,18 @@ for critical_guard in \
     fi
 done
 
+if grep -Fq \
+        'release_tmp_root="$(mktemp -d "/tmp/xe-release-${evidence_commit:0:8}.XXXXXX")"' \
+        "$STRICT_RUNNER" \
+        && grep -Fq 'export TMPDIR="$release_tmp_root"' "$STRICT_RUNNER" \
+        && grep -Fq 'trap cleanup_release_tmp_root EXIT' "$STRICT_RUNNER" \
+        && ! grep -Fq 'export TMPDIR="$AUDIT_ROOT/work"' "$STRICT_RUNNER"; then
+    echo "  ok   strict transient sandboxes use a private short socket-safe path"
+else
+    echo "  FAIL strict transient sandboxes can exceed the Unix socket path limit"
+    fail=$((fail + 1))
+fi
+
 release_io_repo="$(mktemp -d "${TMPDIR:-/tmp}/xe-release-io.XXXXXX")"
 mkdir -p "$release_io_repo/scripts/lib" "$release_io_repo/fail-bin"
 cp "$STRICT_RUNNER" "$release_io_repo/scripts/run_release_tests.sh"

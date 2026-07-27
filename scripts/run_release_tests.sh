@@ -151,9 +151,36 @@ AUDIT_ROOT="$PROJECT_DIR/artifacts/$evidence_commit/$audit_run_id"
 }
 mkdir -m 0700 -p "$AUDIT_ROOT/logs" "$AUDIT_ROOT/work" \
     || release_die "could not create the release evidence directory"
+
+# TMPDIR holds disposable test sandboxes, not retained evidence. Keep it in a
+# short, private tmpfs path: Unix-domain sockets allow only 107 pathname bytes,
+# while the commit-keyed evidence path is intentionally much longer. Pointing
+# TMPDIR at $AUDIT_ROOT/work makes otherwise-correct CTest, D-Bus, and hardware
+# sandboxes fail before testing behavior.
+release_tmp_root=""
+cleanup_release_tmp_root() {
+    [ -n "$release_tmp_root" ] || return 0
+    case "$release_tmp_root" in
+        "/tmp/xe-release-${evidence_commit:0:8}."??????)
+            if [ -d "$release_tmp_root" ] && [ ! -L "$release_tmp_root" ]; then
+                rm -rf -- "$release_tmp_root"
+            fi
+            ;;
+        *)
+            printf 'WARNING: refusing to remove unexpected release temp path: %s\n' \
+                "$release_tmp_root" >&2
+            ;;
+    esac
+    release_tmp_root=""
+}
+trap cleanup_release_tmp_root EXIT
+release_tmp_root="$(mktemp -d "/tmp/xe-release-${evidence_commit:0:8}.XXXXXX")" \
+    || release_die "could not create the short release temp root"
+chmod 0700 "$release_tmp_root" \
+    || release_die "could not protect the short release temp root"
 export XENEON_AUDIT_RUN_DIR="$AUDIT_ROOT"
 export QLOGDIR="$AUDIT_ROOT/qml-ui-logs"
-export TMPDIR="$AUDIT_ROOT/work"
+export TMPDIR="$release_tmp_root"
 printf 'Strict release evidence: %s\n' "$AUDIT_ROOT"
 
 export XENEON_RELEASE_GATE=1
@@ -681,6 +708,7 @@ PY
 rm -rf -- "$AUDIT_ROOT/work" \
     || release_die "could not remove transient release work files"
 unset TMPDIR
+cleanup_release_tmp_root
 unset QLOGDIR
 unset XENEON_AUDIT_RUN_DIR
 bash "$AUDIT_FINALIZER" "$AUDIT_ROOT" \
