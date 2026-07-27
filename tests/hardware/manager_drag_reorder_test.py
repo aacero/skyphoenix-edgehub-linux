@@ -92,6 +92,9 @@ def main():
         dt.assert_rect_on_a_desktop_screen(rect, h.edge_name)
         name, x, y, w, hgt = rect
         print("  Manager window: %s %dx%d+%d+%d" % (name, w, hgt, x, y))
+        if not mw.activate_exact_manager(mgr.pid, rect, work):
+            print("!! exact Manager window could not be raised and verified")
+            return 2
 
         guard = input_guard.ActivityGuard.connect()
         guard.require_user_idle()
@@ -106,7 +109,7 @@ def main():
         # them there. It was not, once: a browser raised itself over the
         # Manager and five clicks went into a docs page. Refuses to emit
         # unless a sidebar row carries the accent. See manager_window.py.
-        p = mw.guard_pointer(p, rect, work)
+        p = mw.guard_pointer(p, rect, work, mgr.pid)
 
         def grab(tag):
             path = os.path.join(work, tag + ".png")

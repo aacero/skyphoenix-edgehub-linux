@@ -80,6 +80,9 @@ def main():
         dt.assert_rect_on_a_desktop_screen(rect, h.edge_name)
         name, x, y, w, hgt = rect
         print("  Manager window: %s %dx%d+%d+%d" % (name, w, hgt, x, y))
+        if not mw.activate_exact_manager(mgr.pid, rect, work):
+            print("!! exact Manager window could not be raised and verified")
+            return 2
 
         guard = input_guard.ActivityGuard.connect()
         guard.require_user_idle()
@@ -94,7 +97,7 @@ def main():
         # them there. It was not, once: a browser raised itself over the
         # Manager and five clicks went into a docs page. Refuses to emit
         # unless a sidebar row carries the accent. See manager_window.py.
-        p = mw.guard_pointer(p, rect, work)
+        p = mw.guard_pointer(p, rect, work, mgr.pid)
 
         def click(fx, fy, settle=0.6):
             p.tap(x + int(w * fx), y + int(hgt * fy)); time.sleep(settle)
@@ -124,7 +127,10 @@ def main():
         # ── select each screen chip; the hub must follow ────────────────────
         # Visit out of order so a pass cannot be "it was already there".
         for label, idx in [("Three", 2), ("Home", 0), ("Four", 3), ("Two", 1)]:
-            invoked = mw.invoke_accessible("Screen: " + label)
+            mw.activate_exact_manager(mgr.pid, rect, work)
+            invoked = mw.invoke_accessible(
+                "Screen: " + label, manager_pid=mgr.pid
+            )
             ok, got = wait_page(idx) if invoked else (False, h.hub_current_page())
             grab("select-%d-%s" % (idx, label))
             h.check("mirror-select-%s" % label, ok,
@@ -133,10 +139,11 @@ def main():
         # ── add a screen via the Manager; the hub must follow to the NEW one ─
         # Select the last screen first so the add is unambiguous, then click the
         # "+" chip (just right of the last screen chip).
-        mw.invoke_accessible("Screen: Four")
+        mw.activate_exact_manager(mgr.pid, rect, work)
+        mw.invoke_accessible("Screen: Four", manager_pid=mgr.pid)
         wait_page(3)
         n_before = len(h.get_state().get("pages", []))
-        invoked = mw.invoke_accessible("Add screen")
+        invoked = mw.invoke_accessible("Add screen", manager_pid=mgr.pid)
         time.sleep(1.0)
         n_after = len(h.get_state().get("pages", []))
         added = invoked and n_after > n_before

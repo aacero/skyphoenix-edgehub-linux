@@ -286,7 +286,7 @@ esac
 for command_name in \
     bash cargo cargo-llvm-cov git gitleaks ip kscreen-doctor rustup \
     kwin_wayland python3 readlink sha256sum spectacle stat tee timeout unshare busctl \
-    gpg; do
+    gpg wmctrl; do
     require_command "$command_name"
 done
 if rustup component list --toolchain "$RUSTUP_TOOLCHAIN" --installed 2>/dev/null \

@@ -141,6 +141,9 @@ def main():
         dt.assert_rect_on_a_desktop_screen(rect, h.edge_name)
         name, x, y, w, hgt = rect
         print("  Manager window: %s %dx%d+%d+%d" % (name, w, hgt, x, y))
+        if not mw.activate_exact_manager(mgr.pid, rect, work):
+            print("!! exact Manager window could not be raised and verified")
+            return 2
 
         front = mw.grab_rect(rect, work, "initial-front")
         if not front:

@@ -267,6 +267,12 @@ def main():
         dt.assert_rect_on_a_desktop_screen(rect, h.edge_name)
         h.check("manager-rect-verified", True, "%s %dx%d+%d+%d"
                 % (rect[0], rect[3], rect[4], rect[1], rect[2]))
+        if not mw.activate_exact_manager(mgr.pid, rect, work):
+            h.check("manager-window-activated", False,
+                    "exact Manager PID could not be raised and screen-verified")
+            return 1
+        h.check("manager-window-activated", True,
+                "exact Manager PID raised; selected sidebar row is visible")
 
         gui = ManagerGui(h, rect, work)
         gui.shot("00-manager-open")
@@ -296,7 +302,11 @@ def main():
         tabs = ["Screens", "Look", "Images", "Device", "About"]
         sigs = {}
         for i, name in enumerate(tabs):
-            if not mw.invoke_accessible(name):
+            if not mw.activate_exact_manager(mgr.pid, rect, work):
+                h.check("manager-window-stayed-in-front", False,
+                        "exact Manager window could not be restored before '%s'" % name)
+                break
+            if not mw.invoke_accessible(name, manager_pid=mgr.pid):
                 h.check("manager-window-stayed-in-front", False,
                         "accessible tab '%s' was unavailable - no event emitted" % name)
                 break
@@ -349,7 +359,8 @@ def main():
         # widget lands at a specific pixel (that is what the offscreen suite is
         # for); we assert that driving the real Manager mutates the real hub.
         before = h.get_state() or {}
-        mw.invoke_accessible("Screens")
+        mw.activate_exact_manager(mgr.pid, rect, work)
+        mw.invoke_accessible("Screens", manager_pid=mgr.pid)
         gui.shot("integration-before")
         time.sleep(1.0)
         after = h.get_state() or {}

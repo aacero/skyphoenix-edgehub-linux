@@ -179,6 +179,7 @@ EXPECTED_PREFLIGHT_CHECKS = [
     "unshare",
     "busctl",
     "gpg",
+    "wmctrl",
     "llvm-tools-preview for pinned Rust 1.86.0",
     "cmake",
     "ctest",

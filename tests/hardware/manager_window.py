@@ -40,6 +40,7 @@ USE
 pointer and only interposes on the emitting calls.
 """
 import os
+import subprocess
 import time
 
 import desktop_target as dt
@@ -127,7 +128,7 @@ def is_in_front(rect, work):
     return ok
 
 
-def _manager_accessible():
+def _manager_accessible(manager_pid=None):
     """Return the live Manager application from AT-SPI, or None.
 
     Semantic accessibility actions are safer than screen coordinates: the action
@@ -142,7 +143,15 @@ def _manager_accessible():
         desktop = Atspi.get_desktop(0)
         for i in range(desktop.get_child_count()):
             app = desktop.get_child_at_index(i)
-            if app and app.get_name() == "Xeneon Edge Manager":
+            if not app or app.get_name() != "Xeneon Edge Manager":
+                continue
+            if manager_pid is not None:
+                try:
+                    if app.get_process_id() != manager_pid:
+                        continue
+                except Exception:
+                    continue
+            if app:
                 return app, Atspi
     except Exception:
         return None, None
@@ -165,11 +174,11 @@ def _find_accessible(node, name, atspi):
     return None
 
 
-def invoke_accessible(name, timeout=3.0):
+def invoke_accessible(name, timeout=3.0, manager_pid=None):
     """Invoke one exact, visible, enabled Manager control by accessible name."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        app, atspi = _manager_accessible()
+        app, atspi = _manager_accessible(manager_pid)
         target = _find_accessible(app, name, atspi) if app else None
         if target:
             try:
@@ -190,6 +199,72 @@ def invoke_accessible(name, timeout=3.0):
     return False
 
 
+def _wmctrl_manager_window(manager_pid):
+    """Return the one X11 Manager window ID owned by manager_pid, or None.
+
+    The Manager deliberately uses XWayland in a KDE Wayland session so its
+    non-Edge placement can be deterministic. wmctrl can therefore activate the
+    exact top-level window by X11 ID. Both PID and title must match, and an
+    ambiguous result is rejected.
+    """
+    try:
+        result = subprocess.run(
+            ["wmctrl", "-lpGx"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+
+    matches = []
+    for line in result.stdout.splitlines():
+        fields = line.split(None, 9)
+        if len(fields) < 10:
+            continue
+        window_id, _, raw_pid, _, _, _, _, _, _, title = fields
+        try:
+            pid = int(raw_pid)
+        except ValueError:
+            continue
+        if pid == manager_pid and title == "EdgeHub Manager":
+            matches.append(window_id)
+    return matches[0] if len(matches) == 1 else None
+
+
+def activate_exact_manager(manager_pid, rect, work, timeout=5.0):
+    """Raise only the launched Manager and prove its sidebar is visible.
+
+    This is window activation, not pointer or keyboard injection. It is safe to
+    retry because the target comes from an exact PID plus exact window-title
+    match. The function still fails closed unless the post-activation screen
+    proof sees one selected Manager sidebar row in the logged rectangle.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        window_id = _wmctrl_manager_window(manager_pid)
+        if window_id:
+            try:
+                result = subprocess.run(
+                    ["wmctrl", "-i", "-a", window_id],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+            except (OSError, subprocess.SubprocessError):
+                result = None
+            if result and result.returncode == 0:
+                time.sleep(0.25)
+                if is_in_front(rect, work):
+                    return True
+        time.sleep(0.1)
+    return False
+
+
 class GuardedPointer:
     """Wraps a VPointer and refuses to emit unless the Manager is in front.
 
@@ -198,10 +273,11 @@ class GuardedPointer:
     lands in someone else's window.
     """
 
-    _EMITTERS = ("tap", "press", "move", "release", "click", "drag")
+    _EMITTERS = ("tap", "press", "move", "release", "click", "drag", "swipe")
 
-    def __init__(self, pointer, rect, work):
+    def __init__(self, pointer, rect, work, manager_pid=None):
         self._p, self._rect, self._work = pointer, rect, work
+        self._manager_pid = manager_pid
         self.refused = 0
 
     def __getattr__(self, name):
@@ -210,7 +286,12 @@ class GuardedPointer:
             return attr
 
         def guarded(*a, **kw):
-            if not is_in_front(self._rect, self._work):
+            front = is_in_front(self._rect, self._work)
+            if (not front and self._manager_pid is not None):
+                front = activate_exact_manager(
+                    self._manager_pid, self._rect, self._work
+                )
+            if not front:
                 self.refused += 1
                 print("  REFUSED %s%r: the Manager is not the window in its own "
                       "rect (occluded?). Emitting nothing." % (name, a), flush=True)
@@ -219,5 +300,5 @@ class GuardedPointer:
         return guarded
 
 
-def guard_pointer(pointer, rect, work):
-    return GuardedPointer(pointer, rect, work)
+def guard_pointer(pointer, rect, work, manager_pid=None):
+    return GuardedPointer(pointer, rect, work, manager_pid)

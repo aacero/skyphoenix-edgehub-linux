@@ -401,6 +401,65 @@ class TestManagerInputLifecycle(unittest.TestCase):
 
 
 class TestManagerWindowProof(unittest.TestCase):
+    def test_wmctrl_window_requires_one_exact_pid_and_title_match(self):
+        listing = (
+            "0x012  0 222 1840 1510 1440 1300 manager.host host EdgeHub Manager\n"
+            "0x013  0 333 0 0 800 600 browser.host host EdgeHub Manager\n"
+        )
+        result = SimpleNamespace(returncode=0, stdout=listing)
+        with mock.patch.object(
+                manager_window.subprocess, "run", return_value=result):
+            self.assertEqual(
+                "0x012", manager_window._wmctrl_manager_window(222)
+            )
+
+    def test_wmctrl_window_rejects_ambiguous_pid_matches(self):
+        listing = (
+            "0x012  0 222 1840 1510 1440 1300 manager.host host EdgeHub Manager\n"
+            "0x014  0 222 1900 1550 400 300 manager.host host EdgeHub Manager\n"
+        )
+        result = SimpleNamespace(returncode=0, stdout=listing)
+        with mock.patch.object(
+                manager_window.subprocess, "run", return_value=result):
+            self.assertIsNone(manager_window._wmctrl_manager_window(222))
+
+    def test_wmctrl_window_rejects_title_only_match(self):
+        listing = (
+            "0x012  0 999 1840 1510 1440 1300 manager.host host EdgeHub Manager\n"
+        )
+        result = SimpleNamespace(returncode=0, stdout=listing)
+        with mock.patch.object(
+                manager_window.subprocess, "run", return_value=result):
+            self.assertIsNone(manager_window._wmctrl_manager_window(222))
+
+    def test_guarded_swipe_raises_exact_manager_before_emitting(self):
+        pointer = SimpleNamespace(swipe=mock.Mock(return_value=True))
+        guarded = manager_window.guard_pointer(
+            pointer, ("DP-1", 10, 20, 300, 400), "/tmp", 222
+        )
+        with mock.patch.object(
+                manager_window, "is_in_front", return_value=False), \
+             mock.patch.object(
+                 manager_window, "activate_exact_manager", return_value=True
+             ) as activate:
+            self.assertTrue(guarded.swipe(1, 2, 3, 4))
+        activate.assert_called_once()
+        pointer.swipe.assert_called_once_with(1, 2, 3, 4)
+
+    def test_guarded_swipe_refuses_when_exact_manager_cannot_be_verified(self):
+        pointer = SimpleNamespace(swipe=mock.Mock(return_value=True))
+        guarded = manager_window.guard_pointer(
+            pointer, ("DP-1", 10, 20, 300, 400), "/tmp", 222
+        )
+        with mock.patch.object(
+                manager_window, "is_in_front", return_value=False), \
+             mock.patch.object(
+                 manager_window, "activate_exact_manager", return_value=False
+             ):
+            self.assertFalse(guarded.swipe(1, 2, 3, 4))
+        pointer.swipe.assert_not_called()
+        self.assertEqual(1, guarded.refused)
+
     def test_selected_sidebar_row_is_detected_for_every_manager_accent_mode(self):
         from PIL import Image
 

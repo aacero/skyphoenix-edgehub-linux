@@ -101,6 +101,9 @@ def main():
         dt.assert_rect_on_a_desktop_screen(rect, h.edge_name)
         name, x, y, w, hgt = rect
         print("  Manager window: %s %dx%d+%d+%d" % (name, w, hgt, x, y))
+        if not mw.activate_exact_manager(mgr.pid, rect, work):
+            print("!! exact Manager window could not be raised and verified")
+            return 2
 
         guard = input_guard.ActivityGuard.connect()
         guard.require_user_idle()
@@ -116,7 +119,7 @@ def main():
         # them there. It was not, once: a browser raised itself over the
         # Manager and five clicks went into a docs page. Refuses to emit
         # unless a sidebar row carries the accent. See manager_window.py.
-        p = mw.guard_pointer(p, rect, work)
+        p = mw.guard_pointer(p, rect, work, mgr.pid)
 
         def click(fx, fy, settle=0.7):
             p.tap(x + int(w * fx), y + int(hgt * fy)); time.sleep(settle)
@@ -143,9 +146,12 @@ def main():
             """
             before = widgets_total(h.get_state())
             for _attempt in range(2):
-                if not mw.invoke_accessible("Add widget"):
+                mw.activate_exact_manager(mgr.pid, rect, work)
+                if not mw.invoke_accessible(
+                        "Add widget", manager_pid=mgr.pid):
                     continue
-                if not mw.invoke_accessible("Add widget: Network"):
+                if not mw.invoke_accessible(
+                        "Add widget: Network", manager_pid=mgr.pid):
                     continue
                 for _ in range(15):            # up to ~3s for propagation
                     time.sleep(0.2)
