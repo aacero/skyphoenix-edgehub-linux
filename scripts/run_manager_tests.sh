@@ -54,12 +54,11 @@ for entry in "${SUITES[@]}"; do
     echo "==> $label  ($script)"
     echo "==================================================================="
     # Never leave a previous suite's binaries holding the Edge or the socket.
-    # `-x` for the hub (comm is exactly 15 chars); a [b]racket pattern for the
-    # Manager, whose name exceeds the 15-char comm limit - and `pkill -f` on the
-    # bare name matches THIS script's own command line and kills the runner
-    # (exit 144, learned the hard way).
+    # Linux truncates comm to 15 characters, so the Manager is reported as
+    # xeneon-edge-man. Match that exact kernel name instead of using `pkill -f`.
+    # A command-line pattern can match and terminate the parent audit shell.
     pkill -TERM -x xeneon-edge-hub 2>/dev/null
-    pkill -TERM -f "[x]eneon-edge-manager" 2>/dev/null
+    pkill -TERM -x xeneon-edge-man 2>/dev/null
     sleep 2
 
     names+=("$label")
