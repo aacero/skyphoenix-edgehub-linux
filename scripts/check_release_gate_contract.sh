@@ -411,7 +411,9 @@ else
     fail=$((fail + 1))
 fi
 if printf '%s\n' "$release_preflight" \
-        | grep -Fq 'rustup component list --toolchain "$RUSTUP_TOOLCHAIN"' \
+        | grep -Fq 'rustup component list --toolchain "$RUSTUP_TOOLCHAIN" --installed' \
+        && printf '%s\n' "$release_preflight" \
+        | grep -Fq "grep -Eq '^llvm-tools(-|$)'" \
         && printf '%s\n' "$release_preflight" \
         | grep -Fq 'llvm-tools-preview is missing for pinned Rust'; then
     echo "  ok   release preflight rejects missing pinned llvm-tools before long suites"

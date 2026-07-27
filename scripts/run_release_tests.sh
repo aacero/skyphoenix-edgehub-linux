@@ -289,8 +289,8 @@ for command_name in \
     gpg; do
     require_command "$command_name"
 done
-if rustup component list --toolchain "$RUSTUP_TOOLCHAIN" 2>/dev/null \
-        | grep -Eq '^llvm-tools[^[:space:]]*[[:space:]]+\\(installed\\)$'; then
+if rustup component list --toolchain "$RUSTUP_TOOLCHAIN" --installed 2>/dev/null \
+        | grep -Eq '^llvm-tools(-|$)'; then
     preflight_ok "llvm-tools-preview for pinned Rust 1.86.0"
 else
     preflight_bad "llvm-tools-preview is missing for pinned Rust 1.86.0"
