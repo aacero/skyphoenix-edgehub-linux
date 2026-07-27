@@ -13,6 +13,8 @@ from rotation_frame_probe import (  # noqa: E402
     dense_commit_cluster,
     parse_buffer_commits,
     qualify_transition,
+    rotation_document,
+    ROTATION_WIDGET_TYPES,
     summarise_transition,
     WaylandCommitObserver,
 )
@@ -35,6 +37,25 @@ def calibrated_callbacks(
 
 
 class RotationFrameProbeTest(unittest.TestCase):
+    def test_rotation_fixture_is_full_and_free_of_metric_driven_widgets(self):
+        metric_driven = {
+            "cpu", "gpu", "ram", "net", "disk", "sensors", "packages",
+            "sinceinstall", "clock", "analog", "moon",
+        }
+        self.assertEqual(len(ROTATION_WIDGET_TYPES), 14)
+        self.assertTrue(metric_driven.isdisjoint(ROTATION_WIDGET_TYPES))
+        document = rotation_document()
+        tiles = document["pages"][0]["tiles"]
+        self.assertEqual(len(tiles), 14)
+        self.assertEqual(
+            tuple(tile["type"] for tile in tiles),
+            ROTATION_WIDGET_TYPES,
+        )
+        self.assertEqual(
+            document["appearance"]["orientation"],
+            "auto",
+        )
+
     def test_parse_tracks_non_null_buffer_per_surface(self):
         lines = [
             "[ 100.000] -> wl_surface#4.attach(wl_buffer#9, 0, 0)",

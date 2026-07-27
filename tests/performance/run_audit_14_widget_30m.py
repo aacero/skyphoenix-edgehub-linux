@@ -103,7 +103,11 @@ def _hub_environment(instance: E2E) -> dict[str, str]:
     return environment
 
 
-def _verify_live_load(instance: E2E) -> dict:
+def _verify_live_load(
+    instance: E2E,
+    expected_widget_types: Sequence[str] = AUDIT_WIDGET_TYPES,
+) -> dict:
+    expected_widget_types = tuple(expected_widget_types)
     state = instance.get_state()
     pages = state.get("pages")
     if not isinstance(pages, list) or len(pages) != 1:
@@ -114,9 +118,9 @@ def _verify_live_load(instance: E2E) -> dict:
     observed = tuple(
         item.get("type") if isinstance(item, dict) else None for item in tiles
     )
-    if observed != AUDIT_WIDGET_TYPES:
+    if observed != expected_widget_types:
         raise MeasurementError(
-            f"live widget manifest differs: expected {AUDIT_WIDGET_TYPES}, "
+            f"live widget manifest differs: expected {expected_widget_types}, "
             f"observed {observed}"
         )
     sizes = [

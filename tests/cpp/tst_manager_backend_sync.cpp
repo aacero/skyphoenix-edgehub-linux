@@ -1025,6 +1025,32 @@ private slots:
         QCOMPARE(b.hubCurrentPage(), 2);
     }
 
+    void newestUnackedPageRequestOwnsItsTimeoutFallback() {
+        FakeHub hub;
+        hub.getReply = testState("page-timeout", 1);
+        hub.holdGet = true;
+        hub.holdActivePageAcks = true;
+        QVERIFY(hub.start());
+        ManagerBackend b;
+        QTRY_VERIFY_WITH_TIMEOUT(b.hubConnected(), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(hub.client != nullptr, 5000);
+
+        b.setHubActivePage(1);
+        b.setHubActivePage(2);
+        QTRY_COMPARE_WITH_TIMEOUT(hub.activePageRequestIds.size(), 2, 5000);
+        QCOMPARE(b.pendingHubPageForTest(), 2);
+        QCOMPARE(b.hubCurrentPage(), 2);
+
+        // The older timer must not clear the newer request. The newer request's
+        // own timeout then releases the optimistic pin and asks the Hub for its
+        // authoritative page, without changing the visible page speculatively.
+        QTest::qWait(1900);
+        QCOMPARE(b.pendingHubPageForTest(), 2);
+        QTRY_COMPARE_WITH_TIMEOUT(b.pendingHubPageForTest(), -1, 1000);
+        QCOMPARE(b.hubCurrentPage(), 2);
+        QVERIFY(hub.getPending);
+    }
+
     void queuedAndLivePanelStateRemainDistinct() {
         FakeHub hub;
         hub.getReply = testState("baseline", 1);

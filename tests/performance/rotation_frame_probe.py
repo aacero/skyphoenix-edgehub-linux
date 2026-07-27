@@ -37,7 +37,7 @@ from resource_probe import (  # noqa: E402
     write_error_report,
     write_json_atomic,
 )
-from run_audit_14_widget_30m import audit_document, _verify_live_load  # noqa: E402
+from run_audit_14_widget_30m import _appearance, _verify_live_load  # noqa: E402
 from run_hub_profiles import validate_candidate_build  # noqa: E402
 
 
@@ -65,6 +65,44 @@ ROTATION_MIN_CALLBACK_RATE_RATIO = 0.70
 ROTATION_P95_MAX_REFRESH_MULTIPLIER = 2.0
 ROTATION_MAX_MISSED_REFRESH_RATIO = 0.20
 ROTATION_MAX_OBSERVER_LAG_SPREAD_MS = 2.0
+
+# The performance audit deliberately uses widgets driven by the two-second
+# metrics poll. That is correct for resource measurement but wrong for
+# attributing the end of one rotation animation: an unrelated gauge update can
+# keep the single Wayland surface committing after rotation has finished. Use a
+# full 14-widget screen whose idle state has no periodic metric-driven repaint,
+# so the dense frame cluster measures the 560/570ms orientation effect itself.
+ROTATION_WIDGET_TYPES = (
+    "tasks",
+    "notes",
+    "habit",
+    "hydration",
+    "meds",
+    "braindump",
+    "routine",
+    "httpjson",
+    "kpi",
+    "calendar",
+    "weather",
+    "quote",
+    "rightnow",
+    "notes",
+)
+
+
+def rotation_document() -> dict:
+    tiles = [
+        harness.tile(
+            f"rotation-{index:02d}-{widget}",
+            widget,
+            "0.5x0.5",
+        )
+        for index, widget in enumerate(ROTATION_WIDGET_TYPES)
+    ]
+    return harness.doc(
+        [harness.page("14-widget rotation", tiles)],
+        appearance=_appearance(),
+    )
 
 
 def iso_now() -> str:
@@ -565,7 +603,7 @@ def run(binary: Path, output_dir: Path, cycles: int) -> int:
     candidate = validate_candidate_build(binary)
     instance = E2E(str(output_dir / "work"))
     refresh_hz = active_refresh_hz(instance.edge_name)
-    state = audit_document()
+    state = rotation_document()
     state["appearance"]["orientation"] = "portrait"
     raw_log = output_dir / "wayland.log"
     event_log = output_dir / "wayland-events.jsonl"
@@ -605,7 +643,9 @@ def run(binary: Path, output_dir: Path, cycles: int) -> int:
         else:
             raise MeasurementError("Hub control socket did not become ready")
 
-        observed_load = _verify_live_load(instance)
+        observed_load = _verify_live_load(
+            instance, ROTATION_WIDGET_TYPES
+        )
         time.sleep(1.0)
         transitions = []
         with request_log.open("x", encoding="utf-8", buffering=1) as requests:
