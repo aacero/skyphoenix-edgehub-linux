@@ -7,7 +7,7 @@
       "height": 818,
       "id": "widget-cpu",
       "kind": "widget",
-      "sha256": "4f6783618c07e00d317fc3c1950f540447f043a1ef6e28296b18aa10ac035a20",
+      "sha256": "bd1c47a9f84bb6c688fb40e61dcef6f475806204796f3a3c32ee8600e3b942eb",
       "source": "wsysa_cpu_portrait-1x1.png",
       "width": 696
     },
@@ -17,7 +17,7 @@
       "height": 818,
       "id": "widget-gpu",
       "kind": "widget",
-      "sha256": "6faf44ba0c607a263f52494fd2765a53df3538377502bb7ca548cfacf80a5fa4",
+      "sha256": "d7d8924e2c6c192359f81136a2d5066ba906a1c1fcceb314c3115798c4ca1485",
       "source": "wsysa_gpu_portrait-1x1.png",
       "width": 696
     },
@@ -27,7 +27,7 @@
       "height": 818,
       "id": "widget-ram",
       "kind": "widget",
-      "sha256": "3a829f5f2c9365cebc3b8c09a03034371dd46ce8e7d58b6f47c6c4229f5277f0",
+      "sha256": "a57f678249174a007a8cb8488510154c286cc072c58de13b43ec572c4d749645",
       "source": "wsysa_ram_portrait-1x1.png",
       "width": 696
     },
@@ -37,7 +37,7 @@
       "height": 818,
       "id": "widget-net",
       "kind": "widget",
-      "sha256": "8e873a07f36aa13f1057354b13bdca29063d2a59345ab26a1d5cbe17276c0624",
+      "sha256": "299f997227e7f00ddb6b05c3bdfe90f4a144bf427877bd2ed9ceae0d51281388",
       "source": "wsysb_net_NET-SZ_portrait-1x1.png",
       "width": 696
     },
@@ -57,7 +57,7 @@
       "height": 818,
       "id": "widget-sensors",
       "kind": "widget",
-      "sha256": "f16d8d74fd682ad388b0d856c8427f9fd6f3591ad02b59d8899331489d8454b3",
+      "sha256": "383f251d6c8422e52ebc818ae3513d0bee5c5c0c084be0a02aee394ddbca6ac9",
       "source": "wsysb_sns_SNS-SZ_portrait-1x1.png",
       "width": 696
     },
@@ -67,7 +67,7 @@
       "height": 818,
       "id": "widget-packages",
       "kind": "widget",
-      "sha256": "96378c9814646713ef735973c240b98d233a007a3a4d31424cbb9ee79c98c217",
+      "sha256": "3e34e32b2d4317234be4bbac8f736a60a6c152899a42f4e6fb475ddd3b1a875e",
       "source": "sysc_pkg_sz_portrait-1x1.png",
       "width": 696
     },
@@ -77,7 +77,7 @@
       "height": 818,
       "id": "widget-sinceinstall",
       "kind": "widget",
-      "sha256": "2cc0ca796f04c3cbb50b5075db2882046e7934a86337059bca4bcbf46ea47e9c",
+      "sha256": "d256b6e86ee1dd762d70859f4786319bc4ae8cd779e17cb820fafff7faa4f225",
       "source": "sysc_sia_sz_portrait-1x1.png",
       "width": 696
     },
@@ -92,7 +92,7 @@
       "height": 818,
       "id": "widget-clock",
       "kind": "widget",
-      "sha256": "b3b0cea505db68fe836ef5ffa9753cbb745b26dafd6d41bfd33a68a9492ff013",
+      "sha256": "659409f3dbb8bd570ac942af74796124b02ac7ecb82108ddc66fbe3b883e5523",
       "source": "wtime_clk_size_portrait-1x1.png",
       "width": 696
     },
@@ -107,7 +107,7 @@
       "height": 818,
       "id": "widget-analog",
       "kind": "widget",
-      "sha256": "2a6b92ff547089291be43163b57caad4fd4940826879b0417762f03326a9a89d",
+      "sha256": "f22b3c842af6c44ac723dc95594ceedc5dd8416efc6b97f3eb1318a1157d1b7e",
       "source": "wtime_anl_size_portrait-1x1.png",
       "width": 696
     },
@@ -122,7 +122,7 @@
       "height": 818,
       "id": "widget-moon",
       "kind": "widget",
-      "sha256": "1677962f7e65aba428cb51275c0138960efea6730e4e031623cd1c1f72ad2854",
+      "sha256": "adcbdbb6ef2d0c404a321507a9b4c56adb28f0e42ab5a2d9d3b5ceea90cfac1b",
       "source": "wtime_moon_size_portrait-1x1.png",
       "width": 696
     },
@@ -132,7 +132,7 @@
       "height": 818,
       "id": "widget-focus",
       "kind": "widget",
-      "sha256": "5ccb992c42507abafa08d065d5d34550ca743590cb77f1600b6af8c515216ce6",
+      "sha256": "2613b2500e84c69a6b8e6743c58ab73405b4e8e811803ed5cc02cdd164ac06ca",
       "source": "wfocus_focus_size_portrait-1x1.png",
       "width": 696
     },
@@ -142,7 +142,7 @@
       "height": 818,
       "id": "widget-tasks",
       "kind": "widget",
-      "sha256": "50efbdc5970b031d07b820c1569059154fb70251bf4da505bae0393c5bb27ae8",
+      "sha256": "f3386a16277f9f5d57cb16472f36c26040021720f26721a5c886d9e67c4580e2",
       "source": "wfocus_tasks_size_portrait-1x1.png",
       "width": 696
     },
@@ -152,7 +152,7 @@
       "height": 818,
       "id": "widget-rightnow",
       "kind": "widget",
-      "sha256": "b441388813be4b439fe154ab1c91f472608ace6b1df7067bd0f52fa7f09752b7",
+      "sha256": "8512244d82e74d0a1df8f8373ac97093c3d9bbf3e439ad427db155808e066fa4",
       "source": "wfocus_rn_size_portrait-1x1.png",
       "width": 696
     },
@@ -162,7 +162,7 @@
       "height": 818,
       "id": "widget-notes",
       "kind": "widget",
-      "sha256": "10462190104766c323caf2adef348d08a195c0c86d0b82c27078d11cda4e6aa7",
+      "sha256": "f15396b204440cf855909d5ad66ca2242a1684c8cab871bd6bf1b0f93966c3fd",
       "source": "foc_notes_size_portrait-1x1.png",
       "width": 696
     },
@@ -172,7 +172,7 @@
       "height": 818,
       "id": "widget-habit",
       "kind": "widget",
-      "sha256": "e70618f6aaee3147cf83f5a3477a7bc209c221d8625e47cc5fcabc2b0306f1a0",
+      "sha256": "77f76c3c5416e050a6233efbccd84e5def2236329b71adaefd524d0bc4bdfab0",
       "source": "foc_habit_size_portrait-1x1.png",
       "width": 696
     },
@@ -182,7 +182,7 @@
       "height": 818,
       "id": "widget-hydration",
       "kind": "widget",
-      "sha256": "a5ef0245e23214fb5b9ce38d6200e1ec9aa17a9b0bff82c844560ec91b8dec65",
+      "sha256": "b1aa5c6ddcec86853d05008a5c76f9b5587e49481eb97386257dc1e3335eed1b",
       "source": "hyd_size_portrait-1x1.png",
       "width": 696
     },
@@ -192,7 +192,7 @@
       "height": 818,
       "id": "widget-break",
       "kind": "widget",
-      "sha256": "46b740c5531bcf8b7ff7dfc5331b8682557fdd3b606d13cdfc0f446739c1390d",
+      "sha256": "7b49d9430af9a0beb9f1fa228c4c5f96eb6a4563064af9948cd7762477e1f9bc",
       "source": "foc_break_size_portrait-1x1.png",
       "width": 696
     },
@@ -202,7 +202,7 @@
       "height": 818,
       "id": "widget-meds",
       "kind": "widget",
-      "sha256": "d0b93d86dd2443c8f192f9135e92099c6b96296f9d6d40ca87261c474fd8c9e9",
+      "sha256": "4c749d5531b23ff932b57b1feb4d8f19cd512646d4e023329e1f3a6290424bf4",
       "source": "fh_meds_sz_portrait-1x1.png",
       "width": 696
     },
@@ -212,7 +212,7 @@
       "height": 818,
       "id": "widget-braindump",
       "kind": "widget",
-      "sha256": "64823f1ee4540409682375a4e3462682ced59f007b7dc679cbcdf6ef6340d952",
+      "sha256": "ba54a742b3bca42572f429bbfe6e58a3a52939996eb8ee9532c3f217e88c4e4b",
       "source": "fh_braindump_sz_portrait-1x1.png",
       "width": 696
     },
@@ -222,7 +222,7 @@
       "height": 818,
       "id": "widget-routine",
       "kind": "widget",
-      "sha256": "1807f957615c7f311bc591edece0ac62b00dacee044a5a5c6351da806adad933",
+      "sha256": "17aa16dd440df7c024fda2bc59f32266a1bc4cd6ca5678c85d7b6c53c9b7679b",
       "source": "fh_routine_sz_portrait-1x1.png",
       "width": 696
     },
@@ -237,7 +237,7 @@
       "height": 818,
       "id": "widget-media",
       "kind": "widget",
-      "sha256": "a7bf01fcdcd55db719ec01707b303fe207970e97126eb57d1c3d31339e60bfd8",
+      "sha256": "87c94725790d070c947af39855230f4aa3bc07e352f8c7193251464aebb08d16",
       "source": "wmedia_size_portrait-1x1.png",
       "width": 696
     },
@@ -252,7 +252,7 @@
       "height": 818,
       "id": "widget-httpjson",
       "kind": "widget",
-      "sha256": "9639efcf62480ea2a663154ced67bca5055698bc07fa9217b9dfb6d12e012ae8",
+      "sha256": "98701d1001692e2117a21440b6e326197505ec99fe44b38541f23aeb514ddd2a",
       "source": "whttp_size_p_1x1.png",
       "width": 696
     },
@@ -267,7 +267,7 @@
       "height": 818,
       "id": "widget-kpi",
       "kind": "widget",
-      "sha256": "23a3132ccfa92c540579962ea9a4cb195e3c80273d0efd5f26e7880c06bec52b",
+      "sha256": "d6b5ea71f58167f064de1222045c29c33225b1918f3caec159367a6c2cec500b",
       "source": "wkpi_size_p_1x1.png",
       "width": 696
     },
@@ -277,7 +277,7 @@
       "height": 818,
       "id": "widget-calendar",
       "kind": "widget",
-      "sha256": "8dcb6d6ae2cc4f4c23233e354ae0dc112cd10927661c9ebfdc910a4596c27319",
+      "sha256": "5c5b8c2873dbe0baaae907a5546467956ff9025d29a9a35f689a00031aaad199",
       "source": "wcalwx_cal_size_p_1x1.png",
       "width": 696
     },
@@ -287,7 +287,7 @@
       "height": 818,
       "id": "widget-nownext",
       "kind": "widget",
-      "sha256": "009b1a3fb888e77441a995d7e95841c15d7bfcc52fc6e46554702df317e9d6e9",
+      "sha256": "d53c9a8d2baa963ef784c4457200c812600a39b4b89783b45a5beb7b80f33bb9",
       "source": "wcalwx_nn_size_p_1x1.png",
       "width": 696
     },
@@ -297,7 +297,7 @@
       "height": 818,
       "id": "widget-weather",
       "kind": "widget",
-      "sha256": "d72be1ccfcbbe07ef8953a39e697b97c1031560f8ecdfe8e97791c31ba56ea25",
+      "sha256": "57f223ba3d7f56ff2d25e6939e5dcd42693715c934d8f4028a460c6882ee603b",
       "source": "wcalwx_wx_size_p_1x1.png",
       "width": 696
     },
@@ -307,7 +307,7 @@
       "height": 818,
       "id": "widget-countdown",
       "kind": "widget",
-      "sha256": "eb65b542d9a5126ea64cc341993c49d3650cc8c38ebd234ba9b1e121ed89c08a",
+      "sha256": "a5de371731d65771752466223f528899566aafe73c0a81627520932955c9c2b1",
       "source": "wmisc_cd_size_p_1x1.png",
       "width": 696
     },
@@ -317,7 +317,7 @@
       "height": 818,
       "id": "widget-eod",
       "kind": "widget",
-      "sha256": "98a1140876e7be5fa7f9ffa6fec111d1da730d7d0c499545366d6dbb5b04b028",
+      "sha256": "d39e6ea532bdc636dfd88e4d8102972fa381cc67b4154ba4e9cc210785583cb8",
       "source": "wmisc_eod_size_p_1x1.png",
       "width": 696
     },
@@ -327,7 +327,7 @@
       "height": 818,
       "id": "widget-quote",
       "kind": "widget",
-      "sha256": "c13ba304bc478f446adaad4384811f07aa727dd1e1d50383d5441630c234d9e8",
+      "sha256": "6464ea66a9a4b6b530d23f70a5dee046500adef0d54b57a21869d728c5917f52",
       "source": "wmisc_qt_size_p_1x1.png",
       "width": 696
     },
@@ -337,7 +337,7 @@
       "height": 720,
       "id": "preset-ambient",
       "kind": "preset",
-      "sha256": "7998eab9b925702cc2c9efbf3ecccfb1a9360ad7981a9e97a0009d8d7d1ba0d0",
+      "sha256": "e6d1501892a48436b6bc0d2ff24bf35fe0239d9362629b1c53346b6d304482b3",
       "source": "shellpreset_append_ambient.png",
       "width": 2560
     },
@@ -347,7 +347,7 @@
       "height": 720,
       "id": "preset-analyst",
       "kind": "preset",
-      "sha256": "94e3aec91f5bfd2fd739dfdf331a558b8d3c59feeb16f6165eb5068a40a9c060",
+      "sha256": "36705f96310588a76dc7b54312265885b13d162a1029684bfd47b63d9e31f01b",
       "source": "shellpreset_append_analyst.png",
       "width": 2560
     },
@@ -357,7 +357,7 @@
       "height": 720,
       "id": "preset-calm-focus",
       "kind": "preset",
-      "sha256": "69e57306ac60ca5ba9666576070cf8b7f0ffebc8cb982084405545d26a9e3913",
+      "sha256": "b91db00ef37a8fab181918a4e4eaa39a3abbb2aa46fb23b5e2efaf0b550184d0",
       "source": "shellpreset_append_calm-focus.png",
       "width": 2560
     },
@@ -367,7 +367,7 @@
       "height": 720,
       "id": "preset-creator",
       "kind": "preset",
-      "sha256": "93a7e1b1b0c2318e208aabc353d1768496c31155b9105a2bf7b13bf36e4724a6",
+      "sha256": "e49996d0730a251ea624751b3f76b69f017be7c000bdfd694fc5de945ec3af67",
       "source": "shellpreset_append_creator.png",
       "width": 2560
     },
@@ -377,7 +377,7 @@
       "height": 720,
       "id": "preset-day-plan",
       "kind": "preset",
-      "sha256": "5b9c32a98554ce9ed2ce417b0ae359545f5ca8a18cd588ae4d867cc057e120f9",
+      "sha256": "6cafa4d0ff3eea35236c2100281ee357eb960f34bdaf98a320801600d70970d5",
       "source": "shellpreset_append_day-plan.png",
       "width": 2560
     },
@@ -387,7 +387,7 @@
       "height": 720,
       "id": "preset-developer",
       "kind": "preset",
-      "sha256": "75e500034b4139b253eabf4d5a672fa4921d298dc3c465e1a47127ed2c68860b",
+      "sha256": "f5e34d3b77f1f2fa98d156b934c88fcf6b4203e1bcb24b959296aa26d0c6dff7",
       "source": "shellpreset_append_developer.png",
       "width": 2560
     },
@@ -397,7 +397,7 @@
       "height": 720,
       "id": "preset-enterprise",
       "kind": "preset",
-      "sha256": "862128739605d6f1e75a4710607bed6b835b99b370c42c6efd3805bfac75186a",
+      "sha256": "01c78048214b91658379e06315d54a0500df2c00d9d0000ba57cdf3b504d0d27",
       "source": "shellpreset_append_enterprise.png",
       "width": 2560
     },
@@ -407,7 +407,7 @@
       "height": 720,
       "id": "preset-gaming",
       "kind": "preset",
-      "sha256": "ee207ce797bdef190e05d48f3f9c032bbce31e4325467ac331ead44550890ba5",
+      "sha256": "fb5939f8b2326de70d393926de90207e4e1e7ad1d58e85404222c7df582ccd87",
       "source": "shellpreset_append_gaming.png",
       "width": 2560
     },
@@ -417,7 +417,7 @@
       "height": 720,
       "id": "preset-health",
       "kind": "preset",
-      "sha256": "ab36a2b69377b1943d910cbf234c073c360be22a84094ee581b8912d3b5f0c6f",
+      "sha256": "38df4900eb9ff6db3ab60cf07762f7bc5452fc920d874967eafd60f243130533",
       "source": "shellpreset_append_health.png",
       "width": 2560
     },
@@ -427,7 +427,7 @@
       "height": 720,
       "id": "preset-home-ambient",
       "kind": "preset",
-      "sha256": "a46edfc6aae68b77af5e623b1c6834626e995a3b05889aaa2f2e8b81d436288c",
+      "sha256": "4974c91d3c981a3ca769f1bd54d1b2cca09f336720948ff94cafdba648f332a0",
       "source": "shellpreset_append_home-ambient.png",
       "width": 2560
     },
@@ -437,7 +437,7 @@
       "height": 720,
       "id": "preset-homelab",
       "kind": "preset",
-      "sha256": "8b13706179a4a381887eee0d8ad55f151392f8552e3675410bc811816bea4e46",
+      "sha256": "48a4f86d488d11067ddd8c6e853293a1aac298e736dde98a85dcc4e2b41953e3",
       "source": "shellpreset_append_homelab.png",
       "width": 2560
     },
@@ -447,7 +447,7 @@
       "height": 720,
       "id": "preset-minimal",
       "kind": "preset",
-      "sha256": "9fb289a16dca45d5b278396c18cc7edc727366a2809f079ebbfa93cfbf3521ae",
+      "sha256": "e18966587a3305c3576c296ab72abbf3cfbe09a71e4ee54738d0cf66149bf694",
       "source": "shellpreset_append_minimal.png",
       "width": 2560
     },
@@ -457,7 +457,7 @@
       "height": 720,
       "id": "preset-notes-streak",
       "kind": "preset",
-      "sha256": "a3630e4dc1f7ccbaeb6c1c626bab702d557ad5bfa32210ee6e9e635681399b03",
+      "sha256": "b1155ed6ca7ce0118f29fe19a0a6106c1041e8a36e1db443603a63cba2a7941a",
       "source": "shellpreset_append_notes-streak.png",
       "width": 2560
     },
@@ -467,7 +467,7 @@
       "height": 720,
       "id": "preset-productivity",
       "kind": "preset",
-      "sha256": "a5060cbc13266fb907569cca5f0670655c700a51170c4c2ad91556ff01d480ea",
+      "sha256": "7edc6236aa66438428e85af3558b97a581255c8ec07a86e21a9e8f80d16212cd",
       "source": "shellpreset_append_productivity.png",
       "width": 2560
     },
@@ -477,7 +477,7 @@
       "height": 720,
       "id": "preset-remote-work",
       "kind": "preset",
-      "sha256": "20c2692f9a38606b25ffe5e7a6c4d3b04eb80a9d0b8ed352c846b76c5bfacff9",
+      "sha256": "10982020d0f2f7c0bf1c7506b8e69f5ebcd32fefdf3a0e63532d04b03535607f",
       "source": "shellpreset_append_remote-work.png",
       "width": 2560
     },
@@ -487,7 +487,7 @@
       "height": 720,
       "id": "preset-study",
       "kind": "preset",
-      "sha256": "32b20fc2cae09b01e18244ab483b310aabd4e211ff5afa237b3aa54b29ff4eb6",
+      "sha256": "19f50064ab86cdef9665a41ec2b2258af9223b7aef30d1cccc8c40f95df63c94",
       "source": "shellpreset_append_study.png",
       "width": 2560
     },
@@ -497,7 +497,7 @@
       "height": 720,
       "id": "preset-system-io",
       "kind": "preset",
-      "sha256": "af20c7e758bbdc0a844d115f5abf913eb6a168c65ac8b711dba2fc45dcac039b",
+      "sha256": "8247bf720ed7d013c8ec4d9d5831c7fad4f62f595db2bf7fc16673441b7965d1",
       "source": "shellpreset_append_system-io.png",
       "width": 2560
     },
@@ -507,7 +507,7 @@
       "height": 720,
       "id": "preset-system-monitor",
       "kind": "preset",
-      "sha256": "5f36036cbb01f4fec67ee8513429882f6c2602de9c7c0daee854435f1cf8952d",
+      "sha256": "a893fa82bb0653aa306f232373f6ab72d747608a2e349a21ac286faba4c1ef6f",
       "source": "shellpreset_append_system-monitor.png",
       "width": 2560
     },
@@ -517,7 +517,7 @@
       "height": 720,
       "id": "preset-trading-desk",
       "kind": "preset",
-      "sha256": "6c4e2ff1f0e90097e3a77df28abb2b857882c2db566831b2c2652ff0638131a4",
+      "sha256": "17e06aa63ee37cb03632b7a3e74e5ae10a269cd30457bc9886eb6322a7f1f768",
       "source": "shellpreset_append_trading-desk.png",
       "width": 2560
     },
@@ -527,11 +527,11 @@
       "height": 720,
       "id": "orientation-home-ambient-landscape",
       "kind": "orientation",
-      "sha256": "e04691701c541eea25767a1739923903d820cf2c0f9fb90f9ca5b34781607109",
+      "sha256": "bb95d2df8cd81042e061634e8d7517966dca085ee957b95c26d15c0ae6d94794",
       "source": "shellpreset_append_landscape.png",
       "width": 2560
     }
   ],
-  "source_commit": "eed2d80c18deedd16e7705f2279d7640547776b2",
+  "source_commit": "4c2292274da091fc3fd5f4bcfe66534352692e57",
   "version": 1
 }
