@@ -153,6 +153,8 @@ def assert_binaries_current(binaries=(HUB, MANAGER)):
     if not want:
         want = subprocess.run(["git", "describe", "--tags", "--always", "--dirty"],
                               cwd=REPO, capture_output=True, text=True).stdout.strip()
+        if want.startswith("v"):
+            want = want[1:]
     if not want:
         return None                      # no git (packaged tree) - nothing to check
     for b in binaries:

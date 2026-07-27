@@ -41,6 +41,22 @@ class TestTileContract(unittest.TestCase):
 
 
 class TestPackagedCandidateIdentity(unittest.TestCase):
+    def test_git_tag_identity_accepts_binary_without_tag_prefix(self):
+        result = SimpleNamespace(
+            stdout="Xeneon Edge Linux Hub 1.0.0-beta.1-107-gb19853b\n"
+        )
+        describe = SimpleNamespace(stdout="v1.0.0-beta.1-107-gb19853b\n")
+        with mock.patch.dict(os.environ, {}, clear=True), \
+             mock.patch("e2e_harness.os.path.exists", return_value=True), \
+             mock.patch(
+                 "e2e_harness.subprocess.run",
+                 side_effect=[describe, result],
+             ):
+            self.assertEqual(
+                assert_binaries_current(("/candidate/xeneon-edge-hub",)),
+                "1.0.0-beta.1-107-gb19853b",
+            )
+
     def test_explicit_package_version_accepts_semver_without_tag_prefix(self):
         result = SimpleNamespace(stdout="Xeneon Edge Linux Hub 1.0.0-beta.1\n")
         with mock.patch.dict(os.environ,
