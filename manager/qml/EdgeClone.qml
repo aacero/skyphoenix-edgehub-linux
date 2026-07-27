@@ -76,7 +76,7 @@ Item {
     property real orientationVisualAngle: 0
     readonly property bool orientationTransitionRunning: orientationTurn.running
     readonly property int orientationTransitionDuration:
-        clone.reduceMotion ? 0 : 560
+        clone.reduceMotion ? 0 : 500
     property bool _orientationReady: false
     property int _lastEffectiveRotation: effectiveRotation
 

@@ -118,7 +118,7 @@ interval. If reader backlog varies by more than 2ms, the measurement fails as
 invalid.
 
 The rotation fixture is a full 14-widget screen made from idle Tasks widgets.
-Repeating one deterministic widget isolates the end of the 560/570ms orientation
+Repeating one deterministic widget isolates the end of the 500ms orientation
 animation from unrelated widget-local timers and single-surface commits. Widget
 diversity remains covered by the render and compositor suites. Active widgets are
 qualified separately by the ten-widget and 30-minute resource profiles.

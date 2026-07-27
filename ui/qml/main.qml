@@ -312,7 +312,7 @@ ApplicationWindow {
     property int sensorRotation: -1          // raw value pushed from C++ OrientationSensor
     // Debounced sensor value: the raw reading must hold steady briefly before we
     // rotate, so jitter near an orientation boundary doesn't thrash the whole UI
-    // (each change triggers a 560ms rotate + a fade/scale dip).
+    // (each change triggers a 500ms rotate + a fade/scale dip).
     property int _stableSensorRotation: -1
     onSensorRotationChanged: {
         if (root.sensorRotation < 0) return
@@ -364,7 +364,7 @@ ApplicationWindow {
                 direction: RotationAnimation.Shortest
                 // effectiveReduceMotion: the OS signal and the explicit on/off
                 // preference must also collapse the rotation to a cut.
-                duration: theme.effectiveReduceMotion ? 0 : 560
+                duration: theme.effectiveReduceMotion ? 0 : 500
                 easing.type: Easing.InOutCubic
             }
         }
@@ -382,12 +382,12 @@ ApplicationWindow {
         SequentialAnimation {
             id: reorientFx
             ParallelAnimation {
-                NumberAnimation { target: contentRoot; property: "opacity"; to: 0.25; duration: 210; easing.type: Easing.InQuad }
-                NumberAnimation { target: contentRoot; property: "scale"; to: 0.93; duration: 210; easing.type: Easing.InQuad }
+                NumberAnimation { target: contentRoot; property: "opacity"; to: 0.25; duration: 180; easing.type: Easing.InQuad }
+                NumberAnimation { target: contentRoot; property: "scale"; to: 0.93; duration: 180; easing.type: Easing.InQuad }
             }
             ParallelAnimation {
-                NumberAnimation { target: contentRoot; property: "opacity"; to: 1.0; duration: 360; easing.type: Easing.OutQuad }
-                NumberAnimation { target: contentRoot; property: "scale"; to: 1.0; duration: 360; easing.type: Easing.OutCubic }
+                NumberAnimation { target: contentRoot; property: "opacity"; to: 1.0; duration: 320; easing.type: Easing.OutQuad }
+                NumberAnimation { target: contentRoot; property: "scale"; to: 1.0; duration: 320; easing.type: Easing.OutCubic }
             }
         }
 
