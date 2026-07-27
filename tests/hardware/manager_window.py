@@ -99,25 +99,57 @@ def active_row(path, win_w=None, win_h=None):
     return separated[0] if len(separated) == 1 else None
 
 
-def grab_rect(rect, work, tag="frontcheck"):
-    """Grab the screen and crop to the Manager's rect. Returns a path or None."""
-    name, x, y, w, h = rect
-    full = dt._full_grab(work, tag)
-    if not full:
-        return None
+def grab_active_manager(rect, work, tag="frontcheck", output_path=None):
+    """Capture the active window and normalize it to the Manager client size.
+
+    KWin may move an XWayland window after Qt logs its requested pre-map
+    position. Cropping a full-desktop grab at that stale position can therefore
+    include unrelated applications. Spectacle's active-window capture follows
+    the mapped window instead. It includes decorations and shadows, so crop the
+    known Manager client size from the centre before inspecting sidebar pixels.
+    """
+    _, _, _, w, h = rect
+    output_path = output_path or os.path.join(work, "_%s.png" % tag)
+    raw = os.path.join(work, "_%s-active.png" % tag)
     try:
+        os.unlink(raw)
+    except OSError:
+        pass
+    try:
+        subprocess.run(
+            ["spectacle", "-b", "-n", "-a", "-o", raw],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=15,
+            check=False,
+        )
+        if not dt._wait_stable(raw):
+            return None
         from PIL import Image
-        out = os.path.join(work, "_%s.png" % tag)
-        Image.open(full).crop((x, y, x + w, y + h)).save(out)
-        os.unlink(full)
-        return out
+        image = Image.open(raw)
+        if image.width < w or image.height < h:
+            return None
+        left = (image.width - w) // 2
+        top = (image.height - h) // 2
+        image.crop((left, top, left + w, top + h)).save(output_path)
+        return output_path
     except Exception:
         return None
+    finally:
+        try:
+            os.unlink(raw)
+        except OSError:
+            pass
+
+
+def grab_rect(rect, work, tag="frontcheck"):
+    """Compatibility name for callers that need normalized Manager pixels."""
+    return grab_active_manager(rect, work, tag)
 
 
 def is_in_front(rect, work):
     """True if the Manager is the window rendering in its own rect."""
-    p = grab_rect(rect, work)
+    p = grab_active_manager(rect, work)
     if not p:
         return False
     ok = active_row(p) is not None

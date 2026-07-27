@@ -57,8 +57,9 @@ from e2e_harness import (E2E, MANAGER, assert_binaries_current,  # noqa: E402
 
 
 class ManagerGui:
-    def __init__(self, h, rect, work):
+    def __init__(self, h, rect, work, manager_pid):
         self.h, self.rect, self.work = h, rect, work
+        self.manager_pid = manager_pid
         self.name, self.x, self.y, self.w, self.hgt = rect
         self.n = 0
         cw, ch = dt.canvas_size()
@@ -206,17 +207,12 @@ class ManagerGui:
     def shot(self, tag):
         self.n += 1
         path = os.path.join(self.work, "%03d-%s.png" % (self.n, tag))
-        full = dt._full_grab(self.work, "s%03d" % self.n)
-        if not full:
+        if not mw.activate_exact_manager(
+                self.manager_pid, self.rect, self.work):
             return None
-        try:
-            from PIL import Image
-            Image.open(full).crop((self.x, self.y, self.x + self.w,
-                                   self.y + self.hgt)).save(path)
-            os.unlink(full)
-            return path
-        except Exception:
-            return None
+        return mw.grab_active_manager(
+            self.rect, self.work, "s%03d" % self.n, output_path=path
+        )
 
 
 def main():
@@ -274,7 +270,7 @@ def main():
         h.check("manager-window-activated", True,
                 "exact Manager PID raised; selected sidebar row is visible")
 
-        gui = ManagerGui(h, rect, work)
+        gui = ManagerGui(h, rect, work, mgr.pid)
         gui.shot("00-manager-open")
 
         # NOTHING may be clicked until the Manager is proven to be the window
