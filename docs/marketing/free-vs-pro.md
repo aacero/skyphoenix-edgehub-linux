@@ -151,10 +151,9 @@ somewhere - and all of it goes through the gate above.
 
 Flagged for the owner, not for the store page.
 
-- **Pro is 9 themes.** That is the whole delta. `docs/LICENSING.md` describes the
-  *intent* as "premium themes, premium preset packs, and custom user widgets", but
-  no preset carries a `pro` flag and `ui/qml/UserWidgetCatalog.qml` performs no
-  licence check. Only themes are actually gated today.
+- **Pro is 9 themes.** That is the whole delta. `docs/LICENSING.md` now states
+  this implemented entitlement directly. No preset carries a `pro` flag and
+  `ui/qml/UserWidgetCatalog.qml` performs no licence check.
 - **The primary in-app copy is now specific.** The free-tier line says Pro adds
   nine themes. The expired-licence line still says "premium extras"; naming the
   themes there would be clearer before any sale.
@@ -174,8 +173,9 @@ code, or that depend on something outside it:
 
 1. **Performance.** No approved candidate benchmark supports a public CPU, RSS,
    startup or endurance number.
-2. **Release status.** The latest tag is `v1.0.0-alpha.2`; the current branch is
-   unreleased and no feature freeze or code freeze has been declared.
+2. **Release status.** The latest public tag is `v1.0.0-beta.1`; the
+   `release/1.0.0` branch is an uncertified stable-candidate work area and no
+   code freeze has been declared.
 3. **Purchase and delivery flow.** The repo contains licence tooling and webhook
    code, but that does not prove a live product, price or fulfilment pipeline.
 4. **Refund policy, support commitments, and platform/distro compatibility list.**

@@ -1,378 +1,205 @@
-# Architecture Overview
+# Architecture overview
 
-**Version:** 0.1.0-draft
-**Status:** Phase 0 - Discovery
-**Last Updated:** 2026-07-11
+**Status:** current implementation
+**Last updated:** 2026-07-27
 
----
+This document describes code that exists in the repository. Future widget
+sandboxing, media scrubbing, volume control and broader integrations are listed
+as deferred product work, not as architecture already in service.
 
-## High-Level Architecture
+## Runtime topology
 
-Xeneon Edge Linux Hub follows a layered architecture with clear separation of concerns:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     APPLICATION LAYER                        │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
-│  │  First-  │  │ Dashboard│  │ Settings │  │ Diagnostics │  │
-│  │  Run     │  │  Manager │  │  Manager │  │   Screen    │  │
-│  │  Wizard  │  │          │  │          │  │             │  │
-│  └──────────┘  └──────────┘  └──────────┘  └────────────┘  │
-├─────────────────────────────────────────────────────────────┤
-│                       UI LAYER (QML)                         │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  Theme System  │  Layout Engine  │  Widget Containers │   │
-│  │  (Dark/Light/  │  (Grid/Stack/   │  (Loader/Error    │   │
-│  │   OLED/HC)     │   Responsive)   │   Boundaries)     │   │
-│  └──────────────────────────────────────────────────────┘   │
-├─────────────────────────────────────────────────────────────┤
-│                      CORE LAYER (Rust)                       │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐   │
-│  │  Widget  │ │  Config  │ │  Display │ │   Event Bus   │   │
-│  │ Lifecycle│ │  Manager │ │  Manager │ │  (Post-MVP)   │   │
-│  │  Manager │ │          │ │          │ │               │   │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────────┘   │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐   │
-│  │ Logging  │ │ Permission│ │  Update  │ │  Diagnostics │   │
-│  │ (tracing)│ │  Manager  │ │  Checker │ │   Collector  │   │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────────┘   │
-├─────────────────────────────────────────────────────────────┤
-│                   INTEGRATION LAYER (Rust)                   │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐   │
-│  │  System  │ │  MPRIS   │ │ PipeWire │ │   Display    │   │
-│  │  Sensors │ │  Adapter │ │  Adapter │ │   Detector   │   │
-│  │  (/proc, │ │  (D-Bus) │ │ (Pulse/  │ │  (udev, Qt)  │   │
-│  │   /sys)  │ │          │ │  PipeWire)│ │              │   │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────────┘   │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐                    │
-│  │   GPU    │ │  OpenLink│ │  Desktop │                    │
-│  │  Metrics │ │  Hub     │ │  Services│                    │
-│  │ (sysfs,  │ │ (Future) │ │(autostart│                    │
-│  │  NVML)   │ │          │ │  notifs) │                    │
-│  └──────────┘ └──────────┘ └──────────┘                    │
-├─────────────────────────────────────────────────────────────┤
-│                    PLATFORM LAYER                            │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │  Qt 6 (QWindow, QScreen, QTouchEvent, QML Engine)    │   │
-│  │  Wayland / X11 Abstraction                            │   │
-│  │  XDG Base Directories (config, data, cache, state)   │   │
-│  └──────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+```text
+                 local Unix socket
+EdgeHub Manager ----------------------> Hub control server
+ Qt 6 + QML                              Qt 6 + QML
+       |                                      |
+       | C++ ManagerBackend                   | C++ bridges and workers
+       |                                      |
+       +-------- configuration schema --------+
+                                              |
+                                      hand-written C ABI
+                                              |
+                                      Rust static library
+                              config, metrics, policy, licence,
+                                display helpers and distro data
 ```
 
----
+The build produces two applications:
 
-## Layer Responsibilities
+- `xeneon-edge-hub` renders the dashboard on the selected display.
+- `xeneon-edge-manager` edits layout and appearance from the desktop.
 
-### Platform Layer
-- **Qt 6 Runtime**: Window management, screen enumeration, touch input, QML rendering
-- **Wayland/X11 Abstraction**: Transparent display protocol handling via Qt platform plugins
-- **XDG Directories**: Configuration, data, cache, and state storage following FreeDesktop standards
+Both applications compile their QML and assets into Qt resource collections.
+There is no browser, embedded web server or Electron runtime.
 
-### Integration Layer
-- **System Sensors**: Reads CPU, RAM, disk, network, temperature from `/proc`, `/sys`, `hwmon`
-- **MPRIS Adapter**: D-Bus client for media player detection and control
-- **PipeWire/PulseAudio Adapter**: Volume control and audio device management
-- **Display Detector**: Monitors display hotplug via udev or Qt events
-- **GPU Metrics**: Vendor-specific GPU telemetry (sysfs for AMD/Intel, NVML for NVIDIA)
-- **OpenLinkHub**: Optional integration for Corsair hardware (future)
-- **Desktop Services**: Autostart, notifications, screen locking
+## Rust and Qt boundary
 
-### Core Layer
-- **Widget Lifecycle Manager**: Load, init, update, pause, resume, teardown widgets
-- **Config Manager**: Read/write versioned configuration; migration; backup
-- **Display Manager**: Select target display; handle connect/disconnect; EDID matching
-- **Event Bus**: Publish/subscribe for inter-widget communication (post-MVP)
-- **Logging**: Structured logging via `tracing` crate
-- **Permission Manager**: Declare, request, check, revoke widget permissions (post-MVP)
-- **Update Checker**: Optional new-version notification
-- **Diagnostics Collector**: Gather system info for diagnostics screen
+The Rust crate builds `libxeneon_core.a`. C++ calls the exported functions in
+`core/src/ffi.rs` through the hand-maintained declarations in
+`core/xeneon_core.h`.
 
-### UI Layer
-- **Theme System**: Dark, light, OLED, high-contrast with customizable accent colors
-- **Layout Engine**: Responsive grid and stack layouts; widget position/size management
-- **Widget Containers**: QML Loader components with error boundaries and timeout guards
+This is a hand-written C ABI. The repository does not use Corrosion, `cxx`,
+or `cxx-qt`.
 
-### Application Layer
-- **First-Run Wizard**: Display selection, starter layout, autostart configuration
-- **Dashboard Manager**: Page management, view/edit mode switching, profile switching
-- **Settings Manager**: Categorized settings UI with search
-- **Diagnostics Screen**: System info, widget status, integration status, recent errors
+Important ownership rules:
 
----
+- Strings returned by the Rust ABI belong to the caller and must be released
+  with `xeneon_string_free()`.
+- Opaque configuration and metrics handles have matching free functions.
+- C++ uses the `XeneonString` RAII wrapper where a returned string crosses into
+  Qt code.
+- Adding an exported Rust function requires a matching header declaration and
+  C++ coverage.
 
-## Component Interaction Flow
+## Hub
 
-### Startup Sequence
+`app/src/main.cpp` is bootstrap and lifecycle coordination. It:
+
+1. handles bounded command-line operations such as `--version`;
+2. loads or resets the Rust-owned configuration;
+3. reconciles autostart from durable configuration;
+4. selects the target `QScreen` before showing the window;
+5. exposes bridges and initial data to QML;
+6. starts the local control server and integration workers; and
+7. coordinates a checked shutdown flush.
+
+The main QML shell is `ui/qml/main.qml`. `Dashboard.qml` owns navigation and
+editing, while `DashboardStore.qml` is the live layout and appearance model.
+`WidgetHost.qml` contains load failures to an unavailable-widget surface.
+Built-in widgets are catalogued in `WidgetCatalog.qml`; preset screens are
+catalogued separately in `PresetCatalog.qml`.
+
+The current first-party widgets run in the Hub process and are trusted code.
+Optional user QML widgets are disabled by default, but when enabled they are
+also unsandboxed code running with the user's privileges.
+
+## Manager and live synchronization
+
+The Manager is a separate Qt application with its own single-instance guard and
+desktop-display placement policy. `ManagerBackend` exposes a
+configuration-compatible surface to `manager/qml/Manager.qml`.
+
+Hub and Manager communicate through `QLocalServer` at the path resolved by
+`app/src/control_socket_path.h`. Both sides include the same path resolver.
+The protocol supports ping/pong, live UI-state requests and updates, and
+graceful lifecycle messages.
+
+The Hub remains the running display authority. The Manager reconciles its local
+document with the Hub generation token and applies accepted state only after
+the Hub has flushed or rejected pending local widget edits. Filesystem
+permissions restrict the socket to the current user; there is no separate
+application-level authentication against another process running as that user.
+
+## Configuration and persistence
+
+The canonical configuration is
+`${XDG_CONFIG_HOME:-~/.config}/xeneon-edge-hub/config.toml`.
+
+Rust owns parsing, schema validation, migration and persistence. On Unix, the
+configuration directory is owner-only, the file is mode `0600`, and saves use a
+same-directory temporary file, fsync, rename and directory fsync under a
+cross-process transaction lock. Loads reject unsafe file types, ownership,
+oversized documents and unsupported newer schemas.
+
+The Hub and Manager share the same serialized dashboard schema. QML widget
+editors may buffer short-lived values, so shutdown and external Manager updates
+invoke explicit flush surfaces before claiming persistence success.
+
+## Metrics and desktop integrations
+
+The Rust metrics layer reads Linux data from `/proc`, `/sys` and hwmon and
+returns a bounded JSON snapshot through the C ABI. `MetricsWorker` performs
+polling away from the Qt GUI thread and publishes snapshots to QML.
+
+Current desktop integrations are implemented in C++ with Qt:
+
+- `mpris_bridge.*` discovers players and sends the implemented transport
+  actions over the session D-Bus.
+- `notification_bridge.h` sends desktop notifications.
+- `orientation_sensor.*` reads supported HID orientation reports.
+- `autostart.*` manages the per-user desktop autostart entry.
+- `system_settings_probe.h`, `timezone_bridge.h` and `distro_bridge.h` expose
+  bounded platform data.
+
+Media volume control and scrubbing are not implemented. There is no PipeWire or
+PulseAudio adapter in the current tree.
+
+## Display selection and orientation
+
+Qt screen placement is implemented in C++. Selection is fail-closed for normal
+operation: configured identity fields are matched before the window is shown,
+and an unrelated primary display is not treated as the target.
+
+Qt does not expose raw EDID bytes through `QScreen`. The C++ path therefore
+uses connector and Qt-reported manufacturer, model and serial data. The Rust
+display module contains raw EDID parsing helpers, but that does not make raw
+EDID available to the Qt bootstrap.
+
+The orientation sensor retries initial HID reports, continues watching the
+device, and can reopen after a disconnect. QML animates the content transform
+and reports the effective orientation to the Manager.
+
+## Network boundary
+
+The default configuration performs no remote request. Repository-shipped QML
+routes network requests through `NetHub`, which applies the offline switch,
+optional host allowlist, same-origin redirect policy, timeouts, response-size
+limits and HTTPS requirements for bearer credentials.
+
+This policy covers shipped code. An enabled user QML widget is arbitrary local
+code and is not contained by `NetHub`.
+
+## Threads and event loops
+
+- The Qt GUI thread owns both QML engines and their objects.
+- `MetricsWorker` performs periodic metrics collection off the GUI thread.
+- Qt DBus and local-socket callbacks return to their owning Qt event loops.
+- Orientation I/O is isolated from QML presentation through the sensor object.
+- Rust configuration transactions are synchronous at explicit load/save
+  boundaries; QML debounce buffers are flushed before those boundaries.
+
+The implementation does not contain a Tokio integration pool, a WASM worker
+pool or a watchdog process.
+
+## Security boundary
+
+Hub, Manager, built-in widgets and enabled user QML all run as the logged-in
+user. The configuration permissions, local-socket directory, egress gate and
+schema validation reduce accidental exposure; they are not a boundary against
+malware already executing as the same user.
+
+There is no implemented WASM runtime, community-widget sandbox, capability
+permission service or arbitrary-command launcher. See the
+[threat model](../security/threat-model.md) and
+[security policy](../../SECURITY.md) for the current limitations.
+
+## Build dependencies
+
+- Rust 1.86 or newer
+- A C++17 compiler
+- CMake 3.22 or newer
+- Qt 6.5 or newer: Core, GUI, Quick, QML, Quick Controls, DBus, Network, SVG
+  and Virtual Keyboard
+- A Qt Wayland plugin for Wayland execution
+
+Qt Virtual Keyboard has a different open-source licensing choice from most
+other linked Qt modules. Its GPLv3-or-commercial distribution disposition is
+an owner/legal stable-release blocker.
+
+## Repository map
+
+```text
+core/                 Rust static library and C ABI
+app/src/              Hub bootstrap, bridges, display and IPC
+manager/src/          Manager backend, reconciliation and placement
+manager/qml/          Manager interface
+ui/qml/               Hub shell, stores, catalogs and widgets
+tests/cpp/            QtTest unit and integration tests
+tests/ui/             resource-aware offscreen QML tests
+tests/gui/            compositor-backed QML tests
+tests/runtime/        real-binary configuration and lifecycle tests
+tests/hardware/       guarded physical display and input tests
+packaging/            native package, AppImage and lifecycle definitions
+scripts/              build, test, evidence and release tooling
 ```
-1. main() → ConfigManager.load()
-2. ConfigManager → if first run: FirstRunWizard.show()
-3. DisplayManager → enumerate screens → select target
-4. WindowManager → create borderless QWindow on target screen
-5. QML Engine → load main dashboard QML
-6. WidgetManager → load configured widgets → init each
-7. Integrations → connect MPRIS, PipeWire, sensors (async, non-blocking)
-8. Dashboard → render → enter View mode
-```
-
-### Widget Rendering Cycle
-```
-1. WidgetManager.update_all(delta_time)
-2. For each Active widget (in priority order):
-   a. Check update interval → skip if not due
-   b. Call widget.update(delta) [with timeout guard]
-   c. Widget reads data from Integration layer
-   d. QML bindings automatically reflect new data
-   e. GPU renders updated QML scene
-3. If widget update exceeds timeout → log warning → throttle
-4. If widget throws error → error boundary → error placeholder
-```
-
-### Display Hotplug Handling
-```
-1. Qt QScreen added/removed signal
-2. DisplayManager → compare to target identity (EDID hash)
-3a. Target removed → hide dashboard → notify user
-3b. Target added → match by EDID → reopen dashboard
-3c. Unknown display added → ignore (not our target)
-4. Settings → persist new display state
-```
-
----
-
-## Data Flow
-
-### Configuration Flow
-```
-User changes setting
-  → Settings UI (QML)
-  → ConfigManager (Rust, via cxx-qt)
-  → Validate (schema check)
-  → Backup old config
-  → Write new config (TOML/JSON)
-  → Notify subscribers (WidgetManager, ThemeManager, etc.)
-  → UI updates reactively
-```
-
-### Sensor Data Flow
-```
-/proc, /sys, hwmon, D-Bus, NVML
-  → Sensor adapters (Rust, async, thread pool)
-  → Parse structured data
-  → Cache latest values (Arc<RwLock<SensorCache>>)
-  → Widget reads from cache (no I/O on UI thread)
-  → QML binding updates
-  → GPU renders updated widget
-```
-
-### MPRIS Media Flow
-```
-D-Bus session bus
-  → MPRIS adapter (Rust, async)
-  → Player detection (NameOwnerChanged signal)
-  → Properties fetch (Metadata, PlaybackStatus, etc.)
-  → Cache in MPRIS state struct
-  → Widget reads from cache
-  → User taps control → adapter sends D-Bus method call
-  → QML updates metadata display
-```
-
----
-
-## Key Design Decisions
-
-| Decision | Rationale | ADR |
-|----------|-----------|-----|
-| Rust + Qt 6/QML stack | Best multi-monitor, touch, Wayland support with native performance | ADR-0001 |
-| Hybrid widget runtime | Native QML for built-in widgets, WASM sandbox planned for community | ADR-0002 |
-| Sensor data caching | Avoids I/O on UI thread; enables configurable polling intervals | This doc |
-| EDID-based display identity | Survives connector changes; resilient across reboots | This doc |
-| TOML configuration | Human-readable, versioned, supports migrations | This doc |
-| tracing crate for logging | Structured, performant, ecosystem standard for Rust | This doc |
-| XDG directory compliance | Industry standard for Linux application data | This doc |
-| cxx-qt for Rust/Qt bridge | Safe Rust↔C++ interop maintained by KDAB (Qt experts) | ADR-0001 |
-
----
-
-## Threading Model
-
-```
-┌─────────────────────────────────────────┐
-│ Main Thread (Qt Event Loop + QML)       │
-│ - UI rendering                          │
-│ - Touch/input handling                  │
-│ - Widget update() calls (time-guarded)  │
-│ - QML bindings                          │
-├─────────────────────────────────────────┤
-│ Integration Thread Pool (async tokio)   │
-│ - Sensor polling (/proc, /sys, hwmon)   │
-│ - D-Bus communication (MPRIS)           │
-│ - PipeWire/PulseAudio                   │
-│ - Display monitoring (udev)             │
-│ - File I/O (config, logs)               │
-├─────────────────────────────────────────┤
-│ WASM Thread Pool (Phase 7+)             │
-│ - Community widget execution            │
-│ - Sandboxed, resource-limited           │
-└─────────────────────────────────────────┘
-```
-
-**Principle:** Never block the main thread. All I/O, polling, and external communication happen on background threads. Data is shared via `Arc<RwLock<T>>` or message passing.
-
----
-
-## Configuration Schema (Conceptual)
-
-```toml
-[application]
-version = 1
-first_run_complete = true
-
-[display]
-target_edid_hash = "abc123def456"
-target_connector = "DP-1"
-fallback_behavior = "hide"  # hide | notify | ask
-
-[startup]
-autostart = true
-reconnect_on_hotplug = true
-
-[dashboards.default]
-orientation = "landscape"  # landscape | portrait
-pages = ["main", "gaming"]
-
-[dashboards.default.pages.main]
-layout = "grid"
-columns = 8
-rows = 3
-
-[[dashboards.default.pages.main.widgets]]
-id = "clock-1"
-type = "clock"
-position = { column = 0, row = 0 }
-size = { width = 2, height = 1 }
-config = { format = "24h", show_seconds = false }
-
-[theme]
-mode = "dark"  # dark | light | oled | high_contrast
-accent_color = "#4A90D9"
-reduced_motion = false
-
-[integrations.mpris]
-enabled = true
-
-[integrations.sensors]
-cpu_poll_interval_ms = 2000
-memory_poll_interval_ms = 5000
-temperature_poll_interval_ms = 5000
-
-[logging]
-level = "info"  # error | warn | info | debug | trace
-file_path = ""  # empty = default XDG location
-```
-
----
-
-## Error Handling Strategy
-
-```
-Error Severity          Action
-─────────────────────────────────────────────
-Fatal (app crash)       Watchdog process restarts app, restores state
-Critical (integration)  Degrade gracefully, show "unavailable" in UI
-Error (widget crash)    Error boundary catches, show placeholder
-Warning (slow widget)   Log, throttle update rate
-Info (normal ops)       Structured log, no user-visible impact
-Debug/Trace             Development only, verbose logging
-```
-
----
-
-## Security Boundaries
-
-```
-┌────────────────────────────────────────────┐
-│ TRUSTED ZONE (Application Process)         │
-│ - Rust core (full system access)           │
-│ - Built-in QML widgets (full API access)   │
-│ - Config Manager (file read/write)         │
-│ - Integration adapters (D-Bus, /proc, etc) │
-├────────────────────────────────────────────┤
-│ RESTRICTED ZONE (Phase 7+)                 │
-│ - WASM community widgets                   │
-│ - Capability-based API (explicit grants)   │
-│ - Resource limits (CPU, memory)            │
-│ - No filesystem, network, or process access│
-│   unless explicitly permitted              │
-└────────────────────────────────────────────┘
-```
-
-See [Threat Model](../security/threat-model.md) for detailed analysis.
-
----
-
-## Technology Dependencies
-
-### Runtime Dependencies
-- Qt 6.5+ (QtQuick, QtWayland, QtDBus, QtSvg)
-- Linux kernel 5.15+ (for /proc, /sys, hwmon interfaces)
-- Wayland 1.20+ or X11 (via Qt platform abstraction)
-- D-Bus session bus (for MPRIS, notifications)
-- PipeWire or PulseAudio (for volume control)
-
-### Build Dependencies
-- Rust 1.75+ (stable)
-- C++17 compiler (GCC 12+ or Clang 16+)
-- CMake 3.22+
-- Qt 6.5+ development headers
-- Corrosion (CMake Rust integration)
-- cxx-qt or cxx crate
-
-### Optional Build Dependencies
-- NVML development headers (for NVIDIA GPU support)
-- OpenLinkHub API headers (future)
-
----
-
-## Repository Structure Mapping
-
-```
-xeneon-edge-linux-hub/
-├── app/                  # Application entry point, CLI parsing
-├── core/                 # Core library (Rust)
-│   ├── src/
-│   │   ├── config/       # Config manager, schema, migration
-│   │   ├── display/      # Display manager, EDID parsing
-│   │   ├── widget/       # Widget lifecycle manager
-│   │   ├── event/        # Event bus (post-MVP)
-│   │   ├── logging/      # Tracing setup
-│   │   └── diagnostics/  # Diagnostics collector
-│   └── Cargo.toml
-├── ui/                   # QML UI layer
-│   ├── qml/
-│   │   ├── main.qml      # Main dashboard
-│   │   ├── themes/       # Theme QML files
-│   │   ├── layouts/      # Layout QML components
-│   │   ├── components/   # Shared UI components
-│   │   └── wizard/       # First-run wizard QML
-│   ├── src/              # C++ or Rust QML bindings
-│   └── CMakeLists.txt
-├── widgets/
-│   ├── built-in/         # Built-in widget QML + Rust backing
-│   ├── examples/         # Example widgets for SDK (Phase 7)
-│   └── sdk/              # Widget SDK crate (Phase 7)
-├── integrations/         # Integration adapters (Rust)
-│   ├── system/           # /proc, /sys, hwmon sensors
-│   ├── mpris/            # MPRIS D-Bus client
-│   ├── pipewire/         # PipeWire/PulseAudio adapter
-│   ├── amd/              # AMD GPU metrics
-│   ├── nvidia/           # NVIDIA GPU metrics (NVML)
-│   └── openlinkhub/      # OpenLinkHub adapter (future)
-├── packages/             # Distribution packaging
-├── tests/                # Automated tests
-├── docs/                 # Documentation
-├── scripts/              # Build and dev scripts
-├── assets/               # Icons, images, fonts
-└── .github/              # CI/CD workflows
-```
-

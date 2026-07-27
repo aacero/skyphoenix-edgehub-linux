@@ -34,6 +34,7 @@ Item {
     property string orientationMode: "auto"
     property string metricsJson: "{}"
     property string screensData: "[]"
+    property bool _widgetsEnabled: true
 
     Loader {
         id: ld
@@ -315,12 +316,14 @@ Item {
 
         function init() {
             var d = ld.item
+            root._widgetsEnabled = true
             root.scanCalls = 0
             d.userWidgetProvider = function () { root.scanCalls++; return [root.scanEntry({})] }
         }
 
         function cleanup() {
             var d = ld.item
+            root._widgetsEnabled = true
             d.userWidgetProvider = null
             root.store().applyExternal(root.makeDoc([], {}))
             d._loadUserWidgets()
@@ -334,6 +337,25 @@ Item {
             compare(d._loadUserWidgets(), 0, "flag off registers nothing")
             compare(root.scanCalls, 0, "flag off → the scan provider was NEVER invoked")
             compare(root.store()._catalog.userItems.length, 0, "store catalog untouched")
+        }
+
+        function test_safe_mode_overrides_persisted_opt_in_without_scanning() {
+            var d = ld.item
+            root._widgetsEnabled = false
+            root.store().applyExternal(root.makeDoc([
+                { id: "safe-unknown-1", type: "user.hello", size: "1x2" }
+            ], { enableUserWidgets: true }))
+
+            verify(!d.sessionWidgetsEnabled,
+                   "the Hub's process-local safe-mode gate reached Dashboard")
+            verify(!d._userWidgetsFlag(),
+                   "safe mode wins over the persisted user-widget opt-in")
+            compare(d._loadUserWidgets(), 0,
+                    "safe mode registers no user widget")
+            compare(root.scanCalls, 0,
+                    "safe mode never invokes the directory scan provider")
+            compare(root.store().pages()[0].tiles[0].size, "1x2",
+                    "safe mode preserves the legal size of an unscanned user widget")
         }
 
         function test_flag_on_loads_and_renders() {

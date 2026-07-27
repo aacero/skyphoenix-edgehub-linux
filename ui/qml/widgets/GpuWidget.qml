@@ -103,12 +103,19 @@ WidgetChrome {
     }
     status: {
         var temperature = (w.showTemp && w.tempAvailable) ? w.temp.toFixed(0) + "°C" : ""
-        var state = w.alertLevel === "normal" ? ""
-                  : w.width < 480 && w.alertLevel === "unsupported" ? "Unsupported"
-                  : w.width < 480 && w.alertLevel === "disconnected" ? "GPU offline"
-                  : w.width < 480 && w.alertText === "Critical temperature" ? "Temp critical"
-                  : w.width < 480 && w.alertText === "High temperature" ? "High temp"
-                  : w.alertText
+        var state = w.alertLevel === "normal" ? "" : w.alertText
+        // Narrow tall projections keep the exact temperature and severity but
+        // avoid repeating a long thermal phrase in the constrained header.
+        // accessibleSummary retains the full alert wording.
+        if (w.width < 480 && state.length) {
+            if (w.alertLevel === "unsupported") return "Unsupported"
+            if (w.alertLevel === "disconnected") return "GPU offline"
+            if (state === "Critical temperature")
+                return temperature.length ? temperature + " critical" : "Temp critical"
+            if (state === "High temperature")
+                return temperature.length ? temperature + " high" : "High temp"
+            return state === "Critical load" ? "Load critical" : state
+        }
         return state.length ? (temperature.length ? temperature + " · " + state : state)
                             : temperature
     }

@@ -74,7 +74,9 @@ selection is required in the Manager.
 1. Turn off animated backgrounds and widget glow.
 2. Remove updating widgets one by one to identify the workload.
 3. Run from a terminal with `RUST_LOG=debug` and inspect the output.
-4. Compare with a session-only safe-mode launch: `xeneon-edge-hub --safe-mode`.
+4. Compare with `xeneon-edge-hub --safe-mode`. This session loads no widget
+   QML, does not scan user-widget directories, and leaves the saved layout
+   unchanged.
 
 The current development build does not meet its formal RSS release limits; do
 not treat the published thresholds as a troubleshooting promise until a candidate
@@ -87,7 +89,9 @@ passes them.
 **Symptom:** RAM usage increases continuously.
 
 **Fixes:**
-1. Enable safe mode to disable all widgets, then re-enable one by one.
+1. Start one comparison session with `xeneon-edge-hub --safe-mode`. If growth
+   stops, exit and return to a normal session to remove or reconfigure suspected
+   widgets one at a time. Safe mode itself has no per-widget enable controls.
 2. Check for widgets with graph/chart history - reduce retention.
 3. Restart application: memory leak may be in a specific widget.
 4. Report the issue with memory profiling data.
@@ -99,11 +103,32 @@ passes them.
 **Symptom:** SIGSEGV or panic on launch.
 
 **Fixes:**
-1. Try safe mode: `xeneon-edge-hub --safe-mode`
-2. Reset all configuration: `xeneon-edge-hub --reset`
-3. Check for corrupted config: `cat ~/.config/xeneon-edge-hub/config.toml`
-4. If resetting, keep the `config.toml.bak` path printed by `--reset`; it is the
-   recovery copy of the discarded configuration.
+1. Try the session-only safe mode: `xeneon-edge-hub --safe-mode`. It keeps
+   diagnostics, settings, and layout recovery available without instantiating
+   any widget or changing the saved layout.
+2. Run `xeneon-edge-hub --diagnostics` and review its redacted summary. Do not
+   print the raw config to a terminal because it can contain bearer tokens,
+   private URLs, personal notes, and the Pro key.
+3. Before any manual repair, make an owner-only copy:
+
+   ```bash
+   install -m 600 ~/.config/xeneon-edge-hub/config.toml \
+     ~/.config/xeneon-edge-hub/config.toml.manual-backup
+   ```
+
+4. If the log says the configuration or dashboard schema is newer than this
+   build, do not reset or edit its version number. Install the newer application
+   that created it. The Hub deliberately refuses a writable config handle so an
+   older build cannot erase unknown fields.
+5. Use `xeneon-edge-hub --reset` only after preserving evidence and only when
+   recovery with the creating version is not possible. The command prints the
+   `config.toml.bak` recovery path. A later reset replaces that canonical backup,
+   so copy it elsewhere before resetting again.
+
+When an older supported schema is migrated, the exact original bytes are kept
+beside `config.toml` in an owner-only
+`config.toml.pre-migration-v<old>-to-v<new>-<timestamp>.bak` file before the
+migrated document is saved.
 
 ---
 
@@ -145,6 +170,11 @@ xeneon-edge-hub --windowed
 `--diagnostics` opens the diagnostics view; it does not create an export bundle.
 Copy the relevant configuration or terminal output manually after checking it for
 secrets.
+
+`--safe-mode` applies only to that Hub process. It prevents all first-party and
+user widget QML from loading and skips user-widget discovery, but it does not
+remove tiles or write a disabled state to `config.toml`. Exit and launch
+normally to restore widgets.
 
 ---
 

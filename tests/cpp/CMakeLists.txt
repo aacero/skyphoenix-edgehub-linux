@@ -21,6 +21,12 @@
 
 set(APP_SRC "${CMAKE_SOURCE_DIR}/app/src")
 set(MGR_SRC "${CMAKE_SOURCE_DIR}/manager/src")
+string(LENGTH "${XENEON_EVIDENCE_SOURCE_COMMIT}" _evidence_commit_length)
+set(_evidence_commit_is_valid FALSE)
+if(_evidence_commit_length EQUAL 40
+   AND XENEON_EVIDENCE_SOURCE_COMMIT MATCHES "^[0-9a-f]+$")
+    set(_evidence_commit_is_valid TRUE)
+endif()
 
 # Where each test's XDG_RUNTIME_DIR goes. NOT the build tree, unlike its HOME /
 # XDG_CONFIG_HOME: a Unix socket path must fit sockaddr_un::sun_path (108 bytes
@@ -108,6 +114,9 @@ add_qt_test(path_sanitize)
 add_qt_test(orientation_byte SOURCES "${APP_SRC}/orientation_sensor.cpp")
 add_qt_test(reconcile       SOURCES "${MGR_SRC}/reconcile.cpp")
 add_qt_test(manager_display_policy)
+add_qt_test(manager_hub_launch)
+add_qt_test(safe_mode LINK Qt6::Qml Qt6::Quick)
+target_compile_definitions(safe_mode PRIVATE XENEON_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_qt_test(autostart       SOURCES "${APP_SRC}/autostart.cpp")
 # Offline licence FFI. No extra sources: it calls the Rust core directly, which
 # is the whole surface the app uses. Qt6::Test already brings QJson*.
@@ -123,12 +132,19 @@ add_executable(notification_desktop_smoke EXCLUDE_FROM_ALL
 set_target_properties(notification_desktop_smoke PROPERTIES AUTOMOC ON)
 target_include_directories(notification_desktop_smoke PRIVATE "${APP_SRC}")
 target_link_libraries(notification_desktop_smoke PRIVATE Qt6::Core Qt6::DBus)
+add_dependencies(notification_desktop_smoke rust_core)
+if(_evidence_commit_is_valid)
+    target_compile_definitions(notification_desktop_smoke PRIVATE
+        XENEON_EVIDENCE_SOURCE_COMMIT="${XENEON_EVIDENCE_SOURCE_COMMIT}")
+endif()
 
 add_qt_test(shutdown_flush)
 
 # ── Unit (event loop) ──
 # The Q_OBJECT header is listed as a source so AUTOMOC generates its moc.
-add_qt_test(config_bridge   SOURCES "${APP_SRC}/config_bridge.h" "${APP_SRC}/autostart.cpp")
+add_qt_test(config_bridge   SOURCES "${APP_SRC}/config_bridge.h"
+                                    "${APP_SRC}/license_bridge.h"
+                                    "${APP_SRC}/autostart.cpp")
 # E9 managed/org policy: ConfigBridge::policy() + the policy FFI, via the
 # XENEON_POLICY_PATH test seam (never the real /etc). Same TU set as
 # config_bridge: the header declares WizardBridge too, whose moc references
@@ -145,7 +161,9 @@ add_qt_test(control_socket_path)
 add_qt_test(manager_backend_sync SOURCES "${MGR_SRC}/manager_backend.h" "${MGR_SRC}/reconcile.cpp"
                                          "${APP_SRC}/control_server.cpp" "${APP_SRC}/autostart.cpp"
                                  LINK Qt6::Gui Qt6::Network)
-add_qt_test(rx_cap          SOURCES "${MGR_SRC}/manager_backend.h" "${MGR_SRC}/reconcile.cpp" LINK Qt6::Gui Qt6::Network)
+add_qt_test(rx_cap          SOURCES "${MGR_SRC}/manager_backend.h" "${MGR_SRC}/reconcile.cpp"
+                                 "${APP_SRC}/autostart.cpp"
+                         LINK Qt6::Gui Qt6::Network)
 add_qt_test(single_instance)
 add_qt_test(network_access_policy LINK Qt6::Network Qt6::Qml)
 
@@ -203,6 +221,11 @@ add_executable(mpris_desktop_smoke EXCLUDE_FROM_ALL
 set_target_properties(mpris_desktop_smoke PROPERTIES AUTOMOC ON)
 target_include_directories(mpris_desktop_smoke PRIVATE "${APP_SRC}")
 target_link_libraries(mpris_desktop_smoke PRIVATE Qt6::Core Qt6::DBus)
+add_dependencies(mpris_desktop_smoke rust_core)
+if(_evidence_commit_is_valid)
+    target_compile_definitions(mpris_desktop_smoke PRIVATE
+        XENEON_EVIDENCE_SOURCE_COMMIT="${XENEON_EVIDENCE_SOURCE_COMMIT}")
+endif()
 
 # ── Smoke: launch the REAL binaries offscreen (main()/screen match/thread lifecycle;
 #    doubles as the XENEON_GRAB UAF regression) ──

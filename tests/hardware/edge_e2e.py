@@ -171,7 +171,12 @@ def main():
         print("!!", e)
         return 2
     _kill_stale()
-    work = tempfile.mkdtemp(prefix="edge-e2e-")
+    audit_root = os.environ.get("XENEON_AUDIT_RUN_DIR", "")
+    if audit_root:
+        work = os.path.join(audit_root, "hardware-edge-e2e")
+        os.mkdir(work, 0o700)
+    else:
+        work = tempfile.mkdtemp(prefix="edge-e2e-")
     print("EdgeHub E2E - workdir:", work, flush=True)
     h = E2E(work)
     print("Edge geom:", h.ex, h.ey, h.ew, h.eh, "canvas:", h.cw, h.ch, flush=True)
@@ -189,9 +194,14 @@ def main():
         section("Interaction (synthetic touch: compact controls + page swipe)")
         e2e_interaction.run(h)
         ipc_robustness_and_perf(h)
-        # Default lands the full run in the ~20–30 min range; set E2E_SOAK_SECONDS
-        # low (e.g. 5) for a quick smoke run.
-        soak(h, seconds=int(os.environ.get("E2E_SOAK_SECONDS", "1200")))
+        # The ordinary developer run retains the historical endurance section.
+        # A release may set the duration to zero because its owner-approved
+        # stability substitute is the separate, instrumented 30-minute
+        # 14-widget observation. Zero omits only this duplicate endurance loop;
+        # every functional section above still runs and must pass.
+        soak_seconds = int(os.environ.get("E2E_SOAK_SECONDS", "1200"))
+        if soak_seconds > 0:
+            soak(h, seconds=soak_seconds)
     finally:
         h.cleanup()   # stop the spawned hub + remove its private runtime dir
 

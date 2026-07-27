@@ -1,0 +1,9 @@
+# The QML requirements denominator is a manually curated traceability contract.
+# Its owner must review additions, removals, and source-selection changes for
+# gaps rather than treating a 100% checklist result as source-code coverage.
+/scripts/qml_coverage.py @SimonKreitmayer
+/ui/qml/WidgetConfigSchema.qml @SimonKreitmayer
+/ui/qml/WidgetCatalog.qml @SimonKreitmayer
+/ui/qml/BackgroundCatalog.qml @SimonKreitmayer
+/ui/qml/WallpaperCatalog.qml @SimonKreitmayer
+/tests/ui/ @SimonKreitmayer

@@ -12,19 +12,22 @@ EOF
 }
 
 post_upgrade() {
-  # This hook runs as ROOT inside the pacman transaction, with no access to your
-  # graphical session (no DISPLAY/WAYLAND_DISPLAY, wrong UID), so it CANNOT
-  # restart your running hub/manager itself - doing so reliably needs your user
-  # session. `./scripts/update-local.sh` (the dev/dogfood path) does the full
-  # restart of both; a plain `pacman -U` / `yay -Syu` cannot, so it says so:
   cat <<'EOF'
-:: Xeneon Edge updated. The RUNNING hub/manager are still the OLD build until
-   you restart them (a package manager cannot restart your session apps):
+:: EdgeHub updated. The package manager does not restart either graphical
+   application because it cannot safely inspect or control your user session.
+   Close and reopen the Hub to use the new build. If the Manager was open during
+   the upgrade, close and reopen it too; do not start the Manager otherwise.
+   Hub autostart, when enabled, uses the new binary at the next login.
+EOF
+}
 
-     pkill -TERM -x xeneon-edge-hub;     setsid xeneon-edge-hub &
-     pkill -TERM -x xeneon-edge-manager; setsid xeneon-edge-manager &   # if open
-
-   The hub saves its config on SIGTERM, so the -TERM above is safe. Dev builds
-   can instead run ./scripts/update-local.sh, which restarts both automatically.
+post_remove() {
+  cat <<'EOF'
+:: EdgeHub package files removed. Per-user data is deliberately preserved:
+     ${XDG_CONFIG_HOME:-$HOME/.config}/xeneon-edge-hub/
+     ${XDG_CONFIG_HOME:-$HOME/.config}/autostart/xeneon-edge-hub.desktop
+   Disable autostart in the Manager before uninstalling, or remove the second
+   file yourself. Remove the first directory only if you want to erase layouts,
+   widget data, settings and credentials.
 EOF
 }

@@ -1,0 +1,7 @@
+# Ordinary CI accepts only development or candidate here. Change to candidate
+# only when changelog and both AppStream files are prepared for target_version.
+# Published status is verified externally after publication and is never
+# self-declared by this file.
+schema = 1
+stage = "development"
+target_version = "v1.0.0"

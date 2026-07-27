@@ -198,7 +198,7 @@ fn test_mpris_play_pause_sends_correct_dbus_method() {
 | 50 suspend/resume cycles | ~2h | No crash, correct display after each resume |
 | 50 dashboard page switches | ~30min | No crash, no memory leak |
 | 50 widget add/remove cycles | ~30min | No crash, layout correct after each |
-| Corrupted config recovery | Instant | App starts in safe mode, offers reset |
+| Corrupted config recovery | Instant | Recoverable malformed TOML is backed up and salvaged; unsupported future schemas fail closed. Safe mode is an explicit session-only launch, not an automatic fallback |
 | Low disk space behavior | ~5min | App warns, does not crash, saves handled gracefully |
 | Missing dependency | Instant | App reports missing dep, exits gracefully |
 

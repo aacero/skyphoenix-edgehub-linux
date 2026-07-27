@@ -52,14 +52,20 @@ WidgetChrome {
         var _ = store ? store.revision : 0
         return (store && instanceId) ? JSON.parse(JSON.stringify(store.settingsFor(instanceId))) : ({})
     }
-    property int goal: cfg.goal || 8
+    // Saved settings can be edited outside either UI. Apply the same bounds as
+    // the schema and the widget actions so an out-of-contract value cannot turn
+    // the tile into a 50-cell layout.
+    property int goal: Math.max(1, Math.min(20,
+        Number(cfg.goal !== undefined ? cfg.goal : 8)))
     property int _observedGoal: -1
-    readonly property int glassMl: cfg.glassMl !== undefined ? cfg.glassMl : 250
+    readonly property int glassMl: Math.max(100, Math.min(1000,
+        Number(cfg.glassMl !== undefined ? cfg.glassMl : 250)))
     readonly property string unit: cfg.unit || "ml"
     readonly property bool celebrate: cfg.celebrate !== undefined ? cfg.celebrate : true
     readonly property bool showStreakSetting: cfg.showStreak !== undefined ? cfg.showStreak : true
     property string todayKey: (w.tick, Qt.formatDate(new Date(), "yyyy-MM-dd"))
-    property int count: cfg.day === todayKey ? (cfg.count || 0) : 0
+    property int count: cfg.day === todayKey
+        ? Math.max(0, Math.min(50, Number(cfg.count || 0))) : 0
     readonly property bool undoAvailable: cfg.countUndoAvailable === true
     status: count + "/" + goal
 
@@ -150,6 +156,13 @@ WidgetChrome {
     readonly property bool showGrid: !w.micro
     readonly property bool showStreak: showStreakSetting && !w.micro && w.streakDisplay > 1
     readonly property bool showDetails: !w.micro && Math.min(width, height) >= 600
+    readonly property real tileBodyWidth:
+        Math.max(1, w.width - 2 * w.contentMargins)
+    readonly property real tileColumnWidth: w.horiz
+        ? Math.max(1, (w.tileBodyWidth - theme.spacingLg) / 2)
+        : w.tileBodyWidth
+    readonly property bool stackTileActions:
+        !w.micro && !w.horiz && w.tileColumnWidth < 360
     // The count line is the readout micro is built around, so it scales to the
     // box there and stays a caption everywhere else. The caption measures against
     // its own COLUMN (wide puts it beside the grid, so the full width would
@@ -169,14 +182,17 @@ WidgetChrome {
     // literals (see the expanded ColumnLayout), so the 42 never rendered anywhere.
     // Its existence is what made this read like a mode decision.
     readonly property real glassPx:
-        Math.max(theme.fontMinimum, Math.min((w.horiz ? width * 0.5 : width) * 0.9 / Math.max(4, Math.ceil(Math.sqrt(w.goal) * 1.6)),
+        Math.max(theme.fontMinimum, Math.min(w.tileColumnWidth * 0.9
+                              / Math.max(4, Math.ceil(Math.sqrt(w.goal) * 1.6)),
                               height * 0.16, 56))
     // The grid is a real Grid (not a Flow): a Flow reports NO implicit width, so
     // Layout.alignment collapsed it to zero and the droplets spilled out of the
     // left edge in one unwrapped row. Columns are computed so they wrap honestly.
     readonly property real glassCell: w.glassPx * 1.25
+    readonly property real glassGap: Math.max(3, w.glassPx * 0.22)
     readonly property int glassCols: Math.max(1, Math.min(w.goal,
-        Math.floor(((w.horiz ? width * 0.5 : width) - 16) / Math.max(1, w.glassCell))))
+        Math.floor((w.tileColumnWidth + w.glassGap)
+                   / Math.max(1, w.glassCell + w.glassGap))))
 
     // Celebration pop (mirrors FocusWidget).
     //
@@ -236,6 +252,8 @@ WidgetChrome {
     // are not rebuilt (their model is the goal COUNT, an int, so a tap moves the
     // bound values and nothing is recreated).
     GridLayout {
+        id: tileLayout
+        objectName: "hydrationTileLayout"
         // centerIn + an explicit width (the wave-2a MoonWidget shape): the group
         // reads as ONE centred block instead of a top-anchored grid with the
         // controls stranded in the middle.
@@ -247,10 +265,11 @@ WidgetChrome {
         columnSpacing: theme.spacingLg
 
         Grid {
+            objectName: "hydrationGlassGrid"
             visible: w.showGrid
             Layout.alignment: Qt.AlignHCenter
             columns: w.glassCols
-            spacing: Math.max(3, w.glassPx * 0.22)
+            spacing: w.glassGap
             horizontalItemAlignment: Grid.AlignHCenter
             verticalItemAlignment: Grid.AlignVCenter
             Repeater {
@@ -368,16 +387,21 @@ WidgetChrome {
             // 52 minimum, and it is kept at EVERY size: logging a glass in one tap
             // is what this widget is for. Micro drops the −1 (it is the undo, not
             // the job) rather than shrinking either target to fit.
-            RowLayout {
+            GridLayout {
+                objectName: "hydrationTileActions"
                 Layout.alignment: Qt.AlignHCenter
-                spacing: theme.spacingSm
+                columns: w.stackTileActions ? 1 : 2
+                rowSpacing: theme.spacingXs
+                columnSpacing: theme.spacingSm
                 PillButton {
                     visible: !w.micro
+                    Layout.alignment: Qt.AlignHCenter
                     label: "Undo"; glyph: "↶"; tint: w.effAccent
                     enabledState: w.undoAvailable
                     onClicked: w.undoLast()
                 }
                 PillButton {
+                    Layout.alignment: Qt.AlignHCenter
                     label: w.micro ? ("+ " + w.servingText()) : ("Add " + w.servingText())
                     glyphIcon: "hydration"
                     primary: true; tint: w.effAccent

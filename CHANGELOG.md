@@ -21,31 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trend with the raw trace preserved, a direct line, or individual bars.
 - Arbitrary HTTP/JSON and KPI values can use a truthful scale from zero or an
   explicitly labelled rolling range.
-
-### Fixed
-
-- KPI variations are no longer silently stretched across the full graph height,
-  and Network automatic scaling now leaves labelled headroom above a peak.
-- Preset thumbnails in the Manager no longer overlap when catalog tiles have no
-  runtime IDs.
-- Manager preset thumbnails and the detailed preset preview now follow the
-  Hub's reported orientation, including after a live rotation.
-- The Manager preset dialog now keeps its content and footer actions clear of
-  every dialog edge with consistent button padding.
-- Manager preset cards now support keyboard focus, Return/Space selection, and
-  named assistive-technology actions.
-
-## [1.0.0-beta.2] - 2026-07-26
-
-### Added
-
 - Real widget and preset golden-image baselines, contrast scans, minimum type
-  size checks, compiled-resource warning gates, and a 503-item enumerated QML
-  behavior matrix.
+  size checks, compiled-resource warning gates, and an assertion-backed
+  enumerated QML requirements matrix.
 - Focused physical-panel workflows for touch, Manager-to-Hub reflection,
   page mirroring, drag reorder, orientation, notification, and MPRIS checks.
-- Instrumented resource, cold-start, and rotation frame measurements plus
-  configuration, HTTP, and widget fault-injection coverage.
+- Instrumented resource, cold-start, rotation-frame, configuration, HTTP, and
+  widget fault-injection measurement tooling.
 - An immersive Hub option that hides global navigation while preserving each
   widget's own settings access.
 
@@ -62,6 +44,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- KPI variations are no longer silently stretched across the full graph height,
+  and Network automatic scaling now leaves labelled headroom above a peak.
+- Preset thumbnails in the Manager no longer overlap when catalog tiles have no
+  runtime IDs.
+- Manager preset thumbnails and the detailed preset preview now follow the
+  Hub's reported orientation, including after a live rotation.
+- The Manager preset dialog now keeps its content and footer actions clear of
+  every dialog edge with consistent button padding.
+- Manager preset cards now support keyboard focus, Return/Space selection, and
+  named assistive-technology actions.
 - Text clipping and ancestor clipping across compact, wide, tall, portrait, and
   landscape widget layouts.
 - Abrupt orientation changes, startup HID enumeration races, and stale Manager
@@ -211,8 +203,7 @@ display matching, and the CI/coverage gates.
 
 | Version | Date | Description |
 |---------|------|-------------|
-| Unreleased | - | Development after beta.2 |
-| 1.0.0-beta.2 | 2026-07-26 | Widget readability, Manager fidelity, hardware behavior and release evidence |
+| Unreleased | - | Stable-candidate hardening after beta.1 |
 | 1.0.0-beta.1 | 2026-07-21 | Hub/Manager integration, hardware lifecycle, widget fidelity and release hardening |
 | 1.0.0-alpha.2 | 2026-07-16 | First signed release tag |
 | 1.0.0-alpha.1 | 2026-07 | Initial alpha |

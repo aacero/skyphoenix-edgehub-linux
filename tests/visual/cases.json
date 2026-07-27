@@ -2,7 +2,8 @@
   "version": 1,
   "expected": {
     "widgets": 30,
-    "presets": 20
+    "presets": 19,
+    "orientations": 1
   },
   "thresholds": {
     "channel_tolerance": 24,
@@ -60,6 +61,6 @@
     {"id": "preset-system-io", "kind": "preset", "source": "shellpreset_append_system-io.png"},
     {"id": "preset-system-monitor", "kind": "preset", "source": "shellpreset_append_system-monitor.png"},
     {"id": "preset-trading-desk", "kind": "preset", "source": "shellpreset_append_trading-desk.png", "thresholds": {"max_rms": 30.0}, "variance_reason": "This preset contains live clock tiles while geometry remains gated at 5%."},
-    {"id": "preset-landscape", "kind": "preset", "source": "shellpreset_append_landscape.png", "thresholds": {"max_rms": 30.0}, "variance_reason": "This preset contains a live clock while geometry remains gated at 5%."}
+    {"id": "orientation-home-ambient-landscape", "kind": "orientation", "source": "shellpreset_append_landscape.png", "thresholds": {"max_rms": 30.0}, "variance_reason": "This landscape capture contains a live clock while geometry remains gated at 5%."}
   ]
 }

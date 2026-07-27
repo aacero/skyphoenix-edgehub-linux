@@ -6,9 +6,10 @@ import "../../ui/qml" as App
 // COVERS: fn:Dashboard.onAccentNameChanged, fn:Dashboard.onAnimatedBackgroundChanged, fn:Dashboard.onGlassOpacityChanged, fn:Dashboard.onOrientationModeChanged, fn:Dashboard.onReduceMotionChanged, fn:Dashboard.onShowWidgetGlowChanged
 // COVERS: fn:Dashboard.onThemeModeChanged, fn:Dashboard.onTextScaleChanged, fn:Dashboard.onFontChoiceChanged, fn:Dashboard.applyPreset, fn:Dashboard.appendPreset
 // COVERS: fn:Dashboard.requestPageRemoval, fn:Dashboard.confirmPageRemoval
+// COVERS: fn:Dashboard.requestWidgetRemoval, fn:Dashboard.confirmWidgetRemoval
 // COVERS: fn:Dashboard.requestWidgetDataAction, fn:Dashboard.confirmWidgetDataAction
 // COVERS: fn:Dashboard.showPriorityAlert, fn:Dashboard.dismissPriorityAlert, fn:Dashboard.triggerPriorityAlertAction
-// COVERS: fn:Dashboard._openPriorityAlertWidget, fn:Dashboard.prunePriorityAlerts
+// COVERS: fn:Dashboard._openPriorityAlertWidget, fn:Dashboard._priorityAlertWidget, fn:Dashboard._invokePriorityAlertWidget, fn:Dashboard.prunePriorityAlerts
 // COVERS: fn:Dashboard._sweepStaleDying
 //
 // ui/qml/Dashboard.qml -
@@ -187,13 +188,77 @@ Item {
             d.closeExpanded()
             d.cfgStatus = ""
             if (d.pageDeleteDialog.visible) d.pageDeleteDialog.close()
+            if (d.widgetRemoveDialog.visible) d.widgetRemoveDialog.close()
             if (d.widgetDataDialog.visible) d.widgetDataDialog.close()
             while (d.dismissPriorityAlert()) {}
         }
 
+        function test_save_failure_banner_is_visible_and_touch_safe() {
+            var banner = findPred(ld.item, function (x) {
+                return x && x.objectName === "saveFailureBanner"
+            })
+            var retry = findPred(ld.item, function (x) {
+                return x && x.objectName === "retryFailedSaveButton"
+            })
+            var discard = findPred(ld.item, function (x) {
+                return x && x.objectName === "discardFailedSaveButton"
+            })
+            verify(banner, "the Hub save-failure banner exists")
+            verify(retry, "the Hub save-failure banner exposes Retry")
+            verify(discard, "the Hub save-failure banner exposes Discard")
+
+            var orientations = [
+                { portrait: false, width: 2560, height: 720 },
+                { portrait: true, width: 720, height: 2560 }
+            ]
+            for (var i = 0; i < orientations.length; i++) {
+                root.width = orientations[i].width
+                root.height = orientations[i].height
+                root.store().markSaveFailed(
+                    "The latest dashboard changes could not be saved.")
+                tryVerify(function () {
+                    return banner.visible
+                           && retry.width >= 52 && retry.height >= 52
+                           && discard.width >= 52 && discard.height >= 52
+                           && banner.x >= 0 && banner.y >= 0
+                           && banner.x + banner.width <= ld.item.width + 1
+                           && banner.y + banner.height <= ld.item.height + 1
+                }, 1000)
+                var retryPoint = retry.mapToItem(banner, 0, 0)
+                var discardPoint = discard.mapToItem(banner, 0, 0)
+                verify(retryPoint.x >= 0 && retryPoint.y >= 0
+                       && retryPoint.x + retry.width <= banner.width + 1
+                       && retryPoint.y + retry.height <= banner.height + 1,
+                       "Retry stays fully inside the warning surface")
+                verify(discardPoint.x >= 0 && discardPoint.y >= 0
+                       && discardPoint.x + discard.width <= banner.width + 1
+                       && discardPoint.y + discard.height <= banner.height + 1,
+                       "Discard stays fully inside the warning surface")
+                verify(retry.visible && discard.visible,
+                        "both recovery actions remain visible in either orientation")
+                root.store().saveFailed = false
+            }
+
+            root.width = 900
+            root.height = 600
+            root.store().markSaveFailed("Retry this change.")
+            tryVerify(function () { return banner.visible }, 1000)
+            retry.clicked()
+            compare(root.store().dirty, false,
+                    "a successful Hub retry clears the dirty state")
+            compare(root.store().saveFailed, false,
+                    "a successful Hub retry hides the banner")
+
+            root.store().markSaveFailed("Discard this change.")
+            tryVerify(function () { return banner.visible }, 1000)
+            discard.clicked()
+            compare(root.store().dirty, false)
+            compare(root.store().saveFailed, false,
+                    "discard reloads the committed/default layout and hides the banner")
+        }
+
         function test_priority_alert_is_persistent_deduplicated_and_actionable() {
             var d = ld.item
-            var primaryCalls = 0
             verify(d.showPriorityAlert({
                 key: "break:one",
                 title: "Time to take a real break",
@@ -202,7 +267,7 @@ Item {
                 iconName: "break",
                 primaryLabel: "I took a break",
                 secondaryLabel: "Snooze 5 min",
-                primaryCallback: function() { primaryCalls++ }
+                primaryAction: "dismiss"
             }))
             tryVerify(function () { return d.priorityAlertSurface.shown }, 1000)
             compare(d.priorityAlertQueue.length, 1)
@@ -221,7 +286,6 @@ Item {
             verify(d.priorityAlertDismissButton.height >= 52)
 
             verify(d.triggerPriorityAlertAction("primary"))
-            compare(primaryCalls, 1)
             compare(d.priorityAlertQueue.length, 0)
         }
 
@@ -290,6 +354,28 @@ Item {
             compare(d.currentPriorityAlert, null)
         }
 
+        function test_priority_alert_queue_is_bounded_and_keeps_oldest() {
+            var d = ld.item
+            for (var i = 0; i < d.maxPriorityAlerts; i++) {
+                verify(d.showPriorityAlert({
+                    key: "bounded-" + i,
+                    title: "Reminder " + i,
+                    body: "Pending action " + i
+                }))
+            }
+            compare(d.priorityAlertQueue.length, d.maxPriorityAlerts)
+            compare(d.currentPriorityAlert.key, "bounded-0")
+            verify(!d.showPriorityAlert({
+                key: "bounded-overflow",
+                title: "Overflow",
+                body: "Use the desktop fallback"
+            }))
+            compare(d.priorityAlertQueue.length, d.maxPriorityAlerts)
+            compare(d.currentPriorityAlert.key, "bounded-0",
+                    "new arrivals cannot displace an unacknowledged reminder")
+            while (d.dismissPriorityAlert()) {}
+        }
+
         function test_priority_alert_can_open_its_source_widget() {
             var d = ld.item
             var s = root.store()
@@ -314,6 +400,94 @@ Item {
             compare(d.expandedType, "focus")
             compare(d.priorityAlertQueue.length, 0)
             d.closeExpanded()
+        }
+
+        function test_break_alert_action_targets_the_current_widget_after_rebuild() {
+            var d = ld.item
+            var first = JSON.stringify({
+                version: 1,
+                appearance: {},
+                settings: {
+                    "break-live": {
+                        due: true,
+                        running: true,
+                        breaksToday: 0,
+                        priorityAlertEnabled: true
+                    }
+                },
+                pages: [ {
+                    name: "First",
+                    tiles: [
+                        { id: "break-live", type: "break", size: "1x1" }
+                    ]
+                } ]
+            })
+            d.applyExternalState(first)
+            var originalHost = null
+            tryVerify(function () {
+                var hosts = root.widgetHostsFor("break-live")
+                for (var i = 0; i < hosts.length; i++) {
+                    if (hosts[i].driverActive && hosts[i].item) {
+                        originalHost = hosts[i]
+                        break
+                    }
+                }
+                return originalHost !== null
+            }, 3000)
+            compare(d._priorityAlertWidget({
+                        sourceId: "break-live", widgetType: "break"
+                    }), originalHost.item,
+                    "_priorityAlertWidget selects the active source instance")
+            verify(originalHost.item.showPriorityAlert())
+            compare(d.priorityAlertQueue.length, 1)
+            compare(d.currentPriorityAlert.primaryAction, "breakTake")
+            compare(d.currentPriorityAlert.primaryCallback, undefined,
+                    "the persistent queue stores no widget-bound closure")
+
+            var rebuilt = JSON.stringify({
+                version: 1,
+                appearance: {},
+                settings: {
+                    "break-live": {
+                        due: true,
+                        running: true,
+                        breaksToday: 0,
+                        priorityAlertEnabled: true
+                    }
+                },
+                pages: [ {
+                    name: "Rebuilt",
+                    tiles: [
+                        { id: "clock-new", type: "clock", size: "1x1" },
+                        { id: "break-live", type: "break", size: "1x1" }
+                    ]
+                } ]
+            })
+            d.applyExternalState(rebuilt)
+            var replacementHost = null
+            tryVerify(function () {
+                var hosts = root.widgetHostsFor("break-live")
+                for (var i = 0; i < hosts.length; i++) {
+                    if (hosts[i].driverActive && hosts[i].item) {
+                        replacementHost = hosts[i]
+                        break
+                    }
+                }
+                return replacementHost !== null
+            }, 3000)
+            compare(d.priorityAlertQueue.length, 1,
+                    "a retained source keeps its persistent reminder")
+            compare(d._priorityAlertWidget({
+                        sourceId: "break-live", widgetType: "break"
+                    }), replacementHost.item,
+                    "_priorityAlertWidget follows the current rebuilt instance")
+            verify(d.triggerPriorityAlertAction("primary"), "_invokePriorityAlertWidget routes the real break action to the current widget")
+            compare(d.priorityAlertQueue.length, 0,
+                    "a handled break action dismisses its persistent reminder")
+            var saved = root.store().settingsFor("break-live")
+            compare(saved.due, false)
+            compare(saved.breaksToday, 1,
+                    "the action reached the replacement widget, not a stale closure")
         }
 
         function test_priority_alert_prunes_a_removed_source() {
@@ -389,6 +563,41 @@ Item {
             d.expandedType = "cpu"
             compare(d.requestWidgetDataAction("erase"), false)
             compare(d.widgetDataDialog.visible, false)
+        }
+
+        function test_widget_removal_requires_an_exact_named_confirmation() {
+            var d = ld.item, s = root.store()
+            var id = s.addTile(0, "tasks")
+            s.setSetting(id, "items", [
+                { id: "task-1", text: "Do not remove by accident", done: false }
+            ])
+
+            verify(d.requestWidgetRemoval(0, id, "tasks"))
+            verify(d.widgetRemoveDialog.visible)
+            verify(d.widgetRemoveSummary.text.indexOf("Tasks") >= 0)
+            verify(d.widgetRemoveSummary.text.indexOf("tasks and their ordering") >= 0)
+            verify(d.widgetRemoveSummary.text.indexOf("unsaved text") >= 0)
+            verify(d.widgetRemoveCancelButton.height >= 48)
+            verify(d.widgetRemoveConfirmButton.height >= 48)
+            verify(d._tileExists(id), "requesting removal changes nothing")
+
+            verify(d.confirmWidgetRemoval())
+            verify(!d._tileExists(id))
+            compare(s.settingsFor(id).items, undefined,
+                    "confirmed removal deletes the widget settings bucket")
+            d.widgetRemoveDialog.close()
+        }
+
+        function test_widget_removal_refuses_a_stale_confirmation() {
+            var d = ld.item, s = root.store()
+            var id = s.addTile(0, "notes")
+            verify(d.requestWidgetRemoval(0, id, "notes"))
+            s.addTile(0, "clock")
+
+            verify(!d.confirmWidgetRemoval())
+            verify(d._tileExists(id), "a changed screen keeps the reviewed widget")
+            verify(d.widgetRemovalError.indexOf("changed") >= 0)
+            d.widgetRemoveDialog.close()
         }
 
         function test_page_removal_requires_named_confirmation() {
@@ -580,6 +789,51 @@ Item {
             verify(!d.hasExpanded, "closeExpanded cleared the expanded state")
             d.closeExpanded()             // second call must not throw
             verify(!d.hasExpanded, "closeExpanded is idempotent (still closed after a second call)")
+        }
+
+        function test_closeExpanded_keeps_a_failed_editor_live_for_retry() {
+            var d = ld.item
+            d.applyExternalState(root.makeDoc([
+                { id: "draft1", type: "braindump", size: "1x1" }
+            ]))
+            d.expandedId = "draft1"
+            d.expandedType = "braindump"
+
+            var overlayHost = null
+            tryVerify(function () {
+                var hosts = root.widgetHostsFor("draft1")
+                for (var i = 0; i < hosts.length; i++) {
+                    if (hosts[i].expanded && hosts[i].item) {
+                        overlayHost = hosts[i]
+                        break
+                    }
+                }
+                return overlayHost !== null
+            }, 3000)
+            var capture = root.findPred(overlayHost.item, function (node) {
+                return node && node.objectName === "braindumpCaptureField"
+            })
+            verify(capture !== null)
+
+            // Break only this loaded editor's store binding to inject the same
+            // failure a rejected backend save exposes. The close action must not
+            // destroy the only copy of the typed draft.
+            overlayHost.item.store = null
+            capture.text = "keep this exact unsaved thought"
+            verify(overlayHost.hasPendingState())
+            verify(!d.closeExpanded(), "close refuses to destroy a failed editor")
+            compare(d.expandedType, "braindump")
+            compare(d.expandedId, "draft1")
+            compare(capture.text, "keep this exact unsaved thought")
+            verify(d.cfgStatus.indexOf("remains open") >= 0)
+
+            // Restore the live store and prove the same close path can be retried
+            // without retyping or losing the draft.
+            overlayHost.item.store = root.store()
+            verify(d.closeExpanded())
+            compare(d.expandedType, "")
+            compare(root.store().settingsFor("draft1").entries[0].text,
+                    "keep this exact unsaved thought")
         }
 
         // ── _tileExists ───────────────────────────────────────────────────────

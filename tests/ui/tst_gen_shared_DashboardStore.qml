@@ -3,11 +3,11 @@ import QtTest
 import "../../ui/qml" as App
 
 // COVERS: fn:DashboardStore._bucket, fn:DashboardStore._clone, fn:DashboardStore._commitStructure, fn:DashboardStore._flush, fn:DashboardStore._hasBridge, fn:DashboardStore._isEphemeralKey
-// COVERS: fn:DashboardStore._mk, fn:DashboardStore._newId, fn:DashboardStore._normaliseDoc, fn:DashboardStore._page, fn:DashboardStore._persistableData, fn:DashboardStore._touchSettings
+// COVERS: fn:DashboardStore._idInUse, fn:DashboardStore._mk, fn:DashboardStore._newId, fn:DashboardStore._normaliseDoc, fn:DashboardStore._page, fn:DashboardStore._persistableData, fn:DashboardStore._schemaSupported, fn:DashboardStore._touchSettings
 // COVERS: fn:DashboardStore._uniquePageName, fn:DashboardStore.addPage, fn:DashboardStore.addTile, fn:DashboardStore.appearance, fn:DashboardStore.applyExternal, fn:DashboardStore.ensureSettings
-// COVERS: fn:DashboardStore.flushNow, fn:DashboardStore.load, fn:DashboardStore.moveTile, fn:DashboardStore.pageBackground, fn:DashboardStore.pageCount
+// COVERS: fn:DashboardStore.discardUnsaved, fn:DashboardStore.flushNow, fn:DashboardStore.load, fn:DashboardStore.markSaveFailed, fn:DashboardStore.moveTile, fn:DashboardStore.pageBackground, fn:DashboardStore.pageCount
 // COVERS: fn:DashboardStore.pages, fn:DashboardStore.patchSettings, fn:DashboardStore.removePage, fn:DashboardStore.removeTile, fn:DashboardStore.renamePage, fn:DashboardStore.resetSettings
-// COVERS: fn:DashboardStore.resetTo, fn:DashboardStore.seed, fn:DashboardStore.setAppearance, fn:DashboardStore.setPageBackground, fn:DashboardStore.setSetting
+// COVERS: fn:DashboardStore.resetTo, fn:DashboardStore.retrySave, fn:DashboardStore.seed, fn:DashboardStore.setAppearance, fn:DashboardStore.setPageBackground, fn:DashboardStore.setSetting
 // COVERS: fn:DashboardStore.setTileSize, fn:DashboardStore.settingsFor
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -33,9 +33,32 @@ Item {
         property string stored: ""     // what uiState() will return (prior saved doc)
         property int    saveCount: 0   // number of saveUiState() calls
         property string lastJson: ""   // JSON of the most recent save
-        function saveUiState(json) { lastJson = json; stored = json; saveCount++ }
+        property bool saveSucceeds: true
+        property int recoveryCount: 0
+        property string recoveryJson: ""
+        property string recoveryResult: ""
+        function saveUiState(json) {
+            lastJson = json
+            saveCount++
+            if (saveSucceeds)
+                stored = json
+            return saveSucceeds
+        }
+        function exportUiStateRecovery(json) {
+            recoveryCount++
+            recoveryJson = json
+            return recoveryResult
+        }
         function uiState() { return stored }
-        function reset() { stored = ""; saveCount = 0; lastJson = "" }
+        function reset() {
+            stored = ""
+            saveCount = 0
+            lastJson = ""
+            saveSucceeds = true
+            recoveryCount = 0
+            recoveryJson = ""
+            recoveryResult = ""
+        }
     }
     property var configBridge: _bridge
 
@@ -43,6 +66,19 @@ Item {
 
     // Helper: build a stored doc string.
     function docStr(o) { return JSON.stringify(o) }
+    function repeatedX(count) {
+        var result = ""
+        var chunk = "x"
+        var remaining = count
+        while (remaining > 0) {
+            if (remaining % 2 === 1)
+                result += chunk
+            remaining = Math.floor(remaining / 2)
+            if (remaining > 0)
+                chunk += chunk
+        }
+        return result
+    }
 
     // ── 0. Mock wiring sanity ───────────────────────────────────────────────
     TestCase {
@@ -72,7 +108,13 @@ Item {
     TestCase {
         name: "StoreForceFlush"
         when: windowShown
-        function init() { _bridge.reset(); store.load("blank"); _bridge.reset() }
+        function init() {
+            store.persistenceEnabled = true
+            _bridge.reset()
+            store.load("blank")
+            _bridge.reset()
+        }
+        function cleanup() { store.persistenceEnabled = true }
 
         // (OK) resetTo() calls flushNow() → immediate, synchronous save.
         function test_resetTo_flushes_immediately() {
@@ -274,6 +316,33 @@ Item {
         function test_applyExternal_rejects_garbage() {
             verify(!store.applyExternal("not json"))
             verify(!store.applyExternal('{"no":"pages"}'))
+        }
+
+        function test_applyExternal_rejects_future_schema_without_mutation() {
+            var before = JSON.stringify(store.document)
+            var revisionBefore = store.revision
+            var structureBefore = store.structureRevision
+            verify(!store.applyExternal(docStr({ version: 99, pages: [] })))
+            compare(JSON.stringify(store.document), before,
+                    "a future Manager document cannot mutate the live layout")
+            compare(store.revision, revisionBefore)
+            compare(store.structureRevision, structureBefore)
+            compare(_bridge.saveCount, 0, "a rejected future document is not persisted")
+        }
+
+        function test_load_rejects_future_schema_without_seed_or_save() {
+            var before = JSON.stringify(store.document)
+            _bridge.stored = docStr({ version: 99, pages: [],
+                futureOnly: { preserve: true } })
+            verify(!store.load("productivity"))
+            compare(JSON.stringify(store.document), before,
+                    "a future saved document cannot be normalised or replaced by a preset")
+            compare(_bridge.saveCount, 0, "load does not overwrite a future document")
+        }
+
+        function test_legacy_document_is_stamped_current_when_normalised() {
+            verify(store.applyExternal(docStr({ pages: [] })))
+            compare(store.document.version, store.schemaVersion)
         }
     }
 
@@ -487,6 +556,29 @@ Item {
                 seen[id] = true
             }
         }
+
+        function test_addTile_id_survives_counter_reset_and_reload() {
+            var first = store.addTile(0, "cpu")
+            store.setSetting(first, "label", "first instance")
+            var persisted = JSON.stringify(store.document)
+
+            // Reproduce a fresh process: both counters return to their initial
+            // values, then the exact persisted document is loaded.
+            store._idSeq = 0
+            verify(store.applyExternal(persisted), "persisted state reloads")
+            var second = store.addTile(0, "cpu")
+            verify(second !== first,
+                   "a post-restart add cannot reuse a persisted widget id")
+            store.setSetting(second, "label", "second instance")
+            compare(store.settingsFor(first).label, "first instance",
+                    "the original settings bucket remains independent")
+            compare(store.settingsFor(second).label, "second instance",
+                    "the new widget owns a distinct settings bucket")
+
+            verify(store.removeTile(0, second), "the new widget can be removed")
+            compare(store.settingsFor(first).label, "first instance",
+                    "removing the new widget cannot delete the original settings")
+        }
     }
 
     // ── 9. Direct API contract for the store's helpers / mutators ────────────
@@ -516,6 +608,22 @@ Item {
         function test_newId_prefix_and_uniqueness() {
             verify(store._newId("cpu").indexOf("cpu-") === 0, "_newId prefixes the id with the type")
             verify(store._newId("cpu") !== store._newId("cpu"), "_newId is unique per call")
+        }
+
+        // Collision checks include tile ids, detached settings buckets, and
+        // malformed or empty input without trusting object prototypes.
+        function test_idInUse_checks_every_id_namespace() {
+            var source = {
+                pages: [ { name: "P", tiles: [ { id: "tile-used", type: "cpu" } ] } ],
+                settings: { "settings-used": { label: "kept" } }
+            }
+            verify(store._idInUse("", source), "_idInUse reserves an empty id")
+            verify(store._idInUse("tile-used", source),
+                   "_idInUse detects an id already present on a tile")
+            verify(store._idInUse("settings-used", source),
+                   "_idInUse detects an id retained only by settings")
+            verify(!store._idInUse("available", source),
+                   "_idInUse accepts an id absent from both namespaces")
         }
 
         // _clone is a deep copy; mutating the clone cannot reach the source.
@@ -579,9 +687,195 @@ Item {
 
         // _flush / flushNow persist the current document through the bridge.
         function test_flush_and_flushNow_persist() {
-            store.addTile(0, "cpu")
-            _bridge.reset(); store.flushNow()
-            verify(_bridge.saveCount >= 1, "flushNow drives an immediate _flush through the bridge")
+            _bridge.reset()
+            store.setSetting("flush-probe", "value", 1)
+            verify(store._flush(), "_flush accepts and persists the dirty document")
+            verify(store.flushNow(), "flushNow stops the armed timer after _flush")
+            compare(_bridge.saveCount, 1, "_flush writes the dirty document exactly once")
+
+            _bridge.reset()
+            verify(store.flushNow())
+            compare(_bridge.saveCount, 0,
+                    "flushNow is a no-op when no mutation is pending")
+        }
+
+        function test_schemaSupported_accepts_legacy_and_rejects_future_docs() {
+            verify(store._schemaSupported({}), "_schemaSupported accepts a legacy unversioned object")
+            verify(store._schemaSupported({ version: store.schemaVersion }), "_schemaSupported accepts the current schema")
+            verify(!store._schemaSupported({ version: store.schemaVersion + 1 }), "_schemaSupported rejects a future schema")
+            verify(!store._schemaSupported({ version: 0.5 }), "_schemaSupported rejects a fractional schema")
+            verify(!store._schemaSupported([]), "_schemaSupported rejects a non-object document")
+        }
+
+        function test_persistence_disabled_keeps_safe_mode_session_ephemeral() {
+            _bridge.reset()
+            store.persistenceEnabled = false
+            verify(store.load("blank"))
+            compare(_bridge.saveCount, 0,
+                    "safe-mode seed normalisation does not create configuration bytes")
+
+            store.setSetting("safe-mode-probe", "text", "session only")
+            verify(store.flushNow())
+            compare(_bridge.saveCount, 0,
+                    "safe-mode edits remain process-local")
+            compare(store.dirty, false)
+            store.persistenceEnabled = true
+        }
+    }
+
+    // ── 10. Persistence failure state machine ───────────────────────────────
+    TestCase {
+        name: "StorePersistenceFailure"
+        when: windowShown
+
+        function init() {
+            _bridge.reset()
+            store.load("blank")
+            store.flushNow()
+            _bridge.reset()
+        }
+
+        function test_failed_save_stays_dirty_and_retry_clears_failure() {
+            _bridge.stored = "previous committed bytes"
+            _bridge.recoveryResult = "/mock/recovery/layout.json"
+            _bridge.saveSucceeds = false
+
+            store.setAppearance("accent", "coral")
+            verify(!store.flushNow(), "a bridge rejection is reported to the caller")
+            compare(store.dirty, true, "a rejected write remains dirty")
+            compare(store.saveFailed, true, "a rejected write exposes the failure state")
+            verify(store.saveFailureMessage.length > 0, "the failure has actionable copy")
+            compare(_bridge.stored, "previous committed bytes",
+                    "the mock confirms a failed write did not replace committed bytes")
+            compare(_bridge.recoveryCount, 1, "the first failed payload is exported once")
+            compare(store.recoveryPath, "/mock/recovery/layout.json",
+                    "the exported recovery path is retained for the banner")
+
+            var failedPayload = _bridge.lastJson
+            verify(!store.retrySave(), "retry still reports failure while storage rejects")
+            compare(_bridge.recoveryCount, 1,
+                    "retrying the same payload does not create duplicate recovery files")
+            compare(_bridge.lastJson, failedPayload, "retry preserves the exact dirty payload")
+            compare(store.dirty, true)
+            compare(store.saveFailed, true)
+
+            _bridge.saveSucceeds = true
+            verify(store.retrySave(), "retry succeeds once storage recovers")
+            compare(store.dirty, false, "successful retry clears dirty")
+            compare(store.saveFailed, false, "successful retry clears saveFailed")
+            compare(store.saveFailureMessage, "")
+            compare(store.recoveryPath, "")
+            compare(_bridge.stored, failedPayload,
+                    "successful retry commits the exact payload that previously failed")
+        }
+
+        function test_markSaveFailed_stops_debounce_and_exports_recovery() {
+            _bridge.recoveryResult = "/mock/recovery/marked.json"
+            store.setSetting("marked-probe", "text", "recover me")
+            verify(store._savePending, "precondition: the edit armed the debounce")
+            store.markSaveFailed("Generation conflict")
+            compare(store.saveFailureMessage, "Generation conflict", "markSaveFailed preserves the supplied reason")
+            compare(store.dirty, true)
+            compare(store.saveFailed, true)
+            compare(store._savePending, false,
+                    "the rejected generation cannot be written by a late timer")
+            compare(store.recoveryPath, "/mock/recovery/marked.json")
+            compare(_bridge.recoveryCount, 1,
+                    "the current recoverable payload is exported exactly once")
+        }
+
+        function test_new_failed_payload_gets_a_new_recovery_export() {
+            _bridge.recoveryResult = "/mock/recovery/first.json"
+            _bridge.saveSucceeds = false
+            store.setAppearance("accent", "mint")
+            verify(!store.flushNow())
+            compare(_bridge.recoveryCount, 1)
+            compare(store.recoveryPath, "/mock/recovery/first.json")
+            compare(_bridge.recoveryJson, _bridge.lastJson)
+
+            _bridge.recoveryResult = "/mock/recovery/second.json"
+            store.setAppearance("accent", "amber")
+            verify(!store.flushNow())
+            compare(_bridge.recoveryCount, 2,
+                    "a different failed payload receives its own recovery export")
+            compare(store.recoveryPath, "/mock/recovery/second.json")
+            compare(_bridge.recoveryJson, _bridge.lastJson)
+        }
+
+        function test_discard_restores_last_committed_document() {
+            var saved = docStr({
+                version: 1,
+                appearance: { accent: "blue" },
+                pages: [ { name: "Saved", tiles: [] } ],
+                settings: {}
+            })
+            _bridge.stored = saved
+            verify(store.load("blank"))
+            compare(store.pages()[0].name, "Saved")
+
+            _bridge.saveSucceeds = false
+            store.setAppearance("accent", "red")
+            verify(!store.flushNow())
+            compare(store.appearance().accent, "red", "the rejected edit stays live")
+            compare(store.saveFailed, true)
+
+            verify(store.discardUnsaved("blank"))
+            compare(store.pages()[0].name, "Saved")
+            compare(store.appearance().accent, "blue",
+                    "discard reloads the last committed document")
+            compare(store.dirty, false)
+            compare(store.saveFailed, false)
+            compare(store.saveFailureMessage, "")
+            compare(store.recoveryPath, "")
+        }
+
+        function test_authoritative_load_retires_stale_failure_state() {
+            _bridge.recoveryResult = "/mock/recovery/stale.json"
+            _bridge.saveSucceeds = false
+            store.setAppearance("accent", "red")
+            verify(!store.flushNow())
+            compare(store.saveFailed, true)
+            compare(store.dirty, true)
+
+            _bridge.saveSucceeds = true
+            _bridge.stored = docStr({
+                version: 1,
+                appearance: { accent: "blue" },
+                pages: [ { name: "External", tiles: [] } ],
+                settings: {}
+            })
+            verify(store.load("blank"))
+            compare(store.pages()[0].name, "External")
+            compare(store.dirty, false)
+            compare(store.saveFailed, false)
+            compare(store.saveFailureMessage, "")
+            compare(store.recoveryPath, "")
+        }
+
+        function test_cap_plus_one_failure_is_visible_and_recoverable() {
+            var cap = 1024 * 1024
+            store.document = {
+                version: 1,
+                appearance: {},
+                pages: [],
+                settings: { capProbe: { text: "" } }
+            }
+            var fixedLength = JSON.stringify(store._persistableData()).length
+            verify(fixedLength < cap + 1, "the fixed JSON envelope fits below the cap")
+            store.document.settings.capProbe.text = repeatedX(cap + 1 - fixedLength)
+            compare(JSON.stringify(store._persistableData()).length, cap + 1,
+                    "the fixture is exactly one ASCII byte over the UI-state cap")
+
+            _bridge.saveSucceeds = false
+            _bridge.recoveryResult = "/mock/recovery/oversized.json"
+            verify(!store.flushNow())
+            compare(_bridge.lastJson.length, cap + 1)
+            compare(store.dirty, true)
+            compare(store.saveFailed, true)
+            verify(store.saveFailureMessage.indexOf("too large") >= 0,
+                    "cap-plus-one uses the size-specific recovery guidance")
+            compare(store.recoveryPath, "/mock/recovery/oversized.json")
+            compare(_bridge.recoveryCount, 1)
         }
     }
 }

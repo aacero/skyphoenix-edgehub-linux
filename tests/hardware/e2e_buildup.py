@@ -159,7 +159,13 @@ def main():
     except RuntimeError as e:
         print("!!", e)
         return 2
-    h = E2E(workdir=tempfile.mkdtemp(prefix="edge-buildup-"))
+    audit_root = os.environ.get("XENEON_AUDIT_RUN_DIR", "")
+    if audit_root:
+        workdir = os.path.join(audit_root, "hardware-edge-buildup")
+        os.mkdir(workdir, 0o700)
+    else:
+        workdir = tempfile.mkdtemp(prefix="edge-buildup-")
+    h = E2E(workdir=workdir)
     b = BuildUp(h)
     try:
         # Seed the config BEFORE launching: without first_run_complete the hub

@@ -63,6 +63,27 @@ Item {
         }, [])
         return found.length ? found[0] : null
     }
+    function clippingIssue(candidate, rootNode) {
+        var ancestor = candidate ? candidate.parent : null
+        while (ancestor && ancestor !== rootNode.parent) {
+            if (ancestor.clip === true && ancestor.width > 0 && ancestor.height > 0) {
+                var topLeft = candidate.mapToItem(ancestor, 0, 0)
+                var bottomRight = candidate.mapToItem(
+                    ancestor, candidate.width, candidate.height)
+                if (topLeft.x < -1 || topLeft.y < -1
+                        || bottomRight.x > ancestor.width + 1
+                        || bottomRight.y > ancestor.height + 1)
+                    return "box " + Math.floor(topLeft.x) + ","
+                           + Math.floor(topLeft.y) + " to "
+                           + Math.ceil(bottomRight.x) + ","
+                           + Math.ceil(bottomRight.y) + " exceeds "
+                           + Math.floor(ancestor.width) + "x"
+                           + Math.floor(ancestor.height)
+            }
+            ancestor = ancestor.parent
+        }
+        return ""
+    }
     function disc(host) { return findByObjectName(host.item, "moonDisc") }
 
     function clearSettings(h) {
@@ -446,6 +467,15 @@ Item {
         WidgetHarness { id: hOvlL; anchors.fill: parent; widgetFile: "MoonWidget.qml"; expanded: true } }
     Item { width: 656; height: 980
         WidgetHarness { id: hOvlP; anchors.fill: parent; widgetFile: "MoonWidget.qml"; expanded: true } }
+    Item { id: responsiveWrap; width: 348; height: 818
+        WidgetHarness {
+            id: hResponsive
+            anchors.fill: parent
+            widgetFile: "MoonWidget.qml"
+            expanded: false
+            active: false
+        }
+    }
 
     TestCase {
         name: "MoonSizes"
@@ -485,7 +515,9 @@ Item {
             var w = hWide.item
             w.sizeClass = "wide"
             compare(w.horiz, true, "wide lays glyph and details side by side")
-            verify(w.illumLine.indexOf("days old") > 0, "wide earns the lunar age")
+            verify(w.illumLine.indexOf(w.ageDays.toFixed(1)) > 0
+                   && w.illumLine.indexOf("days") > 0,
+                   "wide earns the lunar age in its responsive wording")
             wideWrap.width = 840; wideWrap.height = 344
             compare(w.horiz, true, "the landscape projection stays side-by-side")
             wideWrap.width = 696; wideWrap.height = 416
@@ -497,15 +529,118 @@ Item {
             var w = hTall.item
             w.sizeClass = "tall"
             compare(w.tallish, true, "tall is the roomy class")
-            var next = findByText(w, "NEXT NEW")
+            var next = findByObjectName(w, "moonNextNewLabel")
             verify(next !== null && next.visible, "tall shows the next new/full dates")
-            verify(w.illumLine.indexOf("days old") > 0, "tall earns the lunar age too")
-            var note = findByText(w, w.phaseDirection + " · " + w.modelLabel)
+            compare(next.Accessible.name, "Next new moon",
+                    "the compact date label retains its complete meaning")
+            verify(w.illumLine.indexOf(w.ageDays.toFixed(1)) > 0
+                   && w.illumLine.indexOf("days") > 0,
+                   "tall earns the lunar age too")
+            var note = findByObjectName(w, "moonAccuracyNote")
             verify(note !== null && note.visible, "tall view discloses the approximate model")
+            compare(note.Accessible.name, w.phaseDirection + ", " + w.modelLabel,
+                    "the concise note retains the complete disclosure")
             hTall.storeCtl.setSetting("test-instance", "showAccuracyNote", false)
             compare(note.visible, false, "calculation note can be hidden")
             w.sizeClass = "full"
             compare(w.micro, false, "full is never micro")
+        }
+
+        function test_supported_projection_legibility_data() {
+            return [
+                { tag: "portrait-0.5x1-nominal-system-text1-output1",
+                  width: 348, height: 818, sizeClass: "tall",
+                  font: "system", scale: 1.0, profile: "nominal" },
+                { tag: "portrait-0.5x1-zero-hyperlegible-text1.15-output1.25",
+                  width: 278, height: 654, sizeClass: "tall",
+                  font: "hyperlegible", scale: 1.15, profile: "maximum" },
+                { tag: "portrait-0.5x1-saturated-lexend-text1.3-output1",
+                  width: 348, height: 818, sizeClass: "tall",
+                  font: "lexend", scale: 1.3, profile: "long" },
+                { tag: "portrait-0.5x1-empty-system-text1.45-output1.25",
+                  width: 278, height: 654, sizeClass: "tall",
+                  font: "system", scale: 1.45, profile: "error" },
+                { tag: "landscape-0.5x1-saturated-system-text1.3-output1.25",
+                  width: 677, height: 245, sizeClass: "wide",
+                  font: "system", scale: 1.3, profile: "error" },
+                { tag: "landscape-0.5x1-empty-hyperlegible-text1.45-output1",
+                  width: 846, height: 306, sizeClass: "wide",
+                  font: "hyperlegible", scale: 1.45, profile: "nominal" },
+                { tag: "landscape-1x0.5-nominal-system-text1-output1.25",
+                  width: 338, height: 490, sizeClass: "tall",
+                  font: "system", scale: 1.0, profile: "error" },
+                { tag: "landscape-1x0.5-zero-hyperlegible-text1.15-output1",
+                  width: 423, height: 612, sizeClass: "tall",
+                  font: "hyperlegible", scale: 1.15, profile: "nominal" },
+                { tag: "landscape-1x0.5-saturated-lexend-text1.3-output1.25",
+                  width: 338, height: 490, sizeClass: "tall",
+                  font: "lexend", scale: 1.3, profile: "maximum" },
+                { tag: "landscape-1x0.5-empty-system-text1.45-output1",
+                  width: 423, height: 612, sizeClass: "tall",
+                  font: "system", scale: 1.45, profile: "long" },
+                { tag: "portrait-1x1.5-empty-system-text1.45-output1.25",
+                  width: 557, height: 982, sizeClass: "tall",
+                  font: "system", scale: 1.45, profile: "maximum" }
+            ]
+        }
+
+        function test_supported_projection_legibility(row) {
+            tryVerify(function () { return hResponsive.ready }, 3000)
+            responsiveWrap.width = row.width
+            responsiveWrap.height = row.height
+            hResponsive.theme.textScale = row.scale
+            hResponsive.theme.fontChoice = row.font
+            clearSettings(hResponsive)
+            hResponsive.storeCtl.patchSettings("test-instance", {
+                showAccuracyNote: true,
+                showLocalEvents: true,
+                locationMode: "manual",
+                lat: 48.2082,
+                lon: 16.3738,
+                place: row.profile === "long"
+                    ? "Vienna metropolitan observatory" : "Vienna"
+            })
+            var w = hResponsive.item
+            w.sizeClass = row.sizeClass
+            w._cyclePos = 0.4
+            wait(50)
+
+            var layout = findByObjectName(w, "moonLayout")
+            verify(layout !== null, row.tag + " renders the Moon layout")
+            verify(layout.height <= layout.parent.height + 1,
+                   row.tag + " keeps the complete layout inside its viewport")
+
+            var names = [
+                "moonPhaseName", "moonIllumination",
+                "moonNextNewLabel", "moonNextNewDate",
+                "moonNextFullLabel", "moonNextFullDate",
+                "moonLocationLabel", "moonRiseLabel", "moonSetLabel",
+                "moonRiseTime", "moonSetTime", "moonLocalTimeNote",
+                "moonAccuracyNote"
+            ]
+            var minimum = hResponsive.theme.fontMinimum
+            for (var i = 0; i < names.length; i++) {
+                var textItem = findByObjectName(w, names[i])
+                if (!textItem || !textItem.visible) continue
+                verify(textItem.font.pixelSize >= minimum,
+                       row.tag + " keeps " + names[i] + " at the type floor")
+                verify(textItem.truncated !== true,
+                       row.tag + " does not truncate " + names[i])
+                verify(textItem.contentWidth <= textItem.width + 1,
+                       row.tag + " fits " + names[i] + " horizontally")
+                verify(textItem.contentHeight <= textItem.height + 1,
+                       row.tag + " fits " + names[i] + " vertically")
+                compare(clippingIssue(textItem, w), "",
+                        row.tag + " keeps " + names[i] + " inside clipping ancestors")
+            }
+        }
+
+        function cleanup() {
+            responsiveWrap.width = 348
+            responsiveWrap.height = 818
+            hResponsive.theme.textScale = 1.15
+            hResponsive.theme.fontChoice = "hyperlegible"
+            if (hResponsive.ready) hResponsive.item.sizeClass = "tall"
         }
 
         // ── size, not mode ──────────────────────────────────────────────────

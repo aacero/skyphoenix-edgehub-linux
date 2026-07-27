@@ -4,6 +4,7 @@ import QtTest
 // COVERS: fn:main.bindStackItem, fn:main.flushPendingUiState, fn:main.onContentRotationChanged,
 //         fn:main.onDisplayDisconnectedChanged,
 //         fn:main.onDisplaySelectionRequestedChanged
+// COVERS: fn:main.onPersistenceWarning, fn:main.onCurrentItemChanged, fn:main.onDepthChanged
 //
 // ui/qml/main.qml - bindStackItem (binds/rebinds cleanly, skips null +
 // items without the shell properties) and the readonly `contentRotation`
@@ -39,6 +40,12 @@ Item {
     property int _targetScreenWidth: 1920
     property int _targetScreenHeight: 1080
 
+    QtObject {
+        id: warningBridge
+        signal persistenceWarning(string message)
+    }
+    property var wizardBridge: warningBridge
+
     // A stand-in for a StackView page that declares the shell-bound properties.
     Component {
         id: pageStub
@@ -52,6 +59,16 @@ Item {
     Component {
         id: barePage
         QtObject { property int marker: 7 }
+    }
+    Component {
+        id: externalStatePage
+        Item {
+            property string appliedJson: ""
+            function applyExternalState(json) {
+                appliedJson = json
+                return true
+            }
+        }
     }
 
     property var win: null
@@ -81,6 +98,41 @@ Item {
             verify(win !== null, "main.qml instantiated")
         }
         function cleanupTestCase() { if (win) win.destroy() }
+
+        function test_persistence_warning_signal_updates_the_persistent_banner() {
+            warningBridge.persistenceWarning("Storage needs attention.")
+            compare(win.persistenceWarningText, "Storage needs attention.", "onPersistenceWarning preserves the bridge message")
+            var banner = findPred(win.contentItem, function (n) {
+                return n && n.objectName === "hubPersistenceWarningBanner"
+            })
+            verify(banner && banner.visible,
+                   "the bridge warning remains visible until the user dismisses it")
+            win.persistenceWarningText = ""
+        }
+
+        function test_stack_change_handlers_retry_a_queued_external_document() {
+            var stack = findPred(win.contentItem, function (n) {
+                return n && n.objectName === "mainStack"
+            })
+            verify(stack !== null, "found the real StackView")
+            stack.clear()
+            var target = stack.push(externalStatePage)
+            tryCompare(stack, "depth", 1, 1000)
+
+            var currentPayload = "{\"version\":1,\"pages\":[]}"
+            win.pendingExternalUiState = currentPayload
+            stack.currentItemChanged()
+            tryCompare(target, "appliedJson", currentPayload, 1000, "onCurrentItemChanged retries the queued document")
+            compare(win.pendingExternalUiState, "")
+
+            var depthPayload = "{\"version\":1,\"pages\":[{\"name\":\"P\",\"tiles\":[]}]}"
+            target.appliedJson = ""
+            win.pendingExternalUiState = depthPayload
+            stack.depthChanged()
+            tryCompare(target, "appliedJson", depthPayload, 1000, "onDepthChanged retries the queued document")
+            compare(win.pendingExternalUiState, "")
+            stack.clear()
+        }
 
         // ── bindStackItem ─────────────────────────────────────────────────────
         function test_bindStackItem_binds_live_shell() {

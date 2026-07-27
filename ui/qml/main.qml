@@ -23,6 +23,8 @@ ApplicationWindow {
     property string targetModel: _targetModel
     property string configDir: _configDir
     property bool safeMode: _safeMode
+    readonly property bool widgetsEnabled:
+        typeof _widgetsEnabled === "undefined" ? !safeMode : _widgetsEnabled
     property bool startInDiagnostics: typeof _startInDiagnostics !== "undefined" ? _startInDiagnostics : false
     property bool windowedMode: typeof _windowedMode !== "undefined" ? _windowedMode : false
     property int targetScreenX: typeof _targetScreenX !== "undefined" ? _targetScreenX : 0
@@ -31,8 +33,8 @@ ApplicationWindow {
     property int targetScreenHeight: typeof _targetScreenHeight !== "undefined" ? _targetScreenHeight : 1080
 
     // Screen hotplug properties
-    property string screenAddedChanged: ""
-    property string screenRemovedChanged: ""
+    property string screenAdded: ""
+    property string screenRemoved: ""
     // C++ also sends a real org.freedesktop.Notifications desktop notice. These
     // state markers make the event observable to QML/Diagnostics without trying
     // to show a popup inside the safety-hidden Hub window.
@@ -46,6 +48,98 @@ ApplicationWindow {
     property string pendingExternalUiState: ""
     property int externalUiStateRetryCount: 0
     property bool externalUiStateApplied: false
+    property string persistenceWarningText:
+        (typeof _startupPersistenceWarning !== "undefined")
+        ? String(_startupPersistenceWarning) : ""
+    property string externalPushWarningText: ""
+    Connections {
+        target: (typeof configBridge !== "undefined") ? configBridge : null
+        ignoreUnknownSignals: true
+        function onPersistenceWarning(message) {
+            root.persistenceWarningText = message
+        }
+    }
+    Connections {
+        target: (typeof wizardBridge !== "undefined") ? wizardBridge : null
+        ignoreUnknownSignals: true
+        function onPersistenceWarning(message) {
+            root.persistenceWarningText = message
+        }
+    }
+    Connections {
+        target: (typeof license !== "undefined") ? license : null
+        ignoreUnknownSignals: true
+        function onPersistenceWarning(message) {
+            root.persistenceWarningText = message
+        }
+    }
+    Rectangle {
+        objectName: "hubPersistenceWarningBanner"
+        z: 20000
+        visible: root.persistenceWarningText !== ""
+        anchors.top: parent.top
+        anchors.topMargin: 12
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.min(parent.width - 32, 1100)
+        height: warningRow.implicitHeight + 24
+        radius: 12
+        color: "#2B1717"
+        border.width: 2
+        border.color: "#F85149"
+        RowLayout {
+            id: warningRow
+            anchors.fill: parent
+            anchors.margins: 12
+            spacing: 12
+            Text {
+                Layout.fillWidth: true
+                text: root.persistenceWarningText
+                color: "#FFFFFF"
+                font.pixelSize: 18
+                font.bold: true
+                wrapMode: Text.Wrap
+            }
+            Button {
+                text: "Dismiss"
+                Layout.minimumWidth: 112
+                Layout.minimumHeight: 52
+                onClicked: root.persistenceWarningText = ""
+            }
+        }
+    }
+
+    // Called synchronously by the control socket before the incoming document
+    // is persisted. A Dashboard can save unfinished local work and reject this
+    // request as an explicit conflict. With no Dashboard yet, no widget editor
+    // exists, so persistence is safe and live application remains queued.
+    function preflightExternalUiState(json) {
+        if (!json || !json.length)
+            return "rejected"
+        var target = stackView.find(function (item) {
+            return item && typeof item.preflightExternalState === "function"
+        })
+        if (!target)
+            return "queued"
+
+        var status = target.preflightExternalState(json)
+        if (status === "conflict") {
+            externalPushWarningText =
+                "Manager changes were not applied because this Hub had an unfinished edit. "
+                + "The Hub saved that edit. Review the conflict in Manager, then retry or discard."
+            persistenceWarningText = externalPushWarningText
+        } else if (status === "flush-failed") {
+            externalPushWarningText =
+                "Manager changes were not applied because the Hub could not save an unfinished edit. "
+                + "Keep this Hub open and use the recovery controls before retrying."
+            persistenceWarningText = externalPushWarningText
+        } else if (status === "rejected") {
+            externalPushWarningText =
+                "Manager changes were rejected because the layout is invalid or blocked by policy."
+            persistenceWarningText = externalPushWarningText
+        }
+        return status
+    }
+
     function applyExternalUiState(json) {
         if (!json || !json.length) return false
         pendingExternalUiState = json
@@ -54,22 +148,22 @@ ApplicationWindow {
         // silently dropped while any other page is showing.
         var target = stackView.find(function (item) { return item && item.applyExternalState })
         if (!target) {
-            if (externalUiStateRetryCount < 100) {
-                externalUiStateRetryCount++
-                externalUiStateRetry.start()
-            } else {
-                console.warn("Manager UI state could not reach the Dashboard after 5 seconds")
-            }
+            externalUiStateRetryCount++
             return false
         }
         var applied = target.applyExternalState(json)
         if (applied === false) {
-            pendingExternalUiState = ""
-            externalUiStateRetryCount = 0
+            // Preflight already excluded invalid and policy-blocked documents.
+            // Keep an unexpected live-apply failure queued so getUiState cannot
+            // claim that the persisted document is already on the panel.
+            externalUiStateRetryCount++
             return false
         }
         pendingExternalUiState = ""
         externalUiStateRetryCount = 0
+        if (persistenceWarningText === externalPushWarningText)
+            persistenceWarningText = ""
+        externalPushWarningText = ""
         return true
     }
     onExternalUiStateChanged: {
@@ -83,6 +177,17 @@ ApplicationWindow {
             if (root.pendingExternalUiState)
                 root.externalUiStateApplied =
                     root.applyExternalUiState(root.pendingExternalUiState)
+        }
+    }
+    Connections {
+        target: stackView
+        function onCurrentItemChanged() {
+            if (root.pendingExternalUiState)
+                externalUiStateRetry.restart()
+        }
+        function onDepthChanged() {
+            if (root.pendingExternalUiState)
+                externalUiStateRetry.restart()
         }
     }
 
@@ -113,10 +218,10 @@ ApplicationWindow {
 
     // React to screen hotplug events
     onScreenAddedChanged: {
-        if (screenAddedChanged) console.log("Screen added:", screenAddedChanged)
+        if (screenAdded) console.log("Screen added:", screenAdded)
     }
     onScreenRemovedChanged: {
-        if (screenRemovedChanged) console.log("Screen removed:", screenRemovedChanged)
+        if (screenRemoved) console.log("Screen removed:", screenRemoved)
     }
     onDisplayDisconnectedChanged: {
         var name = displayDisconnected

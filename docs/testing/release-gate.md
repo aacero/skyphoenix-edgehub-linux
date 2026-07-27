@@ -8,7 +8,7 @@ Those compatibility rules are never release evidence.
 The pre-release entry point is:
 
 ```sh
-XENEON_TEST_LICENSE_KEY='<real owner-issued Pro key>' \
+XENEON_TEST_LICENSE_KEY_FILE=/absolute/path/to/owner-issued-pro-key \
 XENEON_HW_INPUT=1 XENEON_HW_INPUT_DESKTOP=1 \
   ./scripts/run_release_tests.sh
 ```
@@ -20,24 +20,40 @@ coverage omission, or `KNOWN-RED` result blocks the release. Use
 `./scripts/run_release_tests.sh --list` to inspect the release manifest without
 running anything.
 
-The owner-key variable is also mandatory. Release mode runs
+The owner-key file is also mandatory. It must be an absolute path to a regular,
+non-symlink file owned by the current user, with no group or other access and a
+maximum size of 4 KiB. Raw `XENEON_TEST_LICENSE_KEY` environment input is
+rejected before any child starts because process environments are observable.
+Release mode runs
 `owners_real_pro_key_unlocks_pro_against_the_shipped_issuer_key` explicitly with
 Rust output capture disabled, proving that a key minted by the owner's real
 issuer unlocks Pro against the public key compiled into the shipping binary. The
 ordinary core test run cannot provide that evidence: without `--nocapture`, its
 intentional `SKIP` message is hidden when the test returns successfully.
-The runner immediately removes the key from its exported environment, exposes it
-only to the two Rust core invocations that contain this test, and passes it into
-the nested aggregate through a closed inherited descriptor. GUI, compositor,
-hardware, coverage, and unrelated tool processes never inherit the entitlement.
+The runner opens the file once with no-follow and nonblocking safeguards,
+validates the already-open descriptor, and then removes the path from its
+environment. The key is passed into the nested aggregate through a closed
+inherited descriptor and exposed only to the two Rust core invocations that
+contain this test. GUI, compositor, hardware, coverage, and unrelated tool
+processes never inherit the entitlement.
 
-Completeness-sensitive developer knobs are pinned: the Edge soak is 1,200
-seconds, the render matrix always covers the full widget catalog, the build-up
-uses its validated settle interval, runtime scenarios target the just-built hub,
-and the compositor tier cannot be disabled. Performance intervals are not
-environment knobs: the short profile waits a literal five minutes each for idle
-and the exact ten-widget load, while the long profile waits a literal 48 hours
-and independently gates its first 24-hour checkpoint.
+Release-producing and direct strict-test entry points force
+`RUSTUP_TOOLCHAIN=1.86.0` before starting Rust, CMake, or nested gate children.
+They then require the exact `rustc 1.86.0` and `cargo 1.86.0` product builds
+recorded in `scripts/lib/release_rust_toolchain.sh`. This keeps the shipping
+build on the same toolchain as the declared MSRV and release CI instead of
+silently using a newer local default. Cargo subcommands such as
+`cargo cyclonedx` inherit the same selection.
+
+Completeness-sensitive developer knobs are pinned: the comprehensive Edge E2E
+runs every functional section but omits its duplicate endurance loop, the
+render matrix always covers the full widget catalog, the build-up uses its
+validated settle interval, runtime scenarios target the just-built hub, and the
+compositor tier cannot be disabled. Performance intervals are not environment
+knobs: the short profile waits a literal five minutes each for idle and the
+exact ten-widget load. The release owner explicitly waived soak testing. Its
+accepted substitute waits a literal 30 minutes with an exact 14-widget load,
+30-second samples, and no duration or widget-subset override.
 
 The two input variables are intentionally not enabled by the script. They are
 the explicit authorization for synthetic input on the Edge and inside the
@@ -51,26 +67,55 @@ rejected for a release run.
 
 The gate covers:
 
+- a redacted Gitleaks scan across the complete repository history;
 - Rust core tests plus format and Clippy checks;
 - both Rust tool crates (format, Clippy, and tests);
 - injection-free input and hardware-manifest contract tests;
 - offscreen QML, C++ QtTest including real-binary smoke, and runtime E2E;
 - real Manager-to-hub tests and the nested-KWin compositor suite;
-- the comprehensive Edge E2E/soak, incremental build-up, and widget render
+- the comprehensive Edge functional E2E, incremental build-up, and widget render
   matrix on the real panel;
 - startup-to-first-Wayland-frame plus five-minute Hub CPU/RSS gates;
-- a continuous 48-hour idle Hub soak with CPU/RSS/RSS-trend limits and a gated
-  24-hour checkpoint;
-- Rust, C++, merged, and QML behavior coverage gates.
+- a literal 30-minute, 14-widget observation that gates complete CPU, RSS, file
+  descriptor, thread, and GPU-memory sampling plus finite trend slopes;
+- independent Rust and C++ line-coverage gates;
+- all enumerated QML requirements assertion-backed, with the denominator
+  governed by CODEOWNER review;
+- a merged Rust+C++ line report retained for diagnosis only, never as a gate.
 
 Release mode raises the historical developer C++ coverage ratchet to the full
-95% requirement; Rust, C++, and the merged report must each meet that floor.
+95% requirement. Rust and C++ must each meet that floor independently. The
+merged report is explicitly non-gating because combining differently sized
+surfaces can hide a shortfall.
 Coverage changes code generation, so its instrumented executable is never used
 for performance claims. After coverage is recorded, the gate creates a second
 fresh, fixed CMake tree with `Release`, coverage off, and QA hooks off. The
 performance runner verifies those cache values, the binary version, and its
-SHA-256 before measuring it. JSON evidence is retained under the printed
-`/tmp/xeneon-release-performance.*` directory.
+SHA-256 before measuring it. The strict runner writes retained logs, screenshots,
+and performance JSON directly below
+`artifacts/<full-40-character-commit>/release-gate-<UTC-time>-<pid>/`. After
+every producer closes, it writes the exact `PREFLIGHT.tsv` and `SUMMARY.tsv`
+records plus `RUN.json`. The run record binds the source commit, run ID, result
+row counts, and SHA-256 of both TSV files. The audit finalizer then validates
+those semantics, writes the canonical repository identity and exact commit to
+`PROVENANCE.json`, creates `MANIFEST.sha256`, and signs that manifest with the
+pinned release key as `MANIFEST.sha256.asc`. Provenance never stores a raw Git
+remote URL, so an embedded origin credential cannot enter the evidence. A failed
+gate leaves clearly unsealed diagnostic output and never presents it as
+certified evidence.
+
+The finalizer's contract is semantic, not filename-only. A release-gate
+directory cannot be sealed if a required row is missing, duplicated, reordered,
+or renamed, if either record hash or row count differs from `RUN.json`, or if
+the commit and commit-keyed artifact path disagree. On success the strict runner
+returns a mode-`0600` machine receipt to `release.sh`. The receipt binds the
+commit, run ID, artifact path, and hashes of the manifest, detached signature,
+provenance, and run record.
+Before creating the audit directory, the strict runner also derives its ordered
+preflight and suite rows from its own source and compares them with the signed
+audit contract. This fast check prevents a newly added gate from running for
+hours only to discover at finalization that its row was not added to the
+semantic contract.
 
 All long hardware and compositor processes retain their existing per-process
 memory/time limits and also receive a release-level wall-clock bound. The
@@ -81,19 +126,177 @@ Performance sampling and evidence semantics are documented in
 [the performance test guide](../../tests/performance/README.md).
 
 `scripts/release.sh` has no test bypass. After it proves that the worktree is
-clean, the requested tag is exactly `HEAD`, and the tag signer is the pinned
-release-key fingerprint, it invokes this strict gate before removing `dist/`,
-configuring the shipping build, signing, or publishing. It then revalidates the
-source and tag and materializes the shipping source from that verified commit's
-archive into a fresh build tree. Concurrent working-tree edits and stale CMake
-cache values therefore cannot enter the released binaries. The three environment
-inputs above must be present when cutting a release. Before signing, the exact
-portable tarball copied into `dist/` is extracted, both shipped binaries must
-report the tagged version, and the QA-off payload must pass the packaging smoke
-test; extra artifacts remain array-safe literal paths.
+clean, confirms that every source-like file is tracked even when an ignore rule
+would hide it, verifies that the requested tag is exactly `HEAD`, and verifies
+the tag signer against the pinned release-key fingerprint, it validates that
+`RELEASE_NOTES.md` names the exact release version and contains the exact
+ordered publication-asset ledger. It invokes this strict gate only after those
+checks, before removing `dist/`, configuring the shipping build, signing, or
+publishing. The canonical GitHub fetch and push origin check applies to both
+publish and non-publish runs. For `--publish`, the exact annotated tag object
+must already exist on the pinned GitHub `origin` and peel to `HEAD`; that check
+runs before the strict gate and again immediately before
+`gh release create --verify-tag`. GitHub is never allowed to synthesize a tag at
+the default branch.
 
-For a focused policy check that launches no GUI or hardware process, run:
+After the gate, the script revalidates the source and tag and materializes the
+shipping source from that verified commit's archive into a fresh build tree.
+Concurrent working-tree edits and stale CMake cache values therefore cannot
+enter the released binaries. The protected licence-file path and the two
+explicit input-authorisation variables above must be present when cutting a
+release. Before signing, the exact portable tarball copied into
+`dist/` is extracted, both shipped binaries must report the tagged version, and
+the QA-off payload must pass the packaging smoke test; extra artifacts remain
+array-safe literal paths.
+
+The release CycloneDX document is generated only after the payload set is
+complete. It combines the Cargo graph, exact artifact hashes, and Syft scans,
+then enters the immutable ledger before `SHA256SUMS`. Stable versions fail
+closed if the required local SBOM tools are unavailable. CI's Rust-only
+inventory is diagnostic and is never attached after publication as a substitute
+for this signed-set SBOM.
+
+The signed release set contains `RELEASE_GATE_EVIDENCE.json`, a compact pointer
+to the sealed run and its four hashes. The complete commit-keyed audit directory
+must still be retained in the owner archive; the pointer is not a substitute for
+the signed logs and captures. `release.sh` re-runs the full signed-tree verifier
+after the shipping build, immediately before upload, and immediately before a
+verified draft becomes public. A changed nested log or capture therefore blocks
+publication even when the pointer's four top-level hashes are unchanged. It also
+rechecks the clean checkout, exact `HEAD`, and signed tag at those boundaries so
+a changed post-gate helper cannot silently weaken validation. A stable release
+additionally contains
+`RELEASE_CERTIFICATION_EVIDENCE.json`. That pointer binds the exact
+`RELEASE_CERTIFICATION.json`, signed manifest, detached signature, and audit
+provenance for the stable publication gates. Publishing first creates a draft
+and downloads it for exact filename, size, hash, notes, and metadata comparison.
+Stable candidate staging then makes the exact asset set a non-latest
+prerelease, performs a fresh second download, and stops. It does not perform the
+post-publication zsync proof or promote the candidate.
+
+## Per-commit and manual gates
+
+Pull requests and pushes to `master` and `release/1.0.0` run the ordinary CI,
+documentation, distro, and supply-chain workflows for their relevant paths.
+Workflow actions and distro container images are immutable references. Fork pull
+requests still build, install, and smoke the packages, while OIDC provenance
+attestations run only for trusted non-pull-request events.
+
+The physical panel, authorized synthetic input, owner-issued Pro key,
+commit-keyed manual touch capture, desktop notification and MPRIS actions,
+published AppImage zsync round trip, and native two-version package lifecycle
+remain manual exact-candidate gates. They are not reported as passed merely
+because per-commit CI passed. The 48-hour soak is an explicitly waived,
+documented owner risk and is not a hidden stable-release blocker. The physical touch audit seals
+only when all six named actions are recorded as `PASS`, each has a non-empty
+automatic panel screenshot and a distinct external camera photo or video, and
+the auditor signs the result. A failed, missing, duplicated, `NOT TESTED`,
+empty, invalid, or symlinked capture leaves the audit unsealed.
+
+Stable publication is fail closed on those manual gates. Before `release.sh`
+will stage `vMAJOR.MINOR.PATCH`, the maintainer must pass
+`--certification artifacts/<full-sha>/release-certification-<UTC>-<pid>`. The
+directory is a signed aggregate of five separately finalized and signed typed
+audit directories. It must say `PASS` for:
+
+- all six physical-touch actions, the exact commit and running binary, PASS
+  report, named auditor, six panel screenshots, and six external camera
+  captures;
+- one structured real-desktop notification record with screenshot and transport
+  log;
+- one structured real MPRIS PlayPause action with before, intermediate, and
+  restored state plus process and D-Bus transport logs;
+- one exact-candidate DEB lifecycle with verified GitHub provenance;
+- one exact-candidate RPM lifecycle with verified GitHub provenance.
+
+The receipt schema is
+`skyphoenix-edgehub-release-certification/v2`. The ordered gate IDs are
+`physical_touch`, `desktop_notification`, `mpris_transport`,
+`native_deb_lifecycle`, and `native_rpm_lifecycle`. Each entry names one
+commit-keyed typed artifact path and hashes its record, manifest, detached
+signature, and provenance. Generic text files cannot satisfy this contract.
+
+Record both desktop bridge receipts together with:
+
+```bash
+./scripts/record_desktop_bridge_evidence.sh --player vlc
+```
+
+Replace `vlc` with the exact MPRIS suffix or full
+`org.mpris.MediaPlayer2.*` bus name of an already Playing or Paused real
+player. The recorder refuses a dirty tree, embeds the exact full source SHA in
+both retained smoke binaries, verifies one real notification-daemon reply,
+captures the priority reminder, observes the MPRIS intermediate state, sends a
+second PlayPause, and proves restoration. It writes `PASS` only after the
+auditor types both exact attestation statements. It then invokes the pinned-key
+audit finalizer for both artifact directories. Aborted and failed attempts
+retain raw logs but do not produce a signed passing receipt.
+
+The signed owner statement is exactly:
+`I attest that every named gate was reviewed against the retained evidence and passed for this exact source commit and release version.`
+
+The release helper verifies every nested typed receipt and the aggregate before
+the strict suite, after it, immediately before draft upload, and immediately
+before staging. Missing, wrong-SHA, wrong-version, failed, unsigned, invalidly
+signed, modified, or incomplete certification blocks staging.
+
+The AppImage zsync proof is necessarily post-publication. A versioned public URL
+cannot be tested before it exists, and its receipt cannot be included inside the
+asset set whose URL it proves. The stable flow is therefore:
+
+1. `--stage-candidate` publishes the signed exact assets as a non-latest
+   prerelease with a temporary certification-candidate title.
+2. `run_published_appimage_zsync_audit.sh` anonymously downloads a real prior
+   release AppImage and the staged versioned assets, runs the real `zsync`
+   client, compares the result byte-for-byte with the candidate, and creates a
+   separately signed `skyphoenix-edgehub-appimage-zsync/v2` receipt.
+3. `--promote` accepts both signed receipt directories, performs only read-only
+   identity and byte verification, and changes release metadata to stable and
+   latest. It does not build, rerun the suite, sign payloads, or mutate assets.
+
+Candidate staging, the published zsync audit, and stable promotion use one
+fail-closed GitHub immutable-release policy check. The check accepts only the
+authenticated documented `404` disabled response or the authenticated exact
+`200` object with both `enabled` and `enforced_by_owner` set to boolean `false`.
+It rejects every other status, malformed or extended object, authentication
+failure, repository-identity mismatch, and transport failure. Promotion also
+compares the signed release notes and exact remote annotated tag immediately
+before and after the metadata mutation. A failed post-check attempts to return
+the candidate to draft.
+
+The audit requires the reviewed zsync 0.6.5 client and runs it through a
+pseudo-terminal because that version emits its final byte statistics only for a
+terminal. The retained raw log must contain exactly one `used N local, fetched
+M` line. The receipt and verifier require `N > 0`, proving that verified blocks
+from the prior AppImage were actually reused.
+
+Transfer savings are a conservative application-payload measurement, not a
+claim about total TCP or TLS wire bytes. The measured delta payload is the
+client-reported target bytes fetched plus the exact downloaded zsync control
+file size. It must be smaller than the full candidate AppImage, and the receipt
+records both byte savings and integer basis points. The verifier independently
+recomputes every value from the candidate size, control-file size, receipt, and
+raw client statistics.
+
+The zsync receipt also binds the source commit, annotated tag object, prior and
+candidate release IDs, asset IDs, versioned URLs, anonymous HTTP headers,
+candidate asset-ledger hash, control-file hash, input and output hashes and
+sizes, exact client build string, and retained command log. It remains in the
+owner archive outside the candidate asset set, avoiding cryptographic
+self-reference. Pre-promotion failure leaves the candidate as a non-latest
+prerelease. Post-promotion verification failure attempts to return it to draft.
+
+No existing published release currently contains an AppImage. A truthful first
+round trip therefore requires an AppImage-bearing prior release, recommended as
+`v1.0.0-rc.1`. A CI artifact, retrofitted beta asset, package, or tarball cannot
+satisfy this gate.
+
+For focused policy checks that launch no GUI or hardware process, run:
 
 ```sh
 ./scripts/check_release_gate_contract.sh
+./scripts/check_release_provenance_contract.sh
+./scripts/check_audit_artifact_finalizer.sh
+./scripts/check_release_certification_contract.sh
+./scripts/check_published_zsync_contract.sh
 ```

@@ -49,9 +49,9 @@ echo "    C++: $(g++ --version | head -1)"
 # Check Qt6
 if ! pkg-config --exists Qt6Core 2>/dev/null; then
     echo "ERROR: Qt6 development packages not found."
-    echo "  Arch/CachyOS: sudo pacman -S qt6-base qt6-declarative"
-    echo "  Ubuntu/Debian: sudo apt-get install qt6-base-dev qt6-declarative-dev qt6-wayland-dev"
-    echo "  Fedora: sudo dnf install qt6-qtbase-devel qt6-qtdeclarative-devel"
+    echo "  Arch/CachyOS: sudo pacman -S qt6-base qt6-declarative qt6-svg qt6-virtualkeyboard qt6-wayland"
+    echo "  Ubuntu 26.04: sudo apt-get install qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-virtualkeyboard-dev"
+    echo "  Fedora 43: sudo dnf install qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel qt6-qtvirtualkeyboard-devel"
     exit 1
 fi
 echo "    Qt6: $(pkg-config --modversion Qt6Core)"
@@ -61,9 +61,9 @@ echo ""
 echo "==> Building Rust core library..."
 cd "${PROJECT_DIR}/core"
 if [ "$BUILD_TYPE" = "release" ]; then
-    cargo build --release
+    cargo build --release --locked
 else
-    cargo build
+    cargo build --locked
 fi
 echo "    Done."
 

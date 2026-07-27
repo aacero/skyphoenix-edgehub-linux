@@ -1,4 +1,4 @@
-# Contributing to Xeneon Edge Linux Hub
+# Contributing to SkyPhoenix EdgeHub for Linux
 
 Thanks for your interest in contributing! This document outlines how to get involved.
 
@@ -8,19 +8,19 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Project Status
 
-We are in **Phase 0: Discovery**. We are defining the product, architecture, and MVP scope. See [ROADMAP.md](ROADMAP.md).
-
-**We are not yet accepting code contributions for implementation.** We welcome feedback on the architecture, product vision, and design documents.
+The project is preparing its first stable release. Bug reports, focused fixes,
+tests, documentation, design feedback, and feature proposals are welcome. See
+[ROADMAP.md](ROADMAP.md) for the current status and planned work.
 
 ## How to Contribute
 
 ### 1. Give Feedback
 
 - Read the [Product Vision](docs/product/product-vision.md), [Architecture Overview](docs/architecture/overview.md), and [ADRs](docs/adr/).
-- Open a [Discussion](https://github.com/your-org/xeneon-edge-linux-hub/discussions) with feedback, ideas, or questions.
+- Open a [Discussion](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/discussions) with feedback, ideas, or questions.
 - Vote on existing discussions to help prioritize.
 
-### 2. Report Bugs (Once Released)
+### 2. Report Bugs
 
 - Check existing issues first.
 - Use the bug report template.
@@ -39,16 +39,15 @@ We are in **Phase 0: Discovery**. We are defining the product, architecture, and
 - Describe the use case and user story.
 - Consider how it fits the [MVP Scope](docs/product/mvp-scope.md).
 
-### 4. Submit Code (Phases 1+)
-
-Once we enter implementation phases:
+### 4. Submit Code
 
 1. **Fork** the repository.
 2. **Create a branch:** `feature/your-feature` or `fix/your-bug`.
 3. **Write code** following our conventions.
 4. **Write tests** (see [Test Strategy](docs/testing/test-strategy.md)).
-5. **Run tests:** `cargo test && cmake --build build --target test`.
-6. **Run lints:** `cargo fmt --check && cargo clippy -- -D warnings`.
+5. **Run tests:** `./scripts/run_all_tests.sh`.
+6. **Run lints:** from `core/`, run `cargo fmt --all -- --check` and
+   `cargo clippy --all-targets --locked -- -D warnings`.
 7. **Commit** with conventional commits: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`.
 8. **Push** and open a Pull Request.
 9. **Respond to review** feedback.
@@ -72,40 +71,50 @@ Documentation contributions are always welcome:
 
 ### Prerequisites
 
-- **Rust** 1.75+ (stable): https://rustup.rs
+- **Rust** 1.86+ (stable): https://rustup.rs
 - **C++ compiler**: GCC 12+ or Clang 16+
 - **CMake** 3.22+
 - **Qt 6.5+** development packages
 
 #### CachyOS / Arch Linux
 ```bash
-sudo pacman -S rust cmake gcc qt6-base qt6-declarative qt6-wayland qt6-tools
+sudo pacman -S rust cmake gcc qt6-base qt6-declarative qt6-svg \
+  qt6-virtualkeyboard qt6-wayland qt6-tools
 ```
 
-#### Ubuntu 24.04 LTS
+#### Ubuntu 26.04 LTS
 ```bash
 sudo apt install cargo cmake g++ qt6-base-dev qt6-declarative-dev \
-  qt6-wayland-dev qt6-tools-dev libglib2.0-dev
+  qt6-svg-dev qt6-virtualkeyboard-dev qt6-wayland-dev qt6-tools-dev \
+  libglib2.0-dev
 ```
+
+Ubuntu 24.04's native Qt 6.4 is below the project's Qt 6.5 minimum. Use the
+AppImage or an upstream Qt toolchain there.
 
 ### Build
 ```bash
-git clone https://github.com/your-org/xeneon-edge-linux-hub.git
-cd xeneon-edge-linux-hub
+git clone https://github.com/skyphoenix-it/skyphoenix-edgehub-linux.git
+cd skyphoenix-edgehub-linux
 cmake -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
 ```
 
 ### Run Tests
 ```bash
-cargo test
-cmake --build build --target test
+cd core
+cargo test --locked
+cd ..
+./scripts/run_ui_tests.sh
+./scripts/run_cpp_tests.sh
 ```
 
 ### Format & Lint
 ```bash
-cargo fmt --check
-cargo clippy -- -D warnings
+cd core
+cargo fmt --all -- --check
+cargo clippy --all-targets --locked -- -D warnings
+cd ..
 qmllint ui/qml/
 ```
 
@@ -154,17 +163,16 @@ qmllint ui/qml/
 ## Project Structure
 
 ```
-xeneon-edge-linux-hub/
-├── app/                  # Application entry point
-├── core/                 # Core library (Rust): config, display, widget lifecycle
-├── ui/                   # QML UI layer: themes, layouts, components
-├── widgets/built-in/     # Built-in widget implementations
-├── integrations/         # System integration adapters
-├── packages/             # Distribution packaging
-├── tests/                # Automated tests
-├── docs/                 # Documentation
-├── scripts/              # Build and dev scripts
-└── assets/               # Icons, images, fonts
+skyphoenix-edgehub-linux/
+├── app/                  # Hub C++ entry point and system bridges
+├── core/                 # Rust configuration, metrics, display, and C FFI
+├── ui/qml/               # Hub UI and first-party widgets
+├── manager/              # Companion Manager application
+├── packaging/            # AppImage, Arch, DEB, RPM, and lifecycle tooling
+├── tests/                # Unit, UI, runtime, hardware, visual, and performance tests
+├── docs/                 # Product, architecture, operations, and release documentation
+├── scripts/              # Build, test, audit, update, and release tooling
+└── assets/               # Icons, fonts, wallpapers, metadata, and desktop files
 ```
 
 ## Communication
@@ -179,4 +187,3 @@ All contributors are recognized in the release notes and in the repository's
 [contributors graph](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/graphs/contributors),
 which GitHub maintains automatically - a hand-kept `CONTRIBUTORS.md` was promised
 here for months and never existed, so the promise is now one the repo can keep.
-

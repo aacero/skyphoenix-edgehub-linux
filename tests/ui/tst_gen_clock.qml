@@ -56,6 +56,16 @@ Item {
         }
     }
     function allTexts(harness) { var out = []; collectTexts(harness.item, out); return out }
+    function byObjectName(node, name) {
+        if (!node) return null
+        if (node.objectName === name) return node
+        var children = node.children || []
+        for (var i = 0; i < children.length; i++) {
+            var match = byObjectName(children[i], name)
+            if (match) return match
+        }
+        return null
+    }
     // The big monospace time label (unique: mono + bold; the header status is
     // mono but not bold).
     function timeTextOf(harness) {
@@ -429,6 +439,8 @@ Item {
         WidgetHarness { id: hMicro; anchors.fill: parent; widgetFile: "ClockWidget.qml"; expanded: false } }
     Item { width: 344; height: 840
         WidgetHarness { id: hTallSz; anchors.fill: parent; widgetFile: "ClockWidget.qml"; expanded: false } }
+    Item { width: 677; height: 245
+        WidgetHarness { id: hShortWide; anchors.fill: parent; widgetFile: "ClockWidget.qml"; expanded: false } }
 
     TestCase {
         name: "ClockSizes"
@@ -488,6 +500,64 @@ Item {
             // Away from tall the date drops back to the short form.
             w.sizeClass = "compact"
             verify(w.dateFmt.indexOf("dddd") < 0, "away from tall the short date returns")
+        }
+
+        function test_narrow_tall_calendar_cards_stack_complete_labels() {
+            tryVerify(function () { return hTallSz.ready }, 3000)
+            reset(hTallSz)
+            hTallSz.theme.textScale = 1.45
+            var w = hTallSz.item
+            w.sizeClass = "tall"
+            var context = byObjectName(w, "clockCalendarContext")
+            verify(context && context.visible, "narrow tall calendar context is visible")
+            compare(context.columns, 1,
+                    "narrow tall context uses its vertical room instead of three cramped columns")
+            var today = textEquals(hTallSz, "TODAY")
+            var yearDay = textEquals(hTallSz, "YEAR DAY")
+            verify(today && yearDay, "complete calendar labels are rendered")
+            compare(today.truncated, false, "TODAY is not truncated")
+            compare(yearDay.truncated, false, "YEAR DAY is not truncated")
+            hTallSz.theme.textScale = 1.15
+        }
+
+        function test_short_wide_time_stack_stays_inside_the_content_body() {
+            tryVerify(function () { return hShortWide.ready }, 3000)
+            reset(hShortWide)
+            hShortWide.theme.textScale = 1.45
+            var w = hShortWide.item
+            w.sizeClass = "wide"
+            wait(32)
+            var content = byObjectName(w, "clockContentColumn")
+            var context = byObjectName(w, "clockCalendarContext")
+            verify(content && content.parent, "clock content column is available")
+            verify(context && context.visible, "short wide calendar context remains visible")
+            var body = content.parent
+            var visibleText = []
+            collectTexts(content, visibleText)
+            for (var i = 0; i < visibleText.length; i++) {
+                var label = visibleText[i]
+                if (!label.visible || label.opacity <= 0 || !label.text.length)
+                    continue
+                compare(label.truncated, false,
+                        "short-wide text stays complete: " + label.text)
+                var paintedHeight = Math.min(label.height, label.contentHeight)
+                var localY = label.verticalAlignment === Text.AlignVCenter
+                             ? (label.height - paintedHeight) / 2
+                             : label.verticalAlignment === Text.AlignBottom
+                               ? label.height - paintedHeight : 0
+                var top = label.mapToItem(body, 0, localY)
+                verify(top.y >= -1 && top.y + paintedHeight <= body.height + 1,
+                       "short-wide painted text stays in the body: " + label.text
+                       + " top=" + top.y.toFixed(1)
+                       + " painted=" + paintedHeight.toFixed(1)
+                       + " body=" + body.height.toFixed(1)
+                       + " font=" + label.font.pixelSize)
+            }
+            var time = timeTextOf(hShortWide)
+            verify(time && time.font.pixelSize >= hShortWide.theme.fontMinimum,
+                   "the fitted time remains above the active type floor")
+            compare(time.truncated, false, "the fitted time remains complete")
+            hShortWide.theme.textScale = 1.15
         }
 
         // ISO week self-checks on fixed dates (no wall-clock dependence).

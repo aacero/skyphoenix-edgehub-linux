@@ -203,9 +203,17 @@ WidgetChrome {
         for (var i = 0; i < rows.length; i++) if (rows[i].available) count++
         return count
     }
-    status: rows.length === 0 ? "disabled"
-            : availableRowCount === 0 ? "unavailable"
-            : availableRowCount < rows.length ? "partial" : "live"
+    readonly property string sensorStatus:
+        rows.length === 0 ? "disabled"
+        : availableRowCount === 0 ? "unavailable"
+        : availableRowCount < rows.length ? "partial" : "live"
+    readonly property bool compactHeaderStatus:
+        !expanded && width < theme.touchPrimary * 4
+    status: compactHeaderStatus
+            ? sensorStatus === "disabled" ? "off"
+              : sensorStatus === "unavailable" ? "N/A"
+              : sensorStatus
+            : sensorStatus
     statusColor: availableRowCount === rows.length && rows.length > 0
                  ? theme.textSecondary : theme.warning
 
@@ -225,8 +233,13 @@ WidgetChrome {
         return result
     }
     readonly property int hiddenRowCount: Math.max(0, rows.length - visibleRowIds.length)
-    // Column width the row type is sized against (wide splits the box in two).
-    readonly property real colW: horiz ? width / 2 : width
+    // Size row content against the real body, after chrome margins and the
+    // inter-column gap. Using half the outer card width over-allocates the
+    // right-hand source label and lets it run past the clipped body edge.
+    readonly property real bodyW: Math.max(1, width - 2 * contentMargins)
+    readonly property real colW: horiz
+                                 ? Math.max(1, (bodyW - theme.spacingLg) / 2)
+                                 : bodyW
     readonly property real rowFont: expanded ? theme.fontLabel
         : Math.max(theme.fontMinimum, Math.min(colW * 0.045, height * 0.035, 22))
     readonly property real barH: expanded ? 12
@@ -235,6 +248,10 @@ WidgetChrome {
         : Math.max(92, Math.min(colW * 0.22, 112))
     readonly property real valueW: expanded ? 64
         : Math.max(74, Math.min(colW * 0.19, 112))
+    readonly property real sourceW:
+        Math.min(roomy ? 280 : 250,
+                 Math.max(roomy ? 210 : 190,
+                          colW * (roomy ? 0.36 : 0.30)))
 
     GridLayout {
         anchors.fill: parent
@@ -275,7 +292,7 @@ WidgetChrome {
                 // visible instead of overflowing the clipped body (S12). Expanded
                 // tiles keep their natural, top-aligned rows.
                 Layout.fillWidth: true; Layout.fillHeight: !w.expanded
-                spacing: theme.spacingSm
+                spacing: w.horiz ? theme.spacingXs : theme.spacingSm
                 Text { text: w.rowLabels[sensorRow.modelData] || ""; font.family: theme.fontMono; color: theme.textPrimary
                     font.pixelSize: w.rowFont; Layout.preferredWidth: Math.round(w.labelW)
                     Layout.fillHeight: !w.expanded; verticalAlignment: Text.AlignVCenter
@@ -315,15 +332,16 @@ WidgetChrome {
                     Layout.preferredWidth: Math.max(48, w.rowFont * 3.1)
                 }
                 Text {
+                    objectName: "sensorSource-" + sensorRow.modelData
                     visible: w.showSources && sensorRow.row !== null
                     text: sensorRow.row
                           ? sensorRow.row.available ? sensorRow.row.source : sensorRow.row.reason : ""
                     color: sensorRow.row && sensorRow.row.available
                            ? theme.textPrimary : theme.warning
                     font.pixelSize: w.roomy ? theme.fontLabel : theme.fontMinimum
-                    Layout.preferredWidth: w.roomy
-                        ? Math.min(280, Math.max(210, w.colW * 0.36))
-                        : Math.min(250, Math.max(190, w.colW * 0.30))
+                    Layout.minimumWidth: Math.min(w.sourceW, theme.touchPrimary)
+                    Layout.preferredWidth: w.sourceW
+                    Layout.maximumWidth: w.sourceW
                     Layout.fillHeight: !w.expanded
                     verticalAlignment: Text.AlignVCenter
                     wrapMode: Text.WordWrap

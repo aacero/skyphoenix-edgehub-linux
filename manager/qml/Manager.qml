@@ -27,6 +27,8 @@ ApplicationWindow {
     visible: (typeof _deferInitialShow !== "undefined" && _deferInitialShow) ? false : true
     title: "EdgeHub Manager"
     color: m.bg
+    property string persistentSaveError: ""
+    property bool externalConfigConflictActive: false
 
     // Drive the Qt palette from the chrome tokens so the native Fusion controls
     // that aren't hand-styled (scrollbars, combo popups, text selection, tooltips)
@@ -337,6 +339,89 @@ ApplicationWindow {
 
     // Shared hub model + registry.
     DashboardStore { id: store }
+    Connections {
+        target: store
+        function on_SavePendingChanged() {
+            if (typeof backend !== "undefined" && backend
+                    && typeof backend.setLayoutSavePending === "function")
+                backend.setLayoutSavePending(store._savePending)
+        }
+    }
+    Rectangle {
+        id: persistenceBanner
+        objectName: "managerPersistenceBanner"
+        z: 10000
+        visible: store.saveFailed || win.persistentSaveError !== ""
+        anchors.top: parent.top
+        anchors.topMargin: 12
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.min(parent.width - 32, 1080)
+        height: persistenceBannerContent.implicitHeight + 24
+        radius: m.radius
+        color: appSettings.chromeTheme === "light" ? "#FFF1F0" : "#351919"
+        border.width: 2
+        border.color: m.danger
+
+        RowLayout {
+            id: persistenceBannerContent
+            anchors.fill: parent
+            anchors.margins: 12
+            spacing: 12
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 3
+                Text {
+                    Layout.fillWidth: true
+                    text: store.saveFailed ? "Changes are not saved" : "Storage warning"
+                    color: appSettings.chromeTheme === "light" ? "#5A1111" : "#FFFFFF"
+                    font.pixelSize: 18
+                    font.bold: true
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: (store.saveFailed ? store.saveFailureMessage
+                                            : win.persistentSaveError)
+                          + (store.recoveryPath !== ""
+                             ? "\nRecovery copy: " + store.recoveryPath : "")
+                    color: appSettings.chromeTheme === "light" ? "#6E2929" : "#F4D7D7"
+                    font.pixelSize: 16
+                    wrapMode: Text.Wrap
+                }
+            }
+            MButton {
+                visible: store.saveFailed
+                text: "Retry"
+                iconName: "ui-refresh"
+                onClicked: {
+                    var retryReady = true
+                    if (win.externalConfigConflictActive
+                            && typeof backend.preparePendingLayoutRetry === "function")
+                        retryReady = backend.preparePendingLayoutRetry()
+                    if (retryReady && store.retrySave()) {
+                        win.persistentSaveError = ""
+                        win.externalConfigConflictActive = false
+                    }
+                }
+            }
+            MButton {
+                visible: store.saveFailed
+                text: "Discard"
+                iconName: "ui-trash"
+                onClicked: {
+                    if (backend.hubConnected
+                            && typeof backend.discardPendingLayoutAndSync === "function")
+                        backend.discardPendingLayoutAndSync()
+                    else if (typeof backend.discardLocalAndReload === "function")
+                        backend.discardLocalAndReload()
+                }
+            }
+            MButton {
+                visible: !store.saveFailed
+                text: "Dismiss"
+                onClicked: win.persistentSaveError = ""
+            }
+        }
+    }
     WidgetCatalog { id: catalog }
     WallpaperCatalog { id: bundledWallpapers }
     BackgroundCatalog { id: bgCatalog }
@@ -349,17 +434,35 @@ ApplicationWindow {
     // Mirror the Hub shutdown contract. A live widget preview may own a short
     // editor debounce, so flush every loaded WidgetHost before forcing the
     // Manager's shared store through its single-writer backend.
-    function flushPendingUiState() {
+    function hasPendingUiState() {
+        if (store.dirty || store._savePending)
+            return true
         var pending = [win.contentItem]
         while (pending.length > 0) {
             var node = pending.pop()
-            if (node !== win && typeof node.flushPendingState === "function")
-                node.flushPendingState()
+            if (node !== win && typeof node.hasPendingState === "function"
+                    && node.hasPendingState())
+                return true
             var children = node.children || []
             for (var i = 0; i < children.length; i++)
                 pending.push(children[i])
         }
-        return store.flushNow()
+        return false
+    }
+
+    function flushPendingUiState() {
+        var pending = [win.contentItem]
+        var widgetFlushOk = true
+        while (pending.length > 0) {
+            var node = pending.pop()
+            if (node !== win && typeof node.flushPendingState === "function"
+                    && node.flushPendingState() === false)
+                widgetFlushOk = false
+            var children = node.children || []
+            for (var i = 0; i < children.length; i++)
+                pending.push(children[i])
+        }
+        return store.flushNow() && widgetFlushOk
     }
 
     // Colour tokens + the user's uploaded images, for the shared BackgroundPicker.
@@ -392,8 +495,13 @@ ApplicationWindow {
     // One phrase for "does an edit reach the panel right now?" - reused by the
     // Layout hint card and the Appearance preview so they can never disagree
     // with the sidebar's connection dot again.
+    readonly property bool hubLayoutLive:
+        (typeof backend.layoutLiveApplied === "undefined")
+            ? true : backend.layoutLiveApplied
     readonly property string liveNote: backend.hubConnected
-        ? "Hub connected - changes appear on the Edge immediately."
+        ? (hubLayoutLive
+           ? "Hub connected - changes appear on the Edge immediately."
+           : "Hub saved the layout and will show it when the dashboard opens.")
         : "Hub offline - changes are saved and appear when the hub starts."
 
     // Scope pill ("Whole Edge" / "This page only" / …): the audit's core finding
@@ -438,6 +546,7 @@ ApplicationWindow {
     }
 
     property int currentPageIndex: 0
+    property bool _adoptingHubPage: false
     // Appearance: the Edge theme is chosen from a compact dropdown (Hybrid design)
     // instead of a 29-swatch grid that dominated the tab. The list itself is the
     // SHARED catalogue in Theme.qml, so the Manager dropdown and the hub's picker
@@ -466,6 +575,24 @@ ApplicationWindow {
     function currentPageName() {
         var p = store.pages()[currentPageIndex]
         return p ? p.name : ""
+    }
+    function syncCurrentPageFromHub() {
+        if (typeof backend === "undefined" || !backend
+                || backend.hubCurrentPage === undefined
+                || backend.hubCurrentPage < 0
+                || store.pageCount() < 1)
+            return false
+        var page = Math.max(
+            0, Math.min(backend.hubCurrentPage, store.pageCount() - 1))
+        if (page === currentPageIndex)
+            return true
+        _adoptingHubPage = true
+        try {
+            currentPageIndex = page
+        } finally {
+            _adoptingHubPage = false
+        }
+        return true
     }
     // Commit whatever is typed in the rename field to the page the field belongs to
     // (`pageName.forIndex`, NOT the current page - the two differ exactly when the
@@ -498,7 +625,8 @@ ApplicationWindow {
         // user is editing (O1). No-op when the hub is offline. Guarded so a
         // non-backend test harness (ManagerHarness stub without this method) does
         // not throw.
-        if (typeof backend !== "undefined" && backend
+        if (!_adoptingHubPage
+                && typeof backend !== "undefined" && backend
                 && typeof backend.setHubActivePage === "function")
             backend.setHubActivePage(currentPageIndex)
     }
@@ -625,7 +753,39 @@ ApplicationWindow {
         confirmDialog.open()
     }
 
-    Component.onCompleted: { store.load(backend.starterLayout()); syncTheme(); refreshImages(); refreshLicense() }
+    function confirmRemoveWidget(tileId, tileType) {
+        var pageIndex = currentPageIndex
+        var revision = store.structureRevision
+        var title = catalog.title(tileType)
+        var dataLabel = catalog.personalDataLabel(tileType)
+        confirmDialog.message = "Remove " + title + " from this screen?"
+            + (dataLabel.length > 0
+               ? " Its " + dataLabel + " will also be removed." : "")
+            + " This can't be undone."
+        confirmDialog.onConfirm = function () {
+            if (store.structureRevision !== revision)
+                return
+            var pages = store.pages()
+            var page = pageIndex >= 0 && pageIndex < pages.length
+                       ? pages[pageIndex] : null
+            var tiles = page && Array.isArray(page.tiles) ? page.tiles : []
+            for (var i = 0; i < tiles.length; i++) {
+                if (tiles[i].id === tileId && tiles[i].type === tileType) {
+                    store.removeTile(pageIndex, tileId)
+                    return
+                }
+            }
+        }
+        confirmDialog.open()
+    }
+
+    Component.onCompleted: {
+        store.load(backend.starterLayout())
+        syncTheme()
+        refreshImages()
+        refreshLicense()
+        syncCurrentPageFromHub()
+    }
 
     // Capture helper: XENEON_CFG=<type> auto-opens that widget's config dialog.
     Timer {
@@ -749,7 +909,10 @@ ApplicationWindow {
                                    : (win.hubStarting ? m.accent : m.textSecondary) }
                         Text {
                             Layout.fillWidth: true
-                            text: backend.hubConnected ? "Hub connected (live)"
+                            text: backend.hubConnected
+                                  ? (win.hubLayoutLive
+                                     ? "Hub connected (live)"
+                                     : "Hub connected (layout queued)")
                                   : (win.hubStarting ? "Starting hub…" : "Hub offline (saved)")
                             color: m.textSecondary; font.pixelSize: m.fontMinimum; elide: Text.ElideRight
                         }
@@ -905,6 +1068,8 @@ ApplicationWindow {
                             // animated preview doesn't repaint every scroll frame.
                             scrolling: helperScroll.contentItem ? helperScroll.contentItem.moving : false
                             onConfigRequested: (tileId, tileType) => cfgDialog.openFor(tileId, tileType)
+                            onRemoveRequested: (tileId, tileType) =>
+                                win.confirmRemoveWidget(tileId, tileType)
                         }
 
                         // Helper column: add + how-to + this page's background.
@@ -947,7 +1112,27 @@ ApplicationWindow {
                                     Layout.fillWidth: true
                                     options: [ { label: "1 column", value: 1 }, { label: "2 columns", value: 2 } ]
                                     currentValue: (store.structureRevision, store.pageColumns(win.currentPageIndex))
-                                    onSelected: (v) => store.setPageColumns(win.currentPageIndex, v)
+                                    onSelected: (v) => {
+                                        if (store.setPageColumns(
+                                                win.currentPageIndex, v)) {
+                                            columnLayoutError.text = ""
+                                        } else {
+                                            columnLayoutError.text =
+                                                "This screen is too full for " + v
+                                                + " column" + (v === 1 ? "" : "s")
+                                                + ". Resize or remove a widget first."
+                                        }
+                                    }
+                                }
+                                Text {
+                                    id: columnLayoutError
+                                    objectName: "columnLayoutError"
+                                    visible: text !== ""
+                                    text: ""
+                                    color: m.danger
+                                    font.pixelSize: m.fontMinimum
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
                                 }
 
                                 // Collapsible how-to card. Onboarding lives here, but it
@@ -1693,7 +1878,10 @@ ApplicationWindow {
                         Text { text: "Screen the hub runs on"; color: m.textPrimary; font.pixelSize: m.fontSection; font.bold: true }
                         ScopeTag { label: win.scopeLabels.computer }
                     }
-                    Text { text: "Applies next time the hub starts - a running hub stays where it is."
+                    Text {
+                        text: backend.hubConnected
+                              ? "Moves the running Hub now and keeps this target for future starts."
+                              : "Saved now and applied the next time the Hub starts."
                         color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.fillWidth: true; wrapMode: Text.WordWrap }
 
                     // Audit F8 / W5 #13: with no screens the tab showed a sentence
@@ -1739,8 +1927,11 @@ ApplicationWindow {
                                     text: isTarget ? "Target" : "Set as target"
                                     iconName: isTarget ? "ui-check" : ""
                                     primary: isTarget
-                                    onClicked: { backend.setTargetDisplay(modelData.name, modelData.model)
-                                        win.currentTarget = modelData.name } }
+                                    onClicked: {
+                                        if (backend.setTargetDisplay(
+                                                modelData.name, modelData.model))
+                                            win.currentTarget = modelData.name
+                                    } }
                             }
                         }
                     }
@@ -2179,11 +2370,16 @@ ApplicationWindow {
         objectName: "managerPresetDialog"
         title: "Start from a preset screen"
         modal: true; anchors.centerIn: parent
+        focus: true
         width: Math.min(parent ? parent.width * 0.94 : 1100, 1180)
         height: Math.min(parent ? parent.height * 0.9 : 760, 820)
         standardButtons: Dialog.NoButton
         property string selectedId: ""
         readonly property bool landscape: edgeClone.landscape
+        // The full-width two-pane picker is ideal on a desktop monitor. Smaller
+        // laptop windows stack the scrollable library above the real preview so
+        // neither pane is squeezed below its usable width or pushed out of bounds.
+        readonly property bool compactLayout: width < 980
         readonly property var selectedPreset: selectedId !== "" ? presetLib.def(selectedId) : null
         onOpened: selectedId = ""
         background: Rectangle { color: m.panel; radius: m.radius; border.width: 1; border.color: m.border }
@@ -2202,14 +2398,30 @@ ApplicationWindow {
         }
         contentItem: Item {
             objectName: "managerPresetContent"
-            RowLayout {
+            GridLayout {
+                id: presetLayout
+                objectName: "managerPresetLayout"
                 anchors.fill: parent
                 anchors.margins: 20
-                spacing: 14
+                columns: presetDialog.compactLayout ? 1 : 2
+                rowSpacing: 14
+                columnSpacing: 14
                 MScroll {
                     id: presetScroll
-                    Layout.preferredWidth: 520
-                    Layout.fillHeight: true
+                    objectName: "managerPresetScroll"
+                    Layout.row: 0
+                    Layout.column: 0
+                    Layout.fillWidth: true
+                    Layout.fillHeight: !presetDialog.compactLayout
+                    Layout.minimumWidth: 0
+                    Layout.preferredWidth: presetDialog.compactLayout ? -1 : 520
+                    Layout.minimumHeight: presetDialog.compactLayout ? 120 : 0
+                    Layout.preferredHeight: presetDialog.compactLayout
+                                            ? Math.max(140, Math.min(240, presetLayout.height * 0.42))
+                                            : -1
+                    Layout.maximumHeight: presetDialog.compactLayout
+                                          ? Math.max(140, Math.min(260, presetLayout.height * 0.46))
+                                          : Number.POSITIVE_INFINITY
                     clip: true
                     ColumnLayout {
                         width: presetScroll.availableWidth
@@ -2304,9 +2516,12 @@ ApplicationWindow {
                 }
                 ManagerPresetPreview {
                     objectName: "managerPresetPreview"
+                    Layout.row: presetDialog.compactLayout ? 1 : 0
+                    Layout.column: presetDialog.compactLayout ? 0 : 1
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    Layout.minimumWidth: 430
+                    Layout.minimumWidth: presetDialog.compactLayout ? 0 : 430
+                    Layout.minimumHeight: presetDialog.compactLayout ? 160 : 0
                     preset: presetDialog.selectedPreset
                     widgetCatalog: catalog
                     landscape: presetDialog.landscape
@@ -2526,16 +2741,42 @@ ApplicationWindow {
 
     Connections {
         target: backend
+        ignoreUnknownSignals: true
         function onImagesChanged() { win.refreshImages() }
         // The hub (or disk) changed the config externally - adopt it live.
         function onConfigChanged() {
-            store.load(backend.starterLayout())
+            if (!store.load(backend.starterLayout()))
+                return
+            win.persistentSaveError = ""
+            win.externalConfigConflictActive = false
             win.syncTheme()
             win.refreshImages()
             if (win.currentPageIndex >= store.pageCount())
                 win.currentPageIndex = Math.max(0, store.pageCount() - 1)
             pageName.forIndex = win.currentPageIndex
             pageName.text = win.currentPageName()
+        }
+        function onHubConfigChanged() {
+            win.currentTarget = backend.targetConnector()
+            win.refreshLicense()
+            if (autostartSwitch)
+                autostartSwitch.checked = backend.isAutostart()
+        }
+        function onHubCurrentPageChanged() {
+            win.syncCurrentPageFromHub()
+        }
+        function onSaveError(message) {
+            win.persistentSaveError = message
+        }
+        function onLayoutSaveError(message) {
+            store.markSaveFailed(message)
+        }
+        function onExternalConfigConflict() {
+            win.externalConfigConflictActive = true
+            // Commit every widget-local editor buffer before the generation
+            // conflict is surfaced. The expected save rejection causes the
+            // store to create an owner-only recovery copy.
+            win.flushPendingUiState()
         }
         // Display hotplug.
         function onScreensChanged() {

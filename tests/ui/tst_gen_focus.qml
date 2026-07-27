@@ -335,6 +335,71 @@ Item {
             compare(runway.length, 0, "the baseline tile keeps the simpler ring and controls")
         }
 
+        function test_1x1_5_scaled_maximum_runway_wraps_complete_values() {
+            tryVerify(function () { return hSize.ready }, 3000)
+            var previous = JSON.parse(JSON.stringify(
+                hSize.storeCtl.settingsFor("test-instance")))
+            var oldScale = hSize.theme.textScale
+            var oldFont = hSize.theme.fontChoice
+            try {
+                hSize.theme.textScale = 1.45
+                hSize.theme.fontChoice = "hyperlegible"
+                hSize.storeCtl.patchSettings("test-instance", {
+                    preset: "custom",
+                    phase: "work",
+                    running: false,
+                    doneToday: 999,
+                    dailyGoal: 99,
+                    day: root.todayStr()
+                })
+                wait(32)
+                hSize.storeCtl.patchSettings("test-instance", {
+                    pausedRemaining: 359999
+                })
+                var w = shape(557, 982, "tall")
+                compare(w.runwayNeedsExtraLines, true)
+                verify(w.runwayH > 78,
+                       "the constrained high-scale runway earns a second line")
+
+                var expected = [
+                    ["focusRunwayPlan", "6000 min planned"],
+                    ["focusRunwayNext", "Long break"],
+                    ["focusRunwayRhythm", "Custom rhythm"]
+                ]
+                for (var i = 0; i < expected.length; i++) {
+                    var matches = root.findAll(w, function(node) {
+                        return node.objectName === expected[i][0]
+                    }, [])
+                    compare(matches.length, 1, expected[i][0] + " is rendered")
+                    var label = matches[0]
+                    compare(label.text, expected[i][1])
+                    verify(label.font.pixelSize >= hSize.theme.fontMinimum)
+                    verify(label.wrapMode !== Text.NoWrap)
+                    compare(label.truncated, false,
+                            expected[i][1] + " remains complete at 145 percent")
+                    verify(label.contentHeight <= label.height + 1)
+                }
+
+                var controls = root.visiblePills(w)
+                compare(controls.length, 3)
+                for (var c = 0; c < controls.length; c++) {
+                    verify(controls[c].height >= hSize.theme.touchTertiary)
+                    var bottom = controls[c].mapToItem(
+                        w, 0, controls[c].height).y
+                    verify(bottom <= w.height + 1,
+                           controls[c].label + " remains inside the tall tile")
+                }
+            } finally {
+                hSize.theme.textScale = oldScale
+                hSize.theme.fontChoice = oldFont
+                hSize.storeCtl.resetSettings("test-instance", previous)
+                sizeWrap.width = 696
+                sizeWrap.height = 819
+                if (hSize.item)
+                    hSize.item.sizeClass = "compact"
+            }
+        }
+
         // The stats must stay ATTACHED to the ring they describe: the tall box
         // has ~450px the width-bound ring cannot spend, and that slack belongs
         // above/below the group, not between the ring and its own caption.

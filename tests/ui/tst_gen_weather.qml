@@ -543,6 +543,67 @@ Item {
             }
         }
 
+        function test_constrained_copy_and_forecast_ranges_reflow() {
+            var w = shape(278, 327, "compact", 4)
+            hS.theme.textScale = 1.45
+            hS.storeCtl.patchSettings(hS.instanceId, {
+                lat: 48.2, lon: 16.37,
+                place: "Vienna International Weather Station"
+            })
+            wait(0)
+            var locations = findAllNodes(w, function (n) {
+                return n.objectName === "weatherLocation"
+            }, [])
+            compare(locations.length, 1)
+            verify(!locations[0].truncated
+                   && locations[0].contentHeight <= locations[0].height + 1,
+                   "the complete configured location wraps in the micro tile"
+                   + " (truncated=" + locations[0].truncated
+                   + ", content=" + locations[0].contentWidth + "x"
+                   + locations[0].contentHeight + ", box="
+                   + locations[0].width + "x" + locations[0].height + ")")
+
+            w.loaded = false
+            w.errorText = "Weather provider did not answer"
+            w.stateHelp = "Check the location and retry when the network is available."
+            wait(0)
+            var states = findAllNodes(w, function (n) {
+                return n.objectName === "weatherStateText"
+            }, [])
+            compare(states.length, 1)
+            verify(!states[0].truncated
+                   && states[0].contentHeight <= states[0].height + 1,
+                   "the provider error wraps in the constrained tile")
+            verify(w.Accessible.name.indexOf(w.stateHelp) >= 0,
+                   "the complete recovery guidance remains accessible")
+
+            w = shape(677, 245, "wide", 5)
+            hS.theme.textScale = 1.3
+            var extreme = [{ day: "Today", code: 0, max: 42, min: -18 }]
+            var names = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+            for (var i = 0; i < names.length; i++)
+                extreme.push({ day: names[i], code: 61, max: 41 - i, min: -17 + i })
+            seedLoaded(w, extreme)
+            wait(0)
+            var ranges = findAllNodes(w, function (n) {
+                return n.objectName === "weatherForecastRange"
+            }, [])
+            verify(ranges.length > 0)
+            for (var r = 0; r < ranges.length; r++) {
+                verify(ranges[r].text.indexOf("\n") >= 0,
+                       "wide forecast uses a high/low stack")
+                verify(!ranges[r].truncated
+                       && ranges[r].contentWidth <= ranges[r].width + 1,
+                       "stacked forecast range fits its daily column")
+                verify(ranges[r].font.pixelSize >= hS.theme.fontMinimum,
+                       "stacked forecast range keeps the active type floor")
+            }
+
+            hS.theme.textScale = 1.15
+            hS.storeCtl.patchSettings(hS.instanceId,
+                { lat: 48.2, lon: 16.37, place: "Vienna" })
+        }
+
         // tall - the daily list is what a tall weather tile grows.
         function test_tall_grows_the_daily_list() {
             var w = shape(696, 1228, "tall", 7)

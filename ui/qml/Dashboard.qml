@@ -32,6 +32,14 @@ Item {
     }
     readonly property var availableTimeZones: (typeof timeZones !== "undefined") ? timeZones : null
     property bool editMode: false
+    // Process-local safe mode. This never edits the persisted document: it
+    // prevents every WidgetHost from constructing a widget and prevents the
+    // optional user-widget directory scan from entering the recovery path.
+    readonly property bool sessionWidgetsEnabled: {
+        if (typeof _widgetsEnabled !== "undefined") return _widgetsEnabled
+        if (typeof _safeMode !== "undefined") return !_safeMode
+        return true
+    }
     readonly property bool showHubBar: {
         store.revision
         return store.appearance().hubControlsMode !== "immersive"
@@ -42,6 +50,7 @@ Item {
     // surface until the user chooses an action. A queue prevents two reminders
     // arriving together from silently replacing each other.
     property var priorityAlertQueue: []
+    readonly property int maxPriorityAlerts: 16
     readonly property var currentPriorityAlert:
         priorityAlertQueue.length ? priorityAlertQueue[0] : null
     onCurrentPriorityAlertChanged: {
@@ -62,6 +71,11 @@ Item {
         var key = String(request.key || (request.sourceId || "") + ":" + title)
         for (var i = 0; i < priorityAlertQueue.length; i++)
             if (priorityAlertQueue[i].key === key) return true
+        // Preserve the oldest unacknowledged reminders. Returning false lets the
+        // widget fall back to its desktop-notification path without allowing an
+        // unattended repeating timer to grow this process-local queue forever.
+        if (priorityAlertQueue.length >= maxPriorityAlerts)
+            return false
 
         var next = priorityAlertQueue.slice()
         next.push({
@@ -77,11 +91,7 @@ Item {
             primaryLabel: String(request.primaryLabel || "Got it"),
             secondaryLabel: String(request.secondaryLabel || ""),
             primaryAction: String(request.primaryAction || "dismiss"),
-            secondaryAction: String(request.secondaryAction || ""),
-            primaryCallback: typeof request.primaryCallback === "function"
-                             ? request.primaryCallback : null,
-            secondaryCallback: typeof request.secondaryCallback === "function"
-                               ? request.secondaryCallback : null
+            secondaryAction: String(request.secondaryAction || "")
         })
         priorityAlertQueue = next
         return true
@@ -103,17 +113,50 @@ Item {
         return true
     }
 
+    function _priorityAlertWidget(alert) {
+        if (!alert || !alert.sourceId || !alert.widgetType) return null
+        var pending = [dashboard]
+        var fallback = null
+        while (pending.length > 0) {
+            var node = pending.pop()
+            if (node !== dashboard
+                    && node.widgetId === alert.sourceId
+                    && node.widgetType === alert.widgetType
+                    && node.item) {
+                if (node.driverActive)
+                    return node.item
+                fallback = node.item
+            }
+            var children = node.children || []
+            for (var i = 0; i < children.length; i++)
+                pending.push(children[i])
+        }
+        return fallback
+    }
+
+    function _invokePriorityAlertWidget(alert, method) {
+        var widget = dashboard._priorityAlertWidget(alert)
+        if (!widget || typeof widget[method] !== "function")
+            return false
+        return widget[method]() !== false
+    }
+
     function triggerPriorityAlertAction(which) {
         var alert = currentPriorityAlert
         if (!alert) return false
         var action = which === "secondary" ? alert.secondaryAction
                                            : alert.primaryAction
-        var callback = which === "secondary" ? alert.secondaryCallback
-                                             : alert.primaryCallback
+        var handled = false
         if (action === "openWidget")
-            dashboard._openPriorityAlertWidget(alert)
-        else if (typeof callback === "function")
-            callback()
+            handled = dashboard._openPriorityAlertWidget(alert)
+        else if (action === "breakTake")
+            handled = dashboard._invokePriorityAlertWidget(alert, "takeBreak")
+        else if (action === "breakSnooze")
+            handled = dashboard._invokePriorityAlertWidget(alert, "snooze")
+        else if (action === "dismiss" || action === "")
+            handled = true
+        if (!handled)
+            return false
         return dashboard.dismissPriorityAlert()
     }
 
@@ -129,20 +172,65 @@ Item {
         return priorityAlertQueue.length
     }
 
+    // Synchronous preflight for a Manager document. The C++ control path calls
+    // this on the GUI thread before it persists the incoming document. If a
+    // widget or the shared store has unfinished local work, commit that work and
+    // reject this push as a conflict. A later retry is therefore an explicit
+    // choice to replace the now-saved Hub state, never a silent overwrite.
+    //
+    // Result contract:
+    //   ready        incoming state can be persisted and applied now
+    //   conflict     local state was saved; this incoming request must be rejected
+    //   flush-failed local state remains live/recoverable; reject the request
+    //   rejected     incoming state is invalid or blocked by policy
+    function preflightExternalState(json) {
+        if (!store.canApplyExternal(json))
+            return "rejected"
+
+        var nodes = [dashboard]
+        var pendingHosts = []
+        while (nodes.length > 0) {
+            var node = nodes.pop()
+            if (node !== dashboard
+                    && typeof node.hasPendingState === "function"
+                    && node.hasPendingState())
+                pendingHosts.push(node)
+            var children = node.children || []
+            for (var i = 0; i < children.length; i++)
+                nodes.push(children[i])
+        }
+
+        var hadLocalState = store.dirty || store._savePending
+                                || pendingHosts.length > 0
+        var widgetFlushFailed = false
+        for (var h = 0; h < pendingHosts.length; h++) {
+            if (!pendingHosts[h].flushPendingState())
+                widgetFlushFailed = true
+        }
+        if (!hadLocalState)
+            return "ready"
+        var storeFlushOk = store.flushNow()
+        if (widgetFlushFailed || !storeFlushOk)
+            return "flush-failed"
+        return "conflict"
+    }
+
     // Commit widget-local editor debounces first, then synchronously persist the
     // shared store. Called by main.qml during clean shutdown while configBridge
     // is still attached.
     function flushPendingUiState() {
         var pending = [dashboard]
+        var widgetFlushOk = true
         while (pending.length > 0) {
             var node = pending.pop()
-            if (node !== dashboard && typeof node.flushPendingState === "function")
-                node.flushPendingState()
+            if (node !== dashboard && typeof node.flushPendingState === "function"
+                    && node.flushPendingState() === false)
+                widgetFlushOk = false
             var children = node.children || []
             for (var i = 0; i < children.length; i++)
                 pending.push(children[i])
         }
-        return store.flushNow()
+        return store.flushNow() && widgetFlushOk
     }
 
     // LOSS-001: screen deletion is destructive because removing a screen also
@@ -157,6 +245,17 @@ Item {
     readonly property alias pageDeleteSummary: pageDeleteSummaryText
     readonly property alias pageDeleteCancelButton: cancelPageDelete
     readonly property alias pageDeleteConfirmButton: confirmPageDelete
+
+    property int pendingWidgetRemovalPage: -1
+    property int pendingWidgetRemovalRevision: -1
+    property string pendingWidgetRemovalId: ""
+    property string pendingWidgetRemovalType: ""
+    property string pendingWidgetRemovalLabel: ""
+    property string widgetRemovalError: ""
+    readonly property alias widgetRemoveDialog: widgetRemoveConfirm
+    readonly property alias widgetRemoveSummary: widgetRemoveSummaryText
+    readonly property alias widgetRemoveCancelButton: cancelWidgetRemove
+    readonly property alias widgetRemoveConfirmButton: confirmWidgetRemove
 
     property string pendingWidgetDataAction: ""
     property string pendingWidgetDataId: ""
@@ -193,6 +292,64 @@ Item {
         dashboard.pendingPageRemovalIndex = -1
         dashboard.pendingPageRemovalRevision = -1
         dashboard.pageRemovalError = ""
+        return true
+    }
+
+    function requestWidgetRemoval(pageIndex, tileId, tileType) {
+        var pages = store.pages()
+        if (pageIndex < 0 || pageIndex >= pages.length
+                || !tileId || !tileType)
+            return false
+        var tiles = pages[pageIndex].tiles || []
+        var found = false
+        for (var i = 0; i < tiles.length; i++) {
+            if (tiles[i].id === tileId && tiles[i].type === tileType) {
+                found = true
+                break
+            }
+        }
+        if (!found) return false
+        dashboard.pendingWidgetRemovalPage = pageIndex
+        dashboard.pendingWidgetRemovalRevision = store.structureRevision
+        dashboard.pendingWidgetRemovalId = tileId
+        dashboard.pendingWidgetRemovalType = tileType
+        dashboard.pendingWidgetRemovalLabel = catalog.personalDataLabel(tileType)
+        dashboard.widgetRemovalError = ""
+        widgetRemoveConfirm.open()
+        return true
+    }
+
+    function confirmWidgetRemoval() {
+        var pageIndex = dashboard.pendingWidgetRemovalPage
+        var pages = store.pages()
+        if (store.structureRevision !== dashboard.pendingWidgetRemovalRevision
+                || pageIndex < 0 || pageIndex >= pages.length) {
+            dashboard.widgetRemovalError =
+                "The screen changed. Review this widget again before removing it."
+            return false
+        }
+        var tiles = pages[pageIndex].tiles || []
+        var exact = false
+        for (var i = 0; i < tiles.length; i++) {
+            if (tiles[i].id === dashboard.pendingWidgetRemovalId
+                    && tiles[i].type === dashboard.pendingWidgetRemovalType) {
+                exact = true
+                break
+            }
+        }
+        if (!exact
+                || !store.removeTile(
+                    pageIndex, dashboard.pendingWidgetRemovalId)) {
+            dashboard.widgetRemovalError =
+                "This widget is no longer on the reviewed screen."
+            return false
+        }
+        dashboard.pendingWidgetRemovalPage = -1
+        dashboard.pendingWidgetRemovalRevision = -1
+        dashboard.pendingWidgetRemovalId = ""
+        dashboard.pendingWidgetRemovalType = ""
+        dashboard.pendingWidgetRemovalLabel = ""
+        dashboard.widgetRemovalError = ""
         return true
     }
 
@@ -435,7 +592,70 @@ Item {
         Component.onCompleted: { interval = dashboard._msToNextSecond(); start() }
     }
 
-    DashboardStore { id: store }
+    DashboardStore {
+        id: store
+        preserveUnknownTileSizes: !dashboard.sessionWidgetsEnabled
+        persistenceEnabled: dashboard.sessionWidgetsEnabled
+    }
+    Rectangle {
+        id: saveFailureBanner
+        objectName: "saveFailureBanner"
+        z: 10000
+        visible: store.saveFailed
+        anchors.top: parent.top
+        anchors.topMargin: theme.spacingSm
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.min(parent.width - theme.spacingLg * 2, 1120)
+        height: saveFailureContent.implicitHeight + theme.spacingMd * 2
+        radius: theme.radiusMd
+        color: "#2B1717"
+        border.width: 2
+        border.color: "#F85149"
+
+        RowLayout {
+            id: saveFailureContent
+            anchors.fill: parent
+            anchors.margins: theme.spacingMd
+            spacing: theme.spacingMd
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 4
+                Text {
+                    Layout.fillWidth: true
+                    text: "Changes are not saved"
+                    color: "#FFFFFF"
+                    font.pixelSize: 20
+                    font.bold: true
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: store.saveFailureMessage
+                          + (store.recoveryPath !== ""
+                             ? "\nRecovery copy: " + store.recoveryPath : "")
+                    color: "#F4D7D7"
+                    font.pixelSize: 17
+                    wrapMode: Text.Wrap
+                }
+            }
+            Button {
+                objectName: "retryFailedSaveButton"
+                text: "Retry"
+                Layout.minimumWidth: 104
+                Layout.minimumHeight: 52
+                onClicked: store.retrySave()
+            }
+            Button {
+                objectName: "discardFailedSaveButton"
+                text: "Discard"
+                Layout.minimumWidth: 112
+                Layout.minimumHeight: 52
+                onClicked: store.discardUnsaved(
+                    typeof configBridge !== "undefined" && configBridge
+                        ? configBridge.starterLayout() : "")
+            }
+        }
+    }
     readonly property int observedStoreStructureRevision: store.structureRevision
     onObservedStoreStructureRevisionChanged: dashboard.prunePriorityAlerts()
     WidgetCatalog { id: catalog }
@@ -523,6 +743,8 @@ Item {
     // so before the store is loaded this peeks at the same persisted document
     // store.load() is about to read.
     function _userWidgetsFlag() {
+        if (!dashboard.sessionWidgetsEnabled)
+            return false
         // The org policy vetoes user widgets OUTRIGHT - before the user's own
         // preference is even consulted. Policy beating preference is the
         // definition of a managed session, and putting the veto here (not at a
@@ -633,10 +855,23 @@ Item {
     // Close the expanded overlay + clear its transient state (shared by the
     // header back button and the reachable bottom "Done" bar).
     function closeExpanded() {
+        // The expanded widget can own an editor buffer that is not yet in the
+        // shared store. Commit that buffer and the resulting store mutation
+        // before destroying the overlay. If either step fails, leave the live
+        // editor on screen so its text remains recoverable.
+        var widgetFlushOk = !ovlLoader.hasPendingState()
+                            || ovlLoader.flushPendingState()
+        var storeFlushOk = widgetFlushOk && store.flushNow()
+        if (!widgetFlushOk || !storeFlushOk) {
+            dashboard.cfgStatus =
+                "Could not save these changes. The editor remains open so you can retry."
+            return false
+        }
         dashboard.expandedType = ""
         dashboard.expandedId = ""
         dashboard.cfgStatus = ""
         dashboard.overlayLoaderItem = null
+        return true
     }
 
     Component.onCompleted: {
@@ -1383,6 +1618,7 @@ Item {
                                 Loader {
                                     anchors.fill: parent
                                     active: tileLd.wId !== ""
+                                            && dashboard.sessionWidgetsEnabled
                                             && (catalog.source(tileLd.wType) === ""
                                                 || !dashboard.policyAllowsWidget(tileLd.wType))
                                     // `fallbackTile` is an id in the Dashboard's
@@ -1488,7 +1724,13 @@ Item {
                                             radius: width / 2; color: Qt.rgba(theme.error.r, theme.error.g, theme.error.b, 0.2)
                                             border.width: 2; border.color: theme.error
                                             AppIcon { anchors.centerIn: parent; name: "ui-trash"; size: 26; color: theme.error }
-                                            MouseArea { anchors.fill: parent; onClicked: store.removeTile(pageItem.index, cell.tileId) }
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                onClicked: dashboard.requestWidgetRemoval(
+                                                    pageItem.index,
+                                                    cell.tileId,
+                                                    cell.tileType)
+                                            }
                                         }
                                         // move right
                                         Rectangle {
@@ -1855,6 +2097,108 @@ Item {
                 implicitWidth: 172
                 implicitHeight: theme.touchSecondary
                 onClicked: if (dashboard.confirmPageRemoval()) pageDeleteConfirm.close()
+            }
+        }
+    }
+
+    Dialog {
+        id: widgetRemoveConfirm
+        objectName: "widgetRemoveConfirm"
+        anchors.centerIn: parent
+        modal: true
+        closePolicy: Popup.CloseOnEscape
+        width: Math.min(parent ? parent.width - theme.spacingXl * 2 : 560, 560)
+        title: "Remove widget?"
+        background: Rectangle {
+            color: theme.cardBackground
+            radius: theme.radiusLg
+            border.width: 1
+            border.color: theme.cardBorder
+        }
+        header: Rectangle {
+            color: "transparent"
+            implicitHeight: theme.touchSecondary
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: theme.spacingLg
+                anchors.rightMargin: theme.spacingLg
+                spacing: theme.spacingSm
+                AppIcon {
+                    name: "ui-warning"
+                    size: theme.iconMd
+                    color: theme.error
+                    Layout.alignment: Qt.AlignVCenter
+                }
+                Text {
+                    text: widgetRemoveConfirm.title
+                    color: theme.textPrimary
+                    font.pixelSize: theme.fontTitle
+                    font.bold: true
+                    font.family: theme.fontDisplay
+                    Layout.fillWidth: true
+                }
+            }
+        }
+        contentItem: ColumnLayout {
+            spacing: theme.spacingMd
+            Text {
+                id: widgetRemoveSummaryText
+                objectName: "widgetRemoveSummary"
+                Layout.fillWidth: true
+                text: {
+                    var title = catalog.title(
+                        dashboard.pendingWidgetRemovalType)
+                    var label = dashboard.pendingWidgetRemovalLabel
+                    return "Remove " + title + " from this screen?"
+                        + (label.length > 0
+                           ? " Its " + label + " will also be removed." : "")
+                        + " Any unsaved text in the widget will be removed too."
+                }
+                color: theme.textPrimary
+                font.pixelSize: theme.fontLabel
+                font.family: theme.fontDisplay
+                wrapMode: Text.WordWrap
+            }
+            Text {
+                Layout.fillWidth: true
+                text: "This cannot be undone."
+                color: theme.textSecondary
+                font.pixelSize: theme.fontCaption
+                font.family: theme.fontDisplay
+            }
+            Text {
+                objectName: "widgetRemoveError"
+                Layout.fillWidth: true
+                visible: dashboard.widgetRemovalError.length > 0
+                text: dashboard.widgetRemovalError
+                color: theme.error
+                font.pixelSize: theme.fontCaption
+                font.family: theme.fontDisplay
+                wrapMode: Text.WordWrap
+            }
+        }
+        footer: RowLayout {
+            spacing: theme.spacingSm
+            Item { Layout.fillWidth: true }
+            ConfirmButton {
+                id: cancelWidgetRemove
+                objectName: "cancelWidgetRemove"
+                text: "Cancel"
+                implicitWidth: 128
+                implicitHeight: theme.touchSecondary
+                onClicked: widgetRemoveConfirm.close()
+            }
+            ConfirmButton {
+                id: confirmWidgetRemove
+                objectName: "confirmWidgetRemove"
+                text: "Remove widget"
+                danger: true
+                implicitWidth: 172
+                implicitHeight: theme.touchSecondary
+                onClicked: {
+                    if (dashboard.confirmWidgetRemoval())
+                        widgetRemoveConfirm.close()
+                }
             }
         }
     }

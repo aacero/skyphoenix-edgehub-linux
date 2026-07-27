@@ -1,0 +1,11 @@
+{
+  "manifestVersion": 1,
+  "type": "user.safe-mode-fault",
+  "title": "Safe-mode fault probe",
+  "category": "User",
+  "description": "Deliberately fails when instantiated by the safe-mode runtime test.",
+  "entry": "FailingWidget.qml",
+  "sizes": ["1x1", "1x2"],
+  "dflt": "1x2",
+  "defaults": {}
+}

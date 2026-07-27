@@ -5,20 +5,75 @@
 set -uo pipefail
 
 OWNER_TEST="license::tests::owners_real_pro_key_unlocks_pro_against_the_shipped_issuer_key"
-OWNER_TEST_LICENSE_KEY="${XENEON_TEST_LICENSE_KEY:-}"
-if [ "${XENEON_OWNER_KEY_FD:-}" = "3" ]; then
+if [[ -v XENEON_TEST_LICENSE_KEY ]]; then
+    unset XENEON_TEST_LICENSE_KEY
+    echo "ERROR: XENEON_TEST_LICENSE_KEY is unsupported; use XENEON_TEST_LICENSE_KEY_FILE." >&2
+    exit 2
+fi
+OWNER_TEST_LICENSE_FILE_SUPPLIED=0
+OWNER_TEST_LICENSE_FILE=""
+if [[ -v XENEON_TEST_LICENSE_KEY_FILE ]]; then
+    OWNER_TEST_LICENSE_FILE_SUPPLIED=1
+    OWNER_TEST_LICENSE_FILE="$XENEON_TEST_LICENSE_KEY_FILE"
+fi
+unset XENEON_TEST_LICENSE_KEY_FILE
+OWNER_TEST_LICENSE_KEY=""
+OWNER_TEST_LICENSE_FROM_FD=0
+if [[ -v XENEON_OWNER_KEY_FD ]]; then
+    [ "$XENEON_OWNER_KEY_FD" = "3" ] || {
+        unset XENEON_OWNER_KEY_FD
+        echo "ERROR: XENEON_OWNER_KEY_FD must name descriptor 3." >&2
+        exit 2
+    }
+    [ "$OWNER_TEST_LICENSE_FILE_SUPPLIED" -eq 0 ] || {
+        unset XENEON_OWNER_KEY_FD
+        echo "ERROR: owner licence file and internal descriptor input cannot be combined." >&2
+        exit 2
+    }
+    OWNER_TEST_LICENSE_FROM_FD=1
     IFS= read -r OWNER_TEST_LICENSE_KEY <&3 || OWNER_TEST_LICENSE_KEY=""
     exec 3<&-
 fi
-unset XENEON_TEST_LICENSE_KEY
 unset XENEON_OWNER_KEY_FD
+# This release-only runner is also safe to invoke directly.
+export RUSTUP_TOOLCHAIN=1.86.0
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+OWNER_LICENSE_FILE_READER="$PROJECT_DIR/scripts/lib/owner_license_file.py"
+RELEASE_RUST_TOOLCHAIN_HELPER="$PROJECT_DIR/scripts/lib/release_rust_toolchain.sh"
+
+[ -f "$RELEASE_RUST_TOOLCHAIN_HELPER" ] || {
+    echo "ERROR: release Rust toolchain helper is unavailable: $RELEASE_RUST_TOOLCHAIN_HELPER" >&2
+    exit 2
+}
+# shellcheck source=lib/release_rust_toolchain.sh
+. "$RELEASE_RUST_TOOLCHAIN_HELPER"
+xeneon_release_rust_toolchain_select
+xeneon_release_rust_toolchain_verify || exit 2
+
+if [ "$OWNER_TEST_LICENSE_FROM_FD" -eq 0 ]; then
+    [ "$OWNER_TEST_LICENSE_FILE_SUPPLIED" -eq 1 ] || {
+        echo "ERROR: set XENEON_TEST_LICENSE_KEY_FILE to the protected owner-issued Pro licence." >&2
+        exit 2
+    }
+    [ -f "$OWNER_LICENSE_FILE_READER" ] || {
+        echo "ERROR: owner licence file reader is unavailable: $OWNER_LICENSE_FILE_READER" >&2
+        exit 2
+    }
+    if ! OWNER_TEST_LICENSE_KEY="$(
+            env PYTHONDONTWRITEBYTECODE=1 python3 "$OWNER_LICENSE_FILE_READER" \
+                "$OWNER_TEST_LICENSE_FILE"
+        )"; then
+        echo "ERROR: owner-issued Pro licence file was rejected." >&2
+        exit 2
+    fi
+fi
+OWNER_TEST_LICENSE_FILE=""
 
 case "$OWNER_TEST_LICENSE_KEY" in
     *[![:space:]]*) ;;
     *)
-        echo "ERROR: XENEON_TEST_LICENSE_KEY must contain a real owner-issued Pro key." >&2
+        echo "ERROR: owner licence input must contain a real owner-issued Pro key." >&2
         exit 2
         ;;
 esac

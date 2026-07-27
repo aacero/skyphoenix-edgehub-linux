@@ -2,6 +2,8 @@
 
 #include <QDBusConnection>
 #include <QDBusInterface>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
 #include <QObject>
 #include <QString>
 #include <QVariant>
@@ -59,6 +61,10 @@ public:
         return sendWithProfile(summary, body, true);
     }
 
+signals:
+    void deliveryConfirmed(uint notificationId);
+    void deliveryFailed(const QString& message);
+
 private:
     bool sendWithProfile(const QString& summary, const QString& body,
                          bool priority) {
@@ -85,17 +91,38 @@ private:
         return dispatch(request);
     }
 
-    static bool dispatch(const NotificationRequest& request) {
+    bool dispatch(const NotificationRequest& request) {
         QDBusInterface notifications(
             request.service,
             request.path,
             request.interfaceName,
             QDBusConnection::sessionBus());
-        if (!notifications.isValid()) return false;
+        if (!notifications.isValid()) {
+            emit deliveryFailed(QStringLiteral(
+                "org.freedesktop.Notifications is unavailable"));
+            return false;
+        }
 
         const QDBusPendingCall pending =
             notifications.asyncCallWithArgumentList(request.method, request.arguments());
-        return !pending.isError();
+        if (pending.isError()) {
+            emit deliveryFailed(pending.error().message());
+            return false;
+        }
+
+        auto* watcher = new QDBusPendingCallWatcher(pending, this);
+        connect(
+            watcher, &QDBusPendingCallWatcher::finished, this,
+            [this](QDBusPendingCallWatcher* self) {
+                const QDBusPendingReply<uint> reply = *self;
+                self->deleteLater();
+                if (reply.isError()) {
+                    emit deliveryFailed(reply.error().message());
+                    return;
+                }
+                emit deliveryConfirmed(reply.value());
+            });
+        return true;
     }
 
     Transport transport_;

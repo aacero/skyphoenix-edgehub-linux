@@ -27,6 +27,18 @@ void xeneon_logging_log(int level, const char* file, int line, const char* messa
 
 // === Configuration ===
 ConfigHandle* xeneon_config_load(void);
+// Transactional mutation: clone the live handle, mutate the clone with the
+// normal setters, then commit it. The live handle changes only when persistence
+// succeeds. Free the candidate with xeneon_config_free on every path.
+ConfigHandle* xeneon_config_clone(const ConfigHandle* handle);
+// commit/save return 0 when fully durable, 1 when bytes were atomically
+// published but parent-directory fsync failed, and -1 before publication.
+int xeneon_config_commit(ConfigHandle* target, const ConfigHandle* candidate);
+// Opaque random equality token for this handle's persisted in-memory
+// generation. It is process-local and not derived from config contents.
+// Caller frees the returned string with xeneon_string_free.
+char* xeneon_config_generation_token(const ConfigHandle* handle);
+int xeneon_config_disk_generation_matches(const ConfigHandle* handle);
 int xeneon_config_save(const ConfigHandle* handle);
 void xeneon_config_free(ConfigHandle* handle);
 int xeneon_config_is_first_run(const ConfigHandle* handle);
@@ -45,10 +57,14 @@ char* xeneon_config_dir(void);
 // Structured diagnostics summary. Sensitive/raw config values are omitted.
 char* xeneon_config_to_json(const ConfigHandle* handle);
 ConfigHandle* xeneon_config_reset(void);
+// status_out receives 0 for durable success, 1 when the reset is visible but
+// parent-directory fsync failed, and -1 for failure before publication.
+ConfigHandle* xeneon_config_reset_with_status(int* status_out);
 
 int xeneon_config_set_theme_mode(ConfigHandle* handle, const char* mode);
 int xeneon_config_set_theme_accent(ConfigHandle* handle, const char* color);
 int xeneon_config_set_autostart(ConfigHandle* handle, int enabled);
+int xeneon_config_get_autostart(const ConfigHandle* handle);
 int xeneon_config_set_reconnect(ConfigHandle* handle, int enabled);
 int xeneon_config_set_notify_disconnect(ConfigHandle* handle, int enabled);
 int xeneon_config_get_reconnect(const ConfigHandle* handle);          // 1/0, -1 on error
@@ -76,6 +92,7 @@ char* xeneon_config_get_widgets_json(const ConfigHandle* handle); // JSON array;
 // Opaque UI-state JSON (dashboard layout + per-widget settings + appearance).
 char* xeneon_config_get_ui_state(const ConfigHandle* handle);
 int xeneon_config_set_ui_state(ConfigHandle* handle, const char* json);
+int xeneon_ui_state_validate(const char* json);
 
 // === Display Utilities ===
 char* xeneon_display_compute_edid_hash(const uint8_t* edid_data, size_t len);
@@ -155,9 +172,8 @@ char* xeneon_distro_probe_json(const char* root);
 // Fails soft: a null, empty, truncated, garbage or forged key yields the free
 // tier. Never returns NULL for a bad key and never panics.
 //
-// NOTE: the issuer public key is currently an all-zero PLACEHOLDER - no licence
-// keypair has been issued - so this returns free for every input until the real
-// key is embedded in core/src/license.rs.
+// The production issuer public key is embedded in core/src/license.rs. The
+// private issuer seed is not distributed with the application or its source.
 char* xeneon_license_verify_json(const char* key);
 
 // Get the stored licence key (a sensitive bearer entitlement), or NULL if none.

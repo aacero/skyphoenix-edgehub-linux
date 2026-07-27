@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-# qml_coverage.py - QML behavior-matrix coverage analyzer (read-only, stdlib only).
+# qml_coverage.py - QML enumerated-requirements analyzer (read-only, stdlib only).
 #
-# There is no trustworthy line-coverage tool for QML, so we treat QML coverage as
-# a *behavior traceability matrix*: enumerate the behaviors the source exposes
-# (functions, config-schema field ids, widget types, background/wallpaper catalog
-# entries) and count how many are claimed-and-backed by a `tst_*.qml` test.
+# There is no trustworthy line-coverage tool for QML. This is a finite
+# traceability checklist: enumerate requirements derived from selected QML
+# functions and catalogs, then count how many are claimed-and-backed by a
+# `tst_*.qml` assertion. It is not source-code coverage and cannot prove that the
+# denominator is complete.
 #
 # A test file claims behaviors via a header convention:
 #     // COVERS: fn:Dashboard.cfgAction, schema:clock.showSeconds, widget:cpu
 # A claim is only honored if the file actually asserts: the claimed id's leaf
 # token must appear inside an assertion call (compare/verify/tryCompare/
 # tryVerify/fuzzyCompare) in that same file. Unbacked claims are rejected so a
-# test cannot inflate coverage by merely declaring a header with no real check.
+# test cannot inflate the result by merely declaring a header with no real check.
 #
 # One narrow extra form is honored: a COLLECTION claim `widget:*`, `schema:*`,
 # `bg:*`, or `wallpaper:*`. A test that genuinely iterates the whole catalog under assertion
@@ -25,16 +26,15 @@
 # guarantees (reject-unknown-id, reject-unbacked-claim, credit-backed-claim, and
 # the collection rules) independently of the repository's own test files.
 #
-# Exit 0 if covered/total >= THRESHOLD, else exit 1. Read-only: never writes.
+# Exit 0 only if every enumerated requirement is assertion-backed. Read-only:
+# never writes.
 
 import os
 import re
 import sys
 
-# The beta freeze criterion is stricter than line coverage: every enumerated QML
-# behavior must retain an assertion-backed claim. This is a completeness matrix,
-# so accepting a known gap at release time would defeat its purpose.
-THRESHOLD = 100.0
+# Every enumerated QML requirement must retain an assertion-backed claim. This
+# is a completeness checklist, so accepting a known gap would defeat its purpose.
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -376,32 +376,41 @@ def main():
     # An empty matrix is a broken matrix, never a perfect one. This used to read
     # `if total else 100.0`, i.e. "found nothing -> 100% -> PASS".
     if total == 0:
-        print("FAIL: the behavior matrix enumerated ZERO behaviors.")
-        print("      That is a broken scan, not perfect coverage.")
+        print("FAIL: the requirements matrix enumerated ZERO requirements.")
+        print("      That is a broken scan, not a complete checklist.")
         return 1
-    ratio = 100.0 * covered_count / total
 
-    uncovered = [b for b in behaviors if b not in covered]
+    missing = [b for b in behaviors if b not in covered]
 
-    print("QML behavior-matrix coverage")
-    print("  behaviors enumerated : %d" % total)
-    print("  behaviors covered    : %d" % covered_count)
-    print("  ratio                : %.1f%% (gate >= %.0f%%)" % (ratio, THRESHOLD))
+    print("QML enumerated-requirements matrix")
+    print("  requirements enumerated       : %d" % total)
+    print("  requirements assertion-backed : %d" % covered_count)
+    print("  matrix counts                 : %d/%d" % (covered_count, total))
+    print(
+        "  checklist completeness        : %s"
+        % ("complete" if covered_count == total else "incomplete")
+    )
 
     if rejected:
         print("\nRejected COVERS claims (%d):" % len(rejected))
         for fname, claim, reason in rejected:
             print("  %-32s %-40s %s" % (fname, claim, reason))
 
-    if uncovered:
-        print("\nUncovered behaviors (%d):" % len(uncovered))
-        for b in uncovered:
+    if missing:
+        print("\nMissing assertion-backed requirements (%d):" % len(missing))
+        for b in missing:
             print("  %s" % b)
 
-    if ratio < THRESHOLD:
-        print("\nFAIL: QML behavior coverage %.1f%% < %.0f%%" % (ratio, THRESHOLD))
+    if covered_count != total:
+        print(
+            "\nFAIL: %d of %d enumerated QML requirements are assertion-backed; "
+            "the checklist is incomplete" % (covered_count, total)
+        )
         return 1
-    print("\nPASS: QML behavior coverage %.1f%% >= %.0f%%" % (ratio, THRESHOLD))
+    print(
+        "\nPASS: %d of %d enumerated QML requirements are assertion-backed"
+        % (covered_count, total)
+    )
     return 0
 
 

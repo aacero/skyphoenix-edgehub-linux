@@ -88,6 +88,15 @@ WidgetChrome {
                                           ? "High memory use"
                                           : w.alertLevel === "unavailable"
                                             ? "Memory unavailable" : "Normal"
+    readonly property string compactAlertText: {
+        if (w.alertLevel === "critical")
+            return w.avail ? w.v.toFixed(0) + "% critical" : "Memory critical"
+        if (w.alertLevel === "warning")
+            return w.avail ? w.v.toFixed(0) + "% high" : "Memory high"
+        if (w.alertLevel === "unavailable")
+            return "Unavailable"
+        return ""
+    }
     readonly property string accessibleSummary: {
         var parts = ["Memory"]
         parts.push(w.avail ? w.v.toFixed(0) + " percent used" : w.alertText)
@@ -106,6 +115,12 @@ WidgetChrome {
         var base = w.hasExplicitState ? w.freshness : ""
         var state = w.alertLevel === "warning" || w.alertLevel === "critical"
                     ? w.alertText : ""
+        // Narrow projections cannot fit the full title and a repeated
+        // "Critical memory use" phrase in one header. The ring already shows
+        // the reading, so retain the exact value plus severity here while the
+        // complete wording remains in accessibleSummary.
+        if (!w.expanded && w.width < 480 && state.length)
+            return w.compactAlertText
         return state.length ? (base.length ? base + " · " + state : state) : base
     }
     statusColor: w.alertLevel === "critical" ? theme.error
@@ -125,7 +140,15 @@ WidgetChrome {
         return result
     }
     readonly property int detailColumnCount:
-        w.expanded ? Math.max(1, Math.min(5, w.detailMetrics.length)) : 2
+        w.expanded ? Math.max(1, Math.min(5, w.detailMetrics.length))
+                   : (w.sizeClass === "wide" && w.width > 900 ? 3 : 2)
+    readonly property int detailRowCount:
+        Math.max(1, Math.ceil(w.detailMetrics.length
+                             / Math.max(1, w.detailColumnCount)))
+    readonly property real collapsedDetailPanelHeight:
+        Math.max(172,
+                 w.detailRowCount * (theme.fontLabel + theme.fontTitle + 8)
+                 + Math.max(0, w.detailRowCount - 1) * 8 + 20)
     readonly property var glanceDetails: {
         if (w.micro || w.expanded || w.roomyTile || !w.showDetails
                 || (w.sizeClass !== "wide" && w.sizeClass !== "tall"))
@@ -196,6 +219,8 @@ WidgetChrome {
            : w.unit === "gb" ? (w.haveBytes ? w.gib(w.usedBytes) + " GiB" : "N/A")
                              : w.v.toFixed(0) + "%"
         sub: w.micro ? ""
+           : !w.expanded && detailPanel.visible && w.haveBytes
+             ? w.gib(w.usedBytes) + " GiB used"
            : (w.expanded || w.sizeClass === "large") && w.showDetails
              ? (detailPanel.visible ? w.histStats : w.detailLine)
            : !w.haveBytes ? "-"
@@ -217,7 +242,10 @@ WidgetChrome {
         historyCaptionPixelSize: theme.fontLabel
         subTextColor: theme.textPrimary
         historyCaption: w.showHistory && !w.micro
-                        ? w.historyLabel.toUpperCase() + " UTILIZATION" : ""
+                        ? w.historyLabel.toUpperCase()
+                          + (!w.expanded && w.width < 480
+                             ? " HISTORY" : " UTILIZATION")
+                        : ""
         detailColumns: w.width < 520 ? 1 : 2
         expanded: w.expanded
         showSpark: w.showHistory && !w.micro
@@ -235,7 +263,7 @@ WidgetChrome {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 22
-        height: w.expanded ? 116 : 172
+        height: w.expanded ? 116 : w.collapsedDetailPanelHeight
         radius: theme.radiusMd
         color: Qt.rgba(theme.cardBackground.r, theme.cardBackground.g, theme.cardBackground.b, 0.92)
         border.width: 1

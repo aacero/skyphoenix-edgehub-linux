@@ -108,9 +108,10 @@ choice, not an engineering task.
 `0600`. A stale temporary file is explicitly reset to `0600`. The bytes are
 written and `fsync`ed before an atomic same-filesystem rename. The final file
 inherits mode `0600`, so it is readable and writable only by its owner on Unix.
-The parent configuration directory is created without an explicit mode and
-therefore relies on the user's XDG configuration-directory permissions and
-umask.
+The application-owned `xeneon-edge-hub` configuration directory is verified as
+a real directory owned by the effective user and is explicitly forced to mode
+`0700`. The transaction lock is mode `0600`. A wrong-owner, non-directory, or
+non-private leaf is refused instead of being used.
 
 The following may be stored as literal plaintext in the serialized `ui_state`:
 
@@ -137,7 +138,9 @@ be excluded by the runtime directory and socket permissions. The code relies on
 the XDG contract for an existing `$XDG_RUNTIME_DIR`; it does not independently
 validate that directory's owner and mode.
 
-These are security findings only. No security behavior was changed in this pass.
+The `0700` directory and `0600` file/lock behavior is implemented and covered by
+focused Rust tests. Plaintext secret storage and same-UID socket authority remain
+security findings; this pass does not claim to remove them.
 
 ### 2.4 Autosave durability
 
@@ -171,20 +174,23 @@ making a general no-data-loss claim.
 ### 2.5 Widget fault isolation
 
 All first-party widgets load into one `QQmlApplicationEngine` and one process.
-`WidgetHost` exposes the `Loader` status but has no `Loader.Error` handler or
-runtime error boundary.
+`WidgetHost` now exposes `Loader.Error` as `loadFailed` and replaces a failed
+widget with a visible, noninteractive local fallback card. A focused QML test
+also injects a JavaScript handler exception and asserts that the throwing widget,
+a healthy sibling, and the containing page remain alive.
 
 Current isolation by failure type:
 
 | Failure | Expected blast radius from code |
 |---|---|
 | Unknown or policy-disabled widget type | Dashboard fallback tile is used. |
-| Known widget component fails to compile or load | Loader has no item; the affected tile can become blank while the rest of the page normally remains alive. |
-| JavaScript binding or handler throws | The current binding or handler is aborted and logged; the affected widget can degrade, but no replacement card is installed. |
+| Known widget component fails to compile or load | The affected tile shows the local `Widget unavailable` fallback; a sibling remains ready. |
+| JavaScript handler throws | The throwing handler is aborted and logged; the focused injection keeps that widget, its sibling, and the page alive. A general binding-loop or native fault boundary is not claimed. |
 | Fatal Qt/QML engine or native failure | Entire Hub process can terminate because widgets share the engine and process. |
 
-Fault isolation is therefore partial, not a proven per-widget containment
-boundary. A deliberate runtime-throw injection has not yet been executed.
+Fault isolation is therefore improved but still partial, not a process boundary.
+The focused QML runtime-throw injection exists; fatal Qt/QML engine and native
+failure isolation is still not tested for.
 
 ## 3. Corrections to the earlier report
 
@@ -363,8 +369,10 @@ Run `./scripts/manual_touch_audit.sh check` before the session, then
 `./scripts/manual_touch_audit.sh run` to record it. The guided audit refuses a
 dirty tree or ambiguous panel detection, requires an explicit result and note
 for every action, crops timestamped evidence to the detected physical panel,
-requires an auditor attestation, and writes a SHA-256 manifest below
-`artifacts/<short-sha>/manual-touch/<UTC timestamp>/`. It never injects input.
+requires an auditor attestation, and writes a provenance record plus a signed
+SHA-256 manifest below
+`artifacts/<full-40-character-commit>/manual-touch/<UTC timestamp>/`. It never
+injects input.
 
 ### P1D: behavior-based C++ coverage and bridge proof
 

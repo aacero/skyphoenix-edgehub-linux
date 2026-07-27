@@ -81,15 +81,16 @@ Item {
         })
         return found
     }
-    function findText(str) {
+    function findTextIn(rootNode, str) {
         var found = null
-        eachItem(h.item, function (n) {
+        eachItem(rootNode, function (n) {
             if (found) return
             if (n.text !== undefined && typeof n.text === "string" && n.text === str)
                 found = n
         })
         return found
     }
+    function findText(str) { return findTextIn(h.item, str) }
     // Feed the metrics JSON (omit an arg entirely to leave that key absent).
     // Derived properties (avail/v/temp/status/col) update synchronously on read.
     // The onMetricsChanged accumulator, however, lags exactly one feed: because
@@ -650,7 +651,7 @@ Item {
         WidgetHarness { id: hMicro; anchors.fill: parent; widgetFile: "GpuWidget.qml"; expanded: false } }
     Item { id: wideWrap; width: 696; height: 416
         WidgetHarness { id: hWide; anchors.fill: parent; widgetFile: "GpuWidget.qml"; expanded: false } }
-    Item { width: 344; height: 840
+    Item { id: tallWrap; width: 344; height: 840
         WidgetHarness { id: hTall; anchors.fill: parent; widgetFile: "GpuWidget.qml"; expanded: false } }
 
     TestCase {
@@ -696,6 +697,47 @@ Item {
             wideWrap.width = 840; wideWrap.height = 344
             compare(g.horizontal, true, "the landscape projection stays side-by-side")
             wideWrap.width = 696; wideWrap.height = 416
+        }
+
+        function test_narrow_thermal_alert_fits_data() {
+            return [
+                { tag: "portrait-0.5x1", width: 348, height: 818 },
+                { tag: "landscape-1x0.5-at-125-percent", width: 338, height: 490 }
+            ]
+        }
+
+        // Regression for the two exact GPU projections caught by the systemic
+        // legibility matrix. The gate still checks the rendered Text object.
+        function test_narrow_thermal_alert_fits(row) {
+            tryVerify(function () { return hTall.ready }, 3000)
+            tallWrap.width = row.width
+            tallWrap.height = row.height
+            hTall.theme.textScale = 1.3
+            hTall.theme.fontChoice = "lexend"
+
+            var w = hTall.item
+            w.sizeClass = "tall"
+            w.hist = [0.72, 0.91, 1.0]
+            feedTo(hTall, 100, 95)
+            wait(50)
+
+            compare(w.status, "95°C critical",
+                    row.tag + " keeps the temperature and severity")
+            verify(w.accessibleSummary.indexOf("Critical temperature") >= 0,
+                   row.tag + " retains the complete accessible alert")
+            var statusText = findTextIn(w, "95°C critical")
+            verify(statusText !== null && statusText.visible,
+                   row.tag + " renders the compact thermal status")
+            verify(!statusText.truncated
+                   && statusText.contentWidth <= statusText.width + 1,
+                   row.tag + " thermal status is not truncated")
+        }
+
+        function cleanup() {
+            tallWrap.width = 344
+            tallWrap.height = 840
+            hTall.theme.textScale = 1.15
+            hTall.theme.fontChoice = "hyperlegible"
         }
 
         // tall - full-height sparkline + avg/peak caption inside the ring.

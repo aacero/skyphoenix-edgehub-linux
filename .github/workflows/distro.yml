@@ -16,7 +16,7 @@ name: Distro Packages
 
 on:
   push:
-    branches: [main, master, 'v1.0-alpha']
+    branches: [main, master, 'v1.0-alpha', 'release/1.0.0']
     paths:
       - 'core/**'
       - 'app/**'
@@ -24,7 +24,26 @@ on:
       - 'ui/**'
       - 'assets/**'
       - 'packaging/**'
+      - 'cmake/**'
       - 'CMakeLists.txt'
+      - 'LICENSE*'
+      - '.git_archival.txt'
+      - '.gitattributes'
+      - '.github/workflows/distro.yml'
+  pull_request:
+    branches: [main, master, 'v1.0-alpha', 'release/1.0.0']
+    paths:
+      - 'core/**'
+      - 'app/**'
+      - 'manager/**'
+      - 'ui/**'
+      - 'assets/**'
+      - 'packaging/**'
+      - 'cmake/**'
+      - 'CMakeLists.txt'
+      - 'LICENSE*'
+      - '.git_archival.txt'
+      - '.gitattributes'
       - '.github/workflows/distro.yml'
   schedule:
     - cron: '17 5 * * 1'   # weekly drift check (Mon 05:17 UTC)
@@ -32,22 +51,38 @@ on:
   # must never ship an unproven matrix, and scripts/release.sh's checklist says so.
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   fedora:
     name: Fedora ${{ matrix.release }} (RPM)
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
         release: ['43']
-    container: fedora:${{ matrix.release }}
+    # linux/amd64 manifest for Fedora 43, resolved 2026-07-26.
+    container: fedora:43@sha256:52cfb35e60823b691af7541b576c0fa49195628044b2c1a15b0ae775ec01048e
     steps:
-      - uses: actions/checkout@v5
+      # Full Git history is required below, so install Git before checkout can
+      # fall back to a history-less source archive in the bare container.
+      - run: dnf -y install git
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          # Native packages embed and publish the exact git-describe identity.
+          # A shallow checkout has no tags and silently degrades that identity
+          # to a bare SHA, so full history is part of the package contract.
+          fetch-depth: 0
 
       - name: Install build dependencies
         run: |
           dnf -y install \
-            git cmake gcc-c++ make rpm-build cargo rust \
+            cmake gcc-c++ make rpm-build cargo rust \
             qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
             qt6-qtvirtualkeyboard-devel qt6-qtwayland-devel \
             mesa-libGL-devel
@@ -62,23 +97,57 @@ jobs:
           [ "$(printf '6.5\n%s\n' "$v" | sort -V | head -1)" = "6.5" ] || {
             echo "Qt $v < 6.5 (QtQuick.Effects unavailable)"; exit 1; }
 
+      - name: Resolve exact package identity
+        run: |
+          raw_version="$(git describe --tags --always --dirty)"
+          case "$raw_version" in
+            *-dirty) echo "Refusing a dirty CI package: $raw_version"; exit 1 ;;
+          esac
+          version="${raw_version#v}"
+          echo "XENEON_BUILD_VERSION=$version" >> "$GITHUB_ENV"
+          echo "Exact package identity: $version"
+
       - name: Build Rust core
-        run: cargo build --release
+        run: cargo build --release --locked
         working-directory: core
 
       - name: Configure + build
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release
+          [ "$(tr -d '\n' < build/xeneon-app-version.txt)" = "$XENEON_BUILD_VERSION" ]
+          [ -s build/xeneon-native-package-version.txt ]
           cmake --build build -j"$(nproc)"
 
       - name: Package (RPM)
-        run: cpack -G RPM
+        run: |
+          cpack -G RPM
+          shopt -s nullglob
+          packages=(*.rpm)
+          [ "${#packages[@]}" -eq 1 ]
+          sha256sum "${packages[0]}" > "${packages[0]}.sha256"
+          {
+            echo "requested_image=fedora:${{ matrix.release }}"
+            echo "resolved_image=fedora:43@sha256:52cfb35e60823b691af7541b576c0fa49195628044b2c1a15b0ae775ec01048e"
+            echo "platform=linux/amd64"
+            cat /etc/os-release
+          } > container-build-environment.txt
         working-directory: build
 
-      - uses: actions/upload-artifact@v7
+      - name: Attest exact RPM bytes
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: 'build/*.rpm'
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: fedora-${{ matrix.release }}-rpm
-          path: build/*.rpm
+          path: |
+            build/*.rpm
+            build/*.rpm.sha256
+            build/xeneon-app-version.txt
+            build/xeneon-native-package-version.txt
+            build/container-build-environment.txt
 
   fedora-install:
     name: Fedora ${{ matrix.release }} install + smoke (clean)
@@ -88,24 +157,36 @@ jobs:
       fail-fast: false
       matrix:
         release: ['43']
-    container: fedora:${{ matrix.release }}
+    # Same exact image as the build job, with a fresh container filesystem.
+    container: fedora:43@sha256:52cfb35e60823b691af7541b576c0fa49195628044b2c1a15b0ae775ec01048e
     steps:
       # actions/checkout needs git present in the container image.
       - run: dnf -y install git
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: fedora-${{ matrix.release }}-rpm
           path: pkg
 
+      - name: Record resolved lifecycle container
+        run: |
+          {
+            echo "requested_image=fedora:${{ matrix.release }}"
+            echo "resolved_image=fedora:43@sha256:52cfb35e60823b691af7541b576c0fa49195628044b2c1a15b0ae775ec01048e"
+            echo "platform=linux/amd64"
+            cat /etc/os-release
+          } > pkg/container-lifecycle-environment.txt
+
       - name: Install the RPM with no Qt preinstalled
         # Resolves Requires from the repos only - this is what proves the
         # declared dependency list is complete and installable.
-        run: dnf -y install ./pkg/*.rpm
+        run: |
+          (cd pkg && sha256sum --check --strict ./*.rpm.sha256)
+          dnf -y install ./pkg/*.rpm
 
       - name: Launch smoke (offscreen)
         run: |
-          dnf -y install dejavu-sans-fonts fontconfig
+          dnf -y install dejavu-sans-fonts fontconfig python3
           bash packaging/ci/smoke.sh
 
       - name: Validate AppStream + desktop entries
@@ -117,11 +198,26 @@ jobs:
           desktop-file-validate /usr/share/applications/xeneon-edge-hub.desktop
           desktop-file-validate /usr/share/applications/xeneon-edge-manager.desktop
 
+      - name: Verify identity, licences, autostart and removal
+        run: bash packaging/ci/package-lifecycle.sh rpm pkg
+
+      - name: Archive exact lifecycle-tested RPM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fedora-${{ matrix.release }}-rpm-lifecycle
+          path: pkg
+          compression-level: 0
+          retention-days: 90
+
   appimage:
     name: AppImage (Qt 6.7 bundled)
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           # NOT optional, and not a caching nicety. build-appimage.sh names the
           # artifact - and stamps the binary's appVersion() - from `git describe
@@ -132,14 +228,16 @@ jobs:
           # the one install kind that is actually pointed at the .zsync path.
           # Guarded by scripts/check_appimage_update_contract.sh.
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # action commit pinned
+        with:
+          toolchain: '1.86.0'
 
       # Deliberately NOT 24.04's apt Qt (6.4.2 - too old for QtQuick.Effects).
       # Upstream Qt 6.7 on 24.04's old glibc is exactly what an AppImage wants:
       # a modern Qt with the lowest practical glibc floor. Building on a newer
       # distro would raise that floor and defeat the format.
       - name: Install Qt 6.7
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
           version: '6.7.3'
           modules: 'qtvirtualkeyboard'
@@ -165,12 +263,25 @@ jobs:
             libegl1 libopengl0
 
       - name: Build AppImage
-        run: ./packaging/appimage/build-appimage.sh
+        run: |
+          ./packaging/appimage/build-appimage.sh
+          shopt -s nullglob
+          images=(*.AppImage)
+          [ "${#images[@]}" -eq 1 ]
+          sha256sum "${images[0]}" > "${images[0]}.sha256"
 
-      - uses: actions/upload-artifact@v7
+      - name: Attest exact AppImage bytes
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: '*.AppImage'
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: appimage
-          path: '*.AppImage'
+          path: |
+            *.AppImage
+            *.AppImage.sha256
 
   appimage-smoke:
     name: AppImage smoke (bare container, no Qt)
@@ -180,16 +291,35 @@ jobs:
     # smoking it on the build runner (which has a full Qt) would prove nothing at
     # all. This container has no Qt and no Rust - only the graphics/font stack
     # that linuxdeploy intentionally excludes and every real desktop provides.
-    container: ubuntu:24.04
+    # linux/amd64 manifest for Ubuntu 24.04, resolved 2026-07-26.
+    container: ubuntu:24.04@sha256:52df9b1ee71626e0088f7d400d5c6b5f7bb916f8f0c82b474289a4ece6cf3faf
     env:
       DEBIAN_FRONTEND: noninteractive
     steps:
       - run: apt-get update -qq && apt-get install -y --no-install-recommends git ca-certificates
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: appimage
-          path: pkg
+          path: artifacts/${{ github.sha }}/appimage-ubuntu-24.04
+
+      - name: Record exact AppImage runtime host
+        run: |
+          evidence_dir="$GITHUB_WORKSPACE/artifacts/$GITHUB_SHA/appimage-ubuntu-24.04"
+          umask 077
+          {
+            echo "schema=1"
+            echo "source_commit=$GITHUB_SHA"
+            echo "requested_image=ubuntu:24.04"
+            echo "resolved_image=ubuntu:24.04@sha256:52df9b1ee71626e0088f7d400d5c6b5f7bb916f8f0c82b474289a4ece6cf3faf"
+            echo "platform=linux/amd64"
+            cat /etc/os-release
+          } > "$evidence_dir/container-runtime-environment.txt"
+          (
+            cd "$evidence_dir"
+            sha256sum container-runtime-environment.txt \
+              > container-runtime-environment.txt.sha256
+          )
 
       - name: Install the host graphics/font stack (NOT Qt)
         # linuxdeploy excludes libGL/libEGL/libfontconfig on purpose: a bundled
@@ -197,7 +327,8 @@ jobs:
         # come from the host. Fonts likewise. Nothing here is Qt.
         run: |
           apt-get install -y --no-install-recommends \
-            libgl1 libglx-mesa0 libopengl0 libegl1 libfontconfig1 fonts-dejavu-core
+            libgl1 libglx-mesa0 libopengl0 libegl1 libfontconfig1 \
+            fonts-dejavu-core python3
 
       - name: Assert the container really has no Qt
         run: |
@@ -206,8 +337,39 @@ jobs:
           fi
           echo "confirmed: no system Qt present"
 
+      - name: Verify the AppImage dispatcher contract
+        run: |
+          evidence_dir="$GITHUB_WORKSPACE/artifacts/$GITHUB_SHA/appimage-ubuntu-24.04"
+          if ! contract_output="$(bash packaging/ci/check-apprun-dispatch.sh 2>&1)"; then
+            printf '%s\n' "$contract_output"
+            exit 1
+          fi
+          printf '%s\n' "$contract_output"
+          umask 077
+          {
+            echo "schema=1"
+            echo "result=PASS"
+            echo "source_commit=$GITHUB_SHA"
+            printf '%s\n' "$contract_output"
+          } > "$evidence_dir/appimage-dispatch-contract.txt"
+          (
+            cd "$evidence_dir"
+            sha256sum appimage-dispatch-contract.txt \
+              > appimage-dispatch-contract.txt.sha256
+          )
+
       - name: Smoke the AppImage (offscreen)
-        run: bash packaging/ci/smoke-appimage.sh pkg/*.AppImage "$(pwd)"
+        env:
+          XENEON_APPIMAGE_EVIDENCE_DIR: ${{ github.workspace }}/artifacts/${{ github.sha }}/appimage-ubuntu-24.04
+          XENEON_EVIDENCE_COMMIT: ${{ github.sha }}
+          XENEON_RUNTIME_IMAGE: ubuntu:24.04@sha256:52df9b1ee71626e0088f7d400d5c6b5f7bb916f8f0c82b474289a4ece6cf3faf
+        run: |
+          evidence_dir="$XENEON_APPIMAGE_EVIDENCE_DIR"
+          shopt -s nullglob
+          images=("$evidence_dir"/*.AppImage)
+          [ "${#images[@]}" -eq 1 ]
+          (cd "$evidence_dir" && sha256sum --check --strict ./*.AppImage.sha256)
+          bash packaging/ci/smoke-appimage.sh "${images[0]}" "$(pwd)"
 
       - name: Negative control - smoke must FAIL if a QML module is missing
         # A smoke test that cannot fail proves nothing. Deleting QtQuick.Effects
@@ -215,38 +377,120 @@ jobs:
         # reached through a lazily-loaded widget), so this also proves the module
         # check - not just the launch - is what catches a mis-bundled AppImage.
         run: |
-          cd /tmp
-          cp "$GITHUB_WORKSPACE"/pkg/*.AppImage ./neg.AppImage
+          evidence_dir="$GITHUB_WORKSPACE/artifacts/$GITHUB_SHA/appimage-ubuntu-24.04"
+          shopt -s nullglob
+          images=("$evidence_dir"/*.AppImage)
+          [ "${#images[@]}" -eq 1 ]
+          neg_work="$(mktemp -d)"
+          trap 'rm -rf -- "$neg_work"' EXIT
+          cd "$neg_work"
+          cp "${images[0]}" ./neg.AppImage
           chmod +x ./neg.AppImage
-          ./neg.AppImage --appimage-extract >/dev/null
-          rm -rf /tmp/squashfs-root/usr/qml/QtQuick/Effects
-          mkdir -p /tmp/negbin
-          printf '#!/bin/sh\nexec /tmp/squashfs-root/AppRun "$@"\n' > /tmp/negbin/xeneon-edge-hub
-          chmod +x /tmp/negbin/xeneon-edge-hub
-          export PATH="/tmp/negbin:$PATH"
-          export QML_DIR=/tmp/squashfs-root/usr/qml
+          env -u APPIMAGE_EXTRACT_AND_RUN ./neg.AppImage --appimage-extract >/dev/null
+          rm -rf -- "$neg_work/squashfs-root/usr/qml/QtQuick/Effects"
+          mkdir -p "$neg_work/bin"
+          printf '#!/bin/sh\nexec %s/squashfs-root/AppRun "$@"\n' \
+            "$neg_work" > "$neg_work/bin/xeneon-edge-hub"
+          printf '#!/bin/sh\nexec %s/squashfs-root/AppRun --manager "$@"\n' \
+            "$neg_work" > "$neg_work/bin/xeneon-edge-manager"
+          chmod +x "$neg_work/bin/xeneon-edge-hub" "$neg_work/bin/xeneon-edge-manager"
+          export PATH="$neg_work/bin:$PATH"
+          export QML_DIR="$neg_work/squashfs-root/usr/qml"
           export SRC_ROOT="$GITHUB_WORKSPACE"
           export LC_ALL=C.UTF-8
-          if bash "$GITHUB_WORKSPACE/packaging/ci/smoke.sh" > /tmp/neg.log 2>&1; then
+          if bash "$GITHUB_WORKSPACE/packaging/ci/smoke.sh" > "$neg_work/negative.log" 2>&1; then
             echo "FAIL: smoke PASSED with QtQuick.Effects deleted - the check is not working"
-            cat /tmp/neg.log; exit 1
+            cat "$neg_work/negative.log"; exit 1
           fi
-          grep -q 'MISSING: QtQuick.Effects' /tmp/neg.log || {
-            echo "FAIL: smoke failed for the wrong reason"; cat /tmp/neg.log; exit 1; }
+          grep -q 'MISSING: QtQuick.Effects' "$neg_work/negative.log" || {
+            echo "FAIL: smoke failed for the wrong reason"
+            cat "$neg_work/negative.log"
+            exit 1
+          }
           echo "negative control OK: smoke correctly failed on the missing module"
+          umask 077
+          {
+            echo "schema=1"
+            echo "result=PASS"
+            echo "source_commit=$GITHUB_SHA"
+            echo "mutation=removed QtQuick.Effects from extracted AppImage"
+            echo "expected_failure=MISSING: QtQuick.Effects"
+          } > "$evidence_dir/appimage-qml-negative-control.txt"
+          (
+            cd "$evidence_dir"
+            sha256sum appimage-qml-negative-control.txt \
+              > appimage-qml-negative-control.txt.sha256
+          )
+
+      - name: Finalize AppImage runtime evidence manifest
+        run: |
+          evidence_dir="$GITHUB_WORKSPACE/artifacts/$GITHUB_SHA/appimage-ubuntu-24.04"
+          required=(
+            container-runtime-environment.txt
+            container-runtime-environment.txt.sha256
+            appimage-runtime-smoke.txt
+            appimage-runtime-smoke.txt.sha256
+            appimage-dispatch-contract.txt
+            appimage-dispatch-contract.txt.sha256
+            appimage-qml-negative-control.txt
+            appimage-qml-negative-control.txt.sha256
+          )
+          for file in "${required[@]}"; do
+            [ -s "$evidence_dir/$file" ] || {
+              echo "FAIL: missing AppImage runtime evidence: $file"
+              exit 1
+            }
+          done
+          shopt -s nullglob
+          images=("$evidence_dir"/*.AppImage)
+          [ "${#images[@]}" -eq 1 ]
+          [ -s "${images[0]}.sha256" ]
+          (
+            cd "$evidence_dir"
+            sha256sum --check --strict ./*.sha256
+            mapfile -t files < <(
+              find . -maxdepth 1 -type f ! -name MANIFEST.sha256 \
+                -printf '%P\n' | LC_ALL=C sort
+            )
+            [ "${#files[@]}" -ge 10 ]
+            umask 077
+            sha256sum "${files[@]}" > MANIFEST.sha256
+          )
+
+      - name: Archive exact AppImage runtime evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: appimage-runtime-ubuntu-24.04-${{ github.sha }}
+          path: artifacts/${{ github.sha }}/appimage-ubuntu-24.04
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90
 
   ubuntu:
     name: Ubuntu ${{ matrix.release }} (DEB)
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
         release: ['26.04']
-    container: ubuntu:${{ matrix.release }}
+    # linux/amd64 manifest for Ubuntu 26.04, resolved 2026-07-26.
+    container: ubuntu:26.04@sha256:7c2884fd32770fc6c173b78e0dc2278a2851d89f5447919edbc45475ac55dd6a
     env:
       DEBIAN_FRONTEND: noninteractive
     steps:
-      - uses: actions/checkout@v5
+      # Full Git history is required below. A checkout before Git is installed
+      # may fall back to a history-less source archive in a bare container.
+      - run: apt-get update -qq && apt-get install -y --no-install-recommends git ca-certificates
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          # See the Fedora job: tags are required for an exact, comparable
+          # package and binary identity.
+          fetch-depth: 0
 
       - name: Install build dependencies
         # ca-certificates is not optional: without it cargo's crates.io fetch
@@ -254,7 +498,7 @@ jobs:
         run: |
           apt-get update -qq
           apt-get install -y --no-install-recommends \
-            ca-certificates git cmake g++ make file dpkg-dev rustc cargo \
+            cmake g++ make file dpkg-dev rustc cargo \
             qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-virtualkeyboard-dev \
             libgl1-mesa-dev
 
@@ -266,23 +510,57 @@ jobs:
           [ "$(printf '6.5\n%s\n' "$v" | sort -V | head -1)" = "6.5" ] || {
             echo "Qt $v < 6.5 (QtQuick.Effects unavailable)"; exit 1; }
 
+      - name: Resolve exact package identity
+        run: |
+          raw_version="$(git describe --tags --always --dirty)"
+          case "$raw_version" in
+            *-dirty) echo "Refusing a dirty CI package: $raw_version"; exit 1 ;;
+          esac
+          version="${raw_version#v}"
+          echo "XENEON_BUILD_VERSION=$version" >> "$GITHUB_ENV"
+          echo "Exact package identity: $version"
+
       - name: Build Rust core
-        run: cargo build --release
+        run: cargo build --release --locked
         working-directory: core
 
       - name: Configure + build
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release
+          [ "$(tr -d '\n' < build/xeneon-app-version.txt)" = "$XENEON_BUILD_VERSION" ]
+          [ -s build/xeneon-native-package-version.txt ]
           cmake --build build -j"$(nproc)"
 
       - name: Package (DEB)
-        run: cpack -G DEB
+        run: |
+          cpack -G DEB
+          shopt -s nullglob
+          packages=(*.deb)
+          [ "${#packages[@]}" -eq 1 ]
+          sha256sum "${packages[0]}" > "${packages[0]}.sha256"
+          {
+            echo "requested_image=ubuntu:${{ matrix.release }}"
+            echo "resolved_image=ubuntu:26.04@sha256:7c2884fd32770fc6c173b78e0dc2278a2851d89f5447919edbc45475ac55dd6a"
+            echo "platform=linux/amd64"
+            cat /etc/os-release
+          } > container-build-environment.txt
         working-directory: build
 
-      - uses: actions/upload-artifact@v7
+      - name: Attest exact DEB bytes
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: 'build/*.deb'
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ubuntu-${{ matrix.release }}-deb
-          path: build/*.deb
+          path: |
+            build/*.deb
+            build/*.deb.sha256
+            build/xeneon-app-version.txt
+            build/xeneon-native-package-version.txt
+            build/container-build-environment.txt
 
   ubuntu-install:
     name: Ubuntu ${{ matrix.release }} install + smoke (clean)
@@ -292,17 +570,27 @@ jobs:
       fail-fast: false
       matrix:
         release: ['26.04']
-    container: ubuntu:${{ matrix.release }}
+    # Same exact image as the build job, with a fresh container filesystem.
+    container: ubuntu:26.04@sha256:7c2884fd32770fc6c173b78e0dc2278a2851d89f5447919edbc45475ac55dd6a
     env:
       DEBIAN_FRONTEND: noninteractive
     steps:
       # actions/checkout needs git present in the container image.
       - run: apt-get update -qq && apt-get install -y --no-install-recommends git ca-certificates
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ubuntu-${{ matrix.release }}-deb
           path: pkg
+
+      - name: Record resolved lifecycle container
+        run: |
+          {
+            echo "requested_image=ubuntu:${{ matrix.release }}"
+            echo "resolved_image=ubuntu:26.04@sha256:7c2884fd32770fc6c173b78e0dc2278a2851d89f5447919edbc45475ac55dd6a"
+            echo "platform=linux/amd64"
+            cat /etc/os-release
+          } > pkg/container-lifecycle-environment.txt
 
       - name: Install the DEB with no Qt preinstalled
         # The regression guard for the qml6-module-* Depends in CMakeLists.txt:
@@ -310,11 +598,13 @@ jobs:
         # trimmed this step still passes and the smoke step below fails.
         run: |
           apt-get update -qq
+          (cd pkg && sha256sum --check --strict ./*.deb.sha256)
           apt-get install -y ./pkg/*.deb
 
       - name: Launch smoke (offscreen)
         run: |
-          apt-get install -y --no-install-recommends fonts-dejavu-core fontconfig
+          apt-get install -y --no-install-recommends \
+            fonts-dejavu-core fontconfig python3
           bash packaging/ci/smoke.sh
 
       - name: Validate AppStream + desktop entries
@@ -325,3 +615,14 @@ jobs:
           done
           desktop-file-validate /usr/share/applications/xeneon-edge-hub.desktop
           desktop-file-validate /usr/share/applications/xeneon-edge-manager.desktop
+
+      - name: Verify identity, licences, autostart and removal
+        run: bash packaging/ci/package-lifecycle.sh deb pkg
+
+      - name: Archive exact lifecycle-tested DEB
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ubuntu-${{ matrix.release }}-deb-lifecycle
+          path: pkg
+          compression-level: 0
+          retention-days: 90

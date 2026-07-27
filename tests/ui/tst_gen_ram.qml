@@ -529,6 +529,8 @@ Item {
         WidgetHarness { id: hTall; anchors.fill: parent; widgetFile: "RamWidget.qml"; expanded: false } }
     Item { width: 696; height: 1227
         WidgetHarness { id: hRoomyTall; anchors.fill: parent; widgetFile: "RamWidget.qml"; expanded: false } }
+    Item { width: 1015; height: 490
+        WidgetHarness { id: hRoomyWide; anchors.fill: parent; widgetFile: "RamWidget.qml"; expanded: false } }
 
     TestCase {
         name: "RamSizes"
@@ -624,6 +626,91 @@ Item {
                     "the full swap value is not elided")
             verify(swapValue.contentWidth <= swapValue.width + 1,
                    "the full swap value fits its allocated column")
+        }
+
+        function test_narrow_alert_and_history_caption_remain_complete_at_maximum_type() {
+            tryVerify(function () { return hTall.ready }, 3000)
+            var w = hTall.item
+            hTall.theme.textScale = 1.45
+            w.sizeClass = "tall"
+            hTall.metricsJson = JSON.stringify({
+                ram_metrics_available: true,
+                ram_usage_percent: 100,
+                ram_total_bytes: 137438953472,
+                ram_used_bytes: 137438953472
+            })
+            tryCompare(w, "status", "100% critical", 2000)
+            var statusText = findOne(w, function (o) {
+                return isText(o) && o.text === "100% critical"
+            })
+            verify(statusText, "the concise severity is rendered")
+            compare(statusText.truncated, false,
+                    "the narrow severity is complete at the maximum type scale")
+
+            hTall.metricsJson = "{}"
+            tryCompare(gaugeOf(w), "historyCaption", "2 MINUTES HISTORY", 2000)
+            var caption = findOne(w, function (o) {
+                return isText(o) && o.text === "2 MINUTES HISTORY"
+            })
+            verify(caption, "the narrow history caption is rendered")
+            compare(caption.truncated, false,
+                    "the narrow history caption is complete at the maximum type scale")
+            hTall.theme.textScale = 1.15
+        }
+
+        function test_roomy_detail_panels_reflow_without_clipping() {
+            tryVerify(function () { return hRoomyTall.ready && hRoomyWide.ready }, 3000)
+            var saturated = {
+                ram_metrics_available: true,
+                ram_usage_percent: 100,
+                ram_total_bytes: 137438953472,
+                ram_used_bytes: 137438953472,
+                ram_available_bytes: 274877906944,
+                ram_cached_bytes: 173946175488,
+                ram_buffers_bytes: 10737418240,
+                swap_total_bytes: 274877906944,
+                swap_used_bytes: 13636521164,
+                ram_pressure_some_avg10: 100
+            }
+
+            var tall = hRoomyTall.item
+            hRoomyTall.theme.textScale = 1.45
+            tall.sizeClass = "tall"
+            hRoomyTall.metricsJson = JSON.stringify(saturated)
+            tryCompare(tall, "detailColumnCount", 2, 2000)
+            var tallPanel = findOne(tall, function (o) {
+                return o.objectName === "ramDetailPanel"
+            })
+            var buffersValue = findOne(tall, function (o) {
+                return isText(o) && o.text === "10.0 GiB"
+            })
+            verify(tallPanel && buffersValue, "the complete buffers value is rendered")
+            var buffersTop = buffersValue.mapToItem(tallPanel, 0, 0)
+            verify(buffersTop.y >= -1
+                   && buffersTop.y + buffersValue.height <= tallPanel.height + 1,
+                   "the third detail row remains inside the portrait panel")
+            hRoomyTall.theme.textScale = 1.15
+
+            var wide = hRoomyWide.item
+            hRoomyWide.theme.textScale = 1.3
+            wide.sizeClass = "wide"
+            hRoomyWide.metricsJson = JSON.stringify(saturated)
+            tryCompare(wide, "detailColumnCount", 3, 2000,
+                       "roomy landscape uses three columns and only two rows")
+            compare(gaugeOf(wide).sub, "128.0 GiB used",
+                    "the ring does not repeat the available value shown below")
+            var widePanel = findOne(wide, function (o) {
+                return o.objectName === "ramDetailPanel"
+            })
+            var wideBuffers = findOne(wide, function (o) {
+                return isText(o) && o.text === "10.0 GiB"
+            })
+            verify(widePanel && wideBuffers, "the landscape buffers value is rendered")
+            var wideTop = wideBuffers.mapToItem(widePanel, 0, 0)
+            verify(wideTop.y >= -1
+                   && wideTop.y + wideBuffers.height <= widePanel.height + 1,
+                   "the landscape detail rows remain inside their panel")
+            hRoomyWide.theme.textScale = 1.15
         }
     }
 

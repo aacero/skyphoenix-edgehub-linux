@@ -1,0 +1,3 @@
+node: $Format:%H$
+describe-name: $Format:%(describe:tags=true)$
+ref-names: $Format:%D$

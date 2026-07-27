@@ -97,10 +97,13 @@ Item {
             compare(root.lastPriorityAlert.key, "break:test-instance")
             compare(root.lastPriorityAlert.primaryLabel, "I took a break")
             compare(root.lastPriorityAlert.secondaryLabel, "Snooze 5 min")
-            verify(typeof root.lastPriorityAlert.primaryCallback === "function")
-            verify(typeof root.lastPriorityAlert.secondaryCallback === "function")
+            compare(root.lastPriorityAlert.primaryAction, "breakTake")
+            compare(root.lastPriorityAlert.secondaryAction, "breakSnooze")
 
-            root.lastPriorityAlert.primaryCallback()
+            // Dashboard dispatches these persisted action IDs back to the
+            // source widget. Exercise the same Break action locally here; the
+            // Dashboard suite owns the cross-component dispatch assertion.
+            w.takeBreak()
             compare(cfg().due, false, "the primary alert action acknowledges the break")
             verify(cfg().endEpoch > 0, "acknowledgement starts a fresh interval")
         }

@@ -2,105 +2,235 @@
 
 ## Supported Versions
 
-| Version        | Supported          |
-|----------------|--------------------|
-| 1.0.0-alpha.x  | :white_check_mark: |
-| 0.1.x          | :x: (superseded)   |
+Only published versions listed below receive security fixes.
+
+| Version | Supported |
+|---------|-----------|
+| 1.0.0 | No (unreleased) |
+| 1.0.0-beta.1 | Yes |
+| 1.0.0-alpha.x | No |
+| 0.1.x | No |
+
+An unreleased branch or local development build is not a supported release.
 
 ## Reporting a Vulnerability
 
-**Do not report security vulnerabilities through public GitHub issues.**
+Do not report security vulnerabilities through public GitHub issues.
 
-Instead, use **GitHub private vulnerability reporting**, which opens a private
-advisory visible only to the maintainers:
-
-**<https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/security/advisories/new>**
-
-(This replaced a `security@…` address on a domain that was never registered.
-Mail to it bounced, so any report sent there was lost - and the domain was
-free for anyone to claim and receive vulnerability reports for this product.
-A GitHub-native channel cannot be squatted that way and needs no mailbox.)
+Use
+[GitHub private vulnerability reporting](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/security/advisories/new).
+The report is visible only to the repository maintainers.
 
 Please include:
 
 - A description of the vulnerability
 - Steps to reproduce
-- Affected versions
-- Any potential mitigations you've identified
+- The affected release and installation method
+- Any mitigation you have already identified
 
-### Response Timeline
+### Response targets
 
-- **Acknowledgment:** Within 48 hours
-- **Initial assessment:** Within 5 business days
-- **Fix timeline:**
-  - Critical (remote code execution, sandbox escape): 7 days
-  - High (privilege escalation, data exposure): 30 days
-  - Medium (DoS, information leak): 90 days
-  - Low (best practice violations): Next release
+- Acknowledgment within 48 hours
+- Initial assessment within 5 business days
+- Target fix windows of 7 days for critical issues, 30 days for high issues,
+  90 days for medium issues, and the next release for low issues
 
-### Disclosure Policy
+These are response targets, not a guarantee that every report can be resolved
+inside that window.
 
-We follow coordinated disclosure:
+### Coordinated disclosure
 
-1. Reporter submits vulnerability privately.
-2. We acknowledge and assess.
-3. We develop and test a fix.
-4. We release the fix.
-5. We publish a security advisory after the fix is available.
-6. Credit is given to the reporter (unless they wish to remain anonymous).
+1. Report the issue privately.
+2. The maintainers acknowledge and assess it.
+3. A fix is developed and tested.
+4. A fixed release is published.
+5. A public advisory follows when users can update.
+6. Reporter credit is offered unless anonymity is requested.
 
-## Security Design Principles
+## Implemented Security Posture
 
-1. **No root required** - The application runs with normal user privileges.
-2. **Deny by default** - Widget permissions are opt-in, reviewed by the user.
-3. **Sandbox community widgets** - Third-party widgets run in isolated WASM sandboxes (Phase 7+).
-4. **No arbitrary command execution** - Custom commands require explicit user approval.
-5. **Secrets are referenced, not stored** - config holds `${env:VAR}` / `file:/path`
-   *references*, resolved per-request and never written back to `config.toml`.
-   (OS-keyring `secret://` refs are Phase B and **not implemented** - see Known
-   Limitations. Do not read this line as keyring support.)
-6. **Input validation** - All external data (D-Bus, /proc, /sys, user config) is validated.
-7. **Minimal dependencies** - We audit and pin all dependencies.
-8. **Reproducible builds** - Release artifacts are verifiable.
+This section describes the current implementation. Future designs are not
+presented as controls.
 
-## Security Features by Trust Level
+### Process privileges
 
-| Trust Level | Widget Type | Sandbox | Resource Limits | Permissions |
-|-------------|-------------|---------|-----------------|-------------|
-| 0 | Built-in native | None (trusted) | Timeout guards | Full |
-| 1 | First-party QML | None (trusted) | Timeout guards | Full |
-| 2 | Trusted third-party | QML context restriction | Timeout guards | Declared |
-| 3 | Community WASM | wasmtime sandbox | CPU, memory, execution | Enforced |
+The Hub and Manager run with the privileges of the logged-in user. They do not
+require root at runtime. System package installation is a separate privileged
+operation performed by the package manager.
 
-## Known Security Limitations (MVP)
+### Configuration and secrets at rest
 
-- **No widget sandboxing in MVP (Phases 1-6):** All widgets run in-process as trusted code. Community widget sandboxing is planned for Phase 7.
-- **No encrypted secret storage:** use `${env:VAR}` / `file:/path` refs so the
-  secret lives outside `config.toml` (resolved per-request, never persisted).
-  A literal secret typed into config is stored in plain text with user file
-  permissions. OS-keyring `secret://` support (E7 Phase B) is **parked**, not
-  shipped, and there is no date for it.
-- **No Content Security Policy for web widgets:** Web content widget not included in MVP; CSP will be enforced when it is added.
+The Hub stores its configuration at
+`$XDG_CONFIG_HOME/xeneon-edge-hub/config.toml`, normally
+`~/.config/xeneon-edge-hub/config.toml`.
 
-## Dependency Security
+- Configuration files created or replaced by the current Unix persistence path
+  use mode `0600`.
+- The application config directory is created and verified as an owner-matched
+  real directory with mode `0700`. Its persistent transaction lock uses mode
+  `0600`.
+- Canonical, corrupt-config, reset, and pre-migration backups created by the
+  application also use mode `0600`.
+- A normal save holds a cross-process transaction lock, writes an exclusive
+  same-directory temporary file without following symlinks, fsyncs it, renames
+  it over the live file, then fsyncs the containing directory.
+- Hub and Manager writers that honor the transaction lock get
+  compare-and-swap protection against stale saves. Loads verify file identity,
+  ownership, type, length, modification time, and change time before and after
+  each read, retrying at most three times when a file changes.
+- Pre-migration backups preserve the exact source bytes before a migrated
+  document is saved.
+- Loads refuse symlinks, non-regular files, files owned by another user, invalid
+  UTF-8, files over 16 MiB, and embedded dashboard JSON over 1 MiB. Both the
+  outer TOML schema and embedded dashboard JSON schema fail closed when newer
+  than the running build.
 
-- All Rust dependencies are pinned via `Cargo.lock`
-- CI runs `cargo deny check` - advisories (RUSTSEC), licenses, bans, and source
-  pinning - in `.github/workflows/supply-chain.yml`, on pushes that touch code
-  plus a **weekly** cron, because new advisories land without anyone pushing.
-  (There is no separate `cargo audit` job: it was redundant with deny's
-  advisories check and was removed when CI cost was cut.)
-- Dependencies are reviewed before addition (popularity, maintenance, security history)
-- SBOM generated for every release
+The file is not encrypted. It can contain the Pro licence key, personal widget
+content, private calendar URLs, HTTP/KPI authorization tokens, and other widget
+settings in plain text. Mode `0600` protects against other Unix users when the
+account and filesystem enforce normal permissions. It does not protect against
+malware or another process running as the same user.
 
-## Security Contacts
+The compare-and-swap guarantee is complete only for cooperating Hub and Manager
+writers that honor the transaction lock. The stable-read checks and immediate
+pre-rename generation comparison detect ordinary changes made by other editors,
+but no portable kernel operation binds that comparison to the following rename.
+A process running as the same user that ignores the lock can replace the file in
+that final comparison-to-rename window. Configuration persistence is therefore
+not a security boundary against a compromised user session.
 
-Reports go through [private vulnerability reporting](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/security/advisories/new),
-which reaches the maintainers directly. The repository is maintained by
-**@skyphoenix-it**. There is deliberately no role mailbox to keep stale - the
-last one pointed at an unregistered domain for the whole alpha.
+HTTP/KPI tokens and private calendar URLs may instead use `${env:VAR}` or
+`file:/absolute/path` references. Those references are resolved for a request
+and the resolved value is not written back to configuration. Literal values
+remain supported and remain plain text. `secret://` keyring references are not
+implemented and fail closed.
 
-## Hall of Fame
+### Manager to Hub control socket
 
-We appreciate and acknowledge security researchers who responsibly disclose vulnerabilities. Names will be listed here with permission.
+Hub and Manager communicate through a `QLocalServer` Unix socket at
+`$XDG_RUNTIME_DIR/xeneon-edge-hub-ctl`. If no runtime directory is available,
+the implementation accepts only a private, owner-matched, mode-`0700`
+per-user fallback directory. The server also requests Qt's
+`UserAccessOption`.
 
+There is no application-level authentication or encryption on this local
+protocol. Subject to the operating system enforcing those filesystem
+permissions, another process running as the same user can connect, read live UI
+state, send supported changes to the Hub, or request a graceful shutdown. The
+socket is not a security boundary against a compromised user session.
+
+### Widget trust
+
+All first-party widgets run in the Hub's QML process. A compile or load failure
+is contained to its `WidgetHost` and renders a "Widget unavailable" surface,
+but there is no process sandbox for arbitrary runtime behavior.
+
+User QML widgets are a shipped, opt-in feature. They are disabled by default
+and can be disabled by managed policy. When enabled, they run unsandboxed in
+the Hub process with the user's privileges. Manifest validation prevents
+malformed catalog entries and shipped-type shadowing, but it is not
+containment. Install a user widget only if you trust it like any other local
+program.
+
+There is no implemented WASM runtime, community-widget sandbox, capability
+permission system, safe execution service, or custom-command launcher.
+
+### Network behavior
+
+The default configuration makes no remote request. Update checking is off by
+default. Network-backed first-party widgets make requests only after the user
+configures the data they need.
+
+Repository-shipped QML routes `XMLHttpRequest` through `NetHub`, which provides:
+
+- A global offline switch
+- An optional host allowlist
+- Same-origin redirect policy
+- Request timeouts and native byte-counted response-size limits, with a 2 MiB
+  hard transport ceiling
+- HTTPS enforcement when a bearer credential is used
+- Per-session sent, blocked, and per-host counters
+
+CI structurally rejects raw `XMLHttpRequest` outside `NetHub` and runs a
+network-namespace no-egress attestation with negative controls. This claim
+covers repository-shipped code in the tested configurations. An enabled user
+QML widget is arbitrary code and can bypass `NetHub`.
+
+The product contains no telemetry or crash-report uploader. Diagnostics are
+displayed locally. The Rust configuration summary is an allowlist of fixed
+labels, booleans, and counts and does not expose raw configuration or arbitrary
+widget values. Logs go to stdout/stderr or the service manager that captures
+them. There is no implemented diagnostics-bundle export.
+
+## Automated Gates and Manual Evidence
+
+No metric is a gate merely because a script can print it.
+
+### Automatic workflows
+
+- `.github/workflows/ci.yml` runs for configured code pushes and pull requests.
+  It enforces Rust formatting, Clippy and tests; licence-tool and webhook tests;
+  an Ubuntu build; compiled-resource QML tests; the enumerated QML
+  behavior matrix; QML diagnostic, egress, link, icon, live-test and memory
+  guards; C++ tests and runtime E2E tests; separate Rust and C++ line-coverage
+  thresholds of 95 percent; and compositor plus reviewed visual-baseline tests.
+  The merged Rust/C++ percentage is diagnostic only.
+- `.github/workflows/supply-chain.yml` runs on its configured code paths, tags,
+  a weekly schedule, and manual dispatch. It enforces `cargo deny check` and
+  the no-egress scenarios. It also generates an unsigned CycloneDX inventory
+  for the Rust core. That CI inventory is not the release SBOM.
+- `.github/workflows/distro.yml` runs on its configured packaging paths, a
+  weekly schedule, and manual dispatch. It builds DEB, RPM, and AppImage
+  artifacts and performs clean-container installation and smoke checks.
+- `.github/workflows/docs.yml` checks relative links and anchors on configured
+  documentation pushes and pull requests.
+
+The exact triggers in those workflow files are authoritative. A local run does
+not become a per-commit CI gate, and path-filtered workflows do not run on every
+commit.
+
+### Manual release gates
+
+`scripts/run_release_tests.sh` is the strict local pre-release entry point. It
+requires a clean candidate, a real owner-issued Pro key, live Xeneon Edge
+hardware, explicit input authorization, coverage, hardware E2E, a fresh
+non-instrumented performance build, and the owner-approved literal 30-minute,
+14-widget instrumented observation. The historical 48-hour soak is explicitly
+waived; the substitute does not support a long-duration stability claim.
+Hardware certification, physical touch evidence, signing-key use, and release
+publication cannot be represented as ordinary headless per-commit CI.
+
+The native two-ref upgrade and rollback workflow is manual and expensive by
+design. It is release-candidate evidence, not a per-commit gate.
+
+Release tooling generates a CycloneDX document from the all-features Cargo
+inventory, every exact payload artifact, and Syft scans before creating
+`SHA256SUMS`. The SBOM is therefore included in the signed checksum set. A
+stable release fails without both `cargo-cyclonedx` and Syft. A prerelease may
+use an explicitly marked fallback without Syft, in which case binary dependency
+identification is incomplete. Release artifacts are signed and checksummed only
+when the tooling's prerequisites pass. The project does not currently claim
+bit-for-bit reproducible builds.
+
+## Dependency and Licensing Notes
+
+- Rust dependencies are locked in `core/Cargo.lock`.
+- `cargo deny check` covers advisories, licences, bans, and allowed sources.
+  There is no separate `cargo audit` CI job.
+- The repository's own code is offered under MIT or Apache-2.0. Distributed
+  artifacts also contain or depend on third-party components under their own
+  terms.
+- The Hub imports and links Qt Virtual Keyboard. Qt's official documentation
+  describes that module as available under a commercial Qt licence or GPLv3,
+  and lists it among the Qt modules not available under LGPLv3 for open-source
+  use. The release owner's licensing disposition is unresolved. This document
+  does not provide legal advice or claim that release licensing is complete.
+
+See [Qt licensing](https://doc.qt.io/qt-6/licensing.html) and
+[Qt Virtual Keyboard licensing](https://doc.qt.io/qt-6/qtvirtualkeyboard-index.html).
+
+## Security Contact
+
+Private reports go through
+[GitHub private vulnerability reporting](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/security/advisories/new)
+to the repository maintainers.

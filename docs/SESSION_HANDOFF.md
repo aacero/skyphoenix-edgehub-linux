@@ -1,5 +1,10 @@
 # Session handoff - continue from here
 
+> Historical record only. Do not use the test counts or release status below as
+> current evidence. The active stable-release status is maintained in
+> `docs/releases/v1.0.0-readiness.md`, and current results must name a clean
+> commit-keyed artifact run.
+
 ## 2026-07-17 (overnight) - READ `docs/reports/overnight-report.md` FIRST
 
 Full report: `docs/reports/overnight-report.md`. Open items now live in one place:

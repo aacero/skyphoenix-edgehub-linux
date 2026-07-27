@@ -6,6 +6,7 @@
 name = "xeneon-license-webhook"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.86"
 publish = false
 
 [[bin]]

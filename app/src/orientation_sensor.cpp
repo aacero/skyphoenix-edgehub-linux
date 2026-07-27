@@ -138,9 +138,26 @@ void OrientationSensor::scheduleStartupRetry() {
         int windowMs = 0;
         for (const int delay : m_startupRetryDelays)
             windowMs += qMax(1, delay);
-        qWarning() << "OrientationSensor: no startup HID orientation after"
-                   << m_startupAttemptCount << "attempts over" << windowMs
-                   << "ms; keeping the remembered/default orientation and following pushed reports";
+        if (m_rotation >= 0) {
+            // The Edge firmware seen on real panels can be push-only: it exposes
+            // an INPUT report but rejects GET_REPORT, then sends the current
+            // orientation only after a physical turn. A valid remembered value is
+            // therefore the designed startup path, not a degraded runtime fault.
+            // Keep this visible at INFO for diagnostics without poisoning the
+            // production warning gate on every otherwise healthy cold start.
+            qInfo() << "OrientationSensor: startup GET_REPORT unavailable after"
+                    << m_startupAttemptCount << "attempts over" << windowMs
+                    << "ms; using remembered rotation" << m_rotation
+                    << "deg and following pushed reports";
+        } else {
+            // No hardware result and no remembered state means the QML shell must
+            // use its aspect-derived fallback. That can be wrong if the panel was
+            // physically turned while the Hub was not running, so retain a real
+            // warning for this actionable first-run/deleted-state condition.
+            qWarning() << "OrientationSensor: no startup HID orientation or remembered rotation after"
+                       << m_startupAttemptCount << "attempts over" << windowMs
+                       << "ms; using the display-aspect fallback until a pushed report arrives";
+        }
         return;
     }
     const int delay = qMax(1, m_startupRetryDelays.at(m_startupRetryIndex));

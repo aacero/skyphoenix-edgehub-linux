@@ -153,6 +153,43 @@ private slots:
         QCOMPARE(b.policy()["netOffline"].toBool(), true);
     }
 
+    void forcedPresetRejectsExternalLayoutWithoutChangingOneByte() {
+        const QString policyPath = writePolicy(
+            "forced-layout.toml",
+            "policy_version = 1\n"
+            "force_preset = \"remote-work\"\n");
+        QVERIFY(!policyPath.isEmpty());
+        qputenv("XENEON_POLICY_PATH", policyPath.toUtf8());
+
+        ConfigHandle* config = xeneon_config_load();
+        QVERIFY(config);
+        const QByteArray current(
+            "{\"version\":1,\"pages\":[],\"marker\":\"managed-current\"}");
+        const QByteArray pushed(
+            "{\"version\":1,\"pages\":[],\"marker\":\"manager-push\"}");
+        QCOMPARE(
+            xeneon_config_set_ui_state(config, current.constData()), 0);
+        QVERIFY(xeneon_config_save(config) >= 0);
+
+        char* directoryRaw = xeneon_config_dir();
+        QVERIFY(directoryRaw);
+        const QString configPath =
+            QString::fromUtf8(directoryRaw) + QStringLiteral("/config.toml");
+        xeneon_string_free(directoryRaw);
+        QFile file(configPath);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const QByteArray before = file.readAll();
+        file.close();
+
+        ConfigBridge bridge(config);
+        QVERIFY(!bridge.externalUiStateAllowed());
+        QVERIFY(!bridge.applyExternalUiState(QString::fromUtf8(pushed)));
+        QCOMPARE(bridge.uiState(), QString::fromUtf8(current));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(file.readAll(), before);
+        xeneon_config_free(config);
+    }
+
     // Raw FFI contract: never null, always parseable JSON.
     void rawFfiNeverReturnsNull() {
         qputenv("XENEON_POLICY_PATH", dir_.filePath("nope.toml").toUtf8());

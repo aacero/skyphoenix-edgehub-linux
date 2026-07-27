@@ -10,6 +10,8 @@ Item {
     property int storeRevision: 0
     property var buckets: ({})
     property int taps: 0
+    property int safeModeInstantiationAttempts: 0
+    property int safeModeEnsureCalls: 0
 
     QtObject {
         id: fakeStore
@@ -26,6 +28,14 @@ Item {
     QtObject {
         id: fakePriorityAlerts
         function showPriorityAlert(request) { return request !== null }
+    }
+    QtObject {
+        id: safeModeStore
+        property int revision: 0
+        function ensureSettings(id, defaults) {
+            root.safeModeEnsureCalls++
+        }
+        function settingsFor(id) { return ({}) }
     }
 
     Component {
@@ -48,7 +58,13 @@ Item {
             property string accentName: ""
             property string cardBackdrop: ""
             property int flushCalls: 0
-            function flush() { flushCalls++ }
+            property bool pendingChanges: false
+            function hasPendingChanges() { return pendingChanges }
+            function flush() {
+                flushCalls++
+                pendingChanges = false
+                return true
+            }
             MouseArea { anchors.fill: parent; onClicked: root.taps++ }
         }
     }
@@ -63,6 +79,22 @@ Item {
             }
             function healthyAction() {
                 successfulActions++
+            }
+        }
+    }
+    Component {
+        id: pendingWithoutFlushComponent
+        Item {
+            property bool pendingChanges: true
+            function hasPendingChanges() { return pendingChanges }
+        }
+    }
+    Component {
+        id: startupFaultComponent
+        Item {
+            Component.onCompleted: {
+                root.safeModeInstantiationAttempts++
+                throw new Error("INTENTIONALLY_FAILING_SAFE_MODE_WIDGET")
             }
         }
     }
@@ -104,6 +136,31 @@ Item {
         widgetId: "runtime-fault-1"
         widgetType: "runtime-fault-probe"
         widgetComponent: runtimeFaultComponent
+        acceptsInput: true
+    }
+
+    W.WidgetHost {
+        id: pendingWithoutFlushHost
+        width: 360
+        height: 220
+        x: root.width + 780
+        widgetId: "missing-flush-1"
+        widgetType: "missing-flush-probe"
+        widgetComponent: pendingWithoutFlushComponent
+        acceptsInput: true
+    }
+
+    W.WidgetHost {
+        id: safeModeHost
+        width: 360
+        height: 220
+        x: root.width + 1160
+        sessionEnabled: false
+        widgetId: "safe-mode-fault-1"
+        widgetType: "deliberately-failing"
+        widgetComponent: startupFaultComponent
+        store: safeModeStore
+        catalog: fakeCatalog
         acceptsInput: true
     }
 
@@ -172,10 +229,23 @@ Item {
 
         function test_clean_shutdown_flushes_a_widget_local_buffer() {
             compare(host.item.flushCalls, 0)
+            compare(host.hasPendingState(), false,
+                    "a clean widget does not report a local buffer")
+            host.item.pendingChanges = true
+            compare(host.hasPendingState(), true,
+                    "WidgetHost exposes a loaded widget's pending buffer")
             verify(host.flushPendingState(), "a widget with flush() reports that it was flushed")
             compare(host.item.flushCalls, 1, "WidgetHost invoked the loaded widget's flush() exactly once")
-            verify(!failedHost.flushPendingState(),
-                   "a failed or unloaded widget has no local buffer to flush")
+            compare(host.hasPendingState(), false,
+                    "a successful flush clears the pending contract")
+            verify(failedHost.flushPendingState(),
+                   "an unloaded widget is a successful no-op during shutdown")
+            compare(failedHost.hasPendingState(), false,
+                    "an unloaded widget cannot claim a pending local buffer")
+            compare(pendingWithoutFlushHost.hasPendingState(), true,
+                    "a widget can expose a pending buffer without a flush hook")
+            verify(!pendingWithoutFlushHost.flushPendingState(),
+                   "a real pending buffer without a flush hook fails closed")
         }
 
         function test_passive_preview_blocks_widget_actions() {
@@ -225,6 +295,38 @@ Item {
                     "a sibling widget remains ready after the runtime exception")
             verify(root.visible,
                    "the containing page remains alive after the runtime exception")
+        }
+
+        function test_safe_mode_never_instantiates_deliberately_failing_widget() {
+            root.safeModeInstantiationAttempts = 0
+            root.safeModeEnsureCalls = 0
+            safeModeHost.sessionEnabled = false
+            wait(100)
+
+            compare(safeModeHost.status, Loader.Null,
+                    "safe mode leaves the widget Loader unopened")
+            compare(safeModeHost.item, null,
+                    "safe mode creates no widget item")
+            compare(root.safeModeInstantiationAttempts, 0,
+                    "the deliberately failing component never executes")
+            compare(root.safeModeEnsureCalls, 0,
+                    "safe mode does not seed or persist widget settings")
+            var paused = findByObjectName(safeModeHost, "safeModeWidgetPlaceholder")
+            verify(paused !== null && paused.visible,
+                   "the saved tile is represented by a visible session-only pause surface")
+
+            // Non-vacuity control: the same component executes and throws as
+            // soon as the session gate is opened.
+            ignoreWarning(/.*INTENTIONALLY_FAILING_SAFE_MODE_WIDGET.*/)
+            safeModeHost.sessionEnabled = true
+            tryCompare(root, "safeModeInstantiationAttempts", 1, 3000)
+            compare(safeModeHost.status, Loader.Ready,
+                    "outside safe mode the same widget is instantiated")
+            verify(root.safeModeEnsureCalls > 0,
+                   "normal mode seeds settings through the existing host contract")
+
+            safeModeHost.sessionEnabled = false
+            tryCompare(safeModeHost, "status", Loader.Null, 3000)
         }
     }
 }

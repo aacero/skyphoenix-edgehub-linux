@@ -21,7 +21,9 @@ class FaultServer(ThreadingHTTPServer):
 
     def __init__(self) -> None:
         self.hits: list[str] = []
+        self.request_headers: dict[str, dict[str, str]] = {}
         self.hit_lock = threading.Lock()
+        self.oversized_bytes_sent = 0
         super().__init__(("127.0.0.1", 0), FaultHandler)
 
 
@@ -31,11 +33,29 @@ class FaultHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         with self.server.hit_lock:
             self.server.hits.append(self.path)
+            self.server.request_headers[self.path] = dict(self.headers.items())
         if self.path == "/hang":
             time.sleep(3.0)
             body = b'{"value":1}'
         elif self.path == "/oversized":
-            body = b'{"value":"' + (b"x" * 1_048_576) + b'"}'
+            # No Content-Length: the native guard must count transport bytes,
+            # not merely reject declared metadata. A slow chunk stream also
+            # gives the abort time to reach the server before the whole 8 MiB
+            # body can disappear into loopback socket buffers.
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            chunk = b"x" * 16_384
+            try:
+                for _ in range(512):
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+                    with self.server.hit_lock:
+                        self.server.oversized_bytes_sent += len(chunk)
+                    time.sleep(0.001)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
         else:
             body = b'{"value":42}'
         try:
@@ -153,12 +173,22 @@ def main() -> int:
             print(result.stderr, end="")
         with server.hit_lock:
             hits = list(server.hits)
+            request_headers = dict(server.request_headers)
+            oversized_bytes_sent = server.oversized_bytes_sent
         print(f"Loopback hits: {hits}")
+        print(f"Loopback request headers: {request_headers}")
+        print(f"Oversized bytes accepted before client abort: {oversized_bytes_sent}")
         if result.returncode != 0:
             print(f"RESULT: FAILURE - qmltestrunner exited {result.returncode}")
             return 1
         if "/oversized" not in hits or "/hang" not in hits:
             print("RESULT: FAILURE - one or more fault endpoints were not reached")
+            return 1
+        if oversized_bytes_sent >= 8 * 1024 * 1024:
+            print("RESULT: FAILURE - oversized transport was not aborted")
+            return 1
+        if oversized_bytes_sent > 2 * 1024 * 1024:
+            print("RESULT: FAILURE - transport cap overshot its 1 MiB request by more than 1 MiB")
             return 1
         print("RESULT: SUCCESS - real Qt HTTP faults produced bounded errors")
         return 0

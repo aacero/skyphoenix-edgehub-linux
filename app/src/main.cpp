@@ -48,9 +48,7 @@
 #include "license_bridge.h"
 #include "metrics_worker.h"
 #include "shutdown_flush.h"
-
-// --- Global handle for signal handler access ---
-static ConfigHandle* g_config = nullptr;
+#include "safe_mode_policy.h"
 
 // --- Qt → Rust log bridge ---
 
@@ -242,7 +240,7 @@ static void signalHandler(int sig) {
 
 // --- Find target display ---
 
-// Positive identity match ONLY (hash → model → connector → XENEON → resolution).
+// Positive identity match ONLY (hash, connector, model, XENEON, resolution).
 // Returns nullptr when nothing matches - NO primary-screen fallback. Used to decide
 // whether a hotplugged screen is genuinely the Edge: the primary fallback must not
 // count as a match there, or plugging in an unrelated (primary) monitor while the
@@ -273,21 +271,22 @@ static QScreen* findTargetScreenStrict(ConfigHandle* config) {
         }
     }
 
-    // Try model name match
-    if (targetModel) {
+    // A connector is the exact output the user selected. Prefer it over a model
+    // string, which is often shared by two identical monitors.
+    if (targetConnector) {
         for (auto* s : screens) {
-            if (s->model() == targetModel.qstring()) {
-                qInfo() << "Target found by model:" << s->name();
+            if (s->name() == targetConnector.qstring()) {
+                qInfo() << "Target found by connector:" << s->name();
                 return s;
             }
         }
     }
 
-    // Try connector match
-    if (targetConnector) {
+    // Model remains a resilient fallback when a compositor renames connectors.
+    if (targetModel) {
         for (auto* s : screens) {
-            if (s->name() == targetConnector.qstring()) {
-                qInfo() << "Target found by connector:" << s->name();
+            if (s->model() == targetModel.qstring()) {
+                qInfo() << "Target found by model:" << s->name();
                 return s;
             }
         }
@@ -354,8 +353,8 @@ int main(int argc, char *argv[]) {
 
     QGuiApplication app(argc, argv);
     app.setApplicationName("Xeneon Edge Linux Hub");
-    // XENEON_VERSION, not a literal: CMakeLists passes the git-describe string
-    // (or the packaged pkgver via XENEON_VERSION_OVERRIDE). This used to be a
+    // XENEON_VERSION, not a literal: the generated build header carries the
+    // git-describe string (or the explicit packaging override). This used to be a
     // hardcoded "0.1.0", so `--version` reported 0.1.0 for EVERY build ever
     // made - dev, packaged, and release alike - which made it impossible to
     // tell which build you were actually running or testing.
@@ -412,9 +411,9 @@ int main(int argc, char *argv[]) {
             if (::read(sigFd[0], &c, 1) == 1) {
                 int sig = static_cast<int>(c);
                 qInfo() << "Received signal" << sig << "- shutting down gracefully";
-                if (g_config) {
-                    xeneon_config_save(g_config);
-                }
+                // Persistence is coordinated by the aboutToQuit QML flush and
+                // the final checked save below. Saving here would run before
+                // widget-local debounce buffers are flushed.
                 QCoreApplication::quit();
             }
         });
@@ -437,7 +436,9 @@ int main(int argc, char *argv[]) {
         "reset", "Discard ALL configuration, including your dashboard layout, and start "
                  "from defaults. The discarded config is kept as config.toml.bak. "
                  "To only re-run the wizard, use --reset-wizard.");
-    QCommandLineOption safeModeOpt("safe-mode", "Start in safe mode (all widgets disabled)");
+    QCommandLineOption safeModeOpt(
+        "safe-mode",
+        "Start this session without instantiating widgets. The saved layout is unchanged.");
     QCommandLineOption resetWizardOpt("reset-wizard",
                                       "Re-run the first-run wizard, KEEPING your configuration.");
     QCommandLineOption diagOpt("diagnostics", "Start directly in diagnostics view");
@@ -448,12 +449,19 @@ int main(int argc, char *argv[]) {
     parser.addOption(diagOpt);
     parser.addOption(windowedOpt);
     parser.process(app);
+    const bool safeMode = parser.isSet(safeModeOpt);
+    const bool widgetsEnabled = widgetsEnabledForSession(safeMode);
+    if (safeMode) {
+        qInfo() << "Safe mode active: widget instantiation and user-widget scanning "
+                   "are disabled for this session";
+    }
 
     // Load configuration
     ConfigHandle* config = nullptr;
     const bool resetting = parser.isSet(resetOpt);
+    int resetStatus = -1;
     if (resetting) {
-        config = xeneon_config_reset();
+        config = xeneon_config_reset_with_status(&resetStatus);
         if (config) {
             // Name the backup. A safety net nobody is told about is only half a
             // safety net: the user who reaches for --reset by mistake needs the
@@ -463,6 +471,10 @@ int main(int argc, char *argv[]) {
                                  "saved to"
                               << (dir ? dir.qstring() + "/config.toml.bak"
                                       : QStringLiteral("config.toml.bak beside your config"));
+            if (resetStatus == 1) {
+                qWarning() << "The reset is active, but storage could not confirm "
+                              "crash durability for the directory update.";
+            }
         }
     } else {
         config = xeneon_config_load();
@@ -477,12 +489,32 @@ int main(int argc, char *argv[]) {
                            "was left untouched. Free some disk space or check permissions on"
                         << XeneonString(xeneon_config_dir()).qstring();
         } else {
-            qCritical() << "Failed to load configuration";
+            XeneonString configDirectory(xeneon_config_dir());
+            const QString configPath =
+                configDirectory.qstring() + QStringLiteral("/config.toml");
+            qCritical().noquote()
+                << "Failed to load configuration. The file was left untouched at"
+                << configPath
+                << "\nThis build cannot start Diagnostics or Safe Mode until the "
+                   "configuration is readable. Restore config.toml.bak if it is "
+                   "known-good, or copy config.toml somewhere safe and then run "
+                   "xeneon-edge-hub --reset to start from defaults.";
         }
         return 1;
     }
-    g_config = config;
-
+    // config.toml is the durable source of truth for autostart. Reconcile the
+    // effective desktop entry on every Hub start so an interrupted compensated
+    // transaction repairs itself, and so an AppImage/package path change refreshes
+    // Exec= instead of retaining an obsolete launcher.
+    QString startupPersistenceWarning;
+    const bool configuredAutostart =
+        xeneon_config_get_autostart(config) != 0;
+    if (!applyAutostart(configuredAutostart)) {
+        startupPersistenceWarning = QStringLiteral(
+            "The saved autostart setting could not be applied. Check the autostart "
+            "file permissions, then restart the Hub to retry.");
+        qWarning() << startupPersistenceWarning;
+    }
     int isFirstRun = xeneon_config_is_first_run(config);
     if (parser.isSet(resetWizardOpt)) {
         isFirstRun = 1;
@@ -526,9 +558,15 @@ int main(int argc, char *argv[]) {
 
     // Expose data to QML
     engine.rootContext()->setContextProperty("_isFirstRun", isFirstRun);
+    engine.rootContext()->setContextProperty(
+        "_startupPersistenceWarning", startupPersistenceWarning);
     engine.rootContext()->setContextProperty("_screens", buildScreensJson());
     engine.rootContext()->setContextProperty("_metricsJson", QJsonDocument(metricsJson).toJson(QJsonDocument::Compact));
-    engine.rootContext()->setContextProperty("_safeMode", parser.isSet(safeModeOpt));
+    engine.rootContext()->setContextProperty("_safeMode", safeMode);
+    // WidgetHost consumes this as the central fail-closed session gate. It is
+    // separate from the presentation flag so every host, including preset
+    // previews in the wizard and Screens picker, inherits the same policy.
+    engine.rootContext()->setContextProperty("_widgetsEnabled", widgetsEnabled);
     engine.rootContext()->setContextProperty("_startInDiagnostics", parser.isSet(diagOpt));
     engine.rootContext()->setContextProperty("_windowedMode", windowedMode);
     // QA affordance: XENEON_EXPAND=<type> auto-opens that widget's expanded
@@ -601,35 +639,93 @@ int main(int argc, char *argv[]) {
     // push a new layout/appearance document, which we persist and live-reload.
     ControlServer* controlServer = new ControlServer(&engine);
     controlServer->setStateProvider([configBridge]() { return configBridge->uiState(); });
+    controlServer->setConfigGenerationTokenProvider(
+        [configBridge]() { return configBridge->configGenerationToken(); });
+    controlServer->setStateLiveProvider([&engine]() {
+        for (auto* object : engine.rootObjects()) {
+            if (object->property("pendingExternalUiState").isValid())
+                return object->property("pendingExternalUiState").toString().isEmpty();
+        }
+        return false;
+    });
     QObject::connect(controlServer, &ControlServer::uiStateReceived, &engine,
-                     [configBridge, &engine](const QString& json, bool* ok) {
+                     [configBridge, &engine](
+                         const QString& json, bool* ok, bool* liveApplied) {
+        // Widget editors keep short local debounce buffers that are not yet in
+        // ConfigHandle. Ask the live QML document to flush or reject those edits
+        // before persisting the Manager document. This callback and QML both run
+        // synchronously on the GUI thread, so input cannot interleave between
+        // preflight, persistence, and live application.
+        QString preflightStatus;
+        bool preflightInvoked = false;
+        for (auto* object : engine.rootObjects()) {
+            QVariant returned;
+            if (!QMetaObject::invokeMethod(
+                    object,
+                    "preflightExternalUiState",
+                    Qt::DirectConnection,
+                    Q_RETURN_ARG(QVariant, returned),
+                    Q_ARG(QVariant, json))) {
+                continue;
+            }
+            preflightInvoked = true;
+            preflightStatus = returned.toString();
+            break;
+        }
+        const bool preflightAccepted =
+            preflightStatus == QStringLiteral("ready")
+            || preflightStatus == QStringLiteral("queued");
+        if (!preflightInvoked || !preflightAccepted) {
+            qWarning() << "Hub: external UI state rejected by local-edit preflight:"
+                       << (preflightInvoked ? preflightStatus
+                                            : QStringLiteral("unavailable"));
+            if (ok) *ok = false;
+            if (liveApplied) *liveApplied = false;
+            return;
+        }
+
         // *ok reports the apply result back to ControlServer so the socket ack is
         // honest (was: always "ok"). Same-thread direct connection, so it's set on
         // return. Set on BOTH paths.
         if (!configBridge->applyExternalUiState(json)) {
             qWarning() << "Failed to apply externally pushed UI state";
             if (ok) *ok = false;
+            if (liveApplied) *liveApplied = false;
             return;
         }
         if (ok) *ok = true;
+        bool deliveredLive = false;
         // Trigger a live reload in QML. The writable property is the primary
         // bridge because its change signal is observable and covered by the shell
-        // integration test. main.qml retains the latest state and retries briefly
-        // if the StackView has not finished constructing Dashboard yet, so an IPC
-        // request accepted during startup cannot stop at persistence without ever
-        // repainting the panel. An alternate root without that property falls back
-        // to the direct method.
+        // integration test. main.qml retains the latest state and retries when
+        // the StackView changes if Dashboard is not constructed yet, so an IPC
+        // request accepted during startup cannot stop at persistence without
+        // eventually repainting the panel. An alternate root without that property
+        // falls back to the direct method.
         for (auto* obj : engine.rootObjects()) {
-            if (obj->setProperty("externalUiState", json)) {
+            const QVariant previous = obj->property("externalUiState");
+            if (previous.isValid() && previous.toString() != json
+                    && obj->setProperty("externalUiState", json)) {
+                deliveredLive = obj->property("externalUiStateApplied").toBool();
                 qInfo() << "Hub: external UI state delivered to QML property,"
-                        << "applied:" << obj->property("externalUiStateApplied").toBool();
+                        << "applied:" << deliveredLive;
             } else {
+                QVariant returned;
                 const bool invoked = QMetaObject::invokeMethod(
-                    obj, "applyExternalUiState", Q_ARG(QVariant, json));
+                    obj,
+                    "applyExternalUiState",
+                    Qt::DirectConnection,
+                    Q_RETURN_ARG(QVariant, returned),
+                    Q_ARG(QVariant, json));
+                if (invoked) {
+                    deliveredLive = returned.toBool();
+                    obj->setProperty("externalUiStateApplied", deliveredLive);
+                }
                 if (!invoked)
                     qWarning() << "Hub: QML root cannot accept external UI state";
             }
         }
+        if (liveApplied) *liveApplied = deliveredLive;
     // EXPLICIT Qt::DirectConnection is REQUIRED, not incidental: both the ack
     // correctness and the validity of the `bool* ok` argument depend on SAME-THREAD
     // synchronous delivery - the slot must run and write *ok BEFORE handleLine() reads
@@ -661,7 +757,6 @@ int main(int argc, char *argv[]) {
     engine.load(QUrl(QStringLiteral("qrc:/qml/main.qml")));
     if (engine.rootObjects().isEmpty()) {
         qCritical() << "Failed to load QML";
-        g_config = nullptr;   // clear before free so a late signal can't touch it
         xeneon_config_free(config);
         return 1;
     }
@@ -861,7 +956,7 @@ int main(int argc, char *argv[]) {
             }
         }
         for (auto* obj : engine.rootObjects())
-            obj->setProperty("screenAddedChanged", screen->name());
+            obj->setProperty("screenAdded", screen->name());
         pushScreens();
     });
     auto handleScreenRemoved = [&engine, config, &targetScreen, &targetHidden,
@@ -895,7 +990,7 @@ int main(int argc, char *argv[]) {
         }
         if (wasTarget) targetScreen = nullptr;   // target gone until it returns
         for (auto* obj : engine.rootObjects())
-            obj->setProperty("screenRemovedChanged", screen->name());
+            obj->setProperty("screenRemoved", screen->name());
         pushScreens();
     };
     QObject::connect(&app, &QGuiApplication::screenRemoved, &engine, handleScreenRemoved);
@@ -935,14 +1030,54 @@ int main(int argc, char *argv[]) {
     // only exists past window placement. The event loop starts at app.exec(), so no
     // request can arrive before this point.
     QObject::connect(controlServer, &ControlServer::targetDisplayReceived, &engine,
-                     [&engine, config, &targetScreen, &mainWindow, windowedMode](
-                         const QString& connector, const QString& model, bool* ok) {
-        xeneon_config_set_target_connector(config, connector.toUtf8().constData());
-        xeneon_config_set_target_model(config, model.toUtf8().constData());
-        const bool saved = xeneon_config_save(config) == 0;
+                     [&engine, config, configBridge, &targetScreen, &mainWindow,
+                      windowedMode](
+                         const QString& connector, const QString& model, bool* ok,
+                         bool* durabilityUncertain) {
+        // Replace all three identity fields as one transaction. Retaining the
+        // prior hash makes it outrank the newly selected connector at the next
+        // match, so a successful Manager action can otherwise leave the Hub on
+        // the old display. The live Hub can derive the selected screen's exact
+        // identity; an unavailable target clears the stale hash and relies on
+        // its saved connector/model when it returns.
+        QString targetHash;
+        for (QScreen* screen : QGuiApplication::screens()) {
+            if (!connector.isEmpty() && screen->name() != connector)
+                continue;
+            if (connector.isEmpty()
+                && (!model.isEmpty() && screen->model() != model)) {
+                continue;
+            }
+            targetHash = screenIdentityHash(
+                screen->name(),
+                screen->model(),
+                screen->manufacturer(),
+                screen->serialNumber());
+            break;
+        }
+        const QByteArray targetHashBytes = targetHash.toUtf8();
+        ConfigTransaction transaction(config);
+        const bool prepared =
+            transaction
+            && xeneon_config_set_target_edid_hash(
+                   transaction.candidate(),
+                   targetHash.isEmpty() ? nullptr : targetHashBytes.constData()) == 0
+            && xeneon_config_set_target_connector(
+                   transaction.candidate(), connector.toUtf8().constData()) == 0
+            && xeneon_config_set_target_model(
+                   transaction.candidate(), model.toUtf8().constData()) == 0;
+        const bool saved = prepared && transaction.commit();
         if (!saved)
             qWarning() << "Hub: failed to persist target display" << connector << model;
+        const bool uncertain = saved && transaction.durabilityUncertain();
+        if (durabilityUncertain)
+            *durabilityUncertain = uncertain;
+        if (uncertain)
+            emit configBridge->persistenceWarning(QStringLiteral(
+                "The display target was published, but storage could not confirm crash durability."));
         if (ok) *ok = saved;
+        if (!saved)
+            return;
 
         // Live-apply: re-run the SAME match + placement the hub does at boot, so the
         // choice takes effect now instead of at the next start. STRICT (no primary
@@ -950,6 +1085,7 @@ int main(int argc, char *argv[]) {
         // whatever screen happens to be primary.
         engine.rootContext()->setContextProperty("_targetConnector", connector);
         engine.rootContext()->setContextProperty("_targetModel", model);
+        engine.rootContext()->setContextProperty("_targetEdidHash", targetHash);
         QScreen* s = findTargetScreenStrict(config);
         if (s && mainWindow) {
             qInfo() << "Hub: target display set to" << connector << model
@@ -966,18 +1102,40 @@ int main(int argc, char *argv[]) {
             qWarning() << "Hub: target display" << connector << model
                        << "is not attached - saved, placement unchanged";
         }
-    }, Qt::DirectConnection);   // see the uiStateReceived connection: `ok` is a stack pointer
+    }, Qt::DirectConnection);   // result pointers live in ControlServer's stack frame
     QObject::connect(controlServer, &ControlServer::autostartReceived, &engine,
-                     [config](bool enabled, bool* ok) {
-        xeneon_config_set_autostart(config, enabled ? 1 : 0);
+                     [config, configBridge](
+                         bool enabled, bool* ok, bool* durabilityUncertain) {
+        ConfigTransaction transaction(config);
+        if (!transaction
+            || xeneon_config_set_autostart(
+                   transaction.candidate(), enabled ? 1 : 0) != 0) {
+            if (ok) *ok = false;
+            return;
+        }
         // The flag on its own does nothing at runtime - the EFFECTIVE state is the
         // XDG autostart entry (the same one the first-run wizard installs), so write
         // it here. Both halves must succeed for the ack to be honest: the client's
         // "is autostart on?" readback reads the entry, not the flag.
+        const bool previousEnabled = isAutostartEnabled();
         const bool fileOk = applyAutostart(enabled);
-        const bool saved = xeneon_config_save(config) == 0;
+        const bool saved = fileOk && transaction.commit();
+        const bool uncertain = saved && transaction.durabilityUncertain();
+        if (durabilityUncertain)
+            *durabilityUncertain = uncertain;
+        if (uncertain)
+            emit configBridge->persistenceWarning(QStringLiteral(
+                "Autostart was published, but storage could not confirm crash durability."));
         if (!fileOk) qWarning() << "Hub: autostart .desktop write failed";
         if (!saved)  qWarning() << "Hub: failed to persist autostart flag";
+        if (fileOk && !saved) {
+            const bool restored = applyAutostart(previousEnabled);
+            qWarning() << "Hub: restored previous autostart state:" << restored;
+            if (!restored)
+                emit configBridge->persistenceWarning(QStringLiteral(
+                    "Autostart could not be restored after a configuration failure. "
+                    "Restart the Hub to repair it from the saved setting."));
+        }
         if (ok) *ok = fileOk && saved;
     }, Qt::DirectConnection);
     controlServer->start();
@@ -1021,17 +1179,29 @@ int main(int argc, char *argv[]) {
     metricsThread.quit();
     metricsThread.wait();
 
-    // Save configuration on clean exit while the handle is still valid.
-    xeneon_config_save(config);
+    // Save configuration on clean exit while the handle is still valid. The
+    // QML shutdown hook already flushed widget-local buffers, so this is the
+    // final checked publication attempt rather than a premature signal-path
+    // write.
+    const int finalSaveResult = xeneon_config_save(config);
+    if (finalSaveResult < 0) {
+        const QString recoveryPath =
+            configBridge->exportUiStateRecovery(configBridge->uiState());
+        qWarning() << "Hub: final configuration save failed"
+                   << "recovery:"
+                   << (recoveryPath.isEmpty()
+                           ? QStringLiteral("unavailable")
+                           : recoveryPath);
+    } else if (finalSaveResult == 1) {
+        qWarning() << "Hub: final configuration save published, but crash durability is uncertain";
+    }
 
     // Detach the QML bridges from the config handle BEFORE freeing it. The
     // engine is a stack object destroyed after this scope returns; a late
     // Component.onDestruction handler calling configBridge.saveUiState()/uiState()
-    // would otherwise dereference freed memory. Clear g_config first so the
-    // signal handler can't touch it either.
+    // would otherwise dereference freed memory.
     configBridge->detach();
     wizardBridge->detach();
-    g_config = nullptr;
     xeneon_config_free(config);
 
     return result;

@@ -47,6 +47,19 @@ Item {
         })
         return found
     }
+    function findIn(rootNode, pred) {
+        var found = []
+        eachItem(rootNode, function (n) {
+            if (pred(n)) found.push(n)
+        })
+        return found
+    }
+    function findObjectIn(rootNode, name) {
+        var matches = findIn(rootNode, function (n) {
+            return n.objectName === name
+        })
+        return matches.length ? matches[0] : null
+    }
     function findObject(name) {
         var found = null
         eachItem(h.item, function (n) {
@@ -441,8 +454,12 @@ Item {
             feed(2000000, 500000)
             compare(w.historyLabel, "2 minutes")
             verify(w.graphScaleLabel.indexOf("Auto ceiling") === 0)
-            verify(findText("2 MINUTES THROUGHPUT") !== null)
+            compare(w.historyCaption, "2 MIN HISTORY",
+                    "a compact chart uses the responsive duration caption")
+            verify(findText(w.historyCaption) !== null)
             verify(findText("↓ Download") !== null)
+            verify(w.accessibleSummary.indexOf("2 minutes history") >= 0,
+                   "the complete duration meaning remains accessible")
             h.storeCtl.patchSettings("test-instance", {
                 scaleMode: "fixed", fixedScaleMbps: 1000
             })
@@ -510,6 +527,16 @@ Item {
     // cannot leak `expanded: true` into another test's host.
     Item { width: 696; height: 840
         WidgetHarness { id: hProbe; anchors.fill: parent; widgetFile: "NetWidget.qml"; expanded: false } }
+    // Isolated host for the eight exact systemic-legibility projections.
+    Item { id: responsiveWrap; width: 348; height: 818
+        WidgetHarness {
+            id: hResponsive
+            anchors.fill: parent
+            widgetFile: "NetWidget.qml"
+            expanded: false
+            active: false
+        }
+    }
 
     TestCase {
         name: "NetSizes"
@@ -525,6 +552,92 @@ Item {
         }
         function feedTo(host, r, t) {
             host.metricsJson = JSON.stringify({ net_rx_bytes_per_sec: r, net_tx_bytes_per_sec: t })
+        }
+
+        function test_supported_projection_legibility_data() {
+            return [
+                { tag: "portrait-0.5x1-zero-system-text1.15-output1.25",
+                  width: 278, height: 654, sizeClass: "tall",
+                  font: "system", scale: 1.15, metrics: "zero" },
+                { tag: "portrait-0.5x1-empty-lexend-text1.45-output1.25",
+                  width: 278, height: 654, sizeClass: "tall",
+                  font: "lexend", scale: 1.45, metrics: "empty" },
+                { tag: "landscape-0.5x1-saturated-lexend-text1.3-output1.25",
+                  width: 677, height: 245, sizeClass: "wide",
+                  font: "lexend", scale: 1.3, metrics: "saturated" },
+                { tag: "portrait-1x0.5-zero-lexend-text1.15-output1.25",
+                  width: 557, height: 327, sizeClass: "wide",
+                  font: "lexend", scale: 1.15, metrics: "zero" },
+                { tag: "portrait-1x0.5-saturated-system-text1.3-output1",
+                  width: 696, height: 409, sizeClass: "wide",
+                  font: "system", scale: 1.3, metrics: "saturated" },
+                { tag: "portrait-1x0.5-empty-hyperlegible-text1.45-output1.25",
+                  width: 557, height: 327, sizeClass: "wide",
+                  font: "hyperlegible", scale: 1.45, metrics: "empty" },
+                { tag: "landscape-1x0.5-empty-lexend-text1.45-output1",
+                  width: 423, height: 612, sizeClass: "tall",
+                  font: "lexend", scale: 1.45, metrics: "empty" },
+                { tag: "portrait-1x1-empty-system-text1.45-output1.25",
+                  width: 557, height: 654, sizeClass: "compact",
+                  font: "system", scale: 1.45, metrics: "empty" }
+            ]
+        }
+
+        function test_supported_projection_legibility(row) {
+            tryVerify(function () { return hResponsive.ready }, 3000)
+            responsiveWrap.width = row.width
+            responsiveWrap.height = row.height
+            hResponsive.theme.textScale = row.scale
+            hResponsive.theme.fontChoice = row.font
+            hResponsive.item.sizeClass = row.sizeClass
+            hResponsive.item.hist = []
+            if (row.metrics === "saturated")
+                feedTo(hResponsive, 1250000000, 1250000000)
+            else if (row.metrics === "zero")
+                feedTo(hResponsive, 0, 0)
+            else
+                hResponsive.metricsJson = "{}"
+            wait(50)
+
+            var minimum = hResponsive.theme.fontMinimum
+            var rateNames = ["netDownloadRate", "netUploadRate"]
+            for (var i = 0; i < rateNames.length; i++) {
+                var rate = findObjectIn(hResponsive.item, rateNames[i])
+                verify(rate !== null && rate.visible,
+                       row.tag + " renders " + rateNames[i])
+                verify(rate.font.pixelSize >= minimum,
+                       row.tag + " keeps " + rateNames[i] + " at the type floor")
+                verify(!rate.truncated && rate.contentWidth <= rate.width + 1,
+                       row.tag + " fits " + rateNames[i])
+            }
+
+            var caption = findObjectIn(hResponsive.item, "netHistoryCaption")
+            if (caption && caption.visible)
+                verify(!caption.truncated && caption.contentWidth <= caption.width + 1,
+                       row.tag + " fits the responsive history caption")
+
+            var statistics = findIn(hResponsive.item, function (candidate) {
+                return candidate.text !== undefined
+                    && typeof candidate.text === "string"
+                    && candidate.text.indexOf("avg ") >= 0
+                    && candidate.text.indexOf("peak ") >= 0
+                    && candidate.visible
+            })
+            for (var s = 0; s < statistics.length; s++) {
+                verify(statistics[s].font.pixelSize >= minimum,
+                       row.tag + " keeps chart statistics at the type floor")
+                verify(!statistics[s].truncated
+                       && statistics[s].contentWidth <= statistics[s].width + 1,
+                       row.tag + " fits chart statistics '" + statistics[s].text + "'")
+            }
+        }
+
+        function cleanup() {
+            responsiveWrap.width = 348
+            responsiveWrap.height = 818
+            hResponsive.theme.textScale = 1.15
+            hResponsive.theme.fontChoice = "hyperlegible"
+            if (hResponsive.ready) hResponsive.item.sizeClass = "tall"
         }
 
         // 0.5x0.5 - headerless; the two rates, big and centred; no graph, no peaks.

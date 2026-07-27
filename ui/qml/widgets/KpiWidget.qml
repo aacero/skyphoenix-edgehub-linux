@@ -189,6 +189,18 @@ WidgetChrome {
     status: provider.badgeLabel
     statusColor: provider.state === "loading" || provider.state === "unconfigured"
         ? w.effAccent : theme.warning
+    Accessible.role: Accessible.Pane
+    Accessible.name: {
+        var identity = w.label.length ? w.label : w.title
+        var reading = w.valText.length
+            ? w.prefix + w.valText + (w.unit.length ? " " + w.unit : "")
+            : "No reading"
+        var detail = w.errText.length
+            ? w.errText + (w.errorHelp.length ? ". " + w.errorHelp : "")
+            : w.thresholdConfigError.length ? w.thresholdConfigError
+            : (w.deltaText.length ? w.deltaText : w.thresholdState)
+        return identity + ". " + reading + (detail.length ? ". " + detail : "")
+    }
 
     property var _xhr: null
     Component.onDestruction: {
@@ -369,7 +381,7 @@ WidgetChrome {
     readonly property bool split: (roomy || sizeClass === "wide") && width > height * 1.4
     // How many characters the number is. A KPI's legibility is digit-count
     // dependent - "7" and "1284.5" cannot take the same pixelSize in the same box.
-    readonly property int _valChars: Math.max(1, w.errText.length ? 1 : (w.valText.length || 1))
+    readonly property int _valChars: Math.max(1, w.valText.length || 1)
     // Estimated advance width of the display font's digits, as a fraction of
     // pixelSize, plus the unit's share (it is a sibling Text, ~30% of the value's
     // size and 1-2 glyphs). Sizing the number TO FIT beats leaning on
@@ -381,23 +393,55 @@ WidgetChrome {
     readonly property real _unitTerm: (w.unit.length > 0 ? 0.42 : 0)
                                       + (w.prefix.length > 0 ? 0.42 : 0)
     // The number's width budget: the whole body, or half of it when split.
-    readonly property real _boxW: Math.max(40, (w.split ? lay.width * 0.5 : lay.width) - 8)
+    readonly property bool showStats: (w.expanded || w.roomy) && w.hist.length > 1
+                                      && !w.errText.length
+    readonly property bool showSpark: !w.micro && w.chartHistory.length > 1
+                                      && !w.errText.length
+    // Geometry alone may be wide while an error removes the trend and stats.
+    // In that state the explanation needs the whole body rather than an empty
+    // second column.
+    // Reserve the normal wide composition before history exists. Otherwise the
+    // second sample makes the value jump from one column to two exactly when the
+    // chart appears. Errors still use the whole body for recovery guidance.
+    readonly property bool contentSplit: w.split && !w.errText.length
+    readonly property bool detailedChart: w.expanded || w.roomy
+        || w.height >= Math.max(520, theme.fontLabel * 22)
+    readonly property bool showInlineRefresh: !w.micro
+    // In the shallowest projection reserve the refresh footprint only in the
+    // column that contains it. Subtracting its height from the whole dashboard
+    // caused the headline, label, and chart axes to overflow together.
+    readonly property bool compactRefreshPlacement: w.showInlineRefresh
+        && !w.expanded && w.height < Math.max(340, theme.touchTertiary * 6)
+    readonly property real _compactValueInset:
+        w.compactRefreshPlacement && !w.contentSplit
+        ? theme.touchTertiary + theme.spacingSm : 0
+    readonly property real _boxW: Math.max(
+        40, (w.contentSplit ? lay.width * 0.5
+                            : lay.width - w._compactValueInset) - 8)
     readonly property real _fitPx: w._boxW / (w._valChars * w._digitRatio + w._unitTerm)
+    readonly property real _layoutHeight: Math.max(40, lay.height)
+    readonly property real _valueHeightFraction: !w.contentSplit ? 0.30
+        : w._layoutHeight < 360 ? 0.30 : 0.40
     // The number scales to its box, clamped per shape so it reads as a figure
     // rather than a wall.
     readonly property real valuePx: expanded ? 150
         : Math.max(18, Math.min(w._fitPx,
-            w.micro ? w.height * 0.45 : w.split ? w.height * 0.55 : w.height * 0.30,
-            w.micro ? 200 : w.split ? 340 : 300))
+            w.micro ? w._layoutHeight * 0.45
+                    : w._layoutHeight * w._valueHeightFraction,
+            w.micro ? 200 : w.contentSplit ? 340 : 300))
     readonly property real unitPx: Math.max(theme.fontMinimum, w.valuePx * 0.30)
     readonly property real labelPx: expanded ? 18
         : Math.max(theme.fontMinimum, Math.min(w.valuePx * 0.16, 44))
+    // A detailed trend needs enough height for Sparkline's domain and time
+    // axes. Keep this bounded so the chart supports the headline number rather
+    // than displacing it in the expanded KPI.
+    readonly property real chartDetailHeight:
+        Math.max(180, Math.max(16, theme.fontLabel) * 8)
     // Micro is a readout: the number is the whole tile.
     readonly property bool showLabel: !w.micro
-    readonly property bool showSpark: !w.micro && w.chartHistory.length > 1 && !w.errText.length
-    // min / avg / max over the trend window - genuinely MORE information, so it
-    // is earned by the sizes with room instead of being overlay-only.
-    readonly property bool showStats: (w.expanded || w.roomy) && w.hist.length > 1
+    // min / avg / max over the trend window is earned by the sizes with room.
+    // During an error, the complete recovery state takes priority over stale
+    // statistics; the last reading remains visible and accessible.
     readonly property var stats: {
         var a = w.hist
         if (!a.length) return null
@@ -441,27 +485,31 @@ WidgetChrome {
         // Reserve the refresh button's corner instead of letting content slide
         // under it (at 1x3 the stats strip did exactly that, and the button ate
         // the `max` value).
-        anchors.bottomMargin: refreshBtn.visible
+        anchors.bottomMargin: refreshBtn.visible && !w.compactRefreshPlacement
             ? theme.touchTertiary + 2 * theme.spacingXs : anchors.margins
         visible: w.configured
-        columns: w.split ? 2 : 1
+        columns: w.contentSplit ? 2 : 1
         rowSpacing: w.expanded ? 8 : 2
         columnSpacing: theme.spacingLg
 
         // ── The number + its label ──
         ColumnLayout {
+            objectName: "kpiValueBlock"
             Layout.fillWidth: true
             // Takes ALL the slack a stacked box has left over, so the trend sits
             // at the bottom and the number owns the rest. (No Layout.alignment
             // here: setting it cancels fillHeight, which left a dead band under
             // the 1x3 stats strip.) The spacers do the centring instead.
-            Layout.fillHeight: !w.split
+            Layout.fillHeight: !w.contentSplit
             // Hold the split at an even two columns: the value Text's implicit
             // width is enormous and would otherwise starve the trend beside it.
-            Layout.maximumWidth: w.split ? lay.width * 0.5 : Number.POSITIVE_INFINITY
+            Layout.maximumWidth: w.contentSplit
+                                 ? lay.width * 0.5 : Number.POSITIVE_INFINITY
+            Layout.rightMargin: w.compactRefreshPlacement && !w.contentSplit
+                                ? theme.touchTertiary + theme.spacingSm : 0
             spacing: 0
 
-            Item { Layout.fillHeight: true; visible: !w.split }
+            Item { Layout.fillHeight: true; visible: !w.contentSplit }
 
             RowLayout {
                 Layout.alignment: Qt.AlignHCenter; spacing: 4
@@ -473,6 +521,7 @@ WidgetChrome {
                 }
                 Text {
                     id: valueText
+                    objectName: "kpiValueText"
                     text: w.valText.length ? w.valText : (w.errText.length ? "-" : "…")
                     font.pixelSize: Math.round(w.valuePx); font.bold: true; color: w.valColor
                     font.family: theme.fontDisplay
@@ -496,15 +545,24 @@ WidgetChrome {
             }
 
             // Label / error line - dropped on micro, where the number IS the tile.
-            Text {
+            Item {
                 visible: w.showLabel
-                Layout.alignment: Qt.AlignHCenter; Layout.fillWidth: true
-                horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
-                text: w.errText.length ? w.errText
-                    : (w.label.length ? w.label : w.title)
-                      + (w.deltaText.length ? " · " + w.deltaText : "")
-                color: w.errText.length ? theme.warning : theme.textSecondary
-                font.pixelSize: Math.round(w.labelPx)
+                Layout.fillWidth: true
+                Layout.preferredHeight: labelOrErrorText.contentHeight
+                Layout.minimumHeight: labelOrErrorText.contentHeight
+                Text {
+                    id: labelOrErrorText
+                    objectName: "kpiLabelOrError"
+                    width: parent.width
+                    height: contentHeight
+                    horizontalAlignment: Text.AlignHCenter
+                    text: w.errText.length ? w.errText
+                        : (w.label.length ? w.label : w.title)
+                          + (w.deltaText.length ? " · " + w.deltaText : "")
+                    color: w.errText.length ? theme.warning : theme.textSecondary
+                    font.pixelSize: Math.round(w.labelPx)
+                    wrapMode: Text.WordWrap
+                }
             }
             Text {
                 visible: w.showLabel && (w.thresholdState.length > 0
@@ -517,21 +575,30 @@ WidgetChrome {
                 color: w.thresholdState === "Critical" || w.thresholdConfigError.length
                     ? theme.error : w.thresholdState === "Warning"
                         ? theme.warning : theme.textSecondary
-                font.pixelSize: Math.max(15, Math.round(w.labelPx * 0.85))
+                font.pixelSize: Math.max(theme.fontMinimum,
+                                         Math.round(w.labelPx * 0.85))
                 wrapMode: Text.WordWrap
             }
-            Text {
+            Item {
                 visible: w.showLabel && w.errText.length > 0 && w.errorHelp.length > 0
-                Layout.alignment: Qt.AlignHCenter
                 Layout.fillWidth: true
-                horizontalAlignment: Text.AlignHCenter
-                text: w.errorHelp
-                color: theme.textSecondary
-                font.pixelSize: Math.max(15, Math.round(w.labelPx * 0.8))
-                wrapMode: Text.WordWrap
+                Layout.preferredHeight: errorHelpText.contentHeight
+                Layout.minimumHeight: errorHelpText.contentHeight
+                Text {
+                    id: errorHelpText
+                    objectName: "kpiErrorHelp"
+                    width: parent.width
+                    height: contentHeight
+                    horizontalAlignment: Text.AlignHCenter
+                    text: w.errorHelp
+                    color: theme.textSecondary
+                    font.pixelSize: Math.max(theme.fontMinimum,
+                                             Math.round(w.labelPx * 0.8))
+                    wrapMode: Text.WordWrap
+                }
             }
 
-            Item { Layout.fillHeight: true; visible: !w.split }
+            Item { Layout.fillHeight: true; visible: !w.contentSplit }
         }
 
         // ── The trend, and the stats it explains ──
@@ -541,18 +608,22 @@ WidgetChrome {
             // Only a SPLIT box hands its slack to the trend column (there the two
             // columns are side by side and the trend has the full height to use).
             // A stacked box gives the slack to the NUMBER - see the Sparkline.
-            Layout.fillHeight: w.split
+            Layout.fillHeight: w.contentSplit
+            Layout.rightMargin: w.compactRefreshPlacement && w.contentSplit
+                                ? theme.touchTertiary + theme.spacingSm : 0
             spacing: theme.spacingXs
 
             Sparkline {
+                objectName: "kpiTrendChart"
                 visible: w.showSpark
                 Layout.fillWidth: true
-                Layout.fillHeight: w.split
+                Layout.fillHeight: w.contentSplit
                 // The trend SUPPORTS the number; it does not replace it. On
                 // fillHeight it took ~60% of a 1x3 panel and the widget stopped
                 // being a KPI - so it takes a FRACTION of the box (a bigger one
                 // once there is room) and the value block absorbs the rest.
-                Layout.preferredHeight: w.expanded ? 70
+                Layout.minimumHeight: w.expanded ? w.chartDetailHeight : 0
+                Layout.preferredHeight: w.expanded ? w.chartDetailHeight
                     : Math.max(20, Math.min(w.height * (w.roomy ? 0.26 : 0.16),
                                             w.roomy ? 640 : 120))
                 values: w.chartHistory
@@ -566,7 +637,9 @@ WidgetChrome {
                            + (w.unit.length ? " " + w.unit : "")
                 }
                 primaryLabel: w.label.length ? w.label : w.title
-                showStatistics: !w.showStats
+                showAxes: w.detailedChart
+                showStatistics: w.detailedChart && !w.showStats
+                statisticsLabel: ""
             }
             // min / avg / max over the window - the large sizes' extra content.
             RowLayout {
@@ -584,6 +657,7 @@ WidgetChrome {
                         Layout.fillWidth: true
                         spacing: 0
                         Text {
+                            objectName: "kpiStatLabel-" + statCell.modelData
                             Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
                             text: statCell.modelData
                             color: theme.textTertiary
@@ -592,6 +666,7 @@ WidgetChrome {
                             font.letterSpacing: 1
                         }
                         Text {
+                            objectName: "kpiStatValue-" + statCell.modelData
                             Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
                             text: w.stats ? w.fmt(w.stats[statCell.modelData]) : "-"
                             color: theme.textSecondary; font.family: theme.fontMono
@@ -610,7 +685,7 @@ WidgetChrome {
     Rectangle {
         id: refreshBtn
         objectName: "kpiRefreshButton"
-        visible: w.configured && !w.micro
+        visible: w.configured && w.showInlineRefresh
         anchors.right: parent.right; anchors.bottom: parent.bottom
         anchors.rightMargin: theme.spacingXs; anchors.bottomMargin: theme.spacingXs
         width: theme.touchTertiary; height: theme.touchTertiary; radius: width / 2

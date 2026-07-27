@@ -15,13 +15,19 @@ JSON report exists for the release candidate and has `"qualified": true`.
 | Startup | one cold process launch | empty dashboard | first non-null Wayland buffer commit `< 2s` |
 | Idle | 5 minutes after 30s warm-up | 0 widgets | average CPU `< 1%`, peak process-tree RSS `< 150MiB` |
 | Active | 5 minutes after 30s warm-up | exactly 10 updating widgets | average CPU `< 5%`, peak process-tree RSS `< 250MiB` |
-| Idle soak | 24 hours after 30s warm-up | 0 widgets | CPU `< 1%`, RSS `< 150MiB`, median-window RSS growth `< 10%` |
-| Extended idle soak | 48 hours after 30s warm-up | 0 widgets | CPU `< 1%`, RSS `< 150MiB`, median-window RSS growth `< 10%` |
+| Owner-approved extended observation | 30 minutes after 30s warm-up | exactly 14 widgets | complete 30s samples, startup pass, average and steady CPU `< 5%`, peak RSS `< 250MiB`, GPU memory available, finite CPU/RSS/FD/thread slopes |
 
 The active load is a fixed manifest: CPU, GPU, RAM, network, disk, sensors,
 digital clock, analog clock, a running focus timer, and a running break timer.
 It avoids network-backed widgets so a service outage cannot turn a performance
 run into a different workload.
+
+The 30-minute load is CPU, GPU, RAM, network, disk, packages, system age,
+digital clock, analog clock, moon, right now, notes, habit, and hydration. The
+release owner explicitly waived the former 48-hour idle soak for 1.0.0. The
+30-minute run is the required substitute and records that accepted risk. It does
+not claim 48-hour endurance. The `idle-24h` and `idle-48h` modes remain available
+for optional diagnosis, but neither blocks this release.
 
 The sampler uses the Linux convention that 100% CPU is one fully occupied
 logical core. It follows the Hub's complete descendant tree and sums RSS,
@@ -60,29 +66,27 @@ pixels submitted to the compositor. Control-socket readiness is recorded only
 as a diagnostic and never accepted as first-render evidence.
 
 The short run includes RSS trend data for regression diagnosis, but it **does
-not satisfy the 24-hour or 48-hour requirement**. Those modes wait the complete
-wall-clock intervals:
+not satisfy the required 30-minute 14-widget observation**. Run the accepted
+substitute with:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 python3 tests/performance/run_hub_profiles.py \
-  --mode idle-24h --hub cmake-build-performance-local/xeneon-edge-hub \
-  --output-dir /tmp/xeneon-performance-idle-24h
-
-PYTHONDONTWRITEBYTECODE=1 python3 tests/performance/run_hub_profiles.py \
-  --mode idle-48h --hub cmake-build-performance-local/xeneon-edge-hub \
-  --output-dir /tmp/xeneon-performance-idle-48h
+PYTHONDONTWRITEBYTECODE=1 python3 tests/performance/run_audit_14_widget_30m.py \
+  --hub cmake-build-performance-local/xeneon-edge-hub \
+  --output-dir /tmp/xeneon-performance-14-widget-30m
 ```
 
-The 48-hour report also evaluates the first real 24-hour prefix as an
-independent checkpoint. A day-one leak cannot be hidden by RSS falling again on
-day two. The strict release manifest runs the short profile and this literal
-48-hour profile; either non-zero result blocks release.
+The strict release manifest runs the short profile and this literal 30-minute
+profile; either non-zero result blocks release. For optional longer diagnosis,
+`run_hub_profiles.py` still accepts `--mode idle-24h` and
+`--mode idle-48h`. The 48-hour report evaluates its first real 24-hour prefix as
+an independent checkpoint, but those optional modes are not part of the 1.0.0
+release verdict.
 
 Each output directory must be empty. This prevents a new summary from being
 mistakenly combined with stale evidence. Preserve the directory with the other
 release artifacts. The runner appends a JSONL sample trace as it works and
 flushes a progress checkpoint every five minutes, so a crash still leaves
-diagnostic evidence rather than an empty 48-hour run.
+  diagnostic evidence rather than an empty observation.
 
 To profile an already-running process against the same immutable contracts:
 
@@ -103,9 +107,9 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/performance/resource_probe.py sample \
   on the separate NetHub/no-egress tests for network policy.
 - Touch-to-photon latency and per-widget update latency are different
   requirements. Resource reports do not claim to measure either one.
-- A passing 24-hour or 48-hour report proves only the measured idle scenario.
-  Disconnect/reconnect and suspend/resume endurance scenarios remain separate
-  stability tests.
+- A passing 30-minute substitute proves only the measured 14-widget scenario.
+  It does not erase the accepted 48-hour endurance risk. Disconnect/reconnect
+  and suspend/resume scenarios remain separate stability tests.
 
 The profile runner accepts only a CMake `Release` candidate with
 `XENEON_COVERAGE=OFF` and `XENEON_QA_HOOKS=OFF`; it records the executable's

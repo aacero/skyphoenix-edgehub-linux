@@ -129,12 +129,17 @@ WidgetChrome {
     // tile falls back to the bare footer count - and routine declares no 0.5x0.5,
     // so that path exists for a standalone host (tests, the Manager preview).
     readonly property bool showSummary: !w.micro
-    // Every row is a real touch target. This is NOT scaled down for small tiles:
-    // a tick is the only thing you do here.
-    readonly property real rowH: Math.max(theme.touchTertiary, 60)
     readonly property real rowFont: w.expanded ? Math.max(theme.fontLabel, 17)
-        : Math.max(17,
+        : Math.max(17, theme.fontMinimum,
                    Math.min((w.horiz ? width * 0.5 : width) * 0.038, 21))
+    readonly property int rowLabelLines: w.horiz ? 2
+        : w.lay_w() < 380 ? 3
+        : w.lay_w() < 600 ? 2 : 1
+    // Every row is a real touch target. It also grows with the active type
+    // scale and the number of label lines, so accessibility text does not get
+    // squeezed back into the old fixed-height row.
+    readonly property real rowH: Math.max(theme.touchTertiary, 60,
+        Math.ceil(w.rowFont * 1.35 * w.rowLabelLines + 8))
     readonly property real boxSize: w.expanded ? 28 : Math.max(20, Math.min(w.rowH * 0.5, 28))
 
     function toggle(step) {
@@ -155,7 +160,8 @@ WidgetChrome {
         text: w.expanded ? "Add and arrange routine steps in settings."
                          : "Add steps\nin settings"
         color: theme.textPrimary
-        font.pixelSize: w.expanded ? Math.max(theme.fontLabel, 18) : 17
+        font.pixelSize: w.expanded ? Math.max(theme.fontLabel, 18)
+                                   : theme.fontMinimum
         font.bold: true
         horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
     }
@@ -180,12 +186,14 @@ WidgetChrome {
             spacing: theme.spacingSm
 
             Text {
+                objectName: "routineSummaryText"
                 Layout.fillWidth: true
                 text: !w.isActiveToday() ? "Rest day, nothing scheduled"
                       : w.allDone ? "All done for today ✓"
                                 : w.doneCount + " of " + w.stepList.length + " done"
                 color: w.allDone ? theme.success : theme.textPrimary
-                font.pixelSize: Math.round(w.rowFont * 0.95)
+                font.pixelSize: Math.max(theme.fontMinimum,
+                                         Math.round(w.rowFont * 0.95))
                 font.bold: true
                 elide: Text.ElideRight
             }
@@ -263,9 +271,11 @@ WidgetChrome {
                             border.width: 2
                             border.color: stepRow.done ? w.effAccent : theme.cardBorder
                             Text {
+                                objectName: "routineStepCheck-" + stepRow.modelData.key
                                 anchors.centerIn: parent; visible: stepRow.done
                                 text: "✓"; color: "#0D1117"; font.bold: true
-                                font.pixelSize: Math.round(w.boxSize * 0.58)
+                                font.pixelSize: Math.max(theme.fontMinimum,
+                                                         Math.round(w.boxSize * 0.58))
                             }
                         }
                         MouseArea {
@@ -285,6 +295,8 @@ WidgetChrome {
                         opacity: stepRow.done ? 0.72 : 1
                         font.pixelSize: Math.round(w.rowFont)
                         font.strikeout: stepRow.done
+                        wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+                        maximumLineCount: w.rowLabelLines
                         elide: Text.ElideRight
                     }
                 }

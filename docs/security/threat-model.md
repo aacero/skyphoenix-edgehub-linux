@@ -1,296 +1,325 @@
 # Threat Model
 
-**Version:** 0.1.0-draft
-**Status:** Phase 0 - Discovery
-**Last Updated:** 2026-07-11
+**Status:** Implementation-backed pre-1.0 review
 
----
+**Last verified:** 2026-07-26
 
-## Scope
+## Purpose and scope
 
-This threat model covers the Xeneon Edge Linux Hub application, including:
+This document describes the security boundaries that exist in the current Hub
+and Manager. It covers:
 
-- Application binary and all bundled components
-- Built-in widgets (Trust Levels 0-1)
-- Configuration and data storage
-- Integration adapters (system sensors, MPRIS, PipeWire)
-- Inter-process communication (future community widgets)
-- Update mechanism
-- Build and supply chain
+- The Rust core, C++ Qt hosts, and QML UI
+- First-party and opt-in user QML widgets
+- Configuration, personal widget data, and credential references
+- Manager to Hub local IPC
+- Network-backed widgets and update checks
+- Local system, D-Bus, and HID integrations
+- Diagnostics, packaging, and dependency checks
 
-**Out of Scope:**
-- Operating system security (assumed to be properly configured)
-- Physical security of the device
-- Network-level attacks (assumed handled by OS firewall)
-- Third-party widget repository security (addressed in a future update)
+It does not treat a future design as an implemented mitigation. Operating-system
+security, physical possession of the machine, and malicious code already
+running as the same user remain outside the application's containment ability.
 
----
+## Implemented architecture and boundaries
 
-## Trust Model
+The Hub and Manager are normal user processes. The Rust core is compiled as a
+static library and called through the hand-maintained C ABI in
+`core/xeneon_core.h`. C++ owns the Qt application lifecycle and system
+integration. The UI and all loaded widgets run in QML.
 
-### Trusted
-- The application binary (signed, verified)
-- Built-in widgets (shipped with the application)
-- The operating system's user isolation (the app runs as the user, not root)
-- XDG directory permissions (user-owned, ~/.config, ~/.local)
+The main boundaries are:
 
-### Untrusted
-- Community widgets (future, Trust Level 3)
-- External web content loaded by widgets
-- User-provided configuration files from external sources
-- D-Bus services (may be compromised or malicious)
-- Downloaded updates from unverified sources
+1. Unix account and filesystem permissions around configuration and the local
+   control socket
+2. Typed Rust configuration parsing and atomic persistence
+3. The `NetHub` request gate for repository-shipped QML
+4. QML `WidgetHost` load-failure handling
+5. CI dependency, egress, behavior, coverage, packaging, and visual gates
 
----
+None of these is a sandbox against arbitrary code already executing as the
+logged-in user.
 
 ## Assets
 
-| Asset | Sensitivity | Storage | Access Control |
-|-------|------------|---------|----------------|
-| Widget configuration | Low | XDG_CONFIG_HOME | User file permissions |
-| User preferences | Low | XDG_CONFIG_HOME | User file permissions |
-| API keys / tokens | High | Secret Service (future) | D-Bus secret service |
-| Widget data (notes, goals, tasks) | Medium | XDG_DATA_HOME | User file permissions |
-| System metrics (CPU, RAM, temps) | Low | In-memory only | Process memory |
-| Display EDID data | Low | XDG_CONFIG_HOME | User file permissions |
-| Log files | Medium | XDG_STATE_HOME | User file permissions |
-| Crash reports | Medium | XDG_CACHE_HOME | User file permissions |
-| Application binary | High | System package path | Root (installation), user (execution) |
-
----
-
-## Threat Actors
-
-| Actor | Motivation | Capability | Target |
-|-------|-----------|------------|--------|
-| Malicious community widget author | Data theft, system access | Can write arbitrary code in widget sandbox | User data, system access |
-| Malicious website (in web widget) | Data theft, phishing | Web platform APIs | User tokens, local data |
-| Local attacker (same machine) | Data theft, sabotage | Access to user's filesystem | Configuration, data files |
-| Remote attacker (supply chain) | Malware distribution | Can compromise dependencies or build pipeline | Application binary, updates |
-| Curious user | Accidental misconfiguration | Access to settings UI | Application stability |
-
----
-
-## Threat Scenarios and Mitigations
-
-### T-001: Malicious Community Widget Escapes Sandbox
-
-**Severity:** Critical
-**Likelihood:** Medium (once community widgets are supported)
-**Attack Vector:** A community widget (.wasm) exploits a vulnerability in the WASM runtime or host API to escape the sandbox and execute arbitrary code.
-
-**Mitigations:**
-- Use hardened WASM runtime (wasmtime) with fuel metering and epoch interruption
-- Restrict WASM system interface (WASI) to minimal capabilities
-- Host API is capability-based: widgets can only call explicitly granted functions
-- No filesystem, network, or process access by default
-- Resource limits: max memory, max CPU time, max execution duration
-- Regular wasmtime updates for security patches
-- Widget permissions declared in manifest, reviewed by user
-
-**Residual Risk:** Low. WASM sandboxing is well-proven. Zero-day in wasmtime is the primary concern.
-
----
-
-### T-002: Malicious External Web Content Accesses Local APIs
-
-**Severity:** High
-**Likelihood:** Medium (when web content widget is implemented)
-**Attack Vector:** A web content widget loads a malicious webpage that exploits browser engine vulnerabilities or attempts to access local resources.
-
-**Mitigations:**
-- Web content widget uses a restricted WebView (Qt WebEngine with disabled JavaScript APIs)
-- No access to local filesystem (custom URL scheme only for approved resources)
-- No access to application internals via JavaScript bridge (bridge is disabled)
-- External URLs opened in system browser, not in widget
-- Content security policy enforced where possible
-- Widget clearly labeled as "External Web Content"
-
-**Residual Risk:** Medium. Web engine vulnerabilities are regularly discovered. Regular Qt WebEngine updates required.
-
----
-
-### T-003: Command Injection via Application Launcher Widget
-
-**Severity:** High
-**Likelihood:** Medium
-**Attack Vector:** User (or imported configuration) specifies a malicious command in the application launcher widget. Command is executed with user's privileges.
-
-**Mitigations:**
-- Custom commands require explicit user approval with a clear warning dialog
-- Commands are displayed in full before execution
-- No shell interpretation - commands use direct `exec()` with argument list (no `/bin/sh -c`)
-- Dangerous patterns are detected and warned about (`rm -rf`, `sudo`, `curl | sh`, etc.)
-- Whitelist of approved .desktop entries is the primary launch mechanism
-- Custom commands are clearly marked as "Custom (Unverified)" in UI
-- Command execution is logged
-- Permission `command.execution` must be explicitly granted
-
-**Residual Risk:** Low-Medium. User can still approve dangerous commands, but the system makes it explicit and difficult to do accidentally.
-
----
-
-### T-004: Configuration File Tampering
-
-**Severity:** Medium
-**Likelihood:** Low
-**Attack Vector:** A local attacker (or malware running as the same user) modifies configuration files to change application behavior, redirect widget data, or inject malicious settings.
-
-**Mitigations:**
-- Configuration is in user-owned XDG directories (standard file permissions)
-- Configuration schema is validated on load - invalid values are rejected
-- Versioned schema with migration prevents legacy attack surfaces
-- Human-readable format (TOML) makes tampering detectable
-- Sensitive values (API keys) stored in system secret service, not config files
-
-**Residual Risk:** Low. If an attacker has write access to user files, they already have equivalent access to the user's account.
-
----
-
-### T-005: D-Bus Service Impersonation
-
-**Severity:** Medium
-**Likelihood:** Low
-**Attack Vector:** A malicious D-Bus service impersonates an MPRIS player or other expected service, sending crafted data to trigger bugs or information leaks.
-
-**Mitigations:**
-- D-Bus messages are validated before use (type checking, bounds checking)
-- MPRIS metadata is treated as untrusted - sanitized before display
-- D-Bus method call timeouts prevent hanging
-- Service name validation (well-known bus names)
-- Errors from D-Bus are handled gracefully (no crash, no data corruption)
-
-**Residual Risk:** Low. D-Bus is a local IPC mechanism; attacker would already need code execution as the user.
-
----
-
-### T-006: Supply Chain Attack via Dependencies
-
-**Severity:** Critical
-**Likelihood:** Low
-**Attack Vector:** A compromised dependency (crate, npm package, system library) introduces malicious code into the application binary.
-
-**Mitigations:**
-- Dependency pinning with lockfiles (Cargo.lock)
-- Regular `cargo audit` and `cargo deny` scanning in CI
-- SBOM generation for every release
-- Signed releases with checksums
-- Minimal dependency tree (avoid large dependency graphs)
-- Prefer well-established, widely-used dependencies
-- Regular dependency updates with changelog review
-- Reproducible builds where possible
-
-**Residual Risk:** Low-Medium. Supply chain attacks are an industry-wide problem. Our mitigations follow best practices but cannot eliminate the risk entirely.
-
----
-
-### T-007: Unauthorized System Access via Sensors
-
-**Severity:** Low
-**Likelihood:** Low
-**Attack Vector:** A widget reads system sensor data (/proc, /sys) and exfiltrates it. This is low-sensitivity data but could reveal usage patterns.
-
-**Mitigations:**
-- System metrics are read by trusted core adapters, not directly by widgets
-- Metrics data is in-memory only and discarded on application exit
-- Community widgets (Level 3) cannot read /proc or /sys directly - they go through the capability API
-- Permission `system.metrics.read` required for community widgets
-- Network access is not permitted for community widgets by default
-- Exfiltration would require a separate vulnerability (e.g., network access granted)
-
-**Residual Risk:** Very Low. System metrics are low-value data. Exfiltration requires multiple permission grants.
-
----
-
-### T-008: Crash Report Contains Sensitive Data
-
-**Severity:** Medium
-**Likelihood:** Medium
-**Attack Vector:** A crash report or diagnostics export contains sensitive information (API keys, file paths, personal data) that is exposed to developers or in logs.
-
-**Mitigations:**
-- Hub and Manager receive a structured diagnostics allowlist containing only
-  fixed labels, booleans and aggregate counts; raw config, licence/identity,
-  widget settings and opaque UI-state content never cross the Rust FFI boundary
-- Crash reports are opt-in (user must explicitly send)
-- Malformed-config logs contain only the TOML error position, never the parser's
-  source snippet or offending value
-- Config files and every canonical/corrupt backup are forced to mode `0600` on Unix
-- New credentials use secret-service references; legacy inline values remain
-  supported for migration but are treated as sensitive and never diagnosed/logged
-- Diagnostics bundle is stored in user-owned directory before export
-- Review of diagnostics output before release to ensure no sensitive leaks
-
-**Residual Risk:** Low. The configuration summary is allowlisted rather than
-pattern-redacted, so novel opaque UI fields are omitted by default.
-
----
-
-### T-009: Autostart Hijacking
-
-**Severity:** Low
-**Likelihood:** Low
-**Attack Vector:** A malicious actor modifies the autostart .desktop file to add malicious arguments or redirect the application.
-
-**Mitigations:**
-- Autostart .desktop file is in user's XDG autostart directory (standard permissions)
-- Application validates its own command-line arguments at startup
-- No sensitive operations triggered by command-line arguments
-- --reset flag is the only significant CLI argument and it clears configuration safely
-
-**Residual Risk:** Very Low. Modifying autostart requires user-level file access.
-
----
-
-### T-010: Resource Exhaustion (Denial of Service by Widget)
-
-**Severity:** Medium
-**Likelihood:** Medium (post-MVP)
-**Attack Vector:** A community widget consumes excessive CPU, memory, or file descriptors, degrading the dashboard or the entire system.
-
-**Mitigations:**
-- Built-in widgets (MVP): timeout guards on update calls; slow widgets are throttled
-- Community widgets (Phase 7): WASM resource limits (memory cap, fuel metering)
-- Widget disable-on-repeated-failure (3 errors in 5 minutes)
-- User can manually disable any widget
-- Safe mode disables all non-built-in widgets
-
-**Residual Risk:** Low. Resource limits are effective for WASM. Built-in widgets are trusted by definition.
-
----
-
-## Security Controls Summary
-
-| Control | MVP (Phase 1-6) | Post-MVP (Phase 7+) |
-|---------|-----------------|---------------------|
-| Widget sandbox (WASM) | N/A (no community widgets) | ✅ wasmtime with resource limits |
-| Permission system | N/A | ✅ Manifest-declared, user-approved, enforced |
-| Secret storage | File-based (acceptable for MVP, no API keys in MVP) | Secret Service (D-Bus) |
-| Command execution guard | ✅ Warning dialog + no shell | ✅ Enhanced with permission system |
-| Input validation | ✅ All external data validated | ✅ |
-| Dependency scanning | ✅ cargo audit in CI | ✅ |
-| SBOM generation | ✅ | ✅ |
-| Signed releases | ✅ GPG or minisign | ✅ |
-| Diagnostics redaction | ✅ Pattern-based | ✅ Enhanced |
-| Content Security Policy | N/A (no web content widget) | ✅ For web content widget |
-| Log sanitization | ✅ tracing filter rules | ✅ |
-| Safe mode | ✅ --reset and --safe-mode flags | ✅ |
-
----
-
-## Vulnerability Reporting
-
-Security vulnerabilities should be reported privately to the maintainers. See [SECURITY.md](../../SECURITY.md) for the full process.
-
-**Response Timeline:**
-- Acknowledgment: within 48 hours
-- Initial assessment: within 5 business days
-- Fix release: depends on severity (Critical: 7 days, High: 30 days, Medium: 90 days)
-
----
-
-## Related Documents
-
-- [Widget Permissions](widget-permissions.md) (to be created)
-- [SECURITY.md](../../SECURITY.md)
-- [ADR-0002: Widget Runtime](../adr/0002-widget-runtime.md)
+| Asset | Storage or transport | Current protection |
+|-------|----------------------|--------------------|
+| Layout, appearance, notes, tasks, habits, schedules, and widget settings | `config.toml` | Current Unix writes use mode `0600`; atomic save; stale-handle writes are rejected; no encryption |
+| Pro licence key and holder data | `config.toml`; Manager/Hub IPC; process memory | Mode `0600`; omitted from diagnostics; offline signature verification; no encryption |
+| HTTP/KPI bearer tokens and private calendar URLs | Literal or reference in `config.toml`; resolved value in memory during a request | `${env:VAR}` and `file:/path` avoid persisting the resolved value; literals remain plain text |
+| Live UI state | Local control socket | Same-user socket access only; no application-level authentication or encryption |
+| System metrics and display identity | `/proc`, `/sys`, Qt display APIs, and process memory | Read by the user process; exposed to loaded QML |
+| Media metadata and controls | Session D-Bus | Local user-session D-Bus; input is treated as external data |
+| Orientation events | Authorized HID device | Device-node permissions and parser validation |
+| User QML widgets | `$XDG_DATA_HOME/xeneon-edge-hub/widgets` | Disabled by default; manifest validation; no runtime sandbox |
+| Logs and local Diagnostics view | stdout/stderr and in-process view | Redacted config summary; no built-in upload or bundle export |
+| Release artifacts | Package/release channels | Release tooling supports signatures and checksums; reproducible builds are not claimed |
+
+## Trust assumptions
+
+### Trusted for the current product model
+
+- The exact application binaries and first-party QML installed from the chosen
+  package or release artifact
+- The operating system's user isolation and runtime-directory semantics
+- The logged-in user when they choose configuration, local files, and user
+  widgets
+
+### Untrusted inputs
+
+- Configuration imported or modified outside the application
+- HTTP responses, calendar feeds, weather responses, and update metadata
+- MPRIS service names, properties, metadata, and artwork URLs
+- HID packets and display metadata
+- User-widget manifests and QML files until the user explicitly chooses to
+  trust and enable them
+- Dependencies and build inputs until checked by the relevant build gates
+
+## Threats and current controls
+
+### TM-01: Unsandboxed user widget
+
+An enabled user widget is arbitrary QML in the Hub process. It can read data
+available to that process, allocate resources, issue its own network requests,
+and bypass `NetHub`.
+
+Current controls:
+
+- User widgets default to disabled.
+- Managed policy can disable them.
+- Manifest validation rejects malformed entries, traversal-shaped entry names,
+  unsupported field types, duplicate types, and shipped-type collisions.
+- A compile or load failure renders a local "Widget unavailable" tile.
+- Documentation tells users to treat a user widget like any other local
+  program.
+
+Residual risk: high after the user enables untrusted QML. There is no WASM
+runtime, process isolation, capability API, permission prompt, or runtime
+resource quota.
+
+### TM-02: Same-user process drives the Hub
+
+A process running under the same Unix account can attempt to connect to the
+Manager control socket and send supported protocol messages. Those messages can
+read live UI state and change layout, display selection, startup settings, or
+the licence key, and can request a graceful Hub shutdown.
+
+Current controls:
+
+- The primary path is under `$XDG_RUNTIME_DIR`.
+- The fallback path is accepted only in an owner-matched, mode-`0700`
+  per-user directory.
+- `QLocalServer::UserAccessOption` is set.
+- Messages are newline framed, JSON parsed, type checked on sensitive fields,
+  and an unframed receive buffer over 8 MiB causes that connection to be
+  dropped.
+
+Residual risk: another process under the same account is inside the trusted
+local-user boundary. There is no application-level peer authentication,
+authorization, or transport encryption.
+
+### TM-03: Sensitive values exposed at rest
+
+Literal tokens, private URLs, personal widget content, and the Pro key may be
+stored in `config.toml`.
+
+Current controls:
+
+- Files created or replaced by current Unix persistence and application-created
+  backups use mode `0600`.
+- The config leaf directory is owner-matched and mode `0700`; a mode-`0600`
+  cross-process lock serializes Hub and Manager file transactions.
+- Normal saves use an exclusive, no-follow same-directory temporary file, file
+  fsync, rename, and directory fsync.
+- `${env:VAR}` and `file:/path` references are resolved only for the request and
+  are not replaced by the resolved value on disk.
+- Diagnostics copy only fixed non-secret fields and aggregate counts.
+- Parse-error logs retain a source-free position rather than the offending TOML
+  line.
+
+Residual risk: the configuration is not encrypted. A same-user compromise or a
+lost, unencrypted storage device can expose it. `secret://` keyring references
+are not implemented.
+
+### TM-04: Configuration corruption, downgrade, or incompatible schema
+
+An interrupted write or incompatible application version could destroy user
+state or reinterpret configuration.
+
+Current controls:
+
+- Normal saves are serialized across processes, atomic, symlink-safe, and
+  include file and directory fsync.
+- Corrupt input must be copied byte-for-byte to a unique owner-only backup
+  before best-effort scalar salvage is returned. A backup failure aborts the
+  load, so callers never receive writable salvaged/default state while the
+  corrupt source is the only recovery copy.
+- Reset writes and fsyncs a canonical backup of the held source bytes, verifies
+  the live pathname still names that file, then removes it and fsyncs the
+  directory.
+- Older schema migration preserves exact source bytes in a unique, mode-`0600`
+  pre-migration backup before the migrated save.
+- A valid future outer or dashboard schema is rejected without changing its
+  bytes. Malformed dashboard JSON cannot enter a writable handle or receive a
+  successful Hub IPC acknowledgement.
+- A missing migration step fails closed.
+- Config loads accept only a current-user regular file, never follow the final
+  path as a symlink, and enforce a 16 MiB upper bound.
+
+Residual risk: backups live on the same storage device and are not a substitute
+for an external backup. A malicious same-user writer can also modify both
+configuration and backups.
+
+### TM-05: Unauthorized or unexpected network request
+
+A first-party widget, update checker, redirect, or malicious response could
+send data to an unintended host or consume excessive resources.
+
+Current controls for repository-shipped QML:
+
+- Default configuration and starter layout are tested for zero remote egress.
+- Update checking defaults off.
+- Raw `XMLHttpRequest` is structurally confined to `NetHub`.
+- `NetHub` provides an offline switch, optional host allowlist, timeouts,
+  response-size limits, and HTTPS enforcement for bearer credentials.
+- Qt network redirects are restricted to the same origin.
+- MPRIS artwork is restricted to readable local files or bundled resources.
+- Passive Manager and preset previews use an offline `NetHub`.
+- CI runs network-namespace scenarios and negative controls.
+
+Residual risk: an enabled user QML widget can bypass these controls. A configured
+first-party network widget necessarily sends the requested data to its selected
+service. Session counters are observability, not a historical audit log.
+
+### TM-06: Malicious or malformed external data
+
+HTTP payloads, calendar feeds, D-Bus metadata, system files, and HID packets can
+be malformed, oversized, stale, or intentionally hostile.
+
+Current controls:
+
+- Network requests have a default 1 MiB response cap and timeout. NetHub passes
+  that byte limit to the native network manager, which removes the private
+  header before egress and aborts the transport before an oversized body is
+  fully buffered. Callers may lower the limit or raise it only to the 2 MiB hard
+  ceiling used by calendar feeds.
+- Widget parsers expose error and stale states rather than treating missing data
+  as a measurement.
+- MPRIS artwork URLs are reduced to local or bundled sources.
+- The local KPI file reader accepts only canonical paths under an allowlist of
+  roots and caps reads.
+- HID and display matching code validate input shape before using it.
+- Automated boundary and failure-path tests cover enumerated cases.
+
+Residual risk: parsers and Qt remain attack surface. Test coverage is evidence
+for enumerated behavior, not proof that every malformed input is harmless.
+
+### TM-07: One widget affects the whole process
+
+First-party and user widgets share the QML engine. A Loader compile/load error is
+contained to one host, but arbitrary runtime behavior, excessive allocation, or
+a Qt/native crash can affect the page or terminate the Hub.
+
+Current controls:
+
+- `WidgetHost` exposes `Loader.Error` as a visible per-tile fallback.
+- First-party widgets receive explicit active/foreground lifecycle state.
+- Automated tests cover load failures, boundary states, and the known
+  tree-walk memory regression.
+- `--safe-mode` prevents every `WidgetHost` from instantiating first-party or
+  user widget QML, prevents user-widget directory scanning, and does not seed or
+  rewrite widget settings. The shell, settings, and diagnostics remain usable
+  for recovery. The gate lasts for one process and is not a sandbox.
+
+Residual risk: there is no process-level fault isolation, watchdog restart, or
+per-widget CPU and memory quota.
+
+### TM-08: Diagnostics or logs disclose private data
+
+Logs or diagnostic output could reveal tokens, private calendar URLs, notes, or
+licence holder information.
+
+Current controls:
+
+- The Rust diagnostics summary uses an allowlist and omits raw configuration,
+  arbitrary `ui_state`, licence values, and widget settings.
+- Configuration and policy TOML parse errors log only a source-free location.
+- Reference-resolution errors name a variable or file path, not the secret
+  value.
+- There is no crash-report uploader or diagnostics-bundle export.
+
+Residual risk: logs can still include filesystem paths, display metadata, host
+names, and text emitted by Qt or user QML. Users should review logs before
+sharing them.
+
+### TM-09: Supply-chain or packaging compromise
+
+A dependency, workflow, packaging recipe, signing process, or release account
+could introduce malicious or untracked bytes.
+
+Current controls:
+
+- Rust dependency resolution is locked.
+- CI runs `cargo deny check` for advisories, licences, bans, and sources.
+- CI separately enforces Rust and C++ line-coverage thresholds.
+- Compiled-resource QML, behavior requirements, native package installation,
+  removal, and AppImage smoke are tested by their configured workflows.
+- Release tooling requires a clean signed candidate, creates a signed-set
+  CycloneDX SBOM before `SHA256SUMS`, and creates checksums and signatures after
+  the strict test gate.
+
+Limitations:
+
+- The automatic CycloneDX workflow is an unsigned Rust-core inventory, not the
+  release SBOM. The local release SBOM combines Cargo and Syft findings for the
+  exact payload set, but dependency identification remains explicitly
+  incomplete where catalogers or dynamically loaded system libraries cannot
+  provide a complete inventory. A prerelease without Syft is marked as a
+  fallback inventory.
+- Build reproducibility is not established.
+- Hardware, touch, performance, long-duration stability, key use, and public
+  publication are release-candidate activities, not ordinary per-commit CI.
+
+## Managed policy boundary
+
+`/etc/xeneon-edge-hub/policy.toml` can pin offline mode, allowed hosts, a preset,
+disabled widget types, and user widgets off. Invalid present policy fails closed
+for egress and user-widget loading.
+
+This is an administration control for a managed session, not DRM and not a
+boundary against the logged-in user. `XENEON_POLICY_PATH`, replacement binaries,
+and user-controlled process environments mean a user who controls their session
+can bypass the shipped policy mechanism. A managed deployment must control
+binary provenance and the launch environment.
+
+## Features that are not security controls
+
+The following are not implemented and must not be cited as mitigations:
+
+- WASM or wasmtime widget sandboxing
+- A runtime widget permission system
+- QML context isolation for third-party widgets
+- General custom-command execution or command approval
+- A web-content widget or Content Security Policy
+- OS keyring storage through `secret://`
+- Crash-report upload or diagnostics-bundle export
+- Bit-for-bit reproducible builds
+
+## Licensing release risk
+
+The Hub imports `QtQuick.VirtualKeyboard` and links `Qt6::VirtualKeyboard`.
+Qt's official documentation describes Qt Virtual Keyboard as commercial or
+GPLv3 and lists it among modules that are not available under LGPLv3 for
+open-source use. The release owner has not yet recorded the licensing
+disposition. This is a release-readiness issue, not a runtime security control.
+No statement here is legal advice or a claim of licensing completeness.
+
+- [Qt licensing](https://doc.qt.io/qt-6/licensing.html)
+- [Qt Virtual Keyboard licensing](https://doc.qt.io/qt-6/qtvirtualkeyboard-index.html)
+
+## Verification references
+
+- Security policy and exact CI trigger summary: [SECURITY.md](../../SECURITY.md)
+- User-widget execution model: [Widget manifest specification](../widgets/manifest-spec.md)
+- Managed configuration: [Managed configuration](managed-config.md)
+- Release test inventory: [Development and test plan](../DEV_AND_TEST_PLAN.md)

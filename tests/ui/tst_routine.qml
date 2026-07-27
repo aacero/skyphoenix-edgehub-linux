@@ -459,5 +459,48 @@ Item {
             verify(overflow !== null && overflow.visible)
             verify(overflow.Accessible.name.indexOf("more routine steps") >= 0)
         }
+
+        function test_narrow_maximum_type_keeps_labels_and_state_complete() {
+            tryVerify(function () { return rTall.ready }, 3000)
+            rTall.theme.textScale = 1.45
+            var r = rTall.item
+            r.sizeClass = "tall"
+            var lines = []
+            for (var i = 1; i <= 7; i++)
+                lines.push("Complete morning preparation step " + i)
+            rTall.storeCtl.patchSettings(rTall.instanceId, {
+                steps: lines.join("\n"),
+                day: r.dayKey,
+                done: [lines[0], lines[1]]
+            })
+            wait(32)
+            verify(r.rowFont >= rTall.theme.fontMinimum,
+                   "row labels follow the active minimum type token")
+            var labels = root.findAll(r, function (n) {
+                return String(n.objectName).indexOf("routineStepLabel-") === 0
+            }, [])
+            verify(labels.length >= 7, "all seven narrow rows are instantiated")
+            for (var l = 0; l < labels.length; l++) {
+                verify(labels[l].font.pixelSize >= rTall.theme.fontMinimum)
+                compare(labels[l].truncated, false,
+                        labels[l].text + " remains complete")
+                verify(labels[l].lineCount <= r.rowLabelLines,
+                       labels[l].text + " stays within the responsive row budget")
+            }
+            var checks = root.findAll(r, function (n) {
+                return String(n.objectName).indexOf("routineStepCheck-") === 0
+                       && n.visible
+            }, [])
+            compare(checks.length, 2, "two completed steps render two state marks")
+            for (var c = 0; c < checks.length; c++)
+                verify(checks[c].font.pixelSize >= rTall.theme.fontMinimum,
+                       "completed-state marks meet the active type floor")
+            var summary = root.findAll(r, function (n) {
+                return n.objectName === "routineSummaryText"
+            }, [])[0]
+            verify(summary && summary.font.pixelSize >= rTall.theme.fontMinimum,
+                   "summary text meets the active type floor")
+            rTall.theme.textScale = 1.15
+        }
     }
 }

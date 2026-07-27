@@ -1,49 +1,80 @@
 cmake_minimum_required(VERSION 3.22)
-project(XeneonEdgeLinuxHub VERSION 0.1.0 LANGUAGES CXX)
+project(XeneonEdgeLinuxHub VERSION 1.0.0 LANGUAGES CXX)
 
 # --- Build version string (git-derived, overridable) ---
-# project VERSION stays 0.1.0 across commits, so derive a distinguishing string
-# from git (e.g. "5c3baec" / "v0.1.0-37-g5c3baec-dirty"). Packaged builds have no
-# .git, so the PKGBUILD passes -DXENEON_VERSION_OVERRIDE=<pkgver>.
+# A checkout derives a distinguishing string from Git. A `git archive` source
+# release has no `.git`, so `.git_archival.txt` carries Git's export-substituted
+# describe value. Packagers may still provide an explicit authoritative
+# XENEON_VERSION_OVERRIDE.
+find_package(Git QUIET)
 if(DEFINED XENEON_VERSION_OVERRIDE AND XENEON_VERSION_OVERRIDE)
     set(XENEON_GIT_VERSION "${XENEON_VERSION_OVERRIDE}")
-else()
+elseif(Git_FOUND)
     execute_process(
-        COMMAND git describe --tags --always --dirty
+        COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_SOURCE_DIR}"
+                describe --tags --always --dirty
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         OUTPUT_VARIABLE XENEON_GIT_VERSION
         OUTPUT_STRIP_TRAILING_WHITESPACE
         ERROR_QUIET)
 endif()
-if(NOT XENEON_GIT_VERSION)
-    set(XENEON_GIT_VERSION "${PROJECT_VERSION}")
-endif()
-message(STATUS "Xeneon build version: ${XENEON_GIT_VERSION}")
-
-# Re-run `git describe` on every BUILD, not only on configure.
-#
-# execute_process() above runs at CONFIGURE time, so `cmake --build` alone bakes
-# in whatever the version was when the build dir was last configured. Every
-# incremental dev build therefore reported a stale version - the exact confusion
-# that had a test run reporting r190 while r200 was installed. This target makes
-# a reconfigure happen whenever HEAD moves, so the version tracks the tree.
-if(NOT (DEFINED XENEON_VERSION_OVERRIDE AND XENEON_VERSION_OVERRIDE))
-    find_package(Git QUIET)
-    if(GIT_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
-        # Touching CMakeLists when HEAD changes forces CMake to re-run its own
-        # configure step, which re-evaluates git describe. Cheap, and it uses
-        # CMake's normal dependency machinery instead of a second version path
-        # that could disagree with the first.
-        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-                     "${CMAKE_SOURCE_DIR}/.git/HEAD")
-        if(EXISTS "${CMAKE_SOURCE_DIR}/.git/refs/heads")
-            file(GLOB _xe_heads "${CMAKE_SOURCE_DIR}/.git/refs/heads/*")
-            foreach(_h ${_xe_heads})
-                set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_h}")
-            endforeach()
+if(NOT XENEON_GIT_VERSION
+   AND EXISTS "${CMAKE_SOURCE_DIR}/.git_archival.txt")
+    file(STRINGS "${CMAKE_SOURCE_DIR}/.git_archival.txt"
+         _xeneon_archive_describe
+         REGEX "^describe-name:[ \t]*")
+    list(LENGTH _xeneon_archive_describe _xeneon_archive_describe_count)
+    if(_xeneon_archive_describe_count EQUAL 1)
+        list(GET _xeneon_archive_describe 0 XENEON_GIT_VERSION)
+        string(REGEX REPLACE "^describe-name:[ \t]*" ""
+               XENEON_GIT_VERSION "${XENEON_GIT_VERSION}")
+        if(XENEON_GIT_VERSION MATCHES "\\$Format:")
+            set(XENEON_GIT_VERSION "")
         endif()
     endif()
 endif()
+if(NOT XENEON_GIT_VERSION)
+    set(XENEON_GIT_VERSION "${PROJECT_VERSION}")
+endif()
+# Tags use the conventional leading "v", while application, AppImage, DEB,
+# RPM, TGZ and Arch package versions do not. Canonicalize once before the value
+# reaches either binary or any packaging generator so format-specific build
+# paths cannot disagree about the visible application identity.
+string(REGEX REPLACE "^v" "" XENEON_GIT_VERSION "${XENEON_GIT_VERSION}")
+message(STATUS "Xeneon configure/package version: ${XENEON_GIT_VERSION}")
+
+# Build-time identity must follow more than HEAD. A tracked-file edit changes
+# `git describe --dirty` without touching a ref, and linked worktrees expose
+# `.git` as a pointer file rather than a directory. Run the canonical Git query
+# before every product build and generate a header through copy_if_different.
+# The target is always evaluated, while the header timestamp changes only when
+# its content changes, so normal compiler dependency tracking does the minimum
+# required rebuild.
+set(XENEON_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(XENEON_BUILD_VERSION_HEADER
+    "${XENEON_GENERATED_DIR}/xeneon_build_version.generated.h")
+set(_xeneon_version_command
+    "${CMAKE_COMMAND}"
+    "-DXENEON_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+    "-DXENEON_OUTPUT_FILE=${XENEON_BUILD_VERSION_HEADER}"
+    "-DXENEON_FALLBACK_VERSION=${XENEON_GIT_VERSION}")
+if(DEFINED XENEON_VERSION_OVERRIDE AND XENEON_VERSION_OVERRIDE)
+    list(APPEND _xeneon_version_command
+         "-DXENEON_VERSION_OVERRIDE=${XENEON_VERSION_OVERRIDE}")
+elseif(Git_FOUND)
+    list(APPEND _xeneon_version_command
+         "-DXENEON_GIT_EXECUTABLE=${GIT_EXECUTABLE}")
+endif()
+list(APPEND _xeneon_version_command
+     -P "${CMAKE_SOURCE_DIR}/cmake/GenerateBuildVersion.cmake")
+add_custom_target(xeneon_build_version ALL
+    COMMAND ${_xeneon_version_command}
+    BYPRODUCTS "${XENEON_BUILD_VERSION_HEADER}"
+    COMMENT "Refreshing exact EdgeHub build identity"
+    VERBATIM)
+set_source_files_properties("${XENEON_BUILD_VERSION_HEADER}" PROPERTIES
+    GENERATED TRUE
+    HEADER_FILE_ONLY TRUE)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -105,9 +136,12 @@ file(GLOB_RECURSE RUST_SOURCES CONFIGURE_DEPENDS "${RUST_CORE_DIR}/src/*.rs")
 # Custom command to build the rust library
 add_custom_command(
     OUTPUT ${RUST_LIB}
-    COMMAND ${CARGO_EXECUTABLE} build ${CARGO_BUILD_FLAG} --manifest-path "${RUST_CORE_DIR}/Cargo.toml"
+    COMMAND ${CARGO_EXECUTABLE} build --locked ${CARGO_BUILD_FLAG} --manifest-path "${RUST_CORE_DIR}/Cargo.toml"
     WORKING_DIRECTORY "${RUST_CORE_DIR}"
-    DEPENDS ${RUST_SOURCES} "${RUST_CORE_DIR}/Cargo.toml"
+    DEPENDS
+        ${RUST_SOURCES}
+        "${RUST_CORE_DIR}/Cargo.toml"
+        "${RUST_CORE_DIR}/Cargo.lock"
     COMMENT "Building Rust core library..."
     USES_TERMINAL
 )
@@ -117,13 +151,17 @@ add_custom_target(rust_core ALL DEPENDS ${RUST_LIB})
 # --- Build C++ Application ---
 add_executable(xeneon-edge-hub
     app/src/main.cpp
+    app/src/build_version.h
     app/src/mpris_bridge.cpp
     app/src/mpris_state.cpp
     app/src/control_server.cpp
+    app/src/control_protocol.h
     app/src/orientation_sensor.cpp
     app/src/autostart.cpp
     app/src/display_match.cpp
     app/src/config_bridge.h
+    app/src/config_transaction.h
+    app/src/ui_state_recovery.h
     app/src/license_bridge.h
     app/src/metrics_worker.h
     app/src/timezone_bridge.h
@@ -131,6 +169,8 @@ add_executable(xeneon-edge-hub
     app/src/system_settings_probe.h
     app/src/network_access_policy.h
     app/src/notification_bridge.h
+    app/src/safe_mode_policy.h
+    "${XENEON_BUILD_VERSION_HEADER}"
     ${CMAKE_SOURCE_DIR}/ui/qml.qrc
     ${CMAKE_SOURCE_DIR}/assets/icons.qrc
     ${CMAKE_SOURCE_DIR}/assets/wallpapers.qrc
@@ -156,14 +196,16 @@ target_link_libraries(xeneon-edge-hub PRIVATE
 # Include directories
 target_include_directories(xeneon-edge-hub PRIVATE
     "${CMAKE_SOURCE_DIR}/core"
+    "${XENEON_GENERATED_DIR}"
 )
 
 # Add dependency on Rust build
-add_dependencies(xeneon-edge-hub rust_core)
+add_dependencies(xeneon-edge-hub rust_core xeneon_build_version)
 
 # QML import path
 target_compile_definitions(xeneon-edge-hub PRIVATE
     QT_DISABLE_DEPRECATED_BEFORE=0x060500
+    XENEON_USE_GENERATED_BUILD_VERSION=1
 )
 
 # Release optimizations: LTO + aggressive optimization + stripped symbols.
@@ -190,10 +232,15 @@ add_executable(xeneon-edge-manager
     manager/src/main.cpp
     manager/src/reconcile.cpp
     manager/src/manager_backend.h
+    app/src/build_version.h
+    app/src/autostart.cpp
+    app/src/config_transaction.h
+    app/src/ui_state_recovery.h
     app/src/timezone_bridge.h
     app/src/distro_bridge.h
     app/src/system_settings_probe.h
     app/src/network_access_policy.h
+    "${XENEON_BUILD_VERSION_HEADER}"
     ${CMAKE_SOURCE_DIR}/manager/manager.qrc
     ${CMAKE_SOURCE_DIR}/assets/icons.qrc
     ${CMAKE_SOURCE_DIR}/assets/wallpapers.qrc
@@ -218,12 +265,14 @@ target_link_libraries(xeneon-edge-manager PRIVATE
 
 target_include_directories(xeneon-edge-manager PRIVATE
     "${CMAKE_SOURCE_DIR}/core"
+    "${XENEON_GENERATED_DIR}"
 )
 
-add_dependencies(xeneon-edge-manager rust_core)
+add_dependencies(xeneon-edge-manager rust_core xeneon_build_version)
 
 target_compile_definitions(xeneon-edge-manager PRIVATE
     QT_DISABLE_DEPRECATED_BEFORE=0x060500
+    XENEON_USE_GENERATED_BUILD_VERSION=1
 )
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
@@ -247,22 +296,21 @@ if(XENEON_BUILD_TESTS)
     # qrc:/icons or qrc:/wallpapers, making rendered-pixel assertions vacuous.
     add_executable(xeneon-qmltestrunner
         tests/gui/runner.cpp
+        app/src/network_access_policy.h
         ${CMAKE_SOURCE_DIR}/assets/icons.qrc
         ${CMAKE_SOURCE_DIR}/assets/wallpapers.qrc
         ${CMAKE_SOURCE_DIR}/assets/fonts.qrc
         ${CMAKE_SOURCE_DIR}/ui/qml.qrc
         ${CMAKE_SOURCE_DIR}/manager/manager.qrc)
-    target_link_libraries(xeneon-qmltestrunner PRIVATE Qt6::QuickTest Qt6::Quick Qt6::Qml)
+    target_include_directories(xeneon-qmltestrunner PRIVATE
+        ${CMAKE_SOURCE_DIR}/app/src)
+    target_link_libraries(xeneon-qmltestrunner PRIVATE
+        Qt6::QuickTest Qt6::Quick Qt6::Qml Qt6::Network)
     target_compile_definitions(xeneon-qmltestrunner PRIVATE
         QUICK_TEST_SOURCE_DIR="${CMAKE_SOURCE_DIR}/tests/gui")
 endif()
 
 # Install
-# Surface the build version to both apps (see ManagerBackend::appVersion /
-# ConfigBridge::appVersion).
-target_compile_definitions(xeneon-edge-hub PRIVATE XENEON_VERSION="${XENEON_GIT_VERSION}")
-target_compile_definitions(xeneon-edge-manager PRIVATE XENEON_VERSION="${XENEON_GIT_VERSION}")
-
 if(XENEON_QA_HOOKS)
     target_compile_definitions(xeneon-edge-hub PRIVATE XENEON_QA_HOOKS)
     target_compile_definitions(xeneon-edge-manager PRIVATE XENEON_QA_HOOKS)
@@ -297,9 +345,18 @@ endforeach()
 # a sold product but REQUIRES its licence text to accompany the fonts, so a
 # package that ships the TTFs without these is non-compliant.
 install(FILES LICENSE LICENSE-MIT LICENSE-APACHE
+        packaging/THIRD_PARTY_NOTICES-RUST.txt
+        assets/icons/LICENSE-MIT-PhosphorIcons.txt
         assets/fonts/LICENSE-OFL-AtkinsonHyperlegible.txt
+        assets/fonts/LICENSE-OFL-ChakraPetch.txt
         assets/fonts/LICENSE-OFL-Lexend.txt
         DESTINATION share/licenses/xeneon-edge-hub)
+# Debian Policy expects the installed package copyright record at this exact
+# location. It is useful in every native payload, so install the same
+# machine-readable record for RPM and TGZ instead of maintaining divergent
+# generator-only copies.
+install(FILES packaging/debian/copyright
+        DESTINATION share/doc/xeneon-edge-hub)
 
 # udev rule for Edge orientation-sensor access. DESTINATION is RELATIVE to the
 # install prefix (→ <prefix>/lib/udev/rules.d) so it stages correctly under CPack
@@ -315,24 +372,37 @@ install(FILES packaging/udev/99-xeneon-edge.rules DESTINATION "${UDEV_RULES_DIR}
 #   cpack -G RPM   (build on Fedora/openSUSE - needs rpmbuild)
 # ─────────────────────────────────────────────────────────────────────────────
 if(PROJECT_IS_TOP_LEVEL)
-    # An explicit package override must bind the embedded appVersion and CPack
-    # metadata to the same identity. Keep PROJECT_VERSION as the fallback for
-    # ordinary unversioned developer builds, but never label an explicitly
-    # versioned DEB/RPM/TGZ as the historical 0.1.0.
-    set(XENEON_CPACK_VERSION "${PROJECT_VERSION}")
-    if(DEFINED XENEON_VERSION_OVERRIDE AND XENEON_VERSION_OVERRIDE)
-        string(REGEX REPLACE "^v" "" XENEON_CPACK_VERSION
-               "${XENEON_VERSION_OVERRIDE}")
-    endif()
+    # Bind every package to the same canonical identity as both binaries.
+    # XENEON_GIT_VERSION already falls back to PROJECT_VERSION when Git is not
+    # available, so a normal committed checkout needs no package-only override.
+    # This makes the lifecycle test exercise CMake's real derivation path.
+    set(XENEON_CPACK_VERSION "${XENEON_GIT_VERSION}")
 
     # Debian and RPM use '~' for a prerelease that sorts before the corresponding
     # final version. A literal SemVer hyphen has the wrong package-manager order
-    # (and is not valid in an RPM Version), while archive filenames should retain
-    # the familiar SemVer spelling.
+    # and is not valid in an RPM Version. Git describe adds more hyphens for its
+    # commit count and hash, so normalize those to dots as well. Archive
+    # filenames and the embedded application version retain the canonical
+    # Git-derived spelling, without the tag-only leading "v".
     set(XENEON_NATIVE_PACKAGE_VERSION "${XENEON_CPACK_VERSION}")
-    if(XENEON_CPACK_VERSION MATCHES "^([0-9]+\\.[0-9]+\\.[0-9]+)-(.+)$")
+    # A commit after a final tag is newer than that final (`1.0.0+3.gabc`);
+    # a prerelease tag is older than the final (`1.0.0~rc.1`). Test the
+    # unambiguous git-count form first so post-final development never looks like
+    # a downgrade.
+    if(XENEON_CPACK_VERSION MATCHES
+       "^([0-9]+\\.[0-9]+\\.[0-9]+)-([0-9]+)-g([0-9A-Fa-f]+)(-dirty)?$")
         set(XENEON_NATIVE_PACKAGE_VERSION
-            "${CMAKE_MATCH_1}~${CMAKE_MATCH_2}")
+            "${CMAKE_MATCH_1}+${CMAKE_MATCH_2}.g${CMAKE_MATCH_3}")
+        if(CMAKE_MATCH_4)
+            string(APPEND XENEON_NATIVE_PACKAGE_VERSION ".dirty")
+        endif()
+    elseif(XENEON_CPACK_VERSION MATCHES
+           "^([0-9]+\\.[0-9]+\\.[0-9]+)-(.+)$")
+        set(_xeneon_native_suffix "${CMAKE_MATCH_2}")
+        string(REPLACE "-" "." _xeneon_native_suffix
+               "${_xeneon_native_suffix}")
+        set(XENEON_NATIVE_PACKAGE_VERSION
+            "${CMAKE_MATCH_1}~${_xeneon_native_suffix}")
     endif()
 
     set(CPACK_PACKAGE_NAME "xeneon-edge-hub")
@@ -345,6 +415,13 @@ if(PROJECT_IS_TOP_LEVEL)
         set(CPACK_PACKAGE_VERSION_PATCH "${CMAKE_MATCH_3}")
     endif()
     set(CPACK_XENEON_NATIVE_PACKAGE_VERSION "${XENEON_NATIVE_PACKAGE_VERSION}")
+    # CI carries these two configure-time facts beside the package artifact and
+    # checks both installed package metadata and both binaries against them.
+    # Plain one-line files avoid sourcing tag-derived text as shell code.
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/xeneon-app-version.txt"
+         "${XENEON_GIT_VERSION}\n")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/xeneon-native-package-version.txt"
+         "${XENEON_NATIVE_PACKAGE_VERSION}\n")
     set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
         "Native Linux widget dashboard for the Corsair Xeneon Edge and other secondary touchscreens")
     set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/skyphoenix-it/skyphoenix-edgehub-linux")
@@ -356,6 +433,7 @@ if(PROJECT_IS_TOP_LEVEL)
 
     # Debian/Ubuntu
     set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
+    set(CPACK_DEBIAN_PACKAGE_VERSION "${XENEON_NATIVE_PACKAGE_VERSION}")
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)   # auto-resolve lib deps (needs dpkg-shlibdeps)
     # QML modules are dlopen'd plugins, not linked libraries, so dpkg-shlibdeps
     # cannot see them and Debian/Ubuntu ship each one as a separate qml6-module-*
@@ -379,7 +457,9 @@ qml6-module-qtquick-virtualkeyboard | qt6-virtualkeyboard")
     set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
 
     # Fedora/openSUSE
-    set(CPACK_RPM_PACKAGE_LICENSE "MIT OR Apache-2.0")
+    set(CPACK_RPM_PACKAGE_LICENSE
+        "(MIT OR Apache-2.0) AND MIT AND OFL-1.1 AND BSD-3-Clause AND MPL-2.0 AND Unicode-3.0")
+    set(CPACK_RPM_PACKAGE_VERSION "${XENEON_NATIVE_PACKAGE_VERSION}")
     set(CPACK_RPM_PACKAGE_GROUP "Applications/System")
     set(CPACK_RPM_PACKAGE_REQUIRES
         "qt6-qtbase >= 6.5, qt6-qtdeclarative, qt6-qtsvg, qt6-qtvirtualkeyboard, qt6-qtwayland")

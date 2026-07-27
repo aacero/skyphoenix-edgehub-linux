@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runtime smoke for an INSTALLED xeneon-edge-hub, run inside a clean distro
+# Runtime smoke for an installed Hub and Manager, run inside a clean distro
 # container by .github/workflows/distro.yml.
 #
 # Why not just `--version`: it returns before the QML engine loads, so it proves
@@ -10,54 +10,152 @@
 set -uo pipefail
 
 export QT_QPA_PLATFORM=offscreen
-export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/xdg}"
-mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+SMOKE_WORK="$(mktemp -d)"
+export XDG_RUNTIME_DIR="$SMOKE_WORK/runtime"
+export XDG_CONFIG_HOME="$SMOKE_WORK/config"
+mkdir -m 0700 "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME" \
+  || { echo "FAIL: could not create isolated smoke directories"; exit 1; }
 
-command -v xeneon-edge-hub >/dev/null || { echo "FAIL: xeneon-edge-hub not on PATH"; exit 1; }
+HUB_LOG="$SMOKE_WORK/hub.log"
+MANAGER_LOG="$SMOKE_WORK/manager.log"
+HUB_PID=""
+MANAGER_PID=""
+
+stop_process() {
+  local pid="$1"
+  [ -n "$pid" ] || return 0
+  kill -0 "$pid" 2>/dev/null || { wait "$pid" 2>/dev/null || true; return 0; }
+  kill -TERM "$pid" 2>/dev/null || true
+  for _ in $(seq 1 20); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  kill -9 "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
+
+cleanup_smoke() {
+  stop_process "$MANAGER_PID"
+  stop_process "$HUB_PID"
+  rm -rf -- "$SMOKE_WORK"
+}
+trap cleanup_smoke EXIT
+trap 'exit 130' HUP INT TERM
+
+for binary in xeneon-edge-hub xeneon-edge-manager; do
+  command -v "$binary" >/dev/null \
+    || { echo "FAIL: $binary not on PATH"; exit 1; }
+done
 
 echo "--- xeneon-edge-hub --version"
-xeneon-edge-hub --version 2>&1 | head -3
+xeneon-edge-hub --version 2>&1 | head -3 \
+  || { echo "FAIL: Hub --version failed"; exit 1; }
+echo "--- xeneon-edge-manager --version"
+xeneon-edge-manager --version 2>&1 | head -3 \
+  || { echo "FAIL: Manager --version failed"; exit 1; }
 
-LOG="$(mktemp)"
-# Reap the hub and the temp log on ANY exit path, including SIGINT/SIGTERM.
-# Without this a CI timeout or a Ctrl-C orphans a running GUI hub.
-cleanup_smoke() { [ -n "${PID:-}" ] && kill -9 "$PID" 2>/dev/null; rm -f "$LOG"; }
-trap cleanup_smoke EXIT INT TERM
-
-echo "--- launching dashboard offscreen (10s)"
+echo "--- launching installed Hub and Manager offscreen"
 # Address-space ceiling: a runaway hub must fail its own allocation rather than
 # grow until the kernel fires a system-wide OOM. See scripts/lib/run_bounded.sh.
 ( ulimit -v $(( ${SMOKE_AS_MAX_MB:-8192} * 1024 )) 2>/dev/null
-  exec xeneon-edge-hub ) >"$LOG" 2>&1 &
-PID=$!
-sleep 10
+  exec xeneon-edge-hub ) >"$HUB_LOG" 2>&1 &
+HUB_PID=$!
+
+CONTROL_SOCKET="$XDG_RUNTIME_DIR/xeneon-edge-hub-ctl"
+socket_ready=0
+for _ in $(seq 1 "${SMOKE_SOCKET_POLLS:-100}"); do
+  if [ -S "$CONTROL_SOCKET" ]; then
+    socket_ready=1
+    break
+  fi
+  kill -0 "$HUB_PID" 2>/dev/null || break
+  sleep 0.1
+done
 
 RC=0
-if kill -0 "$PID" 2>/dev/null; then
-  echo "RESULT: still running after 10s"
-  # SIGTERM first, but never wait on it unboundedly: the hub's graceful-shutdown
-  # handler is documented to hang on sensor/socket teardown (tests/runtime/
-  # rt_common.sh). Escalate to SIGKILL rather than blocking forever in `wait`.
-  kill -TERM "$PID" 2>/dev/null
-  for _ in $(seq 1 20); do kill -0 "$PID" 2>/dev/null || break; sleep 0.5; done
-  kill -9 "$PID" 2>/dev/null
-  wait "$PID" 2>/dev/null
+if [ "$socket_ready" -ne 1 ]; then
+  echo "FAIL: installed Hub did not publish its control socket"
+  RC=1
+elif ! python3 - "$CONTROL_SOCKET" <<'PY'
+import json
+import socket
+import sys
+
+client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+client.settimeout(3.0)
+client.connect(sys.argv[1])
+client.sendall(b'{"type":"ping"}\n')
+payload = b""
+while b"\n" not in payload:
+    chunk = client.recv(4096)
+    if not chunk:
+        raise SystemExit("Hub closed the socket before replying")
+    payload += chunk
+reply = json.loads(payload.splitlines()[0].decode("utf-8"))
+if reply != {"type": "pong"}:
+    raise SystemExit(f"unexpected Hub socket reply: {reply!r}")
+PY
+then
+  echo "FAIL: installed Hub control-socket ping failed"
+  RC=1
 else
-  wait "$PID" 2>/dev/null
-  echo "RESULT: exited early with rc=$?"
+  echo "RESULT: installed Hub control socket replied to ping"
+fi
+
+( ulimit -v $(( ${SMOKE_AS_MAX_MB:-8192} * 1024 )) 2>/dev/null
+  exec xeneon-edge-manager ) >"$MANAGER_LOG" 2>&1 &
+MANAGER_PID=$!
+manager_sync_ready=0
+for _ in $(seq 1 "${SMOKE_MANAGER_POLLS:-100}"); do
+  if grep -Fq "ControlServer: Manager UI-state sync request received" \
+      "$HUB_LOG" \
+      && grep -Fq "Manager: Hub UI-state reply accepted" "$MANAGER_LOG"; then
+    manager_sync_ready=1
+    break
+  fi
+  kill -0 "$MANAGER_PID" 2>/dev/null || break
+  sleep 0.1
+done
+if [ "$manager_sync_ready" -ne 1 ]; then
+  echo "FAIL: installed Manager did not complete a UI-state socket round trip"
+  RC=1
+else
+  echo "RESULT: installed Manager completed a UI-state socket round trip"
+fi
+sleep "${SMOKE_SECONDS:-10}"
+
+if ! kill -0 "$HUB_PID" 2>/dev/null; then
+  wait "$HUB_PID" 2>/dev/null
+  echo "FAIL: installed Hub exited during the integration smoke"
+  RC=1
+fi
+if ! kill -0 "$MANAGER_PID" 2>/dev/null; then
+  wait "$MANAGER_PID" 2>/dev/null
+  echo "FAIL: installed Manager exited during the integration smoke"
   RC=1
 fi
 
 echo "--- hub output:"
-cat "$LOG"
+cat "$HUB_LOG"
+echo "--- Manager output:"
+cat "$MANAGER_LOG"
 
 # Scoped to QML/plugin resolution. Do NOT broaden to a bare "No such file or
 # directory": the hidraw orientation-sensor warning is expected in a container
 # (no device, no udev rule) and would false-positive.
-if grep -qiE 'is not installed|plugin .* not found|cannot load library|QQmlApplicationEngine failed|Failed to load QML' "$LOG"; then
-  echo "FAIL: QML module/plugin resolution error above - the package is missing a dependency"
-  RC=1
-fi
+for app_log in "$HUB_LOG" "$MANAGER_LOG"; do
+  if grep -qiE \
+      'is not installed|plugin .* not found|cannot load library|QQmlApplicationEngine failed|Failed to load QML|Component is not ready|engine root object missing' \
+      "$app_log"; then
+    echo "FAIL: QML module/plugin resolution error above in $(basename "$app_log")"
+    RC=1
+  fi
+done
+
+stop_process "$MANAGER_PID"
+MANAGER_PID=""
+stop_process "$HUB_PID"
+HUB_PID=""
 
 # ── Phase 2: every imported QML module is actually installed ────────────────
 # Launching only proves the STARTUP path resolves. main.qml imports just

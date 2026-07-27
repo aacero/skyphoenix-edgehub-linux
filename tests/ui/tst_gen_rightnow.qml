@@ -400,6 +400,34 @@ Item {
                    "short micro focus text is glanceable (" + hero.font.pixelSize + "px)")
         }
 
+        function test_micro_long_focus_uses_a_complete_excerpt_and_continuation() {
+            tryVerify(function () { return hRMicro.ready }, 3000)
+            var full = "Finish the release readiness review with the whole team"
+            seed(hRMicro, full, 0)
+            hRMicro.theme.textScale = 1.45
+            var w = hRMicro.item
+            w.sizeClass = "compact"
+            wait(32)
+            compare(w.focusIsExcerpted, true,
+                    "micro reports when the full focus needs a continuation")
+            verify(w.displayedFocus.length < full.length
+                   && w.displayedFocus.charAt(w.displayedFocus.length - 1) === "…",
+                   "the visible micro cue is a bounded, explicit excerpt")
+            var hero = findByProp(w, "objectName", "rightNowHero")
+            verify(hero && hero.visible, "the focus excerpt is rendered")
+            compare(hero.truncated, false,
+                    "the excerpt itself is complete rather than silently elided")
+            verify(hero.font.pixelSize >= hRMicro.theme.fontTitle,
+                   "the long micro cue retains the active title-size floor")
+            var continuation = findByProp(w, "objectName", "rightNowContinuation")
+            verify(continuation && continuation.visible
+                   && continuation.text === "Tap to read all",
+                   "the tile tells the user how to reach the complete focus")
+            verify(continuation.font.pixelSize >= hRMicro.theme.fontMinimum,
+                   "the continuation meets the active minimum type size")
+            hRMicro.theme.textScale = 1.15
+        }
+
         function test_focus_text_wraps_before_eliding_and_keeps_a_legible_floor() {
             tryVerify(function () { return hRBase.ready }, 3000)
             seed(hRBase,

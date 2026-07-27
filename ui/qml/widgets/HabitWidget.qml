@@ -45,7 +45,8 @@ WidgetChrome {
     property string instanceId: ""
     property int tick: 0
 
-    title: w.name.length ? w.name : "Habit"; iconName: "habit"; accentColor: theme.catProductivity
+    title: w.compactNameLayout ? "Habit" : (w.name.length ? w.name : "Habit")
+    iconName: "habit"; accentColor: theme.catProductivity
     showHeader: !micro
 
     readonly property var cfg: {
@@ -143,6 +144,13 @@ WidgetChrome {
 
     // ── Per-size layout (sizeClass injected by Dashboard) ────────────────────
     readonly property bool horiz: sizeClass === "wide"
+    // Narrow cards keep the stable product header and move the user-provided
+    // habit name into the body, where it can wrap instead of competing with the
+    // icon and live status for one line.
+    readonly property bool compactNameLayout:
+        !w.micro && w.name.length > 0
+        && (w.width < 360 || w.name.length > 18)
+    readonly property bool compactCopy: w.width < 480
 
     // ── 1x1.5 (W1 wave 2c) ───────────────────────────────────────────────────
     // Dashboard injects sizeClass, never the size NAME, so "does this instance
@@ -173,6 +181,12 @@ WidgetChrome {
     readonly property bool tallBox: sizeClass === "tall"
     readonly property int heatCols: w.tallBox ? 4 : 7
     readonly property int heatRows: w.tallBox ? 7 : 4
+    // These projections have less vertical room after chrome and text scaling.
+    // Preserve all 28 days, but reduce cell size from the available axis and
+    // remove only duplicate explanatory copy when it cannot fit.
+    readonly property bool shallowWide: w.horiz && w.height < 380
+    readonly property bool compressedTall: w.tallBox && w.height < 560
+    readonly property bool tightHeatmap: w.shallowWide || w.compressedTall
     function dateForIndex(index) {
         var d = new Date()
         d.setHours(12, 0, 0, 0)
@@ -225,9 +239,14 @@ WidgetChrome {
     // landscape pane, 59px in the 656x980 portrait one) instead of by a literal
     // that was chosen when that pane was a different shape. Tile classes unchanged.
     readonly property real heatCell: w.tallBox
-        ? Math.max(8, Math.min(width / 5, height * 0.07, w.heatCellCap))
+        ? Math.max(8, Math.min(width / 5,
+                               height * (w.compressedTall ? 0.055
+                                         : (w.roomy ? 0.062 : 0.07)),
+                               w.heatCellCap))
         : Math.max(8, Math.min((w.horiz ? width * 0.5 : width) / 9,
-                               height * (w.horiz ? 0.14 : 0.06), w.heatCellCap))
+                               height * (w.shallowWide ? 0.10
+                                         : (w.horiz ? 0.14 : 0.06)),
+                               w.heatCellCap))
 
     // Days-ago for a row-major cell index under the CURRENT grid shape; index 27
     // is always today. With 7 columns the natural row-major order already runs a
@@ -285,6 +304,11 @@ WidgetChrome {
         if (w.paused) return date + ": Habit paused"
         if (!w.scheduledToday) return date + ": Rest day"
         return date + (w.doneToday ? ": Checked in" : ": Ready to check in")
+    }
+    readonly property string todayFeedbackShort: {
+        if (w.paused) return "Today: Paused"
+        if (!w.scheduledToday) return "Today: Rest day"
+        return w.doneToday ? "Today: Checked in" : "Today: Ready"
     }
     readonly property int nextMilestone: {
         for (var i = 0; i < milestones.length; i++)
@@ -399,6 +423,7 @@ WidgetChrome {
     // (the heatmap's model is the literal 28, so its cells live for the widget's
     // whole life and a check-in only moves their bound values).
     GridLayout {
+        objectName: "habitLayout"
         anchors.centerIn: parent
         width: parent.width
         columns: w.horiz ? 2 : 1
@@ -415,6 +440,7 @@ WidgetChrome {
         // layout. Each cell also carries a visible state mark, so color is never
         // the only way to read progress.
         ColumnLayout {
+            objectName: "habitHeatmapColumn"
             Layout.alignment: Qt.AlignCenter
             visible: w.showHeatmap
             spacing: 7
@@ -422,7 +448,9 @@ WidgetChrome {
             Text {
                 objectName: "habitHeatmapRange"
                 Layout.alignment: Qt.AlignHCenter
-                text: "LAST 28 DAYS  ·  " + w.heatmapRange
+                text: w.compactCopy
+                      ? "28D  ·  " + w.heatmapRange
+                      : "LAST 28 DAYS  ·  " + w.heatmapRange
                 color: theme.textPrimary
                 opacity: 0.82
                 font.pixelSize: Math.max(theme.fontMinimum, 18)
@@ -459,10 +487,12 @@ WidgetChrome {
                         Accessible.name: Qt.formatDate(dayDate, "dddd d MMMM")
                                          + ", " + stateLabel
                         Text {
+                            objectName: "habitDayMark-" + index
                             anchors.centerIn: parent
                             text: parent.on ? "✓" : (parent.isScheduled ? "○" : "−")
                             color: parent.on ? theme.backgroundColor : theme.textSecondary
-                            font.pixelSize: Math.max(10, Math.round(parent.width * 0.54))
+                            font.pixelSize: Math.max(theme.fontMinimum,
+                                                     Math.round(parent.width * 0.54))
                             font.bold: parent.on
                         }
                     }
@@ -470,8 +500,11 @@ WidgetChrome {
             }
             Text {
                 objectName: "habitHeatmapLegend"
+                visible: !w.tightHeatmap
                 Layout.alignment: Qt.AlignHCenter
-                text: "✓ Done   ○ Scheduled   − Rest"
+                text: w.compactCopy
+                      ? "✓ Done   ○ Due   − Rest"
+                      : "✓ Done   ○ Scheduled   − Rest"
                 color: theme.textPrimary
                 opacity: 0.82
                 font.pixelSize: Math.max(theme.fontMinimum, 18)
@@ -479,6 +512,7 @@ WidgetChrome {
         }
 
         ColumnLayout {
+            objectName: "habitSummaryColumn"
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignCenter
             // A roomy landscape tile places this column beside a 7x4 heatmap.
@@ -489,11 +523,29 @@ WidgetChrome {
             spacing: w.roomy ? (w.horiz ? 12 : 14) : 4
 
             Text {
+                objectName: "habitBodyName"
+                visible: w.compactNameLayout
+                Layout.fillWidth: true
+                text: w.name
+                color: theme.textPrimary
+                font.pixelSize: theme.fontTitle
+                font.family: theme.fontDisplay
+                font.bold: true
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                maximumLineCount: 2
+                elide: Text.ElideRight
+            }
+            Text {
+                objectName: "habitStreakValue"
                 visible: w.showStreak
                 Layout.alignment: Qt.AlignHCenter; Layout.fillWidth: true
-                text: w.streak + (w.streak === 1 ? " day" : " days")
+                text: w.micro ? w.streak + "d"
+                              : w.streak + (w.streak === 1 ? " day" : " days")
                 font.pixelSize: Math.round(w.streakPx); font.bold: true; color: w.effAccent
                 horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
+                Accessible.role: Accessible.StaticText
+                Accessible.name: w.streak + (w.streak === 1 ? " day" : " days")
             }
             // Best streak - a record to beat. Shown wherever the ROOM earns it
             // (see showBest), which is what lets 1x1.5 carry something the
@@ -561,9 +613,10 @@ WidgetChrome {
             }
             Text {
                 objectName: "habitTodayFeedback"
-                visible: !w.micro
+                visible: !w.micro && !w.compressedTall
                 Layout.fillWidth: true
-                text: w.todayFeedback
+                text: (w.compactCopy || w.shallowWide)
+                      ? w.todayFeedbackShort : w.todayFeedback
                 color: w.doneToday ? w.effAccent : theme.textSecondary
                 font.pixelSize: Math.max(theme.fontMinimum, 18)
                 font.bold: w.doneToday
@@ -575,6 +628,7 @@ WidgetChrome {
             // Check in from every size - a PillButton is theme.touchSecondary (60),
             // above the 52 minimum, and this is the widget's whole interaction.
             PillButton {
+                objectName: "habitCheckinButton"
                 Layout.alignment: Qt.AlignHCenter
                 // The long form is spelled out wherever there is room for it, not
                 // only in the overlay - the pill is content-sized (see PillButton),

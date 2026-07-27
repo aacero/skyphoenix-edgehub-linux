@@ -16,7 +16,8 @@ is required. Broad display and desktop support remains evidence-gated.
 > **Current public status: beta.** `v1.0.0-beta.1` is published with accepted
 > risks. The release owner waived the planned 48-hour soak, so this beta makes
 > no long-duration stability or formal performance claim. See the
-> [beta decision](docs/BETA_PLAN.md) and [release notes](RELEASE_NOTES.md).
+> [beta decision](docs/BETA_PLAN.md) and
+> [beta.1 release notes](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/releases/tag/v1.0.0-beta.1).
 
 **[Watch the 71-second live product film](docs/marketing-site/trailer.html)** or
 **[open the MP4 directly](docs/marketing-site/assets/release/v1.0.0-beta.1/edgehub-v1.0.0-beta.1-live-product-film.mp4)**.
@@ -38,8 +39,8 @@ The Corsair Xeneon Edge is a 2560×720 secondary touchscreen that works in eithe
 **Who it's for:** anyone with a second screen they don't want to waste. Developers watching a build. Homelab owners watching a rack. People who want a calm timer and the weather instead of another browser window.
 
 - **Native, without Chromium.** A Rust core handles metrics and configuration;
-  Qt 6/QML draws the UI. Resource limits are measured separately and the current
-  development build does not yet meet its RSS gates.
+  Qt 6/QML draws the UI. Resource limits are evidence-gated; no passing stable
+  CPU, memory or long-duration number is claimed before the exact candidate run.
 - **Designed for touch.** Large targets, swipe between pages, in-widget controls, on-device settings. You never need a keyboard to use it.
 - **It finds the right screen.** Display detection puts EdgeHub on your Edge (or a display you choose), and a real HID orientation sensor follows the panel when you flip it.
 - **Design it from your desk.** The companion **EdgeHub Manager** is a live clone of your Edge - drag, reorder, resize, and restyle from your main monitor.
@@ -132,12 +133,13 @@ Most apps promise they don't phone home. EdgeHub's design makes the promise chec
 
 ### Performance
 
-No passing CPU or memory number is claimed for a release candidate. A formal
-2026-07-21 run measured the current dirty development binary with a reproducible
-target-panel profile: startup passed at 0.223 s and average CPU passed at 0.120%
-idle / 2.053% active, but peak RSS failed at 408.094 MiB idle (`<150 MiB` required)
-and 472.820 MiB with the exact 10-widget load (`<250 MiB` required). The aggregate
-result is **FAIL**, and the required 24/48-hour evidence is still incomplete.
+No passing CPU or memory number is claimed for the stable candidate. A
+historical 2026-07-21 run measured a then-current dirty development binary:
+startup and average CPU met that run's targets, while peak RSS failed. Those
+numbers describe only that obsolete dirty binary. The exact clean candidate
+must complete the owner-approved literal 30-minute, 14-widget instrumented
+observation. The historical 48-hour soak was waived, so this release will not
+make a long-duration stability claim from the substitute.
 
 ---
 
@@ -181,38 +183,40 @@ A companion desktop app (`xeneon-edge-manager`) that mirrors your Edge in real t
 
 ## Install
 
-The current release is **[v1.0.0-beta.1](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/releases/tag/v1.0.0-beta.1)**.
+The latest published release is
+**[v1.0.0-beta.1](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/releases/tag/v1.0.0-beta.1)**.
+**Release target:** `v1.0.0`. This checkout is unreleased and is not published
+or certified.
+The `release/1.0.0` branch contains unreleased stable-candidate work; its
+presence is not stable certification.
+
+### Current checkout on CachyOS or Arch
+
+For a developer installation of exactly the checked-out source, use the guarded
+local updater:
+
+```sh
+./scripts/update-local.sh
+```
+
+It builds a fresh pacman package, creates a checksum-recorded owner-only
+configuration backup, stops Manager and Hub before replacement, installs with
+`pacman -U`, verifies both installed binary identities, starts the Hub, and
+restores the Manager only if it was open before the update. A dirty-tree install
+is labelled `-dirty` and remains development evidence.
 
 ### CachyOS / Arch Linux, exact beta.1
 
 The committed Arch recipe is pinned to the signed `v1.0.0-beta.1` source asset.
-Build the replacement first, back up the current configuration, gracefully stop
-the applications, remove the old package, and install the new pacman-owned
-package:
+Build the package from that signed source, close both product applications, and
+install it as a normal pacman upgrade. Do not remove the old package first:
 
 ```sh
 cd /path/to/skyphoenix-edgehub-linux
 gpg --import packaging/edgehub-signing.pub
 (cd packaging/aur && makepkg -Csf)
 
-config_file="${XDG_CONFIG_HOME:-$HOME/.config}/xeneon-edge-hub/config.toml"
-if [ -f "$config_file" ]; then
-    cp -- "$config_file" "$config_file.before-v1.0.0-beta.1.$(date +%Y%m%d-%H%M%S)"
-fi
-
-pkill -TERM -f '^/usr/bin/xeneon-edge-manager($| )' 2>/dev/null || true
-pkill -TERM -f '^/usr/bin/xeneon-edge-hub($| )' 2>/dev/null || true
-for _ in $(seq 1 20); do
-    pgrep -f '^/usr/bin/xeneon-edge-hub($| )' >/dev/null || break
-    sleep 0.5
-done
-if pgrep -f '^/usr/bin/xeneon-edge-hub($| )' >/dev/null; then
-    echo "Hub did not exit cleanly; installation stopped to protect the configuration." >&2
-    exit 1
-fi
-
-sudo pacman -R xeneon-edge-hub
-sudo pacman -U packaging/aur/xeneon-edge-hub-1.0.0beta1-1-x86_64.pkg.tar.zst
+sudo pacman -U packaging/aur/xeneon-edge-hub-1.0.0beta1-2-x86_64.pkg.tar.zst
 /usr/bin/xeneon-edge-hub --version
 ```
 
@@ -233,8 +237,9 @@ The tarball is a relocatable `/usr` payload, not a self-contained bundle: its
 binaries use the build host's glibc floor and the target system's Qt 6.5+
 libraries. The current maintainer build requires glibc 2.39 or newer. After
 extracting, run the Hub or Manager from the archive's `usr/bin/` directory, or
-use a native package on the supported distributions. An AppImage, when attached
-to a release, bundles Qt for systems that do not provide a compatible version.
+use a native package only when that exact release lists the distribution as
+supported. An AppImage, when attached to a release, bundles Qt for systems that
+do not provide a compatible version.
 
 The signed beta.1 recipe lives in
 [`packaging/aur/PKGBUILD`](packaging/aur/PKGBUILD). Its presence does not imply
@@ -277,7 +282,11 @@ Policy, scope and key rotation: [`docs/DISTRIBUTION.md`](docs/DISTRIBUTION.md#re
 
 ### Everything else
 
-Build from source (below). AppImage, Flatpak, `.deb` and `.rpm` recipes are authored in this repo but are not yet published, verified artifacts - see [`packaging/README.md`](packaging/README.md) for the honest status of each format. Fedora and Ubuntu packages are planned for v1.1.
+Build from source below. AUR, AppImage, Flatpak, DEB and RPM routes are authored
+in this repository, but no format is a verified stable artifact until its exact
+release SHA and exact bytes pass the gates in
+[`packaging/README.md`](packaging/README.md). Do not infer current-candidate
+status from the presence of a recipe or an older green workflow.
 
 ---
 
@@ -285,23 +294,29 @@ Build from source (below). AppImage, Flatpak, `.deb` and `.rpm` recipes are auth
 
 ### Prerequisites
 
-- **Rust** 1.75+ (stable)
+- **Rust** 1.86+ (the minimum declared by the locked Rust graph)
 - **C++17 compiler** (GCC 12+ or Clang 16+)
 - **CMake** 3.22+
-- **Qt 6.5+** with development headers (QtQuick, QtWayland, QtDBus, QtSvg)
+- **Qt 6.5+** with Qt Quick, Quick Controls, DBus, Network, SVG, Virtual
+  Keyboard and Wayland support
 
 **Arch / CachyOS**
 
 ```sh
-sudo pacman -S rust cmake gcc qt6-base qt6-declarative qt6-wayland qt6-tools
+sudo pacman -S rust cmake gcc qt6-base qt6-declarative qt6-svg \
+  qt6-virtualkeyboard qt6-wayland
 ```
 
-**Ubuntu 24.04 LTS** - note that Ubuntu's apt Qt is 6.4.2; the project needs Qt ≥ 6.5, so install a newer Qt if apt's is too old.
+**Ubuntu 26.04 LTS**, the exact native Ubuntu target:
 
 ```sh
 sudo apt install cargo cmake g++ qt6-base-dev qt6-declarative-dev \
-  qt6-wayland-dev qt6-tools-dev libglib2.0-dev
+  qt6-svg-dev qt6-virtualkeyboard-dev libgl1-mesa-dev
 ```
+
+Ubuntu 24.04's apt Qt 6.4.2 is below the project floor. Use a release
+AppImage when one is offered, or install an upstream Qt 6.5 or newer toolchain;
+the repository does not claim native Ubuntu 24.04 package support.
 
 ### Build & run
 
@@ -320,9 +335,9 @@ cmake --build build
 ### Test
 
 ```sh
-cd core && cargo test        # Rust core
+cd core && cargo test --locked  # Rust core
 ./scripts/run_ui_tests.sh    # QML GUI suite (offscreen, compiled product assets)
-./scripts/run_all_tests.sh   # everything: Rust + QML + ctest + behavior matrix + lints
+./scripts/run_all_tests.sh   # everything: Rust + QML + ctest + requirements matrix + lints
 ```
 
 ---
@@ -352,12 +367,13 @@ The repository includes all of these verification layers:
 | **Real hardware** ([`tests/hardware/`](tests/hardware/README.md)) | Widget/catalog drift, portrait/landscape rendering, Manager-to-Hub integration, guarded synthetic touch and soak scenarios on a physical Edge |
 | **Rust** | Unit tests, formatting, Clippy and coverage gate |
 | **C++** | QtTest suites against the real core plus a coverage gate |
-| **QML** | Offscreen and compositor-backed GUI suites plus a behavior matrix gated at 100% |
+| **QML** | Offscreen and compositor-backed GUI suites plus a finite enumerated-requirements matrix that requires every listed requirement to be assertion-backed |
 | **Lints** | Egress lint (no raw request outside the gate) and a widget-icon lint |
 | **Runtime E2E** | Drives the real hub binary headless and asserts what it persists to `config.toml` |
 
 The intended CI gate runs Rust format, Clippy, tests and dependency checks; the
-build; docs/link checks; QML and C++ suites; and coverage at ≥95% - see
+build; docs/link checks; QML and C++ suites; independent Rust and C++ line
+coverage at ≥95%; and the all-assertion-backed QML requirements checklist - see
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml). The hardware suite needs a
 physical Edge and therefore runs locally. A working-tree run is development
 evidence, not a release certificate. The beta.1 decision and its accepted risks
@@ -368,9 +384,11 @@ The hardware suite asserts its widget list against `WidgetCatalog.qml`, so a new
 
 ---
 
-## Beta status
+## Release status
 
-What is deliberately not claimed for beta.1:
+Beta.1 is the latest published build. The current branch is an uncertified
+stable candidate. What is deliberately not claimed for either without new exact
+candidate evidence:
 
 - **Packaging is incomplete.** AppImage, Flatpak, `.deb` and `.rpm` recipes are
   authored, but native distro jobs still need candidate evidence and the
@@ -398,8 +416,9 @@ What is deliberately not claimed for beta.1:
 
 Beta.1 contains 30 widgets, 19 presets, the Manager, and expanded test and
 release tooling. The next milestone remains evidence-led: address beta reports,
-revisit resource targets, complete longer stability evidence, and verify any
-newly advertised package lifecycle before broadening release claims.
+run the accepted 30-minute resource observation, and verify every advertised
+package lifecycle before broadening release claims. The soak waiver means no
+long-duration stability claim.
 
 Beyond 1.0: segment integration packs (OBS, MangoHud, Prometheus, smart home, market data), a WASM widget SDK, and internationalization.
 
@@ -424,9 +443,18 @@ Dual-licensed under either of:
 
 at your option.
 
-**Qt note:** EdgeHub links against Qt 6 (LGPLv3). Dynamic linking against system Qt satisfies the LGPL; static linking carries the usual re-linking obligations.
+**Qt licensing note:** Qt modules do not all use the same open-source licence. Most modules linked by EdgeHub are available under LGPLv3, while Qt Virtual Keyboard is offered under GPLv3 or a commercial Qt licence. Dynamic linking is relevant to LGPL compliance but does not resolve the Virtual Keyboard choice. Its distribution disposition remains an owner/legal blocker for the stable release; this repository does not claim that decision is complete. See the official [Qt licensing table](https://doc.qt.io/qt-6/licensing.html) and [Qt Virtual Keyboard licensing](https://doc.qt.io/qt-6/qtvirtualkeyboard-index.html).
 
-**Bundled fonts:** the accessibility font options bundle [Atkinson Hyperlegible](https://github.com/googlefonts/atkinson-hyperlegible) (© Braille Institute of America) and [Lexend](https://github.com/googlefonts/lexend) (© The Lexend Project Authors), both unmodified and licensed under the SIL Open Font License 1.1. The OFL texts ship alongside the fonts in [`assets/fonts/`](assets/fonts/) (`LICENSE-OFL-AtkinsonHyperlegible.txt`, `LICENSE-OFL-Lexend.txt`).
+**Bundled fonts:** the selectable typeface options include [Atkinson Hyperlegible](https://github.com/googlefonts/atkinson-hyperlegible) (© Braille Institute of America) and [Lexend](https://github.com/googlefonts/lexend) (© The Lexend Project Authors); the brand wordmark uses [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) (© The Chakra Petch Project Authors). All three are bundled unmodified under the SIL Open Font License 1.1. Their OFL texts ship in both [`assets/fonts/`](assets/fonts/) and installed packages (`LICENSE-OFL-AtkinsonHyperlegible.txt`, `LICENSE-OFL-ChakraPetch.txt`, `LICENSE-OFL-Lexend.txt`).
+
+**Bundled icons:** the interface includes SVGs derived from [Phosphor Icons core](https://github.com/phosphor-icons/core), Copyright (c) 2023 Phosphor Icons, under the MIT License. The exact upstream notice is stored at [`assets/icons/LICENSE-MIT-PhosphorIcons.txt`](assets/icons/LICENSE-MIT-PhosphorIcons.txt) and accompanies every installed package.
+
+**Rust dependencies:** the native binaries include lockfile-pinned crates under
+MIT, Apache-2.0, BSD-3-Clause, Unicode-3.0 and MPL-2.0 terms. Some crates also
+offer the Unlicense as an alternative. The generated
+[`THIRD_PARTY_NOTICES-RUST.txt`](packaging/THIRD_PARTY_NOTICES-RUST.txt)
+records every reachable package, SPDX expression, source URL and exact notice
+text, and accompanies every native package.
 
 App-id: `com.skyphoenix_it.XeneonEdgeHub` · Companion: `com.skyphoenix_it.XeneonEdgeManager`
 

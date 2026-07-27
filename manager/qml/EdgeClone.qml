@@ -19,6 +19,7 @@ Item {
     // offering a second, competing place to edit the layout.
     property bool editable: true
     signal configRequested(string tileId, string tileType)
+    signal removeRequested(string tileId, string tileType)
 
     // Explicit references avoid relying on dynamic id lookup inside the shared
     // WidgetHost component.
@@ -50,17 +51,67 @@ Item {
     //   • a FIXED orientation mode (portrait/landscape/…) → use it directly;
     //   • AUTO → follow the panel's live rotation, pulled from the hub over the
     //     control socket (backend.hubRotation) so turning the panel refreshes the
-    //     preview. Unknown/offline (-1) stays portrait, which is also what the
-    //     offscreen tests (no backend) see, so the semantic packing is unchanged there.
-    readonly property bool landscape: {
+    //     preview. Unknown/offline (-1) uses the same landscape-first fallback as
+    //     the Hub, avoiding a portrait Manager preview beside a landscape Hub.
+    readonly property int effectiveRotation: {
         store.revision   // re-evaluate when the orientation mode changes
         var mode = (typeof store !== "undefined" && store && store.appearance)
                    ? (store.appearance().orientation || "auto") : "auto"
-        if (mode === "landscape" || mode === "inverted-landscape") return true
-        if (mode === "portrait" || mode === "inverted-portrait") return false
+        if (mode === "portrait") return 0
+        if (mode === "landscape") return 90
+        if (mode === "inverted-portrait") return 180
+        if (mode === "inverted-landscape") return 270
         var r = (typeof backend !== "undefined" && backend && backend.hubRotation !== undefined)
                 ? backend.hubRotation : -1
-        return r === 90 || r === 270
+        return r === 0 || r === 90 || r === 180 || r === 270 ? r : 90
+    }
+    readonly property bool landscape:
+        effectiveRotation === 90 || effectiveRotation === 270
+
+    // Reflow is semantic and therefore immediate: widgets must switch to the same
+    // size classes as the Hub as soon as its orientation changes. Only the drawn
+    // device presentation turns, starting at the previous physical angle and
+    // settling upright. This gives the Manager a smooth physical transition without
+    // holding a stale portrait/landscape layout on screen during the animation.
+    property real orientationVisualAngle: 0
+    readonly property bool orientationTransitionRunning: orientationTurn.running
+    readonly property int orientationTransitionDuration:
+        clone.reduceMotion ? 0 : 560
+    property bool _orientationReady: false
+    property int _lastEffectiveRotation: effectiveRotation
+
+    function _shortestTurn(fromDegrees, toDegrees) {
+        var delta = ((toDegrees - fromDegrees) % 360 + 360) % 360
+        return delta > 180 ? delta - 360 : delta
+    }
+
+    function _startOrientationTransition(fromDegrees, toDegrees) {
+        orientationTurn.stop()
+        clone.orientationVisualAngle = 0
+        if (!clone._orientationReady || clone.reduceMotion)
+            return false
+        var turn = clone._shortestTurn(fromDegrees, toDegrees)
+        if (turn === 0)
+            return false
+        clone.orientationVisualAngle = turn
+        orientationTurn.restart()
+        return true
+    }
+
+    onEffectiveRotationChanged: {
+        var previous = clone._lastEffectiveRotation
+        clone._lastEffectiveRotation = clone.effectiveRotation
+        clone._startOrientationTransition(previous, clone.effectiveRotation)
+    }
+
+    RotationAnimation {
+        id: orientationTurn
+        target: clone
+        property: "orientationVisualAngle"
+        to: 0
+        duration: clone.orientationTransitionDuration
+        direction: RotationAnimation.Shortest
+        easing.type: Easing.InOutCubic
     }
     // The Manager must preview the same usable widget area as the Hub. Standard
     // mode reserves the Hub's bottom controls; Immersive mode gives that space
@@ -231,7 +282,12 @@ Item {
     // onPlacementsChanged alone is not enough: a property change signal is not
     // guaranteed for the binding's FIRST evaluation. Both paths are idempotent.
     onPlacementsChanged: clone._syncPlacements()
-    Component.onCompleted: clone._syncPlacements()
+    Component.onCompleted: {
+        clone._syncPlacements()
+        clone._lastEffectiveRotation = clone.effectiveRotation
+        clone.orientationVisualAngle = 0
+        clone._orientationReady = true
+    }
 
     // ── Page background (mirrors Dashboard.qml so the clone is truly WYSIWYG:
     //    animated style OR wallpaper, per-page override → global default) ──
@@ -278,6 +334,12 @@ Item {
     // effectiveReduceMotion (not the raw store flag): the theme folds in the OS
     // reduce-motion probe, so the preview stills exactly when the hub would.
     property bool reduceMotion: theme.effectiveReduceMotion
+    onReduceMotionChanged: {
+        if (!clone.reduceMotion)
+            return
+        orientationTurn.stop()
+        clone.orientationVisualAngle = 0
+    }
 
     // Host-driven: true while the surrounding controls are being scrolled. A
     // continuously-animating preview (animated background, metric sweeps) beside a
@@ -355,6 +417,7 @@ Item {
     // ── Device frame - the WHOLE page, scaled to fit (no scrolling) ──
     Rectangle {
         id: frame
+        objectName: "cloneDeviceFrame"
         anchors.centerIn: parent
         transformOrigin: Item.Center
         // Frame follows the screen's intrinsic size (which follows orientation), so a
@@ -368,8 +431,12 @@ Item {
         // transform alone fits it into the Manager. Keeping true internal geometry
         // is required for the widgets' pixel-based micro/readability boundaries.
         scale: Math.max(0.22, Math.min(clone.width / width, clone.height / height, 1.6))
+        rotation: clone.orientationVisualAngle
         radius: 26; color: "#050507"; border.width: 2; border.color: "#000000"
-        Behavior on scale { NumberAnimation { duration: 150 } }
+        Behavior on scale {
+            enabled: !clone.reduceMotion
+            NumberAnimation { duration: theme.motionFast; easing.type: Easing.OutCubic }
+        }
 
         Rectangle {
             id: screen
@@ -760,7 +827,7 @@ Item {
                                     color: Qt.rgba(theme.error.r, theme.error.g, theme.error.b, 0.7)
                                     AppIcon { anchors.centerIn: parent; name: "ui-close"; color: "#fff"; size: 20 }
                                     MouseArea { anchors.fill: parent
-                                        onClicked: store.removeTile(clone.pageIndex, tile.tileId) }
+                                        onClicked: clone.removeRequested(tile.tileId, tile.tileType) }
                                 }
                             }
 

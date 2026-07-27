@@ -1,12 +1,13 @@
 import QtQuick
 import "../../ui/qml" as App
 
-// WidgetHarness - hosts a single widget for source-tree testing exactly the way
-// Dashboard.qml hosts it: a Loader whose loaded item inherits this component's
-// context, so the widget resolves the `theme`, `store` and `media` globals via
-// the scope chain (no C++ app needed). Load a widget by file name and the
-// harness injects the standard contract props (store, instanceId, metrics,
-// expanded, active, tick).
+// WidgetHarness - hosts a single widget from the compiled shipping resource
+// collection exactly the way Dashboard.qml hosts it: a Loader whose loaded item
+// inherits this component's context, so the widget resolves the `theme`, `store`
+// and `media` globals via the scope chain. The official runner links ui/qml.qrc;
+// a missing alias is therefore a real test failure. Load a widget by file name
+// and the harness injects the standard contract props (store, instanceId,
+// metrics, expanded, active, tick).
 Item {
     id: harness
 
@@ -45,8 +46,7 @@ Item {
         id: ld
         anchors.fill: parent
         active: harness._seeded
-        // Resolved relative to this file (tests/ui/) → ui/qml/widgets/<file>.
-        source: harness.widgetFile ? "../../ui/qml/widgets/" + harness.widgetFile : ""
+        source: harness.widgetFile ? "qrc:/qml/" + harness.widgetFile : ""
         onLoaded: {
             if (!item) return
             store.ensureSettings(harness.instanceId, {})

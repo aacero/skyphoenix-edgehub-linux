@@ -1,0 +1,13 @@
+title = "EdgeHub secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Published signing fingerprint and deliberately invalid test tokens"
+regexTarget = "match"
+regexes = [
+  '''2F0CAD36DC1D46F3347B7EF293CDC77EACF98990''',
+  '''XE1\.valid\.pro''',
+  '''eyJhbGciOiJub25lIn0\.eyJ0aWVyIjoicHJvIn0\.''',
+]

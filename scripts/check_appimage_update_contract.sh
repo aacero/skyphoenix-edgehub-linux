@@ -42,6 +42,14 @@ STRICT_GATE_SH="$REPO/scripts/run_release_tests.sh"
 RELEASE_SEQUENCE_LIB="$REPO/scripts/lib/release_sequence.sh"
 DISTRO_YML="$REPO/.github/workflows/distro.yml"
 CHECKER_QML="$REPO/ui/qml/widgets/UpdateChecker.qml"
+APPRUN="$REPO/packaging/appimage/AppRun"
+PACKAGE_SMOKE="$REPO/packaging/ci/smoke.sh"
+APPIMAGE_SMOKE="$REPO/packaging/ci/smoke-appimage.sh"
+AUTOSTART_SOURCE="$REPO/app/src/autostart.cpp"
+MANAGER_BACKEND="$REPO/manager/src/manager_backend.h"
+MANAGER_HUB_LAUNCH="$REPO/manager/src/manager_hub_launch.h"
+AUTOSTART_TEST="$REPO/tests/cpp/tst_autostart.cpp"
+MANAGER_SYNC_TEST="$REPO/tests/cpp/tst_manager_backend_sync.cpp"
 
 # The one repo slug the whole update path must agree on.
 readonly SLUG="skyphoenix-it/skyphoenix-edgehub-linux"
@@ -60,7 +68,11 @@ _fold() { sed -e ':a' -e '/\\$/{N;s/\\\n//;ta' -e '}' "$1"; }
 _line_of() { grep -nF -- "$1" "$2" | head -1 | cut -d: -f1; }
 
 # A missing subject is a failure, never a skip (rule 1 above).
-for f in "$BUILD_SH" "$RELEASE_SH" "$STRICT_GATE_SH" "$RELEASE_SEQUENCE_LIB" "$DISTRO_YML" "$CHECKER_QML"; do
+for f in \
+    "$BUILD_SH" "$RELEASE_SH" "$STRICT_GATE_SH" "$RELEASE_SEQUENCE_LIB" \
+    "$DISTRO_YML" "$CHECKER_QML" "$APPRUN" "$PACKAGE_SMOKE" \
+    "$APPIMAGE_SMOKE" "$AUTOSTART_SOURCE" "$MANAGER_BACKEND" \
+    "$MANAGER_HUB_LAUNCH" "$AUTOSTART_TEST" "$MANAGER_SYNC_TEST"; do
     [ -f "$f" ] || { fail "missing subject: ${f#$REPO/}"; }
 done
 [ "$fails" -eq 0 ] || { printf '\nRESULT: FAILURE (%d)\n' "$fails"; exit 1; }
@@ -106,9 +118,8 @@ fi
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. The artifact must be named for the RELEASE version, not project(VERSION),
-#    which CMakeLists.txt freezes at 0.1.0 across every commit. Naming it from
-#    the frozen field shipped "xeneon-edge-hub-0.1.0-x86_64.AppImage" for every
-#    release forever - two different releases, one filename.
+#    which cannot encode prerelease or commit identity. Naming artifacts from
+#    that field alone would make distinct candidates collide.
 #    Executed, not grepped: --print-name runs the real derivation.
 # ─────────────────────────────────────────────────────────────────────────────
 frozen="$(grep -Po 'project\(.*VERSION \K[0-9.]+' "$REPO/CMakeLists.txt" | head -1)"
@@ -117,7 +128,7 @@ if [ "$name" = "xeneon-edge-hub-9.9.9-test-x86_64.AppImage" ]; then
     pass "artifact name tracks the release version (--print-name: $name)"
 else
     fail "build-appimage.sh --print-name gave '$name', expected 'xeneon-edge-hub-9.9.9-test-x86_64.AppImage'"
-    fail "  (a name built from the frozen project() version '$frozen' is the bug this catches)"
+    fail "  (a name built only from project() version '$frozen' is the bug this catches)"
 fi
 
 # The leading v must be stripped, matching the pkgver style of every other
@@ -128,13 +139,121 @@ case "$name" in
     *)         pass "leading 'v' is stripped from the artifact version" ;;
 esac
 
+# Both downloaded build tools are immutable release assets with exact SHA-256
+# values. This command is executable without Qt or network access, so the lock
+# itself is covered by the ordinary contract gate.
+expected_tool_lock="$(cat <<'EOF'
+linuxdeploy-x86_64.AppImage	https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage	c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d
+linuxdeploy-plugin-qt-x86_64.AppImage	https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-qt-x86_64.AppImage	15106be885c1c48a021198e7e1e9a48ce9d02a86dd0a1848f00bdbf3c1c92724
+EOF
+)"
+tool_lock="$(bash "$BUILD_SH" --print-tool-lock 2>/dev/null)"
+if [ "$tool_lock" = "$expected_tool_lock" ]; then
+    pass "AppImage build tools are pinned to exact immutable assets and SHA-256 values"
+else
+    fail "AppImage build tool lock differs from the reviewed immutable assets"
+    printf '%s\n' "$tool_lock" | sed 's/^/       /'
+fi
+if grep -Fq '/releases/download/continuous/' <<<"$tool_lock"; then
+    fail "AppImage build tool lock still uses a mutable continuous release"
+else
+    pass "AppImage build tool lock contains no mutable continuous release"
+fi
+
+folded_build="$(_fold "$BUILD_SH")"
+folded_appimage_smoke="$(_fold "$APPIMAGE_SMOKE")"
+if grep -Fq '_verify_tool "$out" "$expected"' <<<"$folded_build" \
+        && grep -Fq '_verify_tool "$temporary" "$expected"' <<<"$folded_build" \
+        && grep -Fq "curl --fail --location --proto '=https' --tlsv1.2" \
+            <<<"$folded_build"; then
+    pass "cached and freshly downloaded AppImage tools are verified before use"
+else
+    fail "AppImage builder can use a tool without enforcing its pinned SHA-256"
+fi
+
+# Execute the custom AppRun against fake payload commands. This proves the
+# default path starts the Hub and the explicit path reaches the Manager without
+# building an AppImage.
+dispatcher_root="$(mktemp -d "${TMPDIR:-/tmp}/xeneon-apprun-contract.XXXXXX")"
+mkdir -p "$dispatcher_root/usr/bin"
+cp -- "$APPRUN" "$dispatcher_root/AppRun"
+chmod +x "$dispatcher_root/AppRun"
+for binary in xeneon-edge-hub xeneon-edge-manager; do
+    printf '#!/bin/sh\nprintf "%%s\\n" "%s:$*"\n' "$binary" \
+        >"$dispatcher_root/usr/bin/$binary"
+    chmod +x "$dispatcher_root/usr/bin/$binary"
+done
+default_dispatch="$("$dispatcher_root/AppRun" alpha beta 2>/dev/null)"
+hub_dispatch="$("$dispatcher_root/AppRun" --hub gamma 2>/dev/null)"
+manager_dispatch="$("$dispatcher_root/AppRun" --manager delta 2>/dev/null)"
+rm -rf -- "$dispatcher_root"
+if [ "$default_dispatch" = "xeneon-edge-hub:alpha beta" ] \
+        && [ "$hub_dispatch" = "xeneon-edge-hub:gamma" ] \
+        && [ "$manager_dispatch" = "xeneon-edge-manager:delta" ]; then
+    pass "AppImage dispatcher exposes default Hub and explicit Manager launch paths"
+else
+    fail "AppImage dispatcher does not preserve the Hub/Manager argument contract"
+fi
+if grep -Fq -- '--custom-apprun "$REPO/packaging/appimage/AppRun"' \
+        <<<"$folded_build" \
+        && grep -Fq \
+            'APPIMAGE_EXTRACT_AND_RUN=1 ./app.AppImage --manager --version' \
+            <<<"$folded_appimage_smoke" \
+        && grep -Fq \
+            'exec env APPIMAGE_EXTRACT_AND_RUN=1 %s/app.AppImage --manager "$@"' \
+            "$APPIMAGE_SMOKE" \
+        && grep -Fq 'xeneon-edge-manager' "$PACKAGE_SMOKE" \
+        && grep -Fq 'xeneon-edge-hub-ctl' "$PACKAGE_SMOKE" \
+        && grep -Fq '{"type":"ping"}' "$PACKAGE_SMOKE" \
+        && grep -Fq 'Manager UI-state sync request received' "$PACKAGE_SMOKE" \
+        && grep -Fq 'Manager UI-state sync request received' \
+            "$REPO/app/src/control_server.cpp" \
+        && grep -Fq 'Manager: Hub UI-state reply accepted' "$PACKAGE_SMOKE" \
+        && grep -Fq 'Manager: Hub UI-state reply accepted' \
+            "$REPO/manager/src/manager_backend.h"; then
+    pass "AppImage and native smoke paths cover Manager launch and Hub socket integration"
+else
+    fail "packaging smoke omits the Manager dispatcher or Hub socket integration"
+fi
+# applyAutostart delegates the current native path to the shared command
+# resolver. The resolver replaces an ephemeral applicationFilePath() with the
+# persistent APPIMAGE and --hub. Requiring the older direct Exec-line rendering
+# call here would reject the equivalent, safer atomic-write delegation.
+if grep -Fq 'qEnvironmentVariable("APPIMAGE")' "$AUTOSTART_SOURCE" \
+        && grep -Fq 'QStringLiteral("--hub")' "$AUTOSTART_SOURCE" \
+        && grep -Fq 'bool applyAutostart(bool enabled)' "$AUTOSTART_SOURCE" \
+        && grep -Fq 'enabled, QCoreApplication::applicationFilePath());' \
+            "$AUTOSTART_SOURCE" \
+        && grep -Fq 'const HubLaunchCommand command = hubLaunchCommand(hubBinaryPath());' \
+            "$MANAGER_BACKEND" \
+        && grep -Fq \
+            'startHubDetached(command, m_managerInjectedQtPlatform)' \
+            "$MANAGER_BACKEND" \
+        && grep -Fq 'process.setProgram(command.program);' "$MANAGER_HUB_LAUNCH" \
+        && grep -Fq 'process.setArguments(command.arguments);' \
+            "$MANAGER_HUB_LAUNCH" \
+        && grep -Fq 'return process.startDetached();' "$MANAGER_HUB_LAUNCH"; then
+    pass "AppImage autostart and Manager startHub relaunch the persistent image with --hub"
+else
+    fail "AppImage lifecycle can persist or launch the ephemeral mounted Hub path"
+fi
+if grep -Fq 'appImageUsesPersistentOriginalForAutostart' "$AUTOSTART_TEST" \
+        && grep -Fq 'QCOMPARE(command.arguments, QStringList{QStringLiteral("--hub")})' \
+            "$AUTOSTART_TEST" \
+        && grep -Fq 'appImageStartHubOutlivesManagerProcess' "$MANAGER_SYNC_TEST" \
+        && grep -Fq 'detached AppImage Hub disappeared with ManagerBackend' \
+            "$MANAGER_SYNC_TEST"; then
+    pass "AppImage autostart persistence and detached Hub lifetime have focused tests"
+else
+    fail "AppImage persistence or Manager lifetime regression coverage is missing"
+fi
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. The binary's own version must be forced to match the filename. cmake
 #    otherwise re-derives it from git describe; in a shallow checkout that is a
 #    bare sha, which UpdateChecker.qml's SemVer parse rejects - so the AppImage
 #    reports "no comparable version" and NEVER surfaces an update.
 # ─────────────────────────────────────────────────────────────────────────────
-folded_build="$(_fold "$BUILD_SH")"
 if printf '%s' "$folded_build" | grep -q -- '-DXENEON_VERSION_OVERRIDE="\$VERSION"'; then
     pass "build passes -DXENEON_VERSION_OVERRIDE=\$VERSION (appVersion == filename)"
 else
@@ -143,7 +262,7 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. git describe needs tags. actions/checkout@v4 defaults to fetch-depth 1,
+# 3. git describe needs tags. The pinned checkout v5.1.0 defaults to depth 1,
 #    which fetches NONE, and `git describe --always` then silently degrades to a
 #    sha instead of erroring. So the appimage job must pin fetch-depth: 0.
 #    This is the check that would have caught the shipped bug.
@@ -155,7 +274,7 @@ elif printf '%s' "$appimage_job" | grep -q 'fetch-depth: 0'; then
     pass "distro.yml appimage job checks out with tags (fetch-depth: 0)"
 else
     fail "distro.yml appimage job does not set fetch-depth: 0"
-    fail "  (checkout@v4 fetches no tags by default; git describe --always then yields a bare sha)"
+    fail "  (checkout fetches no tags by default; git describe --always then yields a bare sha)"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -284,9 +403,16 @@ if [ -n "$first_release_action_line" ]; then
         fail "strict release gate does not run after signed-tag provenance verification"
     elif [ "$gate_line" -ge "$first_release_action_line" ]; then
         fail "strict release gate runs after release build/sign/publish actions can begin"
-    elif ! grep -Eq '^bash "\$STRICT_RELEASE_GATE" 3<<<"\$RELEASE_OWNER_TEST_LICENSE_KEY" \\$' "$RELEASE_SH" \
-            || ! grep -Eq 'bash "\$STRICT_RELEASE_GATE" 3<<<"\$RELEASE_OWNER_TEST_LICENSE_KEY"[[:space:]]+\|\| die "strict release test gate failed\.' <<<"$folded_release"; then
-        fail "strict release gate invocation is conditional, wrapped, or otherwise bypassable"
+    elif ! grep -Fq 'if ! XENEON_RELEASE_METADATA_STAGE=candidate \' \
+            "$RELEASE_SH" \
+            || ! grep -Fq 'XENEON_RELEASE_VERSION="$VERSION" \' "$RELEASE_SH" \
+            || ! grep -Fq 'XENEON_RELEASE_GATE_RESULT_FILE="$gate_result_file" \' \
+                "$RELEASE_SH" \
+            || ! grep -Fq 'bash "$STRICT_RELEASE_GATE" 3<<<"$RELEASE_OWNER_TEST_LICENSE_KEY"; then' \
+                "$RELEASE_SH" \
+            || ! grep -Fq 'die "strict release test gate failed. No release artifact was created, signed, or published."' \
+                "$RELEASE_SH"; then
+        fail "strict release gate invocation or machine-result binding is bypassable"
     elif [ -z "$gate_mark_line" ] || [ -z "$mutation_barrier_line" ] \
             || [ "$gate_mark_line" -le "$gate_line" ] \
             || [ "$mutation_barrier_line" -le "$gate_mark_line" ] \
@@ -296,19 +422,23 @@ if [ -n "$first_release_action_line" ]; then
         pass "release.sh unconditionally gates the signed candidate before every release mutation"
     fi
 
-    if grep -Fq 'RELEASE_OWNER_TEST_LICENSE_KEY="${XENEON_TEST_LICENSE_KEY:-}"' "$RELEASE_SH" \
-            && grep -Fq 'unset XENEON_TEST_LICENSE_KEY' "$RELEASE_SH" \
+    if grep -Fq '[[ -v XENEON_TEST_LICENSE_KEY ]]' "$RELEASE_SH" \
+            && grep -Fq 'XENEON_TEST_LICENSE_KEY_FILE' "$RELEASE_SH" \
+            && grep -Fq 'owner_license_file.py' "$RELEASE_SH" \
             && grep -Fq 'export XENEON_OWNER_KEY_FD=3' "$RELEASE_SH" \
             && grep -Fq 'unset XENEON_OWNER_KEY_FD' "$RELEASE_SH"; then
-        pass "release.sh keeps the owner entitlement out of build/sign/publish child environments"
+        pass "release.sh reads only a protected licence file and keeps the entitlement out of build/sign/publish child environments"
     else
-        fail "release.sh leaks the owner entitlement beyond the strict Rust attestations"
+        fail "release.sh has unsafe owner-licence ingress or leaks the entitlement beyond the strict Rust attestations"
     fi
 
     if [ -z "$mutation_barrier_line" ]; then
         fail "cannot scan pre-gate mutations without the runtime barrier"
     else
-        pre_barrier_source="$(sed -n "1,$((mutation_barrier_line - 1))p" "$RELEASE_SH" | sed '/^[[:space:]]*#/d')"
+        pre_barrier_source="$(sed -n "1,$((mutation_barrier_line - 1))p" "$RELEASE_SH" \
+            | sed '/^[[:space:]]*#/d' \
+            | grep -Fv 'rm -f -- "$attestation_output"' \
+            | grep -Fv 'rm -f -- "$gate_result_file"' || true)"
         pre_barrier_mutators="$(printf '%s\n' "$pre_barrier_source" | grep -En \
             '^[[:space:]]*(rm|mkdir|cp|mv|install|touch|truncate|dd|tee|cpack)([[:space:]]|$)|^[[:space:]]*cmake([[:space:]]|$)|^[[:space:]]*gpg[[:space:]].*--(detach-)?sign|^[[:space:]]*gh[[:space:]]+release' || true)"
         if [ -n "$pre_barrier_mutators" ]; then
@@ -335,11 +465,13 @@ fi
 if sed '/^[[:space:]]*#/d' "$RELEASE_SH" \
         | grep -Eq '(^|[[:space:]])eval([[:space:]]|$)'; then
     fail "release.sh still evaluates a constructed shell command"
-elif grep -Fq 'release_command=(gh release create "$VERSION" --repo "$RELEASE_REPO")' "$RELEASE_SH" \
+elif grep -Fq 'release_command=(gh release create "$VERSION" --repo "$RELEASE_REPO" --verify-tag --draft)' "$RELEASE_SH" \
         && [ "$release_repo" = "$SLUG" ] \
-        && grep -Fq 'release_command+=(--title "EdgeHub $VERSION" --notes-file RELEASE_NOTES.md)' "$RELEASE_SH" \
+        && grep -Fq 'release_command+=(--title "$RELEASE_PAGE_TITLE" --notes-file dist/RELEASE_NOTES.md)' "$RELEASE_SH" \
         && grep -Fq 'release_command+=("${release_files[@]}")' "$RELEASE_SH" \
-        && grep -Fq 'find "$DIST_DIR" -maxdepth 1 -type f -print0 | sort -z' "$RELEASE_SH" \
+        && grep -Fq 'for publication_path in "${PUBLICATION_PATHS[@]}"; do' "$RELEASE_SH" \
+        && grep -Fq 'release_files+=("dist/$(basename -- "$publication_path")")' "$RELEASE_SH" \
+        && ! grep -Fq 'find "$DIST_DIR"' "$RELEASE_SH" \
         && grep -Fq 'printf '\''%q '\'' "${release_command[@]}"' "$RELEASE_SH" \
         && grep -Fq '( cd "$REPO_DIR" && "${release_command[@]}" )' "$RELEASE_SH"; then
     pass "release publishing preserves tag and artifact arguments without shell re-parsing"
@@ -387,8 +519,8 @@ fi
 #    cannot find the next release AT ALL - there is no discovery path from an
 #    installed AppImage to the next .zsync, and the whole self-update story is
 #    dead on arrival no matter how correct the .zsync is. Must be gh-releases-zsync
-#    against the right repo, and `latest` (a versioned channel would pin the
-#    AppImage to one release forever).
+#    against the right repo. `latest` is explicitly the stable-only channel.
+#    Prerelease release notes provide the versioned .zsync URL.
 # ─────────────────────────────────────────────────────────────────────────────
 ui_line="$(printf '%s' "$folded_build" | grep -o 'LDAI_UPDATE_INFORMATION="[^"]*"' | head -1)"
 if [ -z "$ui_line" ]; then
@@ -396,11 +528,11 @@ if [ -z "$ui_line" ]; then
 else
     case "$ui_line" in
         *"gh-releases-zsync|skyphoenix-it|skyphoenix-edgehub-linux|latest|"*".AppImage.zsync"*)
-            pass "AppImage embeds gh-releases-zsync update-information for $SLUG (latest)" ;;
+            pass "AppImage embeds the stable-only gh-releases-zsync channel for $SLUG" ;;
         *"|latest|"*)
             fail "update-information targets the wrong repo/pattern: $ui_line" ;;
         *)
-            fail "update-information is not the 'latest' channel (would pin to one release): $ui_line" ;;
+            fail "update-information is not the documented stable-only channel: $ui_line" ;;
     esac
 fi
 

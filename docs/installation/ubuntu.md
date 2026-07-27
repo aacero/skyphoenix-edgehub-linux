@@ -2,10 +2,12 @@
 
 ## Supported native release
 
-The native `.deb` target is supported on **Ubuntu 26.04 LTS or newer**, where
-the distribution supplies Qt 6.5 or newer. The package lifecycle is tested in a
-clean Ubuntu 26.04 container: build, dependency resolution, install, real QML
-startup, desktop metadata and AppStream validation.
+The native `.deb` workflow targets **Ubuntu 26.04 LTS exactly**, where the
+distribution supplies Qt 6.5 or newer. A successful 26.04 result is not evidence
+for a later Ubuntu version. The workflow builds in one container and tests
+dependency resolution, install, QML startup, metadata, exact-artifact reinstall
+and full removal in another. Stable support is claimed only after that workflow
+and the upgrade/rollback workflow pass for the exact release SHA.
 
 Ubuntu 24.04 ships Qt 6.4.2, which is below the application's Qt 6.5 floor.
 Do not install the native `.deb` there. Use an AppImage built with Qt 6.5 or
@@ -46,6 +48,11 @@ cd build
 cpack -G DEB
 ```
 
+CMake derives the canonical binary and package versions from the checkout.
+Inspect `build/xeneon-app-version.txt` and
+`build/xeneon-native-package-version.txt`; do not override package metadata at
+CPack time.
+
 The generated package combines dependencies derived by `dpkg-shlibdeps` with
 explicit `qml6-module-*` dependencies. The explicit list is required because QML
 plugins are loaded dynamically and therefore cannot be discovered from ELF
@@ -59,18 +66,40 @@ linkage alone.
 Both applications also install desktop-menu launchers. The first dashboard
 start opens display selection when no target has been configured.
 
+If the Edge was connected while the package was installed, replug its USB
+connection or reboot before testing automatic orientation. To activate the new
+udev rule without either:
+
+```sh
+sudo udevadm control --reload
+sudo udevadm trigger --action=change --subsystem-match=hidraw
+```
+
 ## Upgrade and uninstall
 
-Install a newer local package with the same `apt install ./…deb` command. Restart
-any running Hub or Manager process afterward so it uses the upgraded binary.
+Install a newer local package with the same `apt install ./…deb` command. A
+package manager cannot safely restart applications in your graphical session,
+so an already-running Hub or Manager remains the old process until you close and
+reopen it. Reopen the Manager only if you were using it before the upgrade. Hub
+autostart, when enabled, uses the new binary at the next login.
 
 ```sh
 sudo apt remove xeneon-edge-hub
 ```
 
-Package removal intentionally preserves
-`~/.config/xeneon-edge-hub/config.toml`. Remove that directory manually only if
-you explicitly want to discard the dashboard layout and settings.
+Package removal deletes the binaries, launchers, icons, udev rule and installed
+licence files. It intentionally does not traverse home directories, so these
+per-user files remain:
+
+```text
+${XDG_CONFIG_HOME:-$HOME/.config}/xeneon-edge-hub/
+${XDG_CONFIG_HOME:-$HOME/.config}/autostart/xeneon-edge-hub.desktop
+```
+
+Disable autostart in the Manager before uninstalling, or remove the autostart
+file manually afterward. Remove the `xeneon-edge-hub` configuration directory
+only if you explicitly want to discard layouts, widget data, settings and stored
+credentials. `apt purge` also cannot remove these per-user files.
 
 See [common issues](../troubleshooting/common-issues.md) for display and
 orientation troubleshooting.

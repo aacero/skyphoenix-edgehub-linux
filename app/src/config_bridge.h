@@ -20,6 +20,9 @@
 #include <unistd.h>
 
 #include "autostart.h"
+#include "build_version.h"
+#include "config_transaction.h"
+#include "ui_state_recovery.h"
 #include "xeneon_core.h"
 #include "xeneon_string.h"
 
@@ -43,50 +46,83 @@ public:
                                      const QString& themeMode, const QString& themeAccent,
                                      bool autostart, bool reconnect, bool notifyDisconnect) {
         if (!m_config) return false;
+        ConfigTransaction transaction(m_config);
+        if (!transaction) return false;
+        ConfigHandle* candidate = transaction.candidate();
+        bool mutated = true;
 
         // Persist display identity
         if (!edidHash.isEmpty())
-            xeneon_config_set_target_edid_hash(m_config, edidHash.toUtf8().constData());
+            mutated = mutated
+                      && xeneon_config_set_target_edid_hash(
+                             candidate, edidHash.toUtf8().constData()) == 0;
         if (!connector.isEmpty())
-            xeneon_config_set_target_connector(m_config, connector.toUtf8().constData());
+            mutated = mutated
+                      && xeneon_config_set_target_connector(
+                             candidate, connector.toUtf8().constData()) == 0;
         if (!model.isEmpty())
-            xeneon_config_set_target_model(m_config, model.toUtf8().constData());
+            mutated = mutated
+                      && xeneon_config_set_target_model(
+                             candidate, model.toUtf8().constData()) == 0;
 
         // Persist layout choice
         if (!layout.isEmpty())
-            xeneon_config_set_starter_layout(m_config, layout.toUtf8().constData());
+            mutated = mutated
+                      && xeneon_config_set_starter_layout(
+                             candidate, layout.toUtf8().constData()) == 0;
 
         // Persist theme
         if (!themeMode.isEmpty())
-            xeneon_config_set_theme_mode(m_config, themeMode.toUtf8().constData());
+            mutated = mutated
+                      && xeneon_config_set_theme_mode(
+                             candidate, themeMode.toUtf8().constData()) == 0;
         if (!themeAccent.isEmpty())
-            xeneon_config_set_theme_accent(m_config, themeAccent.toUtf8().constData());
+            mutated = mutated
+                      && xeneon_config_set_theme_accent(
+                             candidate, themeAccent.toUtf8().constData()) == 0;
 
         // Persist startup preferences
-        xeneon_config_set_autostart(m_config, autostart ? 1 : 0);
-        xeneon_config_set_reconnect(m_config, reconnect ? 1 : 0);
-        xeneon_config_set_notify_disconnect(m_config, notifyDisconnect ? 1 : 0);
+        mutated = mutated
+                  && xeneon_config_set_autostart(candidate, autostart ? 1 : 0) == 0;
+        mutated = mutated
+                  && xeneon_config_set_reconnect(candidate, reconnect ? 1 : 0) == 0;
+        mutated = mutated
+                  && xeneon_config_set_notify_disconnect(
+                         candidate, notifyDisconnect ? 1 : 0) == 0;
 
-        // Actually install/remove the XDG autostart entry to match the choice.
-        applyAutostart(autostart);
+        // Mark first-run complete only inside the isolated candidate.
+        mutated = mutated
+                  && xeneon_config_set_first_run_complete(candidate) == 0;
+        if (!mutated)
+            return false;
 
-        // Mark first-run complete
-        xeneon_config_set_first_run_complete(m_config);
+        // The config and the effective XDG entry are a compensated transaction.
+        // If either half fails, preserve the previous live config and restore the
+        // previous effective entry state.
+        const bool previousAutostart = isAutostartEnabled();
+        if (!applyAutostart(autostart))
+            return false;
 
-        // Save to disk
-        int saved = xeneon_config_save(m_config);
-        if (saved == 0) {
+        const bool saved = transaction.commit();
+        if (saved) {
+            if (transaction.durabilityUncertain())
+                emit persistenceWarning(QStringLiteral(
+                    "Settings were saved, but storage could not confirm crash durability."));
             qInfo() << "Wizard complete. Target:" << model << "Layout:" << layout
                      << "Theme:" << themeMode << "Autostart:" << autostart;
         } else {
-            qWarning() << "Wizard complete but config save failed";
+            const bool restored = applyAutostart(previousAutostart);
+            qWarning() << "Wizard config save failed; autostart restored:" << restored;
         }
-        return saved == 0;
+        return saved;
     }
 
     // Detach from the Rust config handle before it is freed at shutdown, so any
     // late QML call becomes a guarded no-op instead of a use-after-free.
     void detach() { m_config = nullptr; }
+
+signals:
+    void persistenceWarning(const QString& message);
 
 private:
     ConfigHandle* m_config;
@@ -114,8 +150,9 @@ public:
         : QObject(parent), m_config(config) {}
 
     // Opaque UI-state JSON (dashboard layout + per-widget settings + appearance).
-    // Build version, injected at compile time via -DXENEON_VERSION (git describe;
-    // or the pkgver for packaged builds). Falls back to "dev" for syntax-only builds.
+    // Product builds include the generated git-describe version; explicit
+    // packaging overrides remain authoritative. Logic-only builds fall back to
+    // "dev" without needing a configured build tree.
     Q_INVOKABLE QString appVersion() const {
 #ifdef XENEON_VERSION
         return QStringLiteral(XENEON_VERSION);
@@ -130,11 +167,28 @@ public:
         return s.qstring();
     }
 
+    // Opaque, process-local equality token for the persisted config generation.
+    // It is random and carries no config digest or private data.
+    QString configGenerationToken() const {
+        if (!m_config) return QString();
+        XeneonString token(xeneon_config_generation_token(m_config));
+        return token.qstring();
+    }
+
     // Persist the UI-state JSON and flush to disk atomically. Returns success.
     Q_INVOKABLE bool saveUiState(const QString& json) {
         if (!m_config) return false;
-        xeneon_config_set_ui_state(m_config, json.toUtf8().constData());
-        bool ok = xeneon_config_save(m_config) == 0;
+        ConfigTransaction transaction(m_config);
+        if (!transaction
+            || xeneon_config_set_ui_state(
+                   transaction.candidate(), json.toUtf8().constData()) != 0) {
+            qWarning() << "Rejected invalid or unsupported UI state";
+            return false;
+        }
+        const bool ok = transaction.commit();
+        if (ok && transaction.durabilityUncertain())
+            emit persistenceWarning(QStringLiteral(
+                "The layout is visible on disk, but storage could not confirm crash durability."));
         if (!ok) qWarning() << "Failed to persist UI state";
         return ok;
     }
@@ -145,8 +199,31 @@ public:
     // is explicit at the call site.
     bool applyExternalUiState(const QString& json) {
         if (!m_config || json.isEmpty()) return false;
-        xeneon_config_set_ui_state(m_config, json.toUtf8().constData());
-        return xeneon_config_save(m_config) == 0;
+        if (!externalUiStateAllowed()) {
+            qWarning() << "Rejected external UI state while a managed preset is forced";
+            return false;
+        }
+        ConfigTransaction transaction(m_config);
+        if (!transaction
+            || xeneon_config_set_ui_state(
+                   transaction.candidate(), json.toUtf8().constData()) != 0) {
+            qWarning() << "Rejected invalid or unsupported external UI state";
+            return false;
+        }
+        const bool ok = transaction.commit();
+        if (ok && transaction.durabilityUncertain())
+            emit persistenceWarning(QStringLiteral(
+                "The Manager layout was published, but storage could not confirm crash durability."));
+        return ok;
+    }
+
+    bool externalUiStateAllowed() const {
+        return policy().value(QStringLiteral("forcePreset")).toString().isEmpty();
+    }
+
+    Q_INVOKABLE QString exportUiStateRecovery(const QString& json) const {
+        XeneonString directory(xeneon_config_dir());
+        return xeneon::exportUiStateRecovery(directory.qstring(), json);
     }
 
     // Starter layout id chosen during the wizard ("productivity"/"gaming"/…).
@@ -264,6 +341,10 @@ public:
     // An empty input is a success with an empty value (an unconfigured widget just
     // sends no Authorization header) - NOT an error.
     Q_INVOKABLE QVariantMap resolveSecret(const QString& raw) const {
+        return resolveSecretValue(raw);
+    }
+
+    static QVariantMap resolveSecretValue(const QString& raw) {
         QVariantMap r;
         r["ok"] = false;
         r["value"] = QString();
@@ -458,6 +539,9 @@ public:
     // Detach from the Rust config handle before it is freed at shutdown, so any
     // late QML call becomes a guarded no-op instead of a use-after-free.
     void detach() { m_config = nullptr; }
+
+signals:
+    void persistenceWarning(const QString& message);
 
 private:
     ConfigHandle* m_config;

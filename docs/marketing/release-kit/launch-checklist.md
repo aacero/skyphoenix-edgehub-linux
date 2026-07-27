@@ -16,7 +16,9 @@ tarballs are advertised.
 - [x] The 48-hour soak is explicitly waived; no long-soak claim is present.
 - [x] Performance numbers are omitted; no formal performance claim is present.
 - [ ] The real owner-issued Pro key passed against the shipped issuer key.
-- [ ] Coverage met the strict Rust, C++, merged, and QML gates.
+- [ ] Rust and C++ independently met their strict line-coverage gates.
+- [ ] All enumerated QML requirements were assertion-backed; the merged
+  Rust+C++ report was reviewed as diagnostic only.
 - [x] Real Edge, Manager/Hub, display lifecycle, touch, reconnect, and suspend
       evidence belongs to the exact candidate.
 - [x] Release notes no longer contain the development hold.

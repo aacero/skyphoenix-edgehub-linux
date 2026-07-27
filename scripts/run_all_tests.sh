@@ -9,33 +9,62 @@
 #
 # Suites:
 #   1. Gate/input contracts : injection-free shell + Python unit tests
-#   2. Rust core            : cd core && cargo test
+#   2. Rust core            : cd core && cargo test --locked
 #   3. QML GUI              : scripts/run_ui_tests.sh (offscreen qmltestrunner)
 #   4. C++ (ctest)          : existing build in developer mode; clean dedicated
 #                             build in strict release mode
-#   5. QML behavior matrix  : python3 scripts/qml_coverage.py
-#   6. Runtime E2E battery  : tests/runtime/run_*.sh - nine scenarios driving the
+#   5. QML requirements     : every enumerated item must be assertion-backed
+#   6. Runtime E2E battery  : tests/runtime/run_*.sh - ten scenarios driving the
 #                            REAL hub binary (focus goal bonus, w/h→size
 #                            migration, org policy, update-check-off, secret
 #                            refs, corrupt salvage, reset flags, live-push
-#                            single-writer, page-name dedup). Each needs a hub
+#                            single-writer, page-name dedup, safe mode). Each needs a hub
 #                            binary and SKIPs (77) if none is built/installed.
 #
 # Exits non-zero if any suite fails. Prints a clear per-suite summary.
 set -euo pipefail
 
-# Remove the owner entitlement before even the path-resolution subprocess. The
-# strict release path may supply it through descriptor 3 instead of environment.
-incoming_owner_test_key="${XENEON_TEST_LICENSE_KEY:-}"
-if [ "${XENEON_OWNER_KEY_FD:-}" = "3" ]; then
+# A raw bearer key is never a supported process-environment input. Direct strict
+# invocations may name a protected file; the canonical release runner supplies
+# the already-read key through descriptor 3.
+if [[ -v XENEON_TEST_LICENSE_KEY ]]; then
+    unset XENEON_TEST_LICENSE_KEY
+    echo "ERROR: XENEON_TEST_LICENSE_KEY is unsupported; use XENEON_TEST_LICENSE_KEY_FILE." >&2
+    exit 2
+fi
+incoming_owner_test_file_supplied=0
+incoming_owner_test_file=""
+if [[ -v XENEON_TEST_LICENSE_KEY_FILE ]]; then
+    incoming_owner_test_file_supplied=1
+    incoming_owner_test_file="$XENEON_TEST_LICENSE_KEY_FILE"
+fi
+unset XENEON_TEST_LICENSE_KEY_FILE
+incoming_owner_test_key="" # gitleaks:allow, explicit empty local; never key material
+incoming_owner_test_from_fd=0
+if [[ -v XENEON_OWNER_KEY_FD ]]; then
+    [ "$XENEON_OWNER_KEY_FD" = "3" ] || {
+        unset XENEON_OWNER_KEY_FD
+        echo "ERROR: XENEON_OWNER_KEY_FD must name descriptor 3." >&2
+        exit 2
+    }
+    [ "$incoming_owner_test_file_supplied" -eq 0 ] || {
+        unset XENEON_OWNER_KEY_FD
+        echo "ERROR: owner licence file and internal descriptor input cannot be combined." >&2
+        exit 2
+    }
+    incoming_owner_test_from_fd=1
     IFS= read -r incoming_owner_test_key <&3 || incoming_owner_test_key=""
     exec 3<&-
 fi
-unset XENEON_TEST_LICENSE_KEY
 unset XENEON_OWNER_KEY_FD
+if [ "${XENEON_RELEASE_GATE:-0}" = "1" ]; then
+    # Direct strict invocations get the same exact toolchain as release.sh.
+    export RUSTUP_TOOLCHAIN=1.86.0
+fi
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_DIR"
+owner_license_file_reader="$PROJECT_DIR/scripts/lib/owner_license_file.py"
 
 # shellcheck source=lib/release_gate.sh
 . "$PROJECT_DIR/scripts/lib/release_gate.sh"
@@ -46,6 +75,15 @@ release_gate=0
 if xeneon_release_gate_enabled; then
     release_gate=1
     echo "==> STRICT RELEASE GATE: every suite must execute and pass."
+    release_rust_toolchain_helper="$PROJECT_DIR/scripts/lib/release_rust_toolchain.sh"
+    [ -f "$release_rust_toolchain_helper" ] || {
+        echo "ERROR: release Rust toolchain helper is unavailable: $release_rust_toolchain_helper" >&2
+        exit 2
+    }
+    # shellcheck source=lib/release_rust_toolchain.sh
+    . "$release_rust_toolchain_helper"
+    xeneon_release_rust_toolchain_select
+    xeneon_release_rust_toolchain_verify || exit 2
 fi
 
 # All consumers share one build-tree selection. Developer runs retain the
@@ -71,6 +109,23 @@ fi
 # QML, Manager, compositor, runtime, or hardware children.
 release_owner_test_key=""
 if [ "$release_gate" -eq 1 ]; then
+    if [ "$incoming_owner_test_from_fd" -eq 0 ]; then
+        [ "$incoming_owner_test_file_supplied" -eq 1 ] || {
+            echo "ERROR: strict tests require XENEON_TEST_LICENSE_KEY_FILE." >&2
+            exit 2
+        }
+        [ -f "$owner_license_file_reader" ] || {
+            echo "ERROR: owner licence file reader is unavailable: $owner_license_file_reader" >&2
+            exit 2
+        }
+        if ! incoming_owner_test_key="$(
+                env PYTHONDONTWRITEBYTECODE=1 python3 \
+                    "$owner_license_file_reader" "$incoming_owner_test_file"
+            )"; then
+            echo "ERROR: owner-issued Pro licence file was rejected." >&2
+            exit 2
+        fi
+    fi
     release_owner_test_key="$incoming_owner_test_key"
     case "$release_owner_test_key" in
         *[![:space:]]*) ;;
@@ -79,8 +134,12 @@ if [ "$release_gate" -eq 1 ]; then
             exit 2
             ;;
     esac
+elif [ "$incoming_owner_test_file_supplied" -eq 1 ] \
+        || [ "$incoming_owner_test_from_fd" -eq 1 ]; then
+    echo "ERROR: owner licence input is accepted only in strict release mode." >&2
+    exit 2
 fi
-unset incoming_owner_test_key
+unset incoming_owner_test_key incoming_owner_test_file
 
 # Names and outcomes kept in parallel arrays (bash 3.2 compatible).
 names=()
@@ -114,9 +173,44 @@ run_suite() {
     fi
 }
 
+# Ordinary developer and CI runs use the reviewed repository stage declaration.
+# release.sh overrides both values from its already validated --version so the
+# strict suite cannot accidentally certify metadata for a different candidate.
+release_metadata_args=()
+if [ -n "${XENEON_RELEASE_METADATA_STAGE:-}" ]; then
+    release_metadata_args+=(--stage "$XENEON_RELEASE_METADATA_STAGE")
+fi
+if [ -n "${XENEON_RELEASE_VERSION:-}" ]; then
+    release_metadata_args+=(--target-version "$XENEON_RELEASE_VERSION")
+fi
+
 # 1. Cheap, injection-free contracts. These must stay before GUI/build work so
 # a broken safety boundary or hollow release gate fails in seconds.
 run_suite "Release-gate contract" bash "$PROJECT_DIR/scripts/check_release_gate_contract.sh"
+run_suite "Release provenance + signed SBOM contract" \
+    bash "$PROJECT_DIR/scripts/check_release_provenance_contract.sh"
+run_suite "CI/toolchain/release metadata contract" \
+    env PYTHONDONTWRITEBYTECODE=1 \
+        python3 "$PROJECT_DIR/scripts/check_ci_release_metadata_contract.py" \
+        "${release_metadata_args[@]}"
+run_suite "Release metadata lifecycle unit tests" \
+    env PYTHONDONTWRITEBYTECODE=1 \
+        python3 "$PROJECT_DIR/tests/runtime/test_ci_release_metadata_contract.py"
+run_suite "Signed audit-artifact finalizer contract" \
+    bash "$PROJECT_DIR/scripts/check_audit_artifact_finalizer.sh"
+run_suite "Signed stable-publication certification contract" \
+    bash "$PROJECT_DIR/scripts/check_release_certification_contract.sh"
+run_suite "Desktop notification + MPRIS evidence contract" \
+    env PYTHONDONTWRITEBYTECODE=1 python3 \
+        "$PROJECT_DIR/tests/runtime/test_desktop_bridge_evidence.py"
+run_suite "Certified native package byte-binding contract" \
+    bash "$PROJECT_DIR/scripts/check_native_package_binding_contract.sh"
+run_suite "Published AppImage zsync and stable-promotion contract" \
+    bash "$PROJECT_DIR/scripts/check_published_zsync_contract.sh"
+run_suite "Safe local update lifecycle contract" \
+    bash "$PROJECT_DIR/scripts/check_update_local_contract.sh"
+run_suite "Manual physical-touch sealing contract" \
+    bash "$PROJECT_DIR/scripts/check_manual_touch_audit_contract.sh"
 run_suite "Input safety (injection-free unit tests)" \
     env PYTHONDONTWRITEBYTECODE=1 python3 "$PROJECT_DIR/tests/hardware/test_input_safety.py"
 run_suite "Hardware E2E manifest contract (injection-free)" \
@@ -130,7 +224,7 @@ run_suite "Performance sampler unit + release-contract tests (injection-free)" \
 run_rust_core_with_owner_key() {
     local cargo_rc
     export XENEON_TEST_LICENSE_KEY="$release_owner_test_key"
-    if bash -c 'cd "'"$PROJECT_DIR"'/core" && cargo test'; then
+    if bash -c 'cd "'"$PROJECT_DIR"'/core" && cargo test --locked'; then
         cargo_rc=0
     else
         cargo_rc=$?
@@ -144,7 +238,7 @@ if [ "$release_gate" -eq 1 ]; then
     run_suite "Rust (cargo test)" run_rust_core_with_owner_key
     release_owner_test_key=""
 else
-    run_suite "Rust (cargo test)" bash -c 'cd "'"$PROJECT_DIR"'/core" && cargo test'
+    run_suite "Rust (cargo test)" bash -c 'cd "'"$PROJECT_DIR"'/core" && cargo test --locked'
 fi
 
 # 3. C++ ctest. Both modes configure and build before testing. Reusing an
@@ -175,8 +269,9 @@ fi
 run_suite "QML GUI (compiled resources)" \
     env QT_QPA_PLATFORM=offscreen bash "$PROJECT_DIR/scripts/run_ui_tests.sh"
 
-# 5. QML behavior-matrix coverage gate.
-run_suite "QML behavior matrix (qml_coverage.py)" python3 "$PROJECT_DIR/scripts/qml_coverage.py"
+# 5. QML enumerated-requirements assertion gate.
+run_suite "QML enumerated requirements (all assertion-backed)" \
+    python3 "$PROJECT_DIR/scripts/qml_coverage.py"
 
 # Static guard against the scene-graph walk bug that caused a system-wide OOM on
 # 2026-07-19 (three independent copies; 18.8 GB and 20 GB RSS). Cheap and fast -
@@ -192,8 +287,9 @@ run_suite "No Manager tests under a compositor" bash "$PROJECT_DIR/scripts/check
 run_suite "Doc links (files + anchors)" bash "$PROJECT_DIR/scripts/check_doc_links.sh"
 run_suite "UI links (no dead openUrlExternally)" bash "$PROJECT_DIR/scripts/check_ui_links.sh"
 
-# 5c. Icon lint - every widget type needs a bundled, registered picker icon (the
-#     QML suite can't see missing assets: it runs source-tree, with no qrc).
+# 5c. Icon lint - every widget type needs a bundled, registered picker icon.
+#     The compiled-resource QML suite exercises resolution; this static check
+#     additionally proves exact catalog-to-resource parity.
 run_suite "Icon lint (widget types)" bash "$PROJECT_DIR/scripts/check_widget_icons.sh"
 run_suite "Widget resource parity (Catalog, Hub, Manager)" \
     python3 "$PROJECT_DIR/scripts/check_widget_resources.py"
@@ -203,6 +299,12 @@ run_suite "Widget resource parity (Catalog, Hub, Manager)" \
 #     No single suite spans those four files, and every one of them was independently
 #     broken while the rest of the tests stayed green.
 run_suite "AppImage update contract" bash "$PROJECT_DIR/scripts/check_appimage_update_contract.sh"
+run_suite "Rust third-party notice inventory" \
+    python3 "$PROJECT_DIR/scripts/generate_rust_third_party_notices.py" \
+        --check "$PROJECT_DIR/packaging/THIRD_PARTY_NOTICES-RUST.txt"
+run_suite "Debian machine-readable copyright" \
+    python3 "$PROJECT_DIR/scripts/generate_debian_copyright.py" \
+        --check "$PROJECT_DIR/packaging/debian/copyright"
 run_suite "CPack release identity + tooling contract" \
     bash "$PROJECT_DIR/scripts/check_cpack_contract.sh"
 
@@ -220,6 +322,7 @@ runtime_scenarios=(
     "07 live push single-writer:run_07_live_push_single_writer.sh"
     "08 page dedup roundtrip:run_08_page_dedup_roundtrip.sh"
     "09 HTTP fault recovery:run_09_http_faults.sh"
+    "10 safe-mode widget boundary:run_10_safe_mode.sh"
 )
 for entry in "${runtime_scenarios[@]}"; do
     rt_name="${entry%%:*}"; rt_script="${entry#*:}"
@@ -324,12 +427,12 @@ else
        { [ "$release_gate" -eq 0 ] && \
             bash "$PROJECT_DIR/tests/gui/run_gui_tests.sh" -j"${XENEON_GUI_JOBS:-8}"; }; then
         results+=("PASS")
-        run_suite "Reviewed visual baselines (30 widgets + 20 presets)" \
+        run_suite "Reviewed visual baselines (30 widgets + 19 presets + orientation)" \
             python3 "$PROJECT_DIR/scripts/visual_baselines.py" compare
     else
         results+=("FAIL")
         echo "--- QML compositor suite: FAIL"
-        names+=("Reviewed visual baselines (30 widgets + 20 presets)")
+        names+=("Reviewed visual baselines (30 widgets + 19 presets + orientation)")
         results+=("NOT RUN")
         echo "--- Visual baselines: NOT RUN (compositor evidence failed)"
     fi

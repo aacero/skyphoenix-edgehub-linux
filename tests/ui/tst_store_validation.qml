@@ -127,6 +127,48 @@ Item {
             verify(store.pages()[0].name.length > 0, "default page name is non-empty")
         }
 
+        function test_null_settings_bucket_is_healed_and_saveable() {
+            var ok = store.applyExternal(
+                '{"version":1,"appearance":{},"settings":{"cpu-1":null},'
+                + '"pages":[{"name":"A","tiles":[{"id":"cpu-1","type":"cpu"}]}]}')
+            verify(ok, "the direct QML boundary heals the legacy bucket")
+            verify(store._isPlainObject(store.document.settings["cpu-1"]),
+                   "the null settings bucket became a plain object")
+            store.setSetting("cpu-1", "title", "Recovered")
+            compare(store.settingsFor("cpu-1").title, "Recovered",
+                    "a later edit no longer throws")
+            verify(store.flushNow(), "the healed document remains serializable")
+        }
+
+        function test_hasOwnProperty_tile_id_cannot_break_pruning() {
+            var ok = store.applyExternal(
+                '{"version":1,"settings":{"hasOwnProperty":{"title":"kept"}},'
+                + '"pages":[{"name":"A","tiles":['
+                + '{"id":"hasOwnProperty","type":"cpu"}]}]}')
+            verify(ok, "normalization accepts the prototype-like id")
+            compare(store.pages()[0].tiles.length, 1, "the tile survives")
+            compare(store.settingsFor("hasOwnProperty").title, "kept",
+                    "its settings survive pruning without invoking user data")
+            store.setSetting("hasOwnProperty", "title", "still editable")
+            verify(store.flushNow(), "subsequent persistence succeeds")
+        }
+
+        function test_duplicate_tile_ids_are_rekeyed_without_shared_settings() {
+            var ok = store.applyExternal(
+                '{"version":1,"settings":{"same":{"title":"copy me"}},'
+                + '"pages":[{"name":"A","tiles":['
+                + '{"id":"same","type":"cpu"},{"id":"same","type":"cpu"}]}]}')
+            verify(ok, "duplicate-id input is healed")
+            var tiles = store.pages()[0].tiles
+            compare(tiles.length, 2, "both widgets are preserved")
+            verify(tiles[0].id !== tiles[1].id, "the duplicate receives a fresh id")
+            compare(store.settingsFor(tiles[0].id).title, "copy me")
+            compare(store.settingsFor(tiles[1].id).title, "copy me")
+            store.setSetting(tiles[1].id, "title", "independent")
+            compare(store.settingsFor(tiles[0].id).title, "copy me",
+                    "the two widgets no longer share a bucket")
+        }
+
         // The `_isPlainObject` predicate underpins every heal above: it is the exact
         // gate that decides whether appearance/settings/a page/a tile is a usable
         // object or junk to drop. Assert it across every branch (null / non-object /

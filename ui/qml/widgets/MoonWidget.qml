@@ -220,6 +220,11 @@ WidgetChrome {
     // ── Per-size layout (sizeClass injected by Dashboard) ────────────────────
     readonly property bool horiz: sizeClass === "wide"
     readonly property bool tallish: sizeClass === "tall" || sizeClass === "large"
+    // A half-size projection can be tall while still only 278 to 423 px wide.
+    // Keep its useful facts, but use the compact density tier. Full overlays
+    // deliberately retain their richer composition even when one axis is short.
+    readonly property bool compactDetail: sizeClass !== "full"
+                                          && Math.min(width, height) < 480
     // Has this instance got room to spare? The overlay is a size CLASS ("full",
     // injected by Dashboard alongside expanded), not a mode - so it belongs in
     // this predicate rather than in a `w.expanded ?` branch scattered across the
@@ -240,12 +245,16 @@ WidgetChrome {
     readonly property real glyphPx: micro ? Math.min(width * 0.64, height * 0.68, 220)
         : horiz ? Math.min(width * (roomy ? 0.24 : 0.30),
                            height * (roomy ? 0.60 : 0.55), roomy ? 260 : 170)
-        : tallish ? Math.min(width * 0.68, height * 0.45, 260)
+        : tallish ? Math.min(width * (compactDetail ? 0.54 : 0.68),
+                             height * (compactDetail ? 0.30 : 0.45), 260)
         : Math.min(width * 0.50, height * 0.44, 300)
     // Illumination context: the sizes that have room add the lunar age. (`|| expanded`
     // dropped - `roomy` already covers sizeClass "full", which is what the overlay
     // is injected as, so the mode term was dead weight.)
-    readonly property string illumLine: (horiz || roomy)
+    readonly property string illumLine: w.compactDetail
+        ? w.illum + "% lit"
+          + ((horiz || roomy) ? " · " + w.ageDays.toFixed(1) + " days" : "")
+        : (horiz || roomy)
         ? w.illum + "% illuminated  ·  " + w.ageDays.toFixed(1) + " days old"
         : w.illum + "% illuminated"
     // The phase name and the illumination line are sized by the BOX, with the
@@ -258,7 +267,7 @@ WidgetChrome {
     // wide LANDSCAPE half-cell (846x306 / 423x306), whose name eases from 24 to
     // ~18 because a 306px-tall box genuinely has less vertical room - the same
     // room-driven logic, not a regression.
-    readonly property real namePx: Math.max(roomy ? 18 : 14,
+    readonly property real namePx: Math.max(theme.fontMinimum, roomy ? 18 : 14,
                                              Math.min(width * (roomy ? 0.065 : 0.045), height * 0.06,
                                                          roomy ? 34 : 24))
     readonly property real illumPx: Math.max(theme.fontMinimum,
@@ -267,14 +276,15 @@ WidgetChrome {
 
     GridLayout {
         id: moonLay
+        objectName: "moonLayout"
         anchors.centerIn: parent
         width: parent.width
         columns: w.horiz ? 2 : 1
         // Air is room, not mode: 14 was "the overlay" and 2 "not the overlay",
         // so a 0.5x1 tall tile carrying the same glyph + name + illumination +
         // dates stack as the overlay got the cramped 2.
-        rowSpacing: w.roomy ? 14 : 2
-        columnSpacing: theme.spacingLg
+        rowSpacing: w.compactDetail ? theme.spacingXs : (w.roomy ? 14 : 2)
+        columnSpacing: w.compactDetail ? theme.spacingSm : theme.spacingLg
 
         Canvas {
             id: moonDisc
@@ -360,17 +370,23 @@ WidgetChrome {
             visible: !w.micro
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignVCenter
-            spacing: w.roomy ? 14 : 4          // room, not mode - see rowSpacing above
+            spacing: w.compactDetail ? theme.spacingXs
+                                     : (w.roomy ? 14 : 4)
 
             // fillWidth (not maximumWidth): a non-fill Text caps the nested
             // column's own stretch, which pinned the whole block to the left.
-            Text { Layout.fillWidth: true; text: w.names[w.idx]
+            Text {
+                objectName: "moonPhaseName"
+                Layout.fillWidth: true; text: w.names[w.idx]
                 horizontalAlignment: Text.AlignHCenter
                 elide: Text.ElideRight; fontSizeMode: Text.HorizontalFit
+                minimumPixelSize: theme.fontMinimum
                 font.pixelSize: Math.round(w.namePx)
                 font.family: theme.fontDisplay
                 color: w.effAccent }
-            Text { Layout.fillWidth: true
+            Text {
+                objectName: "moonIllumination"
+                Layout.fillWidth: true
                 horizontalAlignment: Text.AlignHCenter
                 elide: Text.ElideRight; fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum
                 text: w.illumLine
@@ -384,25 +400,64 @@ WidgetChrome {
             RowLayout {
                 objectName: "moonUpcomingDates"
                 Layout.alignment: Qt.AlignHCenter
+                Layout.fillWidth: w.compactDetail
                 visible: w.roomy
-                spacing: theme.spacingXl
-                Layout.topMargin: theme.spacingSm
+                spacing: w.compactDetail ? theme.spacingSm : theme.spacingXl
+                Layout.topMargin: w.compactDetail ? 0 : theme.spacingSm
                 ColumnLayout {
+                    Layout.fillWidth: w.compactDetail
                     spacing: 1
-                    Text { Layout.alignment: Qt.AlignHCenter; text: "NEXT NEW"; font.pixelSize: theme.fontLabel; color: theme.textSecondary; font.bold: true }
-                    Text { Layout.alignment: Qt.AlignHCenter; text: Qt.formatDate(w.nextNew, "ddd, d MMM")
-                        font.pixelSize: theme.fontTitle; font.bold: true; color: w.effAccent }
+                    Text {
+                        objectName: "moonNextNewLabel"
+                        Layout.fillWidth: w.compactDetail
+                        Layout.alignment: Qt.AlignHCenter
+                        horizontalAlignment: Text.AlignHCenter
+                        text: w.compactDetail ? "NEW" : "NEXT NEW"
+                        Accessible.name: "Next new moon"
+                        font.pixelSize: theme.fontLabel
+                        color: theme.textSecondary; font.bold: true
+                    }
+                    Text {
+                        objectName: "moonNextNewDate"
+                        Layout.fillWidth: w.compactDetail
+                        Layout.alignment: Qt.AlignHCenter
+                        horizontalAlignment: Text.AlignHCenter
+                        text: Qt.formatDate(w.nextNew,
+                                            w.compactDetail ? "d MMM" : "ddd, d MMM")
+                        Accessible.name: "Next new moon "
+                                         + Qt.formatDate(w.nextNew, "ddd, d MMM")
+                        font.pixelSize: theme.fontTitle; font.bold: true; color: w.effAccent
+                    }
                 }
                 ColumnLayout {
+                    Layout.fillWidth: w.compactDetail
                     spacing: 1
-                    Text { Layout.alignment: Qt.AlignHCenter; text: "NEXT FULL"; font.pixelSize: theme.fontLabel; color: theme.textSecondary; font.bold: true }
-                    Text { Layout.alignment: Qt.AlignHCenter; text: Qt.formatDate(w.nextFull, "ddd, d MMM")
-                        font.pixelSize: theme.fontTitle; font.bold: true; color: w.effAccent }
+                    Text {
+                        objectName: "moonNextFullLabel"
+                        Layout.fillWidth: w.compactDetail
+                        Layout.alignment: Qt.AlignHCenter
+                        horizontalAlignment: Text.AlignHCenter
+                        text: w.compactDetail ? "FULL" : "NEXT FULL"
+                        Accessible.name: "Next full moon"
+                        font.pixelSize: theme.fontLabel
+                        color: theme.textSecondary; font.bold: true
+                    }
+                    Text {
+                        objectName: "moonNextFullDate"
+                        Layout.fillWidth: w.compactDetail
+                        Layout.alignment: Qt.AlignHCenter
+                        horizontalAlignment: Text.AlignHCenter
+                        text: Qt.formatDate(w.nextFull,
+                                            w.compactDetail ? "d MMM" : "ddd, d MMM")
+                        Accessible.name: "Next full moon "
+                                         + Qt.formatDate(w.nextFull, "ddd, d MMM")
+                        font.pixelSize: theme.fontTitle; font.bold: true; color: w.effAccent
+                    }
                 }
             }
             ColumnLayout {
                 objectName: "moonCyclePosition"
-                visible: w.roomy
+                visible: w.roomy && !w.compactDetail
                 Layout.alignment: Qt.AlignHCenter
                 Layout.preferredWidth: Math.min(moonLay.width * 0.76, 420)
                 spacing: theme.spacingXs
@@ -440,7 +495,8 @@ WidgetChrome {
                 objectName: "moonLocalEvents"
                 visible: w.roomy && w.showLocalEvents
                 Layout.alignment: Qt.AlignHCenter
-                Layout.preferredWidth: Math.min(moonLay.width * 0.86, 520)
+                Layout.preferredWidth: Math.min(
+                    moonLay.width * (w.compactDetail ? 0.96 : 0.86), 520)
                 Layout.preferredHeight: localEventColumn.implicitHeight + theme.spacingMd * 2
                 radius: theme.radiusMd
                 color: theme.cardBackgroundAlt
@@ -449,9 +505,11 @@ WidgetChrome {
                 ColumnLayout {
                     id: localEventColumn
                     anchors.fill: parent
-                    anchors.margins: theme.spacingMd
+                    anchors.margins: w.compactDetail ? theme.spacingSm
+                                                     : theme.spacingMd
                     spacing: theme.spacingXs
                     Text {
+                        objectName: "moonLocationLabel"
                         Layout.fillWidth: true
                         text: w.locationConfigured
                               ? (w.locationLabel.length ? w.locationLabel : "Configured location")
@@ -460,61 +518,78 @@ WidgetChrome {
                         color: w.locationConfigured ? w.effAccent : theme.warning
                         font.pixelSize: theme.fontLabel
                         font.bold: true
-                        elide: Text.ElideRight
+                        wrapMode: Text.WordWrap
                     }
                     GridLayout {
                         visible: w.locationConfigured
                         Layout.fillWidth: true
                         columns: 2
-                        columnSpacing: theme.spacingLg
+                        columnSpacing: w.compactDetail ? theme.spacingXs
+                                                      : theme.spacingLg
                         rowSpacing: theme.spacingXs
                         Text {
+                            objectName: "moonRiseLabel"
                             Layout.fillWidth: true
                             horizontalAlignment: Text.AlignHCenter
-                            text: "NEXT RISE"
+                            text: w.compactDetail ? "RISE" : "NEXT RISE"
+                            Accessible.name: "Next moonrise"
                             color: theme.textSecondary
                             font.pixelSize: theme.fontLabel
                             font.bold: true
                         }
                         Text {
+                            objectName: "moonSetLabel"
                             Layout.fillWidth: true
                             horizontalAlignment: Text.AlignHCenter
-                            text: "NEXT SET"
+                            text: w.compactDetail ? "SET" : "NEXT SET"
+                            Accessible.name: "Next moonset"
                             color: theme.textSecondary
                             font.pixelSize: theme.fontLabel
                             font.bold: true
                         }
                         Text {
+                            objectName: "moonRiseTime"
                             Layout.fillWidth: true
                             horizontalAlignment: Text.AlignHCenter
                             text: w.eventTime(w.localEvents.rise)
+                            Accessible.name: "Next moonrise " + text
                             color: theme.textPrimary
                             font.pixelSize: theme.fontTitle
                             font.bold: true
                         }
                         Text {
+                            objectName: "moonSetTime"
                             Layout.fillWidth: true
                             horizontalAlignment: Text.AlignHCenter
                             text: w.eventTime(w.localEvents.set)
+                            Accessible.name: "Next moonset " + text
                             color: theme.textPrimary
                             font.pixelSize: theme.fontTitle
                             font.bold: true
                         }
                     }
                     Text {
+                        objectName: "moonLocalTimeNote"
                         visible: w.locationConfigured
                         Layout.fillWidth: true
-                        text: "Approximate times in this device's local time"
+                        text: w.compactDetail ? "Approximate local times"
+                                              : "Approximate times in this device's local time"
+                        Accessible.name: "Approximate times in this device's local time"
                         horizontalAlignment: Text.AlignHCenter
                         color: theme.textSecondary
                         font.pixelSize: theme.fontLabel
+                        wrapMode: Text.WordWrap
                     }
                 }
             }
             Text {
+                objectName: "moonAccuracyNote"
                 Layout.fillWidth: true
                 visible: w.roomy && w.showAccuracyNote
-                text: w.phaseDirection + " · " + w.modelLabel
+                text: w.compactDetail
+                      ? w.phaseDirection + " · estimated phase"
+                      : w.phaseDirection + " · " + w.modelLabel
+                Accessible.name: w.phaseDirection + ", " + w.modelLabel
                 horizontalAlignment: Text.AlignHCenter
                 font.pixelSize: theme.fontLabel; color: theme.textSecondary
                 wrapMode: Text.WordWrap

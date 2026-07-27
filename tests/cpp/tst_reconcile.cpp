@@ -30,15 +30,25 @@ private slots:
         QTest::newRow("adopt-normal-with-pending-not-awaiting")
             << false << true  << QString("A") << QString("B") << false << ReconcileAction::AdoptHub;
 
-        // ── Reconnect reconcile: hub CHANGED while offline → drop our stale edit ──
-        QTest::newRow("hub-changed-drop")
-            << true  << true  << QString("NEW") << QString("OLD") << false << ReconcileAction::DropEdit;
+        // ── Reconnect reconcile: both sides changed → explicit conflict ──
+        QTest::newRow("hub-changed-conflict")
+            << true  << true  << QString("NEW") << QString("OLD") << false << ReconcileAction::RequireConflict;
         // hubChanged wins even if suppressed.
-        QTest::newRow("hub-changed-drop-suppressed")
-            << true  << true  << QString("NEW") << QString("OLD") << true  << ReconcileAction::DropEdit;
-        // hubChanged with NO buffered edit still drops (adopts the newer hub state).
-        QTest::newRow("hub-changed-no-pending-drop")
-            << true  << false << QString("NEW") << QString("OLD") << false << ReconcileAction::DropEdit;
+        QTest::newRow("hub-changed-conflict-suppressed")
+            << true  << true  << QString("NEW") << QString("OLD") << true  << ReconcileAction::RequireConflict;
+        // With no buffered edit there is no conflict; adopt the newer Hub state.
+        QTest::newRow("hub-changed-no-pending-adopt")
+            << true  << false << QString("NEW") << QString("OLD") << false << ReconcileAction::AdoptHub;
+        QTest::newRow("json-value-changed-conflict")
+            << true << true
+            << QStringLiteral(R"({"version":1,"appearance":{"theme":"light"}})")
+            << QStringLiteral(R"({"version":1,"appearance":{"theme":"dark"}})")
+            << false << ReconcileAction::RequireConflict;
+        QTest::newRow("json-array-order-changed-conflict")
+            << true << true
+            << QStringLiteral(R"({"pages":[{"id":"second"},{"id":"first"}]})")
+            << QStringLiteral(R"({"pages":[{"id":"first"},{"id":"second"}]})")
+            << false << ReconcileAction::RequireConflict;
 
         // ── Reconnect reconcile: hub UNCHANGED → (re)push our buffered edit ──
         QTest::newRow("hub-same-keep")
@@ -49,12 +59,23 @@ private slots:
         // Empty pull is treated as "unchanged" → keep the edit, don't drop it.
         QTest::newRow("empty-pull-keep")
             << true  << true  << QString("")     << QString("OLD")  << false << ReconcileAction::KeepAndPushEdit;
+        QTest::newRow("json-whitespace-only-keep")
+            << true << true
+            << QStringLiteral("{\n  \"version\": 1,\n  \"pages\": []\n}\n")
+            << QStringLiteral(R"({"version":1,"pages":[]})")
+            << false << ReconcileAction::KeepAndPushEdit;
+        QTest::newRow("json-object-key-order-only-keep")
+            << true << true
+            << QStringLiteral(
+                   R"({"appearance":{"accent":"#fff","theme":"dark"},"pages":[{"widgets":[],"id":"main"}]})")
+            << QStringLiteral(
+                   R"({"pages":[{"id":"main","widgets":[]}],"appearance":{"theme":"dark","accent":"#fff"}})")
+            << false << ReconcileAction::KeepAndPushEdit;
 
         // ── Empty baseline (no prior successful pull) + NON-EMPTY pull → adopt the
-        //    hub (DropEdit): we can't prove our buffered edit is newer than what's on
-        //    the device, so don't clobber a possible device-side edit. ──
-        QTest::newRow("empty-baseline-nonempty-pull-adopt")
-            << true  << true  << QString("DEVICE") << QString("")   << false << ReconcileAction::DropEdit;
+        //    hub: we cannot prove either side is newer, so require a choice. ──
+        QTest::newRow("empty-baseline-nonempty-pull-conflict")
+            << true  << true  << QString("DEVICE") << QString("")   << false << ReconcileAction::RequireConflict;
 
         // ── Reconnect but nothing buffered → falls through to adopt/suppress ──
         QTest::newRow("awaiting-no-pending-adopt")

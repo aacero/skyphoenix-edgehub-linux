@@ -55,6 +55,11 @@ The flag lives in the persisted UI state's `appearance` object (inside
 A managed/enterprise configuration can pin this flag to `false`; the hub then
 neither scans nor loads, regardless of what is on disk.
 
+The session-only `xeneon-edge-hub --safe-mode` command is an additional
+fail-closed boundary: the Hub does not scan this directory and no user or
+first-party widget QML is instantiated. Safe mode does not change
+`enableUserWidgets`, remove tiles, or rewrite the saved layout.
+
 ---
 
 ## `manifest.json`

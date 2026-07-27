@@ -11,7 +11,10 @@ dist/
 *.dylib
 moc_*.cpp
 qrc_*.cpp
-ui_*.h
+# Qt uic output belongs in ignored build directories. Anchor this fallback to
+# the repository root so a real source header such as app/src/ui_state_recovery.h
+# cannot disappear from a commit.
+/ui_*.h
 
 # Rust
 **/target/

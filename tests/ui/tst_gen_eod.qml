@@ -820,6 +820,10 @@ Item {
         WidgetHarness { id: hWide; anchors.fill: parent; widgetFile: "EndOfDayWidget.qml"; expanded: false } }
     Item { width: 344; height: 840
         WidgetHarness { id: hTall; anchors.fill: parent; widgetFile: "EndOfDayWidget.qml"; expanded: false } }
+    // The exact constrained portrait projection used by the legibility matrix
+    // at 125% output scaling.
+    Item { width: 278; height: 654
+        WidgetHarness { id: hTightTall; anchors.fill: parent; widgetFile: "EndOfDayWidget.qml"; expanded: false } }
     Item { width: 696; height: 819
         WidgetHarness { id: hBase; anchors.fill: parent; widgetFile: "EndOfDayWidget.qml"; expanded: false } }
     // The OVERLAY, at the two boxes Dashboard actually gives it: the live-preview
@@ -900,6 +904,28 @@ Item {
             verify(visibleRing(w) !== null, "the ring renders")
             w.sizeClass = "full"
             compare(w.micro, false, "full is never micro")
+        }
+
+        function test_constrained_tall_header_keeps_title_and_accessible_state() {
+            tryVerify(function () { return hTightTall.ready }, 3000)
+            prep(hTightTall)
+            var w = hTightTall.item
+            w.sizeClass = "tall"
+            hTightTall.theme.textScale = 1.45
+            wait(0)
+
+            compare(w.narrowHeader, true)
+            compare(w.headerStateLabel, w.conciseStateLabel)
+            var title = visibleTextEq(w, "End of Day")
+            verify(title !== null, "the complete title remains visible")
+            verify(!title.truncated,
+                   "the title is not elided at the largest supported type scale")
+            verify(title.paintedWidth <= title.width + 0.5,
+                   "the title fits inside its assigned header width")
+            verify(w.Accessible.name.indexOf(w.stateLabel) >= 0,
+                   "the full state remains in the widget's accessible summary")
+
+            hTightTall.theme.textScale = 1.15
         }
 
         // ── size, not mode ──────────────────────────────────────────────────

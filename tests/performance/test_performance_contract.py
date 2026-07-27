@@ -120,10 +120,12 @@ class RunnerContractTests(unittest.TestCase):
         self.assertIn("_verify_loaded_profile(instance, expected_types)", self.source)
         self.assertIn('"live_state_verified": True', self.source)
 
-    def test_documentation_never_calls_short_trends_long_soak_evidence(self) -> None:
+    def test_documentation_records_owner_waiver_and_literal_substitute(self) -> None:
         documentation = README.read_text(encoding="utf-8")
         normalised = " ".join(documentation.split())
-        self.assertIn("does not satisfy the 24-hour or 48-hour requirement", normalised)
+        self.assertIn("explicitly waived the former 48-hour idle soak", normalised)
+        self.assertIn("does not claim 48-hour endurance", normalised)
+        self.assertIn("run_audit_14_widget_30m.py", documentation)
         self.assertIn("--mode idle-24h", documentation)
         self.assertIn("--mode idle-48h", documentation)
 
@@ -146,9 +148,13 @@ class AuditSubstituteContractTests(unittest.TestCase):
         self.assertEqual(len(widgets), 14)
         self.assertEqual(len(set(widgets)), 14)
 
-    def test_audit_cannot_be_presented_as_a_release_gate(self) -> None:
-        self.assertIn('"status": "MEASURED"', self.source)
-        self.assertIn('"qualified": None', self.source)
+    def test_owner_waived_substitute_is_a_real_release_gate(self) -> None:
+        self.assertIn('"status": "PASS" if not failures else "FAIL"', self.source)
+        self.assertIn('"qualified": not failures', self.source)
+        self.assertIn("explicitly waived the historical 48-hour", self.source)
+        self.assertIn("MAXIMUM_AVERAGE_CPU_PERCENT = 5.0", self.source)
+        self.assertIn("MAXIMUM_RSS_MIB = 250.0", self.source)
+        self.assertIn('"GPU memory could not be measured for every sample"', self.source)
         self.assertNotIn('"--duration"', self.source)
 
 

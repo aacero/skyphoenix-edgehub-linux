@@ -47,6 +47,44 @@ private slots:
         QVERIFY2(!img.isNull(), "grab PNG is not a valid image");
         QFile::remove(grab);
     }
+
+    void unreadableConfigurationFailsClosedWithUsableRecovery() {
+        const QString root =
+            qEnvironmentVariable("XDG_CONFIG_HOME") + QStringLiteral("/recovery");
+        const QString configDir = root + QStringLiteral("/xeneon-edge-hub");
+        QVERIFY(QDir().mkpath(configDir));
+        const QString configPath = configDir + QStringLiteral("/config.toml");
+        const QByteArray futureConfig =
+            QByteArrayLiteral("schema_version = 99\nfuture_only = \"KEEP_EXACTLY\"\n");
+        QFile config(configPath);
+        QVERIFY(config.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        QCOMPARE(config.write(futureConfig), futureConfig.size());
+        config.close();
+
+        QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+        env.insert("QT_QPA_PLATFORM", "offscreen");
+        env.insert("XDG_CONFIG_HOME", root);
+
+        QProcess process;
+        process.setProcessEnvironment(env);
+        process.setProcessChannelMode(QProcess::MergedChannels);
+        process.setProgram(QStringLiteral(MGR_BIN));
+        process.start();
+        QVERIFY2(process.waitForStarted(5000), "manager recovery process failed to start");
+        QVERIFY2(process.waitForFinished(10000), "manager recovery process did not exit");
+
+        const QByteArray output = process.readAll();
+        QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+        QCOMPARE(process.exitCode(), 1);
+        QVERIFY2(output.contains("file was left untouched"), output.constData());
+        QVERIFY2(output.contains("cannot open Diagnostics"), output.constData());
+        QVERIFY2(output.contains("config.toml.bak"), output.constData());
+        QVERIFY2(output.contains("xeneon-edge-hub --reset"), output.constData());
+
+        QFile preserved(configPath);
+        QVERIFY(preserved.open(QIODevice::ReadOnly));
+        QCOMPARE(preserved.readAll(), futureConfig);
+    }
 };
 
 QTEST_GUILESS_MAIN(TstSmokeManager)

@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include "control_server.h"
+#include "control_protocol.h"
 #include "control_socket_path.h"
 
 // Refuse to run outside a sandbox: this test would otherwise clobber the
@@ -68,9 +69,11 @@ class TstControlServer : public QObject {
     ControlServer* srv_ = nullptr;
     QString providerState_;
     bool ackResult_ = true;
+    bool liveApplyResult_ = true;
     // Stand-in for main()'s per-field apply handlers: record what the owner was told
     // to apply and control whether it reports success.
     bool applyResult_ = true;
+    bool applyDurabilityUncertain_ = false;
     QString gotConnector_;
     QString gotModel_;
     bool gotAutostart_ = false;
@@ -110,19 +113,37 @@ class TstControlServer : public QObject {
 
 private slots:
     void init() {
+        providerState_.clear();
+        ackResult_ = true;
+        liveApplyResult_ = true;
+        applyResult_ = true;
+        applyDurabilityUncertain_ = false;
+        gotConnector_.clear();
+        gotModel_.clear();
+        gotAutostart_ = false;
+        gotLicense_.clear();
+        gotActivePage_ = -999;
         srv_ = new ControlServer(this);
         srv_->setStateProvider([this] { return providerState_; });
         connect(srv_, &ControlServer::uiStateReceived, this,
-                [this](const QString&, bool* ok) { if (ok) *ok = ackResult_; });
+                [this](const QString&, bool* ok, bool* liveApplied) {
+                    if (ok) *ok = ackResult_;
+                    if (liveApplied) *liveApplied = liveApplyResult_;
+                });
         connect(srv_, &ControlServer::targetDisplayReceived, this,
-                [this](const QString& c, const QString& m, bool* ok) {
+                [this](const QString& c, const QString& m, bool* ok,
+                       bool* durabilityUncertain) {
                     gotConnector_ = c; gotModel_ = m;
                     if (ok) *ok = applyResult_;
+                    if (durabilityUncertain)
+                        *durabilityUncertain = applyDurabilityUncertain_;
                 });
         connect(srv_, &ControlServer::autostartReceived, this,
-                [this](bool enabled, bool* ok) {
+                [this](bool enabled, bool* ok, bool* durabilityUncertain) {
                     gotAutostart_ = enabled;
                     if (ok) *ok = applyResult_;
+                    if (durabilityUncertain)
+                        *durabilityUncertain = applyDurabilityUncertain_;
                 });
         connect(srv_, &ControlServer::licenseKeyReceived, this,
                 [this](const QString& key, bool* ok) {
@@ -149,25 +170,35 @@ private slots:
         QCOMPARE(r.size(), 1);
         QCOMPARE(r[0].value("type").toString(), QStringLiteral("uiState"));
         QCOMPARE(r[0].value("state").toString(), providerState_);
+        QVERIFY(!r[0].contains(QStringLiteral("configGenerationToken")));
     }
 
     void getUiStateIncludesLivePanelContext() {
         providerState_ = QStringLiteral("{\"layout\":\"pages\"}");
         srv_->setRotationProvider([] { return 270; });
         srv_->setPageProvider([] { return 2; });
+        srv_->setStateLiveProvider([] { return false; });
+        srv_->setConfigGenerationTokenProvider(
+            [] { return QStringLiteral("opaque-generation-7"); });
         const auto r = exchange("{\"type\":\"getUiState\"}");
         QCOMPARE(r.size(), 1);
         QCOMPARE(r[0].value("type").toString(), QStringLiteral("uiState"));
         QCOMPARE(r[0].value("state").toString(), providerState_);
         QCOMPARE(r[0].value("rotation").toInt(), 270);
         QCOMPARE(r[0].value("currentPage").toInt(), 2);
+        QCOMPARE(r[0].value("stateLive").toBool(), false);
+        QCOMPARE(
+            r[0].value("configGenerationToken").toString(),
+            QStringLiteral("opaque-generation-7"));
     }
 
     void setActivePageInvokesHandlerAndAcks() {
         srv_->setActivePageHandler([this](int page) { gotActivePage_ = page; });
-        const auto r = exchange("{\"type\":\"setActivePage\",\"page\":4}");
+        const auto r = exchange(
+            "{\"type\":\"setActivePage\",\"page\":4,\"requestId\":\"page-1\"}");
         QCOMPARE(r.size(), 1);
         QCOMPARE(r[0].value("type").toString(), QStringLiteral("ok"));
+        QCOMPARE(r[0].value("requestId").toString(), QStringLiteral("page-1"));
         QCOMPARE(gotActivePage_, 4);
 
         // A missing/non-number page is explicitly represented as unknown (-1),
@@ -181,10 +212,14 @@ private slots:
     void setUiStateOkAck() {
         ackResult_ = true;
         QSignalSpy spy(srv_, &ControlServer::uiStateReceived);
-        const auto r = exchange("{\"type\":\"setUiState\",\"state\":\"{\\\"a\\\":1}\"}");
+        const auto r = exchange(
+            "{\"type\":\"setUiState\",\"state\":\"{\\\"a\\\":1}\",\"requestId\":\"17\"}");
         QCOMPARE(r.size(), 1);
         QCOMPARE(r[0].value("type").toString(), QStringLiteral("ok"));
         QCOMPARE(r[0].value("for").toString(), QStringLiteral("setUiState"));
+        QCOMPARE(r[0].value("requestId").toString(), QStringLiteral("17"));
+        QCOMPARE(r[0].value("liveApplied").toBool(), true);
+        QCOMPARE(r[0].value("queued").toBool(), false);
         QCOMPARE(spy.count(), 1);
     }
 
@@ -192,18 +227,35 @@ private slots:
     // error, not a lie of success (else the Manager silently diverges).
     void setUiStateFailAck() {
         ackResult_ = false;
-        const auto r = exchange("{\"type\":\"setUiState\",\"state\":\"{\\\"a\\\":1}\"}");
+        const auto r = exchange(
+            "{\"type\":\"setUiState\",\"state\":\"{\\\"a\\\":1}\",\"requestId\":\"18\"}");
         QCOMPARE(r.size(), 1);
         QCOMPARE(r[0].value("type").toString(), QStringLiteral("error"));
         QCOMPARE(r[0].value("for").toString(), QStringLiteral("setUiState"));
+        QCOMPARE(r[0].value("requestId").toString(), QStringLiteral("18"));
         QCOMPARE(r[0].value("message").toString(), QStringLiteral("failed to apply state"));
     }
 
+    void setUiStateCanBeStoredButQueuedForLiveApplication() {
+        ackResult_ = true;
+        liveApplyResult_ = false;
+        const auto r = exchange(
+            "{\"type\":\"setUiState\",\"state\":\"{\\\"a\\\":1}\","
+            "\"requestId\":\"queued-1\"}");
+        QCOMPARE(r.size(), 1);
+        QCOMPARE(r[0].value("type").toString(), QStringLiteral("ok"));
+        QCOMPARE(r[0].value("requestId").toString(), QStringLiteral("queued-1"));
+        QCOMPARE(r[0].value("liveApplied").toBool(), false);
+        QCOMPARE(r[0].value("queued").toBool(), true);
+    }
+
     void setUiStateEmpty() {
-        const auto r = exchange("{\"type\":\"setUiState\",\"state\":\"\"}");
+        const auto r =
+            exchange("{\"type\":\"setUiState\",\"state\":\"\",\"requestId\":\"19\"}");
         QCOMPARE(r.size(), 1);
         QCOMPARE(r[0].value("type").toString(), QStringLiteral("error"));
         QCOMPARE(r[0].value("for").toString(), QStringLiteral("setUiState"));
+        QCOMPARE(r[0].value("requestId").toString(), QStringLiteral("19"));
         QCOMPARE(r[0].value("message").toString(), QStringLiteral("empty state"));
     }
 
@@ -213,10 +265,12 @@ private slots:
     void setTargetDisplayOkAck() {
         applyResult_ = true;
         const auto r = exchange(
-            "{\"type\":\"setTargetDisplay\",\"connector\":\"DP-3\",\"model\":\"XENEON EDGE\"}");
+            "{\"type\":\"setTargetDisplay\",\"connector\":\"DP-3\","
+            "\"model\":\"XENEON EDGE\",\"requestId\":\"target-1\"}");
         QCOMPARE(r.size(), 1);
         QCOMPARE(r[0].value("type").toString(), QStringLiteral("ok"));
         QCOMPARE(r[0].value("for").toString(), QStringLiteral("setTargetDisplay"));
+        QCOMPARE(r[0].value("requestId").toString(), QStringLiteral("target-1"));
         QCOMPARE(gotConnector_, QStringLiteral("DP-3"));
         QCOMPARE(gotModel_, QStringLiteral("XENEON EDGE"));
     }
@@ -225,10 +279,12 @@ private slots:
     void setTargetDisplayFailAck() {
         applyResult_ = false;
         const auto r = exchange(
-            "{\"type\":\"setTargetDisplay\",\"connector\":\"DP-3\",\"model\":\"M\"}");
+            "{\"type\":\"setTargetDisplay\",\"connector\":\"DP-3\","
+            "\"model\":\"M\",\"requestId\":\"target-fail\"}");
         QCOMPARE(r.size(), 1);
         QCOMPARE(r[0].value("type").toString(), QStringLiteral("error"));
         QCOMPARE(r[0].value("for").toString(), QStringLiteral("setTargetDisplay"));
+        QCOMPARE(r[0].value("requestId").toString(), QStringLiteral("target-fail"));
         QCOMPARE(r[0].value("message").toString(),
                  QStringLiteral("failed to apply target display"));
     }
@@ -254,18 +310,33 @@ private slots:
         QCOMPARE(gotModel_, QStringLiteral("XENEON EDGE"));
     }
 
+    void setTargetDisplayReportsUncertainDurability() {
+        applyResult_ = true;
+        applyDurabilityUncertain_ = true;
+        const auto r = exchange(
+            "{\"type\":\"setTargetDisplay\",\"connector\":\"DP-3\","
+            "\"requestId\":\"target-uncertain\"}");
+        QCOMPARE(r.size(), 1);
+        QCOMPARE(r[0].value("type").toString(), QStringLiteral("ok"));
+        QCOMPARE(r[0].value("durabilityUncertain").toBool(), true);
+    }
+
     void setAutostartOkAck() {
         applyResult_ = true;
         gotAutostart_ = false;
-        const auto r = exchange("{\"type\":\"setAutostart\",\"enabled\":true}");
+        const auto r = exchange(
+            "{\"type\":\"setAutostart\",\"enabled\":true,\"requestId\":\"auto-on\"}");
         QCOMPARE(r.size(), 1);
         QCOMPARE(r[0].value("type").toString(), QStringLiteral("ok"));
         QCOMPARE(r[0].value("for").toString(), QStringLiteral("setAutostart"));
+        QCOMPARE(r[0].value("requestId").toString(), QStringLiteral("auto-on"));
         QVERIFY(gotAutostart_);
 
         gotAutostart_ = true;
-        const auto r2 = exchange("{\"type\":\"setAutostart\",\"enabled\":false}");
+        const auto r2 = exchange(
+            "{\"type\":\"setAutostart\",\"enabled\":false,\"requestId\":\"auto-off\"}");
         QCOMPARE(r2[0].value("type").toString(), QStringLiteral("ok"));
+        QCOMPARE(r2[0].value("requestId").toString(), QStringLiteral("auto-off"));
         QVERIFY(!gotAutostart_);
     }
 
@@ -275,6 +346,17 @@ private slots:
         QCOMPARE(r.size(), 1);
         QCOMPARE(r[0].value("type").toString(), QStringLiteral("error"));
         QCOMPARE(r[0].value("message").toString(), QStringLiteral("failed to apply autostart"));
+    }
+
+    void setAutostartReportsUncertainDurability() {
+        applyResult_ = true;
+        applyDurabilityUncertain_ = true;
+        const auto r = exchange(
+            "{\"type\":\"setAutostart\",\"enabled\":true,"
+            "\"requestId\":\"auto-uncertain\"}");
+        QCOMPARE(r.size(), 1);
+        QCOMPARE(r[0].value("type").toString(), QStringLiteral("ok"));
+        QCOMPARE(r[0].value("durabilityUncertain").toBool(), true);
     }
 
     // A missing/non-bool `enabled` must NOT be coerced to false (which would silently
@@ -297,16 +379,20 @@ private slots:
         QSignalSpy spy(srv_, &ControlServer::licenseKeyReceived);
 
         const auto set = exchange(
-            "{\"type\":\"setLicenseKey\",\"key\":\"XE1.invalid.signature\"}");
+            "{\"type\":\"setLicenseKey\",\"key\":\"XE1.invalid.signature\","
+            "\"requestId\":\"license-set\"}");
         QCOMPARE(set.size(), 1);
         QCOMPARE(set[0].value("type").toString(), QStringLiteral("ok"));
         QCOMPARE(set[0].value("for").toString(), QStringLiteral("setLicenseKey"));
+        QCOMPARE(set[0].value("requestId").toString(), QStringLiteral("license-set"));
         QCOMPARE(gotLicense_, QStringLiteral("XE1.invalid.signature"));
 
         // Empty string is the deliberate remove-key operation and remains valid.
-        const auto clear = exchange("{\"type\":\"setLicenseKey\",\"key\":\"\"}");
+        const auto clear = exchange(
+            "{\"type\":\"setLicenseKey\",\"key\":\"\",\"requestId\":\"license-clear\"}");
         QCOMPARE(clear.size(), 1);
         QCOMPARE(clear[0].value("type").toString(), QStringLiteral("ok"));
+        QCOMPARE(clear[0].value("requestId").toString(), QStringLiteral("license-clear"));
         QVERIFY(gotLicense_.isEmpty());
         QCOMPARE(spy.count(), 2);
     }
@@ -358,11 +444,13 @@ private slots:
         ControlServer* dying = srv_;
         QMetaObject::Connection conn = connect(srv_, &ControlServer::shutdownRequested, this,
             [dying] { dying->deleteLater(); });   // tear down on shutdown, like main()
-        const auto r = exchange("{\"type\":\"shutdown\"}");
+        const auto r = exchange(
+            "{\"type\":\"shutdown\",\"requestId\":\"shutdown-1\"}");
         disconnect(conn);
         srv_ = nullptr;   // handed to deleteLater; keep cleanup() from double-deleting
         QCOMPARE(r.size(), 1);
         QCOMPARE(r[0].value("type").toString(), QStringLiteral("ok"));   // ack survived
+        QCOMPARE(r[0].value("requestId").toString(), QStringLiteral("shutdown-1"));
         QVERIFY(spy.count() >= 1);                                        // signal fired
     }
 
@@ -398,6 +486,32 @@ private slots:
         QCOMPARE(r[1].value("type").toString(), QStringLiteral("pong"));
     }
 
+    // The cap is per frame, not per read chunk. Two legal complete frames may
+    // arrive together with an aggregate larger than the cap and both must run.
+    void aggregateReadLargerThanCapKeepsLegalFrames() {
+        const QString payload(4 * 1024 * 1024, QLatin1Char('x'));
+        const QByteArray first =
+            QJsonDocument(QJsonObject{{"type", "setUiState"},
+                                      {"state", payload},
+                                      {"requestId", "large-1"}})
+                .toJson(QJsonDocument::Compact);
+        const QByteArray second =
+            QJsonDocument(QJsonObject{{"type", "setUiState"},
+                                      {"state", payload},
+                                      {"requestId", "large-2"}})
+                .toJson(QJsonDocument::Compact);
+        QVERIFY(first.size() < xeneon::kMaxControlFrameBytes);
+        QVERIFY(second.size() < xeneon::kMaxControlFrameBytes);
+        QVERIFY(first.size() + second.size() > xeneon::kMaxControlFrameBytes);
+
+        const auto replies = exchange(first + "\n" + second, 2);
+        QCOMPARE(replies.size(), 2);
+        QCOMPARE(replies[0].value("type").toString(), QStringLiteral("ok"));
+        QCOMPARE(replies[0].value("requestId").toString(), QStringLiteral("large-1"));
+        QCOMPARE(replies[1].value("type").toString(), QStringLiteral("ok"));
+        QCOMPARE(replies[1].value("requestId").toString(), QStringLiteral("large-2"));
+    }
+
     // A handler that re-enters the event loop (processEvents) mid-dispatch must not
     // corrupt the per-connection buffer. Send TWO complete requests in ONE write: the
     // FIRST handler re-enters the event loop, so onReadyRead()'s line loop must
@@ -406,7 +520,7 @@ private slots:
     void reentrantHandlerSafe() {
         ackResult_ = true;
         QMetaObject::Connection conn = connect(srv_, &ControlServer::uiStateReceived, this,
-            [](const QString&, bool*) { QCoreApplication::processEvents(); });
+            [](const QString&, bool*, bool*) { QCoreApplication::processEvents(); });
         const auto r = exchange(
             "{\"type\":\"setUiState\",\"state\":\"{\\\"x\\\":1}\"}\n"
             "{\"type\":\"setUiState\",\"state\":\"{\\\"y\\\":2}\"}", /*nLines*/ 2);

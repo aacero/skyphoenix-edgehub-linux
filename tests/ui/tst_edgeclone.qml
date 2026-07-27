@@ -3,6 +3,7 @@ import QtTest
 import "../../ui/qml" as App
 
 // COVERS: fn:EdgeClone.targetAt, fn:EdgeClone.wsrc
+// COVERS: fn:EdgeClone._shortestTurn, fn:EdgeClone._startOrientationTransition
 //
 // manager/qml/EdgeClone.qml -
 //   • wsrc(type): rewrites the hub qrc path to the manager alias; "" for unknown
@@ -32,6 +33,7 @@ Item {
     QtObject {
         id: backend
         property bool hubConnected: false
+        property int hubRotation: -1
         function imageUrl(n) { return "file:///imgs/" + n }
         function metricsJson() { return "{}" }
     }
@@ -108,6 +110,10 @@ Item {
 
     function seed(tileList) {
         store.load("blank")
+        // Geometry interaction cases below intentionally exercise portrait.
+        // Auto now truthfully defaults to the Hub's landscape-first fallback,
+        // so make this helper's test projection explicit.
+        store.setAppearance("orientation", "portrait")
         for (var i = 0; i < tileList.length; i++)
             store.addTile(0, tileList[i].type)
     }
@@ -121,7 +127,10 @@ Item {
             tryVerify(function () { return ld.status === Loader.Ready && ld.item !== null }, 5000)
         }
 
-        function init() { store.load("blank") }   // a live, mutable store document
+        function init() {
+            backend.hubRotation = -1
+            store.load("blank")
+        }
 
         // ── wsrc ──────────────────────────────────────────────────────────────
         function test_wsrc_rewrites_known_and_blanks_unknown() {
@@ -260,6 +269,117 @@ Item {
             compare(hubSizes.classFor("0.5x1", false), "tall",  "portrait: half-width is tall")
             compare(hubSizes.classFor("0.5x1", true),  "wide",  "landscape: and now it is wide")
             compare(hubSizes.classFor("bogus", false), "compact", "unknown size assumes least room")
+        }
+
+        function test_auto_orientation_matches_the_hubs_landscape_first_fallback() {
+            var c = ld.item
+            store.setAppearance("orientation", "auto")
+            backend.hubRotation = -1
+            compare(c.landscape, true,
+                    "unknown Hub telemetry uses the Hub's landscape-first fallback")
+            backend.hubRotation = 0
+            compare(c.landscape, false, "a reported portrait rotation is mirrored")
+            backend.hubRotation = 90
+            compare(c.landscape, true, "a reported landscape rotation is mirrored")
+            backend.hubRotation = 180
+            compare(c.landscape, false, "inverted portrait remains portrait-shaped")
+            backend.hubRotation = 270
+            compare(c.landscape, true, "inverted landscape remains landscape-shaped")
+        }
+
+        function test_orientation_reflows_immediately_while_the_device_turns_smoothly() {
+            var c = ld.item
+            var screenItem = findByObjectName("cloneDashboardScreen")
+            var frame = findByObjectName("cloneDeviceFrame")
+            verify(screenItem !== null && frame !== null,
+                   "the preview exposes its semantic screen and animated device frame")
+            compare(c._shortestTurn(0, 270), -90,
+                    "a turn toward 270 degrees takes the short reverse path")
+            compare(c._shortestTurn(270, 0), 90,
+                    "a turn back through zero takes the short forward path")
+
+            theme.reduceMotionPreference = "off"
+            store.setAppearance("orientation", "portrait")
+            tryCompare(c, "orientationVisualAngle", 0, 1500,
+                       "the portrait starting position settled")
+            verify(screenItem.height > screenItem.width,
+                   "the settled semantic layout starts portrait")
+
+            store.setAppearance("orientation", "landscape")
+            compare(c.landscape, true,
+                    "the semantic orientation changes in the committing event")
+            verify(screenItem.width > screenItem.height,
+                   "the WYSIWYG screen reflows to landscape immediately")
+            verify(Math.abs(c.orientationVisualAngle) > 1,
+                   "the device presentation starts from the previous physical angle")
+            verify(c.orientationTransitionRunning,
+                   "the physical device turn is animated when motion is enabled")
+            wait(Math.round(c.orientationTransitionDuration * 0.45))
+            verify(Math.abs(c.orientationVisualAngle) > 1
+                   && Math.abs(c.orientationVisualAngle) < 89,
+                   "the device occupies an intermediate angle instead of snapping")
+            tryCompare(c, "orientationVisualAngle", 0, 1500,
+                       "the device settles upright in the new orientation")
+            compare(frame.rotation, 0)
+
+            theme.reduceMotionPreference = "auto"
+        }
+
+        function test_start_orientation_transition_reports_and_draws_a_real_turn() {
+            var c = ld.item
+            theme.reduceMotionPreference = "off"
+            c._orientationReady = true
+
+            compare(c._startOrientationTransition(0, 0), false,
+                    "no physical turn does not start an animation")
+            compare(c.orientationVisualAngle, 0,
+                    "the no-op transition leaves the device upright")
+            verify(!c.orientationTransitionRunning,
+                   "the no-op transition leaves no animation running")
+
+            verify(c._startOrientationTransition(0, 90),
+                   "a real orientation change reports that its turn started")
+            compare(c.orientationVisualAngle, 90,
+                    "the drawn device starts at the previous physical angle")
+            verify(c.orientationTransitionRunning,
+                   "the reported transition owns a running animation")
+            tryCompare(c, "orientationVisualAngle", 0, 1500,
+                       "the directly started device turn settles upright")
+
+            theme.reduceMotionPreference = "on"
+            compare(c._startOrientationTransition(90, 180), false,
+                    "reduced motion declines the animated transition")
+            compare(c.orientationVisualAngle, 0,
+                    "reduced motion keeps the drawn device upright")
+            verify(!c.orientationTransitionRunning,
+                   "reduced motion leaves no transition running")
+            theme.reduceMotionPreference = "auto"
+        }
+
+        function test_reduce_motion_keeps_orientation_reflow_immediate_and_skips_the_turn() {
+            var c = ld.item
+            var screenItem = findByObjectName("cloneDashboardScreen")
+            verify(screenItem !== null, "the semantic preview screen exists")
+
+            theme.reduceMotionPreference = "off"
+            store.setAppearance("orientation", "landscape")
+            tryCompare(c, "orientationVisualAngle", 0, 1500,
+                       "precondition: the landscape turn settled")
+
+            theme.reduceMotionPreference = "on"
+            compare(c.orientationTransitionDuration, 0,
+                    "reduced motion collapses the duration token")
+            store.setAppearance("orientation", "portrait")
+            compare(c.landscape, false,
+                    "the semantic orientation still changes immediately")
+            verify(screenItem.height > screenItem.width,
+                   "the WYSIWYG layout is immediately portrait")
+            compare(c.orientationVisualAngle, 0,
+                    "the presentation does not rotate under reduced motion")
+            verify(!c.orientationTransitionRunning,
+                   "no orientation animation remains active under reduced motion")
+
+            theme.reduceMotionPreference = "auto"
         }
 
         // ANTI-RE-COPY. The bug was not a wrong constant, it was a SECOND copy of a

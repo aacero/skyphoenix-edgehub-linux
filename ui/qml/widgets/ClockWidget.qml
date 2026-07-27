@@ -221,9 +221,16 @@ WidgetChrome {
         var mm = m > 0 ? ":" + (m < 10 ? "0" : "") + m : ""
         return "UTC" + sign + h + mm
     }
+    readonly property real clockTimePixelSize: w.expanded ? 168
+        : Math.max(30, Math.min(w.width * 0.24,
+                                w.height * (w.sizeClass === "wide" ? 0.18 : 0.42),
+                                w.sizeClass === "wide" ? 132
+                              : w.tallish ? 120
+                              : w.micro ? 88 : 104))
 
     ColumnLayout {
         id: col
+        objectName: "clockContentColumn"
         anchors.centerIn: parent
         // Fill the content body width so children can be width-constrained and
         // shrink-to-fit rather than overflow the tile (S12).
@@ -299,21 +306,35 @@ WidgetChrome {
             text: "Fixed UTC offset. Daylight-saving changes are not applied."
             color: theme.textTertiary; font.pixelSize: theme.fontMinimum; wrapMode: Text.WordWrap
         }
-        Text {
+        Item {
             Layout.fillWidth: true
-            horizontalAlignment: Text.AlignHCenter
-            text: (w.tick, w.formatAt(w.effTimeFmt))
-            // The type scales with the box: wide grows into its width, tall
-            // stays width-bound, micro is the whole (small) tile.
-            font.pixelSize: w.expanded ? 168
-                          : Math.max(30, Math.min(w.width * 0.24,
-                                                  w.height * (w.sizeClass === "wide" ? 0.34 : 0.42),
-                                                  w.sizeClass === "wide" ? 132
-                                                : w.tallish ? 120
-                                                : w.micro ? 88 : 104))
-            fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum
-            elide: Text.ElideRight
-            font.bold: true; font.family: theme.fontMono; color: theme.textPrimary
+            Layout.fillHeight: false
+            // Text.HorizontalFit can leave implicitHeight based on the
+            // pre-fit font (141 px for a 60 px painted line). Constrain the
+            // layout through a neutral wrapper so the short-wide column is not
+            // centered as though it were much taller.
+            implicitHeight: Math.ceil(w.clockTimePixelSize * 1.4)
+            Layout.minimumHeight: Math.ceil(w.clockTimePixelSize * 1.4)
+            Layout.preferredHeight: Math.ceil(w.clockTimePixelSize * 1.4)
+            Layout.maximumHeight: Math.ceil(w.clockTimePixelSize * 1.4)
+            Text {
+                anchors.fill: parent
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                text: (w.tick, w.formatAt(w.effTimeFmt))
+                // The type scales with the box: wide grows into its width, tall
+                // stays width-bound, micro is the whole (small) tile.
+                // Short-wide tiles also carry a date and calendar row. The
+                // shared binding bounds the time by the tile height so that the
+                // complete stack remains inside the clipped content body.
+                font.pixelSize: w.clockTimePixelSize
+                fontSizeMode: Text.HorizontalFit
+                minimumPixelSize: theme.fontMinimum
+                elide: Text.ElideRight
+                font.bold: true
+                font.family: theme.fontMono
+                color: theme.textPrimary
+            }
         }
         Text {
             Layout.fillWidth: true; visible: w.showDate && !w.micro
@@ -334,7 +355,10 @@ WidgetChrome {
             Layout.maximumWidth: Math.min(col.width * 0.92, 620)
             Layout.alignment: Qt.AlignHCenter
             visible: (w.sizeClass === "tall" || w.sizeClass === "wide") && !w.expanded
-            columns: 3
+            // A narrow tall tile has vertical room, not horizontal room.
+            // Stack the three complete labels there instead of squeezing them
+            // into thirds and truncating TODAY / YEAR DAY.
+            columns: w.sizeClass === "tall" && w.width < 480 ? 1 : 3
             columnSpacing: theme.spacingXs
             Layout.topMargin: theme.spacingXs
             property var entries: {

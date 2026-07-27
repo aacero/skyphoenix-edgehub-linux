@@ -1,0 +1,151 @@
+name: Native Package Upgrade and Rollback
+
+# This is deliberately manual and expensive: each job builds two complete refs.
+# It is a release-candidate certification gate, not a per-commit smoke test.
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: Older signed tag or committed ref to install first
+        required: true
+        type: string
+      candidate_ref:
+        description: Newer tag or commit, also selected as the workflow run ref
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: native-upgrade-rollback-${{ inputs.baseline_ref }}-${{ inputs.candidate_ref }}
+  cancel-in-progress: false
+
+jobs:
+  lifecycle:
+    name: ${{ matrix.label }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Ubuntu 26.04 DEB
+            kind: deb
+            requested_image: ubuntu:26.04
+            image: ubuntu:26.04@sha256:7c2884fd32770fc6c173b78e0dc2278a2851d89f5447919edbc45475ac55dd6a
+          - label: Fedora 43 RPM
+            kind: rpm
+            requested_image: fedora:43
+            image: fedora:43@sha256:52cfb35e60823b691af7541b576c0fa49195628044b2c1a15b0ae775ec01048e
+    container: ${{ matrix.image }}
+
+    steps:
+      # Bare distro containers may not have Git. Install it before checkout so
+      # fetch-depth 0 cannot silently degrade to a history-less source archive.
+      - name: Bootstrap Git
+        shell: bash
+        run: |
+          case "${{ matrix.kind }}" in
+            deb)
+              apt-get update -qq
+              apt-get install -y --no-install-recommends git ca-certificates
+              ;;
+            rpm)
+              dnf -y install git ca-certificates
+              ;;
+          esac
+
+      - name: Validate immutable ref input shape
+        shell: bash
+        env:
+          BASELINE_REF: ${{ inputs.baseline_ref }}
+          CANDIDATE_REF: ${{ inputs.candidate_ref }}
+        run: |
+          set -euo pipefail
+          for ref in "$BASELINE_REF" "$CANDIDATE_REF"; do
+            if [[ "$ref" =~ ^[0-9A-Fa-f]{40}$ ]] ||
+               [[ "$ref" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]] ||
+               [[ "$ref" =~ ^refs/tags/[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
+              if [[ "$ref" == -* || "$ref" == *".."* ||
+                    "$ref" == *"@{"* || "$ref" == *"//"* ||
+                    "$ref" == *"/." || "$ref" == */ ]]; then
+                exit 2
+              fi
+              continue
+            fi
+            echo "Ref must be a full commit or exact release tag: $ref" >&2
+            exit 2
+          done
+
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: ${{ inputs.candidate_ref }}
+          fetch-depth: 0
+
+      - name: Install two-build toolchain
+        shell: bash
+        run: |
+          case "${{ matrix.kind }}" in
+            deb)
+              apt-get install -y --no-install-recommends \
+                cmake g++ make file dpkg-dev rustc cargo \
+                qt6-base-dev qt6-declarative-dev qt6-svg-dev \
+                qt6-virtualkeyboard-dev libgl1-mesa-dev
+              ;;
+            rpm)
+              dnf -y install \
+                cmake gcc-c++ make rpm-build cargo rust \
+                qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
+                qt6-qtvirtualkeyboard-devel qt6-qtwayland-devel \
+                mesa-libGL-devel
+              ;;
+          esac
+
+      - name: Build, upgrade, rollback and remove
+        id: lifecycle
+        shell: bash
+        env:
+          PACKAGE_KIND: ${{ matrix.kind }}
+          BASELINE_REF: ${{ inputs.baseline_ref }}
+          CANDIDATE_REF: ${{ inputs.candidate_ref }}
+        run: |
+          bash packaging/ci/native-upgrade-rollback.sh \
+            "$PACKAGE_KIND" \
+            "$BASELINE_REF" \
+            "$CANDIDATE_REF"
+
+      - name: Record resolved lifecycle container
+        shell: bash
+        env:
+          EVIDENCE_DIR: ${{ steps.lifecycle.outputs.evidence_dir }}
+        run: |
+          set -euo pipefail
+          [ -d "$EVIDENCE_DIR" ]
+          {
+            echo "requested_image=${{ matrix.requested_image }}"
+            echo "resolved_image=${{ matrix.image }}"
+            echo "platform=linux/amd64"
+            cat /etc/os-release
+          } > "$EVIDENCE_DIR/container-lifecycle-environment.txt"
+          (
+            cd "$EVIDENCE_DIR"
+            sha256sum container-lifecycle-environment.txt \
+              > container-lifecycle-environment.txt.sha256
+          )
+
+      - name: Attest exact lifecycle-tested candidate package
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: ${{ steps.lifecycle.outputs.candidate_package }}
+
+      - name: Archive lifecycle report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-upgrade-rollback-${{ matrix.kind }}
+          path: ${{ steps.lifecycle.outputs.evidence_dir }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 90

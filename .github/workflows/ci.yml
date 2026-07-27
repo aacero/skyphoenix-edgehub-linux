@@ -1,6 +1,6 @@
 name: CI
 
-# master AND v1.0-alpha.
+# Mainline, the active alpha line, and the active stable-release branch.
 #
 # This previously triggered on master only, on the stated precondition that
 # v1.0-alpha was kept in ff-only lockstep with master (same SHA), making a second
@@ -15,13 +15,13 @@ name: CI
 # rather than narrowing the trigger. See docs/agent-memory/TEST-STRATEGY-v2.md.
 on:
   push:
-    branches: [main, master, 'v1.0-alpha']
+    branches: [main, master, 'v1.0-alpha', 'release/1.0.0']
     paths-ignore:
       - 'docs/**'
       - '**.md'
       - 'LICENSE*'
   pull_request:
-    branches: [main, master, 'v1.0-alpha']
+    branches: [main, master, 'v1.0-alpha', 'release/1.0.0']
   workflow_dispatch:
 
 # Cancel superseded runs on the same ref (e.g. rapid pushes to a PR branch).
@@ -45,19 +45,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # action commit pinned
         with:
+          toolchain: '1.86.0'
           components: rustfmt, clippy
       - name: Format check
         working-directory: core
         run: cargo fmt --check
       - name: Clippy (--all-targets - --lib misses test-code lints)
         working-directory: core
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
       - name: Tests
         working-directory: core
-        run: cargo test
+        run: cargo test --locked
       # The licence issuer tool (not shipped) mints the keys that unlock paid
       # features, so its crypto correctness - a minted key verifies, a forged
       # payload does not, a name can't inject a higher tier - is gated too. Folded
@@ -66,14 +67,14 @@ jobs:
         working-directory: tools/license-tool
         run: |
           cargo fmt --check
-          cargo clippy --all-targets -- -D warnings
-          cargo test
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --locked
       - name: Licence webhook (fmt + clippy + test)
         working-directory: tools/license-webhook
         run: |
           cargo fmt --check
-          cargo clippy --all-targets -- -D warnings
-          cargo test
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --locked
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -82,13 +83,15 @@ jobs:
       matrix:
         os: [ubuntu-24.04]
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # action commit pinned
+        with:
+          toolchain: '1.86.0'
       # Ubuntu 24.04's apt Qt is 6.4.2, but the project requires Qt >= 6.5
       # (QtQuick.Effects/MultiEffect) and needs QML modules the minimal apt
       # packages omit (QtQml.WorkerScript). Install a full Qt >= 6.5 instead.
       - name: Install Qt 6.7
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
           version: '6.7.3'
           modules: 'qtvirtualkeyboard'
@@ -98,7 +101,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake g++ libgl1-mesa-dev
       - name: Build Rust core
-        run: cargo build --release
+        run: cargo build --release --locked
         working-directory: core
       - name: Configure CMake
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -110,15 +113,15 @@ jobs:
           test -x build/xeneon-edge-manager
 
   qml-test:
-    name: QML Tests + Behavior Matrix
+    name: QML Tests + Enumerated Requirements
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       # Full Qt >= 6.5: the apt qt6-declarative is 6.4.2 and lacks bundled QML
       # modules (QtQml.WorkerScript, QtQuick.Effects) the widgets need.
       - name: Install Qt 6.7 (+ qmltestrunner)
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
           version: '6.7.3'
           modules: 'qtvirtualkeyboard'
@@ -135,8 +138,8 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: ./scripts/run_ui_tests.sh
-      - name: Enforce complete QML behavior-matrix coverage (100%)
-        run: python3 scripts/qml_coverage.py | tee coverage-qml.txt
+      - name: Require every enumerated QML requirement to be assertion-backed
+        run: python3 scripts/qml_coverage.py | tee qml-enumerated-requirements.txt
       # The two structural lints. They lived only in run_all_tests.sh, i.e. they
       # gated nothing anyone was forced to run - and the egress lint is the whole
       # basis of the "no telemetry" claim, so it has to hold on every push, not
@@ -164,12 +167,22 @@ jobs:
       # spans was independently broken while the rest of the suite stayed green.
       - name: AppImage update contract
         run: bash scripts/check_appimage_update_contract.sh
-      - name: Upload uncovered-behavior list
+      - name: Release provenance and signed SBOM contract
+        run: bash scripts/check_release_provenance_contract.sh
+      - name: CI, toolchain, packaging, and release metadata contract
+        run: python3 scripts/check_ci_release_metadata_contract.py
+      - name: Certified native package byte-binding contract
+        run: bash scripts/check_native_package_binding_contract.sh
+      - name: Signed audit-artifact finalizer contract
+        run: bash scripts/check_audit_artifact_finalizer.sh
+      - name: Manual physical-touch sealing contract
+        run: bash scripts/check_manual_touch_audit_contract.sh
+      - name: Upload QML enumerated-requirements result
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: qml-behavior-coverage
-          path: coverage-qml.txt
+          name: qml-enumerated-requirements
+          path: qml-enumerated-requirements.txt
 
   # --- C++ tests + coverage capture ---
   cpp-test:
@@ -177,10 +190,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # action commit pinned
+        with:
+          toolchain: '1.86.0'
       - name: Install Qt 6.7
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
           version: '6.7.3'
           modules: 'qtvirtualkeyboard'
@@ -192,11 +207,12 @@ jobs:
           # Use a modern gcovr (via pipx, preinstalled on the runner): the apt
           # gcovr does not honor the in-source GCOVR_EXCL_START/STOP hardware/glue
           # exclusion markers, so it counts the excluded lines and understates
-          # coverage. pipx gcovr matches the version used locally.
-          pipx install gcovr
+          # coverage. Pin the exact audited version used locally.
+          pipx install gcovr==8.6
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/gcovr" --version | grep -Fx 'gcovr 8.6'
       - name: Build Rust core (static lib for C++ tests)
-        run: cargo build --release
+        run: cargo build --release --locked
         working-directory: core
       - name: Configure CMake (tests + coverage)
         # XENEON_QA_HOOKS=ON is required by the smoke tests, which drive the real
@@ -248,7 +264,7 @@ jobs:
           python3 -c "import sys; sys.exit(0 if float('${pct}') >= 95 else 1)"
       - name: Upload C++ lcov
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cpp-lcov
           path: coverage/cpp-lcov.info
@@ -263,28 +279,32 @@ jobs:
       run:
         working-directory: .
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # action commit pinned
         with:
+          # cargo-llvm-cov 0.8.7 declares Rust 1.87. Product MSRV remains
+          # independently enforced by the Rust and build jobs on 1.86.0.
+          toolchain: '1.87.0'
           components: llvm-tools-preview
       - name: Install cargo-llvm-cov + lcov + gcovr
         run: |
-          cargo install cargo-llvm-cov --locked
+          cargo install cargo-llvm-cov --version 0.8.7 --locked
+          cargo-llvm-cov --version | grep -Fx 'cargo-llvm-cov 0.8.7'
           sudo apt-get update
           sudo apt-get install -y lcov gcovr
       - name: Rust coverage (lcov + JSON summary)
         working-directory: core
         run: |
           mkdir -p ../coverage
-          cargo llvm-cov --lib --lcov --output-path ../coverage/rust-lcov.info
-          cargo llvm-cov --lib --json --summary-only --output-path ../coverage/rust-summary.json
+          cargo llvm-cov --locked --lib --lcov --output-path ../coverage/rust-lcov.info
+          cargo llvm-cov --locked --lib --json --summary-only --output-path ../coverage/rust-summary.json
       - name: Enforce Rust >= 95%
         run: |
           pct=$(python3 -c 'import json; print(json.load(open("coverage/rust-summary.json"))["data"][0]["totals"]["lines"]["percent"])')
           echo "Rust line coverage: ${pct}%"
           python3 -c "import sys; sys.exit(0 if float('${pct}') >= 95 else 1)"
       - name: Download C++ lcov artifact
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: cpp-lcov
           path: coverage
@@ -310,7 +330,7 @@ jobs:
           echo "Merged (Rust + C++) line coverage: ${pct}%"
       - name: Upload coverage reports
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage
           path: coverage/
@@ -327,10 +347,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # action commit pinned
+        with:
+          toolchain: '1.86.0'
       - name: Install Qt 6.7 (+ qmltestrunner)
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
           version: '6.7.3'
           modules: 'qtvirtualkeyboard'
@@ -366,7 +388,7 @@ jobs:
         run: python3 scripts/visual_baselines.py compare
       - name: Upload GUI evidence
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: gui-evidence
           path: |

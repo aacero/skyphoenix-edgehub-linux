@@ -12,6 +12,7 @@
 #include <QString>
 #include <QTimer>
 #include <QImage>
+#include <QMetaObject>
 #include <QPalette>
 #include <QColor>
 #include <QQuickWindow>
@@ -20,6 +21,7 @@
 #include <QRect>
 #include <QSize>
 #include <QUrl>
+#include <QVariant>
 
 #include "xeneon_core.h"
 #include "manager_backend.h"
@@ -181,8 +183,8 @@ int main(int argc, char* argv[]) {
     if (usingManagerXwayland)
         qInfo() << "Manager: using XWayland for deterministic non-Edge placement";
     app.setApplicationName("Xeneon Edge Manager");
-    // XENEON_VERSION, not a literal: CMakeLists passes the git-describe string
-    // (or the packaged pkgver via XENEON_VERSION_OVERRIDE). This used to be a
+    // XENEON_VERSION, not a literal: the generated build header carries the
+    // git-describe string (or the explicit packaging override). This used to be a
     // hardcoded "0.1.0", so `--version` reported 0.1.0 for EVERY build ever
     // made - dev, packaged, and release alike - which made it impossible to
     // tell which build you were actually running or testing.
@@ -222,7 +224,23 @@ int main(int argc, char* argv[]) {
 
     // Declare the backend BEFORE the engine so it outlives it (locals destroy in
     // reverse order; the engine holds context-property references to the backend).
-    ManagerBackend backend;
+    ManagerBackend backend(nullptr, usingManagerXwayland);
+    if (!backend.configAvailable()) {
+        XeneonString configDirectory(xeneon_config_dir());
+        const QByteArray configPath =
+            (configDirectory.qstring() + QStringLiteral("/config.toml")).toUtf8();
+        std::fprintf(
+            stderr,
+            "Manager refused to open because the saved configuration is invalid "
+            "or newer than this build. The file was left untouched at %s.\n"
+            "This build cannot open Diagnostics until the configuration is "
+            "readable. Restore config.toml.bak if it is known-good, or copy "
+            "config.toml somewhere safe and then run xeneon-edge-hub --reset "
+            "to start from defaults.\n",
+            configPath.constData());
+        std::fflush(stderr);
+        return 1;
+    }
     XeneonNetworkAccessManagerFactory networkAccessFactory;
     QQmlApplicationEngine engine;
     engine.setNetworkAccessManagerFactory(&networkAccessFactory);
@@ -256,15 +274,38 @@ int main(int argc, char* argv[]) {
         qCritical() << "Manager: failed to load QML";
         return 1;
     }
+    backend.setOfflineExternalChangePreflight([&engine] {
+        return xeneon::flushPendingUiState(engine.rootObjects()).ok();
+    });
+    backend.setLocalUiStatePendingProbe([&engine] {
+        for (QObject* root : engine.rootObjects()) {
+            if (!root)
+                continue;
+            QVariant returned;
+            if (QMetaObject::invokeMethod(
+                    root,
+                    "hasPendingUiState",
+                    Qt::DirectConnection,
+                    Q_RETURN_ARG(QVariant, returned)))
+                return returned.toBool();
+        }
+        return false;
+    });
 
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &engine, [&engine, &backend]() {
         const auto flushed = xeneon::flushPendingUiState(engine.rootObjects());
         const bool persisted = flushed.ok() && backend.confirmShutdownUiStatePersisted();
-        if (!persisted)
+        if (!persisted) {
+            const QString recoveryPath = backend.exportPendingUiStateRecovery();
             qWarning() << "Manager: clean-shutdown UI flush failed"
                        << "invoked:" << flushed.invoked
                        << "failed:" << flushed.failed
-                       << "hub-confirmed:" << persisted;
+                       << "hub-confirmed:" << persisted
+                       << "recovery:"
+                       << (recoveryPath.isEmpty()
+                               ? QStringLiteral("unavailable")
+                               : recoveryPath);
+        }
     });
 
     // Doc/review capture: XENEON_GRAB=<path> renders the window to a PNG and quits.

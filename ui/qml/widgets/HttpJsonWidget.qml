@@ -41,8 +41,19 @@ WidgetChrome {
     // Test seam (mirrors Weather): a per-request XHR factory passed through the gate.
     property var xhrFactory: null
 
-    title: "HTTP / JSON"; iconName: "net"; accentColor: theme.catInfo
+    readonly property bool narrowHeader:
+        !micro && width < 320 && theme.textScaleEff >= 1.3
+    title: w.narrowHeader ? "HTTP" : "HTTP / JSON"
+    iconName: "net"; accentColor: theme.catInfo
     showHeader: !micro
+    Accessible.name: "HTTP / JSON"
+    Accessible.description: !w.url.length
+        ? "No data source configured. Add a URL in settings."
+        : w.errText.length
+          ? w.errText + (w.errorHelp.length ? ". " + w.errorHelp : "")
+          : (w.jsonPath.length ? w.jsonPath + ". " : "")
+            + (w.valText.length ? w.valText : "No reading")
+            + (w.unit.length ? " " + w.unit : "")
 
     // ── Per-size layout (sizeClass injected by Dashboard) ────────────────────
     // A large allocation can be either a tall portrait column or a wide
@@ -65,6 +76,11 @@ WidgetChrome {
     readonly property real hintPx: Math.max(theme.fontMinimum,
                                             Math.min(w.width * 0.038, w.height * 0.05,
                                                          w.expanded ? 16 : 15))
+    // Sparkline's labelled chart contract needs enough vertical room for its
+    // domain, time axis, and min/avg/max summary. The overlay previously handed
+    // it a 60px strip, which necessarily disabled all of that context.
+    readonly property real chartDetailHeight:
+        Math.max(180, Math.max(16, theme.fontLabel) * 8)
 
     // ── list mode: how many rows, and the same rule calendar uses ────────────
     // `listMax` is a MAXIMUM the user asks for (schema: 1..12); the SIZE decides
@@ -451,13 +467,26 @@ WidgetChrome {
     Component {
         id: valueView
         GridLayout {
+            id: valueGrid
             anchors.fill: parent
             columns: w.horiz ? 2 : 1
             rowSpacing: 2
             columnSpacing: theme.spacingMd
 
             ColumnLayout {
+                id: readingColumn
                 Layout.fillWidth: true
+                // When the trend is beside the reading, both columns need an
+                // explicit share. Without one, the chart's rich implicit width
+                // consumed the row and reduced the number to a 1px slot.
+                Layout.minimumWidth: w.horiz && trendColumn.visible
+                                     ? theme.touchSecondary * 2 : 0
+                Layout.preferredWidth: w.horiz && trendColumn.visible
+                                       ? Math.max(
+                                             Layout.minimumWidth,
+                                             (valueGrid.width
+                                              - valueGrid.columnSpacing) / 2)
+                                       : -1
                 // Exactly ONE of these two may absorb the height when they are
                 // stacked in one column, or they compete and the nested Layout
                 // wins - which left the trend 6px tall (a flat line) in every
@@ -479,32 +508,54 @@ WidgetChrome {
                 Item {
                     Layout.fillWidth: true
                     Layout.preferredHeight: valueLabel.implicitHeight
+                                            + (stackUnit
+                                               ? theme.spacingXs
+                                                 + unitLabel.implicitHeight : 0)
                     readonly property real unitW: unitLabel.visible ? unitLabel.implicitWidth + 4 : 0
+                    readonly property bool stackUnit: unitLabel.visible
+                        && valueLabel.implicitWidth + unitW > width
                     Text {
                         id: valueLabel
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.horizontalCenterOffset: -parent.unitW / 2
-                        width: Math.max(40, parent.width - parent.unitW)
+                        objectName: "httpValueLabel"
+                        x: parent.stackUnit ? 0
+                           : (parent.width - parent.unitW - width) / 2
+                        y: parent.stackUnit ? 0 : (parent.height - height) / 2
+                        width: parent.stackUnit ? parent.width
+                                               : Math.max(40, parent.width - parent.unitW)
+                        height: implicitHeight
                         text: w.valText.length ? w.valText : (w.errText.length ? "-" : "…")
                         font.pixelSize: w.valuePx; font.bold: true
                         color: w.valColor
                         horizontalAlignment: Text.AlignHCenter
                         fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum
-                        elide: Text.ElideRight
+                        elide: Text.ElideNone
                     }
                     Text {
                         id: unitLabel
+                        objectName: "httpUnitLabel"
                         visible: w.unit.length > 0 && !w.errText.length
                         text: w.unit; font.pixelSize: w.unitPx; color: theme.textSecondary
-                        // Sit just past the number's painted right edge.
-                        x: valueLabel.x + (valueLabel.width + valueLabel.paintedWidth) / 2 + 4
-                        anchors.baseline: valueLabel.baseline
+                        width: parent.stackUnit ? parent.width : implicitWidth
+                        height: implicitHeight
+                        x: parent.stackUnit
+                           ? 0
+                           : valueLabel.x
+                             + (valueLabel.width + valueLabel.paintedWidth) / 2 + 4
+                        y: parent.stackUnit
+                           ? valueLabel.y + valueLabel.height + theme.spacingXs
+                           : valueLabel.y + valueLabel.baselineOffset - baselineOffset
+                        horizontalAlignment: parent.stackUnit
+                                             ? Text.AlignHCenter : Text.AlignLeft
+                        wrapMode: Text.WordWrap
+                        elide: Text.ElideNone
                     }
                 }
                 Text {
+                    objectName: "httpReadingContext"
                     Layout.alignment: Qt.AlignHCenter; Layout.fillWidth: true
-                    horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    elide: Text.ElideNone
                     // The half-cell has no room for the path caption; an error
                     // still wins at every size (it explains a missing reading).
                     visible: w.errText.length > 0
@@ -513,6 +564,20 @@ WidgetChrome {
                     color: w.errText.length ? theme.warning : theme.textTertiary
                     font.pixelSize: Math.max(theme.fontMinimum,
                                              Math.min(w.valuePx * 0.24, theme.fontLabel))
+                }
+                Text {
+                    objectName: "httpErrorHelp"
+                    visible: w.errText.length > 0 && w.errorHelp.length > 0
+                             && (w.expanded || w.tallish
+                                 || w.sizeClass === "large")
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.fillWidth: true
+                    text: w.errorHelp
+                    color: theme.textSecondary
+                    font.pixelSize: theme.fontMinimum
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    elide: Text.ElideNone
                 }
                 Text {
                     visible: w.rich && w.thresholdState.length > 0
@@ -528,26 +593,78 @@ WidgetChrome {
             }
 
             // Trend. Micro reserves no slot for it at all.
-            Sparkline {
+            ColumnLayout {
+                id: trendColumn
+                objectName: "httpTrendSection"
                 visible: w.rich && w.hist.length > 1 && !w.errText.length
                 Layout.fillWidth: true
+                Layout.minimumWidth: w.horiz
+                                     ? theme.touchSecondary * 2 : 0
+                Layout.preferredWidth: w.horiz
+                                       ? Math.max(
+                                             Layout.minimumWidth,
+                                             (valueGrid.width
+                                              - valueGrid.columnSpacing) / 2)
+                                       : -1
+                spacing: theme.spacingXs
                 // Stacked: a strip, or real height once the box is tall.
                 // Wide: the trend takes the height beside the number.
                 Layout.fillHeight: w.horiz || w.tallish
-                Layout.preferredHeight: (w.horiz || w.tallish) ? -1
-                                        : (w.expanded ? 60 : Math.max(22, w.height * 0.14))
-                values: w.hist
-                color: w.valColor
-                chartStyle: w.graphStyle
-                scaleMode: w.mode === "gauge" ? "fixed" : "auto"
-                minimumValue: 0
-                maximumValue: Math.max(1, w.gaugeMax)
-                includeZero: w.graphScale !== "range"
-                sampleIntervalSeconds: w.pollSec
-                valueFormatter: function(value) {
-                    return w.formatNumber(value) + (w.unit.length ? " " + w.unit : "")
+                Layout.minimumHeight: w.expanded
+                                      ? w.chartDetailHeight
+                                        + trendLegend.implicitHeight
+                                        + theme.spacingXs : 0
+                Layout.preferredHeight: w.expanded
+                                        ? w.chartDetailHeight
+                                          + trendLegend.implicitHeight
+                                          + theme.spacingXs
+                                        : (w.horiz || w.tallish) ? -1
+                                        : Math.max(
+                                              w.chartDetailHeight,
+                                              w.height * 0.22)
+                Accessible.role: Accessible.StaticText
+                Accessible.name: (w.jsonPath.length ? w.jsonPath : "Value")
+                                 + (w.unit.length ? ", unit " + w.unit : "")
+                                 + ". " + trendPlot.accessibleSummary
+
+                Text {
+                    id: trendLegend
+                    objectName: "httpTrendLegend"
+                    Layout.fillWidth: true
+                    text: (w.jsonPath.length ? w.jsonPath : "Value trend")
+                          + (w.unit.length ? " · " + w.unit : "")
+                    color: theme.textSecondary
+                    font.pixelSize: theme.fontLabel
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    elide: Text.ElideNone
                 }
-                primaryLabel: w.jsonPath.length ? w.jsonPath : "Value"
+
+                Sparkline {
+                    id: trendPlot
+                    objectName: "httpTrendChart"
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.minimumHeight: w.expanded ? w.chartDetailHeight : 0
+                    values: w.hist
+                    color: w.valColor
+                    chartStyle: w.graphStyle
+                    scaleMode: w.mode === "gauge" ? "fixed" : "auto"
+                    minimumValue: 0
+                    maximumValue: Math.max(1, w.gaugeMax)
+                    includeZero: w.graphScale !== "range"
+                    sampleIntervalSeconds: w.pollSec
+                    // The legend carries the full configured path and unit once.
+                    // Repeating a long unit on every tick and statistic made the
+                    // chart unreadable; numeric axes remain complete and the
+                    // accessible summary below retains the same semantic unit.
+                    valueFormatter: function(value) {
+                        return w.formatNumber(value)
+                    }
+                    primaryLabel: ""
+                    Accessible.ignored: true
+                }
             }
 
             ColumnLayout {

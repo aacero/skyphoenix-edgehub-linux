@@ -173,9 +173,41 @@ private slots:
 
         // One immediate attempt plus all three scheduled attempts. ioctl on the
         // FIFO always fails, so exhaustion is deterministic and fast.
+        QTest::ignoreMessage(
+            QtInfoMsg,
+            QRegularExpression(
+                "OrientationSensor: startup GET_REPORT unavailable after .* "
+                "using remembered rotation 90 deg and following pushed reports"));
         QTRY_COMPARE_WITH_TIMEOUT(s.startupAttemptCountForTest(), 4, 1000);
         QTRY_VERIFY_WITH_TIMEOUT(!s.startupRetryActiveForTest(), 1000);
         QCOMPARE(s.rotation(), 90);
+        QVERIFY(!s.hasDeviceReadingForTest());
+        ::close(wfd);
+    }
+
+    // Exhaustion without either a device report or persisted state is genuinely
+    // degraded: the shell can only infer landscape from the display aspect. Keep
+    // that case at warning severity so the production warning gate remains useful.
+    void missingDeviceAndFallbackRemainsWarning() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString fifo = dir.path() + "/edge_fifo";
+        QCOMPARE(::mkfifo(fifo.toUtf8().constData(), 0600), 0);
+        const int wfd = ::open(fifo.toUtf8().constData(), O_RDWR | O_NONBLOCK);
+        QVERIFY(wfd >= 0);
+
+        OrientationSensor s;
+        s.setStatePath(dir.path() + "/missing-orientation.state");
+        s.setStartupRetryScheduleForTest({5, 10});
+        QTest::ignoreMessage(
+            QtWarningMsg,
+            QRegularExpression(
+                "OrientationSensor: no startup HID orientation or remembered rotation after .* "
+                "using the display-aspect fallback until a pushed report arrives"));
+        QVERIFY(s.openForTest(fifo));
+        QTRY_COMPARE_WITH_TIMEOUT(s.startupAttemptCountForTest(), 3, 1000);
+        QTRY_VERIFY_WITH_TIMEOUT(!s.startupRetryActiveForTest(), 1000);
+        QCOMPARE(s.rotation(), -1);
         QVERIFY(!s.hasDeviceReadingForTest());
         ::close(wfd);
     }

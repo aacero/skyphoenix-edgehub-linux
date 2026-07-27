@@ -8,42 +8,59 @@
 # long-running child is bounded by its own runner and/or an outer wall-clock timeout.
 set -uo pipefail
 
-# Keep the real entitlement out of every unrelated compiler, GUI, compositor,
-# hardware, and coverage child. It is handed to the two Rust core invocations
-# through descriptor 3; the receiving runner exports it only to Cargo itself.
-OWNER_TEST_LICENSE_KEY="${XENEON_TEST_LICENSE_KEY:-}"
-if [ "${XENEON_OWNER_KEY_FD:-}" = "3" ]; then
+# Reject the legacy bearer-key environment before any child can inherit it.
+# Direct invocations accept only a protected file path. release.sh passes the
+# already-read key through private descriptor 3, never through the environment.
+if [[ -v XENEON_TEST_LICENSE_KEY ]]; then
+    unset XENEON_TEST_LICENSE_KEY
+    printf 'ERROR: XENEON_TEST_LICENSE_KEY is unsupported; use XENEON_TEST_LICENSE_KEY_FILE.\n' >&2
+    exit 2
+fi
+OWNER_TEST_LICENSE_FILE_SUPPLIED=0
+OWNER_TEST_LICENSE_FILE=""
+if [[ -v XENEON_TEST_LICENSE_KEY_FILE ]]; then
+    OWNER_TEST_LICENSE_FILE_SUPPLIED=1
+    OWNER_TEST_LICENSE_FILE="$XENEON_TEST_LICENSE_KEY_FILE"
+fi
+unset XENEON_TEST_LICENSE_KEY_FILE
+OWNER_TEST_LICENSE_KEY=""
+OWNER_TEST_LICENSE_FROM_FD=0
+if [[ -v XENEON_OWNER_KEY_FD ]]; then
+    [ "$XENEON_OWNER_KEY_FD" = "3" ] || {
+        unset XENEON_OWNER_KEY_FD
+        printf 'ERROR: XENEON_OWNER_KEY_FD must name descriptor 3.\n' >&2
+        exit 2
+    }
+    [ "$OWNER_TEST_LICENSE_FILE_SUPPLIED" -eq 0 ] || {
+        unset XENEON_OWNER_KEY_FD
+        printf 'ERROR: owner licence file and internal descriptor input cannot be combined.\n' >&2
+        exit 2
+    }
+    OWNER_TEST_LICENSE_FROM_FD=1
     IFS= read -r OWNER_TEST_LICENSE_KEY <&3 || OWNER_TEST_LICENSE_KEY=""
     exec 3<&-
 fi
-unset XENEON_TEST_LICENSE_KEY
 unset XENEON_OWNER_KEY_FD
+# Select the shipping MSRV before any repository or test child is started.
+export RUSTUP_TOOLCHAIN=1.86.0
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_DIR"
 
-export XENEON_RELEASE_GATE=1
-export XENEON_COVERAGE=ON
-# One pinned CMake tree is shared by C++ tests, real-binary suites, and gcovr.
-# run_cpp_tests.sh recreates it from scratch, so no mutable developer build/
-# cache or binary can influence the candidate verdict.
-export XENEON_TEST_BUILD_DIR="$PROJECT_DIR/cmake-build-release-tests"
-# Pin completeness-sensitive knobs. Developer overrides that shorten a soak or
-# select a widget subset must never weaken a release verdict.
-export XENEON_HUB="$XENEON_TEST_BUILD_DIR/xeneon-edge-hub"
-export XENEON_MANAGER="$XENEON_TEST_BUILD_DIR/xeneon-edge-manager"
-PERFORMANCE_BUILD_DIR="$PROJECT_DIR/cmake-build-release-performance"
-PERFORMANCE_HUB="$PERFORMANCE_BUILD_DIR/xeneon-edge-hub"
-export XENEON_HW_IDLE_SECONDS=3
-export E2E_SOAK_SECONDS=1200
-export XENEON_EGRESS_SECS=10
-# The AppImage contract supports mutated-tree negative controls in developer
-# tests. A release must always audit the signed candidate, never a caller-chosen
-# alternate tree.
-export XENEON_CONTRACT_REPO="$PROJECT_DIR"
+release_die() {
+    printf 'ERROR: %s\n' "$*" >&2
+    exit 2
+}
 
-# shellcheck source=lib/release_gate.sh
-. "$PROJECT_DIR/scripts/lib/release_gate.sh"
+readonly RELEASE_KEY="2F0CAD36DC1D46F3347B7EF293CDC77EACF98990"
+readonly RELEASE_REPO="skyphoenix-it/skyphoenix-edgehub-linux"
+readonly AUDIT_FINALIZER="$PROJECT_DIR/scripts/finalize_audit_artifacts.sh"
+readonly AUDIT_MANIFEST_HELPER="$PROJECT_DIR/scripts/lib/audit_artifact_manifest.py"
+readonly AUDIT_RECORD_HELPER="$PROJECT_DIR/scripts/lib/audit_artifact_contract.py"
+readonly RELEASE_MANIFEST_CHECKER="$PROJECT_DIR/scripts/check_release_manifest_contract.py"
+readonly OWNER_LICENSE_FILE_READER="$PROJECT_DIR/scripts/lib/owner_license_file.py"
+readonly RELEASE_ORIGIN_HELPER="$PROJECT_DIR/scripts/lib/release_origin.sh"
+readonly RELEASE_RUST_TOOLCHAIN_HELPER="$PROJECT_DIR/scripts/lib/release_rust_toolchain.sh"
 
 list_suites() {
     cat <<'EOF'
@@ -51,6 +68,7 @@ core/Cargo.toml (rustfmt + clippy; tests via scripts/run_all_tests.sh)
 owners_real_pro_key_unlocks_pro_against_the_shipped_issuer_key (explicit --nocapture)
 tools/license-tool/Cargo.toml (rustfmt + clippy + tests)
 tools/license-webhook/Cargo.toml (rustfmt + clippy + tests)
+gitleaks full-history secret scan
 scripts/run_all_tests.sh (strict: unit, QML, C++, runtime, Manager, compositor)
 tests/hardware/test_input_safety.py (via scripts/run_all_tests.sh)
 tests/hardware/test_e2e_contract.py (via scripts/run_all_tests.sh)
@@ -60,7 +78,7 @@ tests/hardware/widget_render_matrix.py
 scripts/coverage.sh
 tests/performance/prepare_release_candidate.sh
 tests/performance/run_hub_profiles.py --mode short (literal 5m idle + 5m active + first render)
-tests/performance/run_hub_profiles.py --mode idle-48h (literal 48h; includes a gated 24h checkpoint)
+tests/performance/run_audit_14_widget_30m.py (literal 30m; owner-approved 14-widget substitute)
 EOF
 }
 
@@ -70,7 +88,7 @@ case "${1:-}" in
         exit 0
         ;;
     -h|--help)
-        echo "Usage: XENEON_HW_INPUT=1 XENEON_HW_INPUT_DESKTOP=1 XENEON_TEST_LICENSE_KEY=<key> $0 [--list]"
+        echo "Usage: XENEON_HW_INPUT=1 XENEON_HW_INPUT_DESKTOP=1 XENEON_TEST_LICENSE_KEY_FILE=/absolute/path $0 [--list]"
         echo "Runs the complete strict pre-release suite; no omissions are accepted."
         exit 0
         ;;
@@ -78,9 +96,103 @@ case "${1:-}" in
     *) echo "ERROR: unknown argument '$1' (use --help)" >&2; exit 2 ;;
 esac
 
+[ -f "$RELEASE_RUST_TOOLCHAIN_HELPER" ] \
+    || release_die "release Rust toolchain helper is unavailable: $RELEASE_RUST_TOOLCHAIN_HELPER"
+# shellcheck source=lib/release_rust_toolchain.sh
+. "$RELEASE_RUST_TOOLCHAIN_HELPER"
+xeneon_release_rust_toolchain_select
+xeneon_release_rust_toolchain_verify \
+    || release_die "release Rust toolchain verification failed"
+
+if [ "$OWNER_TEST_LICENSE_FROM_FD" -eq 0 ]; then
+    [ "$OWNER_TEST_LICENSE_FILE_SUPPLIED" -eq 1 ] \
+        || release_die "set XENEON_TEST_LICENSE_KEY_FILE to the protected owner-issued Pro licence"
+    [ -f "$OWNER_LICENSE_FILE_READER" ] \
+        || release_die "owner licence file reader is unavailable: $OWNER_LICENSE_FILE_READER"
+    if ! OWNER_TEST_LICENSE_KEY="$(
+            env PYTHONDONTWRITEBYTECODE=1 python3 "$OWNER_LICENSE_FILE_READER" \
+                "$OWNER_TEST_LICENSE_FILE"
+        )"; then
+        release_die "owner-issued Pro licence file was rejected"
+    fi
+fi
+OWNER_TEST_LICENSE_FILE=""
+
+evidence_commit="$(git rev-parse --verify 'HEAD^{commit}')" || {
+    echo "ERROR: release evidence requires a committed HEAD" >&2
+    exit 2
+}
+case "$evidence_commit" in
+    [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+    *) echo "ERROR: release evidence commit is not a full lowercase SHA" >&2; exit 2 ;;
+esac
+initial_git_state="$(git status --porcelain=v1 \
+    --untracked-files=all --ignore-submodules=none)"
+if [ -n "$initial_git_state" ]; then
+    printf '%s\n' "$initial_git_state" >&2
+    echo "ERROR: strict release evidence requires a clean tree" >&2
+    exit 2
+fi
+env PYTHONDONTWRITEBYTECODE=1 \
+    python3 "$PROJECT_DIR/scripts/check_tracked_source_inputs.py" \
+        --repo "$PROJECT_DIR" \
+    || release_die "strict release evidence contains an untracked or ignored build input"
+env PYTHONDONTWRITEBYTECODE=1 \
+    python3 "$RELEASE_MANIFEST_CHECKER" --repo "$PROJECT_DIR" \
+    || release_die "strict runner and signed audit contract have drifted"
+audit_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+audit_run_id="release-gate-${audit_stamp}-$$"
+AUDIT_ROOT="$PROJECT_DIR/artifacts/$evidence_commit/$audit_run_id"
+[ ! -e "$AUDIT_ROOT" ] || {
+    echo "ERROR: audit run already exists: $AUDIT_ROOT" >&2
+    exit 2
+}
+mkdir -m 0700 -p "$AUDIT_ROOT/logs" "$AUDIT_ROOT/work" \
+    || release_die "could not create the release evidence directory"
+export XENEON_AUDIT_RUN_DIR="$AUDIT_ROOT"
+export QLOGDIR="$AUDIT_ROOT/qml-ui-logs"
+export TMPDIR="$AUDIT_ROOT/work"
+printf 'Strict release evidence: %s\n' "$AUDIT_ROOT"
+
+export XENEON_RELEASE_GATE=1
+export XENEON_COVERAGE=ON
+# One pinned CMake tree is shared by C++ tests, real-binary suites, and gcovr.
+# run_cpp_tests.sh recreates it from scratch, so no mutable developer build/
+# cache or binary can influence the candidate verdict.
+export XENEON_TEST_BUILD_DIR="$PROJECT_DIR/cmake-build-release-tests"
+# Pin completeness-sensitive knobs. The historical Edge E2E endurance loop is
+# explicitly omitted because the separate 30-minute 14-widget instrumented run
+# is the owner-approved stability substitute. Widget subsets remain forbidden.
+export XENEON_HUB="$XENEON_TEST_BUILD_DIR/xeneon-edge-hub"
+export XENEON_MANAGER="$XENEON_TEST_BUILD_DIR/xeneon-edge-manager"
+PERFORMANCE_BUILD_DIR="$PROJECT_DIR/cmake-build-release-performance"
+PERFORMANCE_HUB="$PERFORMANCE_BUILD_DIR/xeneon-edge-hub"
+export XENEON_HW_IDLE_SECONDS=3
+export E2E_SOAK_SECONDS=0
+export XENEON_EGRESS_SECS=10
+# The AppImage contract supports mutated-tree negative controls in developer
+# tests. A release must always audit the signed candidate, never a caller-chosen
+# alternate tree.
+export XENEON_CONTRACT_REPO="$PROJECT_DIR"
+
+# shellcheck source=lib/release_gate.sh
+. "$PROJECT_DIR/scripts/lib/release_gate.sh"
+
 preflight_fail=0
-preflight_ok() { printf '  ok   %s\n' "$1"; }
-preflight_bad() { printf '  FAIL %s\n' "$1" >&2; preflight_fail=$((preflight_fail + 1)); }
+preflight_record="$AUDIT_ROOT/PREFLIGHT.tsv"
+printf 'result\tcheck\n' >"$preflight_record" \
+    || release_die "could not initialize PREFLIGHT.tsv"
+preflight_ok() {
+    printf '  ok   %s\n' "$1"
+    printf 'PASS\t%s\n' "$1" >>"$preflight_record" \
+        || release_die "could not append to PREFLIGHT.tsv"
+}
+preflight_bad() {
+    printf '  FAIL %s\n' "$1" >&2
+    printf 'FAIL\t%s\n' "$1" >>"$preflight_record" \
+        || release_die "could not append to PREFLIGHT.tsv"
+    preflight_fail=$((preflight_fail + 1))
+}
 
 require_command() {
     if command -v "$1" >/dev/null 2>&1; then
@@ -104,10 +216,10 @@ echo "==================================================================="
 
 case "$OWNER_TEST_LICENSE_KEY" in
     *[![:space:]]*)
-        preflight_ok "XENEON_TEST_LICENSE_KEY is non-empty (owner-key attestation enabled)"
+        preflight_ok "protected owner licence is non-empty (owner-key attestation enabled)"
         ;;
     *)
-        preflight_bad "set XENEON_TEST_LICENSE_KEY to a real owner-issued Pro key"
+        preflight_bad "provide a real owner-issued Pro key through XENEON_TEST_LICENSE_KEY_FILE"
         ;;
 esac
 if [ "${XENEON_HW_INPUT:-0}" = "1" ]; then
@@ -138,13 +250,94 @@ case "${QT_QPA_PLATFORM:-}" in
 esac
 
 for command_name in \
-    bash cargo cargo-llvm-cov git ip kscreen-doctor \
-    kwin_wayland python3 spectacle tee timeout unshare busctl; do
+    bash cargo cargo-llvm-cov git gitleaks ip kscreen-doctor \
+    kwin_wayland python3 sha256sum spectacle stat tee timeout unshare busctl \
+    gpg; do
     require_command "$command_name"
 done
 require_command_or_executable cmake "$HOME/.local/bin/cmake"
 require_command_or_executable ctest "$HOME/.local/bin/ctest"
 require_command_or_executable gcovr "$HOME/.local/bin/gcovr"
+
+missing_finalizer_tools=()
+for command_name in \
+    awk cat chmod cut date dirname ln mkdir mktemp realpath rm rmdir wc; do
+    command -v "$command_name" >/dev/null 2>&1 \
+        || missing_finalizer_tools+=("$command_name")
+done
+if [ "${#missing_finalizer_tools[@]}" -eq 0 ]; then
+    preflight_ok "audit finalizer command prerequisites"
+else
+    preflight_bad \
+        "audit finalizer command prerequisites are missing: ${missing_finalizer_tools[*]}"
+fi
+
+finalizer_helpers_ok=1
+for helper in \
+    "$AUDIT_FINALIZER" "$AUDIT_MANIFEST_HELPER" "$AUDIT_RECORD_HELPER" \
+    "$RELEASE_ORIGIN_HELPER"; do
+    if [ ! -f "$helper" ] || [ -L "$helper" ] || [ ! -s "$helper" ]; then
+        finalizer_helpers_ok=0
+    fi
+done
+if [ "$finalizer_helpers_ok" -eq 1 ]; then
+    preflight_ok "audit finalizer and semantic helpers"
+else
+    preflight_bad "audit finalizer or semantic helper is missing, empty, or symlinked"
+fi
+
+origin_policy_loaded=0
+if [ -f "$RELEASE_ORIGIN_HELPER" ] && [ ! -L "$RELEASE_ORIGIN_HELPER" ]; then
+    # shellcheck source=lib/release_origin.sh
+    . "$RELEASE_ORIGIN_HELPER"
+    origin_policy_loaded=1
+fi
+if [ "$origin_policy_loaded" -eq 1 ] \
+        && xeneon_origin_matches_github_repo "$PROJECT_DIR" "$RELEASE_REPO"; then
+    preflight_ok "canonical origin fetch and push identity"
+else
+    preflight_bad "origin fetch and push URLs must identify the canonical GitHub repository"
+fi
+
+signing_key_record=""
+if command -v gpg >/dev/null 2>&1; then
+    signing_key_record="$(
+        gpg --batch --list-secret-keys --with-colons "$RELEASE_KEY" 2>/dev/null \
+            | awk -F: '
+                $1 == "sec" && !seen {
+                    validity = $2
+                    expiry = $7
+                    capabilities = $12
+                    seen = 1
+                    next
+                }
+                $1 == "fpr" && seen {
+                    print toupper($10) ":" validity ":" expiry ":" capabilities
+                    exit
+                }
+            '
+    )"
+fi
+IFS=: read -r signing_fingerprint signing_validity signing_expiry signing_caps \
+    <<<"$signing_key_record"
+signing_key_ok=1
+[ "$signing_fingerprint" = "$RELEASE_KEY" ] || signing_key_ok=0
+case "$signing_validity" in
+    r|e) signing_key_ok=0 ;;
+esac
+case "$signing_caps" in
+    *s*|*S*) ;;
+    *) signing_key_ok=0 ;;
+esac
+if [ -n "$signing_expiry" ] \
+        && [ "$signing_expiry" -le "$(date +%s)" ] 2>/dev/null; then
+    signing_key_ok=0
+fi
+if [ "$signing_key_ok" -eq 1 ]; then
+    preflight_ok "pinned release signing key is present and signing-capable"
+else
+    preflight_bad "pinned release signing key is unavailable, expired, revoked, or not signing-capable"
+fi
 
 # A caller-supplied QMLTESTRUNNER=/bin/true previously made every offscreen QML
 # file exit zero without running a single check. Ignore that override. The suite
@@ -226,14 +419,22 @@ fi
 
 names=()
 results=()
+suite_counter=0
 run_release_suite() {
     local name="$1" max_seconds="$2"; shift 2
+    local safe_name suite_log
     echo ""
     echo "==================================================================="
     echo "==> $name (timeout ${max_seconds}s)"
     echo "==================================================================="
     names+=("$name")
-    if xeneon_run_rejecting_skips \
+    suite_counter=$((suite_counter + 1))
+    safe_name="$(printf '%s' "$name" \
+        | tr '[:upper:]' '[:lower:]' \
+        | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
+    suite_log="$(printf '%s/logs/%02d-%s.log' \
+        "$AUDIT_ROOT" "$suite_counter" "$safe_name")"
+    if xeneon_run_rejecting_skips_to "$suite_log" \
         timeout --signal=INT --kill-after=60 "$max_seconds" "$@"; then
         results+=("PASS")
         echo "--- $name: PASS"
@@ -245,6 +446,9 @@ run_release_suite() {
 
 # Rust static analysis is intentionally outside run_all_tests.sh: developer
 # runs stay quick, while a release verifies every first-party Rust crate.
+run_release_suite "Repository full-history secret scan" 600 \
+    gitleaks git --no-banner --redact=100 --log-level warn --no-color \
+        -c "$PROJECT_DIR/.gitleaks.toml" "$PROJECT_DIR"
 run_release_suite "Rust core format" 600 \
     cargo fmt --manifest-path "$PROJECT_DIR/core/Cargo.toml" --all -- --check
 run_release_suite "Rust core clippy" 1800 \
@@ -275,9 +479,18 @@ run_release_suite "Strict complete developer/integration suite" \
 unset XENEON_OWNER_KEY_FD
 OWNER_TEST_LICENSE_KEY=""
 
+if [ -d "$PROJECT_DIR/gui-evidence" ]; then
+    cp -a -- "$PROJECT_DIR/gui-evidence" "$AUDIT_ROOT/gui-evidence" \
+        || release_die "could not retain GUI evidence"
+fi
+if [ -d "$PROJECT_DIR/build/gui-logs" ]; then
+    cp -a -- "$PROJECT_DIR/build/gui-logs" "$AUDIT_ROOT/gui-logs" \
+        || release_die "could not retain GUI logs"
+fi
+
 # Current non-legacy real-device suites. These are deliberately explicit: a
 # release manifest is reviewable, and the contract check prevents orphaning.
-run_release_suite "Real Edge comprehensive E2E + soak" \
+run_release_suite "Real Edge comprehensive functional E2E" \
     3600 \
     env PYTHONDONTWRITEBYTECODE=1 python3 \
         "$PROJECT_DIR/scripts/run_hardware_python.py" \
@@ -299,26 +512,26 @@ run_release_suite "Coverage gates" 7200 \
 # Coverage instrumentation changes code generation and is not valid CPU/RSS
 # evidence. Rebuild the same source revision in a second fixed, clean Release
 # tree with coverage and QA hooks disabled, then measure only that pinned
-# candidate. The long mode has no duration override: it waits a literal 48
-# hours and independently gates the first 24-hour checkpoint.
+# candidate. The release owner explicitly waived the historical 48-hour soak.
+# The accepted substitute is a literal 30-minute, 14-widget instrumented
+# observation with no duration or widget-subset override.
 run_release_suite "Fresh non-instrumented performance candidate" 7200 \
     bash "$PROJECT_DIR/tests/performance/prepare_release_candidate.sh"
 
-if ! performance_evidence_root="$(mktemp -d "${TMPDIR:-/tmp}/xeneon-release-performance.XXXXXX")"; then
-    echo "RESULT: FAILURE - could not create the performance evidence directory" >&2
-    exit 1
-fi
+performance_evidence_root="$AUDIT_ROOT/performance"
+mkdir -m 0700 "$performance_evidence_root" \
+    || release_die "could not create the performance evidence directory"
 echo "Performance evidence root: $performance_evidence_root"
 run_release_suite "Hub startup + literal 5m idle/10-widget performance" 1200 \
     env PYTHONDONTWRITEBYTECODE=1 python3 \
         "$PROJECT_DIR/tests/performance/run_hub_profiles.py" \
         --mode short --hub "$PERFORMANCE_HUB" \
         --output-dir "$performance_evidence_root/short"
-run_release_suite "Hub literal 48h idle stability/performance soak" 174600 \
+run_release_suite "Hub literal 30m 14-widget performance observation" 2400 \
     env PYTHONDONTWRITEBYTECODE=1 python3 \
-        "$PROJECT_DIR/tests/performance/run_hub_profiles.py" \
-        --mode idle-48h --hub "$PERFORMANCE_HUB" \
-        --output-dir "$performance_evidence_root/idle-48h"
+        "$PROJECT_DIR/tests/performance/run_audit_14_widget_30m.py" \
+        --hub "$PERFORMANCE_HUB" \
+        --output-dir "$performance_evidence_root/14-widget-30m"
 
 echo ""
 echo "==================================================================="
@@ -332,8 +545,171 @@ for i in "${!names[@]}"; do
     fi
 done
 echo "==================================================================="
+summary_path="$AUDIT_ROOT/SUMMARY.tsv"
+printf 'result\tsuite\n' >"$summary_path" \
+    || release_die "could not initialize SUMMARY.tsv"
 if [ "$release_fail" -ne 0 ]; then
+    for i in "${!names[@]}"; do
+        printf '%s\t%s\n' "${results[$i]}" "${names[$i]}" >>"$summary_path" \
+            || release_die "could not append to SUMMARY.tsv"
+    done
+    rm -rf -- "$AUDIT_ROOT/work" \
+        || release_die "could not remove transient release work files"
     echo "RESULT: FAILURE - release is blocked"
+    echo "Unsealed failure evidence retained at: $AUDIT_ROOT"
     exit 1
 fi
+for i in "${!names[@]}"; do
+    printf '%s\t%s\n' "${results[$i]}" "${names[$i]}" >>"$summary_path" \
+        || release_die "could not append to SUMMARY.tsv"
+done
+python3 - "$AUDIT_ROOT/RUN.json" "$evidence_commit" "$audit_run_id" \
+    "$preflight_record" "$summary_path" <<'PY' \
+    || release_die "could not publish the complete RUN.json record"
+import datetime
+import hashlib
+import json
+import os
+import pathlib
+import sys
+import tempfile
+
+output, commit, run_id, preflight_path, summary_path = sys.argv[1:]
+
+
+def record_details(path):
+    payload = pathlib.Path(path).read_bytes()
+    rows = payload.decode("utf-8").splitlines()
+    if len(rows) < 2:
+        raise SystemExit(f"release record has no result rows: {path}")
+    return len(rows) - 1, hashlib.sha256(payload).hexdigest()
+
+
+preflight_rows, preflight_sha256 = record_details(preflight_path)
+summary_rows, summary_sha256 = record_details(summary_path)
+document = {
+    "schema": "skyphoenix-edgehub-release-gate-run/v2",
+    "source_commit": commit,
+    "run_id": run_id,
+    "completed_at": datetime.datetime.now(datetime.timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z"),
+    "result": "PASS",
+    "preflight_rows": preflight_rows,
+    "preflight_sha256": preflight_sha256,
+    "summary_rows": summary_rows,
+    "summary_sha256": summary_sha256,
+}
+destination = pathlib.Path(output)
+descriptor, temporary = tempfile.mkstemp(
+    dir=destination.parent,
+    prefix=".release-run.",
+)
+try:
+    os.fchmod(descriptor, 0o600)
+    payload = (json.dumps(document, indent=2, sort_keys=True) + "\n").encode()
+    remaining = memoryview(payload)
+    while remaining:
+        written = os.write(descriptor, remaining)
+        if written <= 0:
+            raise OSError("short write while publishing RUN.json")
+        remaining = remaining[written:]
+    os.fsync(descriptor)
+    os.close(descriptor)
+    descriptor = -1
+    os.replace(temporary, destination)
+    temporary = ""
+    directory = os.open(
+        destination.parent,
+        os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_CLOEXEC,
+    )
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+finally:
+    if descriptor >= 0:
+        os.close(descriptor)
+    if temporary:
+        pathlib.Path(temporary).unlink(missing_ok=True)
+PY
+rm -rf -- "$AUDIT_ROOT/work" \
+    || release_die "could not remove transient release work files"
+unset TMPDIR
+unset QLOGDIR
+unset XENEON_AUDIT_RUN_DIR
+bash "$AUDIT_FINALIZER" "$AUDIT_ROOT" \
+    || {
+        echo "RESULT: FAILURE - test suites passed but evidence signing/finalization failed" >&2
+        exit 1
+    }
+
+if [ -n "${XENEON_RELEASE_GATE_RESULT_FILE:-}" ]; then
+    result_file="$XENEON_RELEASE_GATE_RESULT_FILE"
+    [ -f "$result_file" ] && [ ! -L "$result_file" ] \
+        || release_die "machine result target must be an existing regular non-symlink file"
+    [ "$(stat -c %a -- "$result_file")" = "600" ] \
+        || release_die "machine result target must have mode 0600"
+    manifest_digest_line="$(sha256sum -- "$AUDIT_ROOT/MANIFEST.sha256")" \
+        || release_die "could not hash the finalized audit manifest"
+    signature_digest_line="$(sha256sum -- "$AUDIT_ROOT/MANIFEST.sha256.asc")" \
+        || release_die "could not hash the finalized audit signature"
+    provenance_digest_line="$(sha256sum -- "$AUDIT_ROOT/PROVENANCE.json")" \
+        || release_die "could not hash the finalized audit provenance"
+    run_digest_line="$(sha256sum -- "$AUDIT_ROOT/RUN.json")" \
+        || release_die "could not hash the finalized release run record"
+    python3 - "$result_file" "$evidence_commit" "$audit_run_id" \
+        "artifacts/$evidence_commit/$audit_run_id" \
+        "${manifest_digest_line%% *}" "${signature_digest_line%% *}" \
+        "${provenance_digest_line%% *}" "${run_digest_line%% *}" <<'PY' \
+        || release_die "could not write the machine-readable release-gate result"
+import json
+import os
+import stat
+import sys
+
+(
+    output,
+    commit,
+    run_id,
+    artifact_path,
+    manifest_sha256,
+    signature_sha256,
+    provenance_sha256,
+    run_sha256,
+) = sys.argv[1:]
+metadata = os.lstat(output)
+if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+    raise SystemExit("unsafe machine result target")
+if stat.S_IMODE(metadata.st_mode) != 0o600:
+    raise SystemExit("machine result target mode changed")
+document = {
+    "schema": "skyphoenix-edgehub-release-gate-result/v1",
+    "source_commit": commit,
+    "run_id": run_id,
+    "artifact_path": artifact_path,
+    "manifest_sha256": manifest_sha256,
+    "signature_sha256": signature_sha256,
+    "provenance_sha256": provenance_sha256,
+    "run_sha256": run_sha256,
+}
+descriptor = os.open(
+    output,
+    os.O_WRONLY | os.O_TRUNC | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0),
+)
+try:
+    payload = (json.dumps(document, indent=2, sort_keys=True) + "\n").encode()
+    remaining = memoryview(payload)
+    while remaining:
+        written = os.write(descriptor, remaining)
+        if written <= 0:
+            raise OSError("short write")
+        remaining = remaining[written:]
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+PY
+    printf 'Machine result: %s\n' "$result_file"
+fi
 echo "RESULT: SUCCESS - every release suite executed and passed"
+echo "Signed evidence: $AUDIT_ROOT"

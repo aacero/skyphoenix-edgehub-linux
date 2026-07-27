@@ -8,7 +8,7 @@
 //! | form                  | meaning                                      |
 //! |-----------------------|----------------------------------------------|
 //! | `${env:VAR}`          | read environment variable `VAR`              |
-//! | `file:/path/to/token` | read the file's contents (trimmed)           |
+//! | `file:/path/to/token` | read a protected owner-only file (trimmed)   |
 //! | `secret://svc/key`    | OS keyring - Phase B, not yet implemented    |
 //! | anything else         | a legacy plaintext literal (still honoured)  |
 //!
@@ -20,8 +20,14 @@
 //! NOTHING in this module may log a secret's value - only its *kind* and, on
 //! failure, the reference (which is a variable name or path, not the secret).
 
-use std::fs;
+use std::fs::{self, File, OpenOptions};
+use std::io::Read;
 use std::path::Path;
+
+/// Credential files are expected to contain one short token or URL. Keeping the
+/// cap deliberately small prevents a mistaken path from pulling an arbitrary
+/// file into memory or forwarding its contents to a widget request.
+pub const MAX_SECRET_FILE_BYTES: u64 = 8 * 1024;
 
 /// What a stored credential string denotes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,6 +48,20 @@ pub enum SecretError {
     EnvMissing(String),
     #[error("secret file `{0}` could not be read: {1}")]
     FileUnreadable(String, String),
+    #[error("secret file path `{0}` must be absolute")]
+    FilePathNotAbsolute(String),
+    #[error("secret file `{0}` must not be a symbolic link")]
+    FileSymlink(String),
+    #[error("secret file `{0}` is not a regular file")]
+    FileNotRegular(String),
+    #[error("secret file `{0}` is owned by user {1}, not the current user {2}")]
+    FileNotOwned(String, u32, u32),
+    #[error("secret file `{0}` has unsafe permissions {1:o}; remove all group and other access")]
+    FilePermissions(String, u32),
+    #[error("secret file `{0}` exceeds the {1}-byte limit")]
+    FileTooLarge(String, u64),
+    #[error("secret file `{0}` is not valid UTF-8")]
+    FileInvalidUtf8(String),
     #[error("secret file `{0}` is empty")]
     FileEmpty(String),
     #[error("`secret://` references need the keyring backend, which this build does not have")]
@@ -84,6 +104,94 @@ pub fn is_plaintext(raw: &str) -> bool {
     !raw.trim().is_empty() && matches!(classify(raw), SecretRef::Plaintext(_))
 }
 
+fn unreadable(path: &str, error: impl std::fmt::Display) -> SecretError {
+    SecretError::FileUnreadable(path.to_string(), error.to_string())
+}
+
+fn open_secret_file(path_text: &str) -> Result<File, SecretError> {
+    let path = Path::new(path_text);
+    if !path.is_absolute() {
+        return Err(SecretError::FilePathNotAbsolute(path_text.to_string()));
+    }
+
+    // Reject unsafe file kinds before opening so a FIFO or device can never
+    // block or cause side effects. The descriptor is validated again below so
+    // replacing the path between this check and open cannot bypass the policy.
+    let path_metadata = fs::symlink_metadata(path).map_err(|e| unreadable(path_text, e))?;
+    if path_metadata.file_type().is_symlink() {
+        return Err(SecretError::FileSymlink(path_text.to_string()));
+    }
+    if !path_metadata.is_file() {
+        return Err(SecretError::FileNotRegular(path_text.to_string()));
+    }
+
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        options.custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let file = options.open(path).map_err(|e| unreadable(path_text, e))?;
+    let metadata = file.metadata().map_err(|e| unreadable(path_text, e))?;
+    if !metadata.is_file() {
+        return Err(SecretError::FileNotRegular(path_text.to_string()));
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+
+        let owner = metadata.uid();
+        // SAFETY: geteuid has no preconditions and does not dereference memory.
+        let current_user = unsafe { libc::geteuid() };
+        if owner != current_user {
+            return Err(SecretError::FileNotOwned(
+                path_text.to_string(),
+                owner,
+                current_user,
+            ));
+        }
+        let permissions = metadata.mode() & 0o777;
+        if permissions & 0o077 != 0 {
+            return Err(SecretError::FilePermissions(
+                path_text.to_string(),
+                permissions,
+            ));
+        }
+    }
+
+    if metadata.len() > MAX_SECRET_FILE_BYTES {
+        return Err(SecretError::FileTooLarge(
+            path_text.to_string(),
+            MAX_SECRET_FILE_BYTES,
+        ));
+    }
+    Ok(file)
+}
+
+fn read_bounded_secret(mut reader: impl Read, path: &str) -> Result<String, SecretError> {
+    let mut bytes = Vec::new();
+    (&mut reader)
+        .take(MAX_SECRET_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| unreadable(path, e))?;
+    // Check the bytes actually read as well as metadata.len(): a file can grow
+    // after it is opened, but it must never bypass the cap.
+    if bytes.len() as u64 > MAX_SECRET_FILE_BYTES {
+        return Err(SecretError::FileTooLarge(
+            path.to_string(),
+            MAX_SECRET_FILE_BYTES,
+        ));
+    }
+    String::from_utf8(bytes).map_err(|_| SecretError::FileInvalidUtf8(path.to_string()))
+}
+
+fn read_secret_file(path: &str) -> Result<String, SecretError> {
+    read_bounded_secret(open_secret_file(path)?, path)
+}
+
 /// Resolve a stored credential to the value to actually send.
 ///
 /// Errors carry the *reference* (a var name or path), never the secret.
@@ -99,8 +207,7 @@ pub fn resolve(raw: &str) -> Result<String, SecretError> {
             if path.is_empty() {
                 return Err(SecretError::Malformed(raw.trim().to_string()));
             }
-            let contents = fs::read_to_string(Path::new(path))
-                .map_err(|e| SecretError::FileUnreadable(path.to_string(), e.to_string()))?;
+            let contents = read_secret_file(path)?;
             // Trim: a token file almost always ends in a newline, and sending
             // that in an Authorization header breaks the request in a way that
             // is very hard to see.
@@ -118,6 +225,19 @@ pub fn resolve(raw: &str) -> Result<String, SecretError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::{symlink, MetadataExt, PermissionsExt};
+    use std::path::PathBuf;
+
+    fn protected_file(path: &Path, contents: impl AsRef<[u8]>) {
+        fs::write(path, contents).unwrap();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+
+    fn file_ref(path: &Path) -> String {
+        format!("file:{}", path.display())
+    }
 
     #[test]
     fn classifies_each_form() {
@@ -183,9 +303,18 @@ mod tests {
         let p = dir.path().join("tok");
         // The newline is the realistic case: `echo tok > file` leaves one, and
         // sending it in a header breaks auth confusingly.
-        fs::write(&p, "file-token\n").unwrap();
-        let r = resolve(&format!("file:{}", p.display())).unwrap();
+        protected_file(&p, "file-token\n");
+        let r = resolve(&file_ref(&p)).unwrap();
         assert_eq!(r, "file-token");
+    }
+
+    #[test]
+    fn relative_file_ref_is_rejected_before_it_is_opened() {
+        let err = resolve("file:relative/private-token").unwrap_err();
+        assert_eq!(
+            err,
+            SecretError::FilePathNotAbsolute("relative/private-token".into())
+        );
     }
 
     #[test]
@@ -200,9 +329,126 @@ mod tests {
     fn empty_file_is_an_error_not_an_empty_token() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("empty");
-        fs::write(&p, "\n  \n").unwrap();
-        let err = resolve(&format!("file:{}", p.display())).unwrap_err();
+        protected_file(&p, "\n  \n");
+        let err = resolve(&file_ref(&p)).unwrap_err();
         assert!(matches!(err, SecretError::FileEmpty(_)));
+    }
+
+    #[test]
+    fn symlink_file_ref_is_rejected_without_following_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let link = dir.path().join("link");
+        protected_file(&target, "must-not-be-read");
+        symlink(&target, &link).unwrap();
+
+        assert_eq!(
+            resolve(&file_ref(&link)).unwrap_err(),
+            SecretError::FileSymlink(link.display().to_string())
+        );
+    }
+
+    #[test]
+    fn directory_and_fifo_file_refs_are_rejected_as_non_regular() {
+        let dir = tempfile::tempdir().unwrap();
+        let directory = dir.path().join("directory");
+        fs::create_dir(&directory).unwrap();
+        assert_eq!(
+            resolve(&file_ref(&directory)).unwrap_err(),
+            SecretError::FileNotRegular(directory.display().to_string())
+        );
+
+        let fifo = dir.path().join("fifo");
+        let fifo_c = CString::new(fifo.as_os_str().as_bytes()).unwrap();
+        // SAFETY: fifo_c is a valid, NUL-terminated path and mkfifo does not
+        // retain the pointer.
+        assert_eq!(unsafe { libc::mkfifo(fifo_c.as_ptr(), 0o600) }, 0);
+        assert_eq!(
+            resolve(&file_ref(&fifo)).unwrap_err(),
+            SecretError::FileNotRegular(fifo.display().to_string())
+        );
+    }
+
+    #[test]
+    fn file_owned_by_another_user_is_rejected() {
+        // A non-root test process can use a known root-owned regular file. A
+        // root test process can create a fixture and give it to UID 1.
+        // SAFETY: geteuid has no preconditions.
+        let current_user = unsafe { libc::geteuid() };
+        let (path, _guard) = if current_user == 0 {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("foreign");
+            protected_file(&path, "must-not-be-read");
+            let path_c = CString::new(path.as_os_str().as_bytes()).unwrap();
+            // SAFETY: path_c is valid for the duration of the call. Passing -1
+            // for the group leaves it unchanged.
+            assert_eq!(
+                unsafe { libc::chown(path_c.as_ptr(), 1, u32::MAX) },
+                0,
+                "root test process must be able to prepare a foreign-owned fixture"
+            );
+            (path, Some(dir))
+        } else {
+            (PathBuf::from("/etc/passwd"), None)
+        };
+        let owner = fs::metadata(&path).unwrap().uid();
+        assert_ne!(owner, current_user);
+
+        assert_eq!(
+            resolve(&file_ref(&path)).unwrap_err(),
+            SecretError::FileNotOwned(path.display().to_string(), owner, current_user)
+        );
+    }
+
+    #[test]
+    fn group_or_other_access_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("shared");
+        protected_file(&p, "must-not-be-read");
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o640)).unwrap();
+
+        assert_eq!(
+            resolve(&file_ref(&p)).unwrap_err(),
+            SecretError::FilePermissions(p.display().to_string(), 0o640)
+        );
+    }
+
+    #[test]
+    fn input_at_size_limit_is_accepted_and_one_byte_more_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let at_limit = dir.path().join("at-limit");
+        protected_file(&at_limit, vec![b'a'; MAX_SECRET_FILE_BYTES as usize]);
+        assert_eq!(
+            resolve(&file_ref(&at_limit)).unwrap().len(),
+            MAX_SECRET_FILE_BYTES as usize
+        );
+
+        let oversized = dir.path().join("oversized");
+        protected_file(&oversized, vec![b'a'; MAX_SECRET_FILE_BYTES as usize + 1]);
+        assert_eq!(
+            resolve(&file_ref(&oversized)).unwrap_err(),
+            SecretError::FileTooLarge(oversized.display().to_string(), MAX_SECRET_FILE_BYTES)
+        );
+    }
+
+    #[test]
+    fn bounded_reader_rejects_a_file_that_grows_after_metadata_validation() {
+        let bytes = vec![b'a'; MAX_SECRET_FILE_BYTES as usize + 1];
+        assert_eq!(
+            read_bounded_secret(bytes.as_slice(), "/already-open-fixture").unwrap_err(),
+            SecretError::FileTooLarge("/already-open-fixture".into(), MAX_SECRET_FILE_BYTES)
+        );
+    }
+
+    #[test]
+    fn invalid_utf8_secret_file_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("invalid-utf8");
+        protected_file(&p, [0xff, 0xfe]);
+        assert_eq!(
+            resolve(&file_ref(&p)).unwrap_err(),
+            SecretError::FileInvalidUtf8(p.display().to_string())
+        );
     }
 
     #[test]

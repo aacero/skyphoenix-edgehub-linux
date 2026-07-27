@@ -51,6 +51,7 @@ public:
     QString status() const { return m_status; }
     bool playing() const { return m_status == QStringLiteral("Playing"); }
     QString playerName() const { return m_playerName; }
+    QString serviceName() const { return m_service; }
     double position() const {
         return m_lengthUs > 0 ? double(m_positionUs) / double(m_lengthUs) : 0.0;
     }

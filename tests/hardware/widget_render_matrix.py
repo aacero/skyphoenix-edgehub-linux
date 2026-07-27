@@ -80,7 +80,12 @@ def main():
     only = os.environ.get("XENEON_WIDGETS", "").strip()
     widgets = [w.strip() for w in only.split(",") if w.strip()] if only else ALL_WIDGETS
 
-    work = tempfile.mkdtemp(prefix="widget-render-")
+    audit_root = os.environ.get("XENEON_AUDIT_RUN_DIR", "")
+    if audit_root:
+        work = os.path.join(audit_root, "hardware-widget-render")
+        os.mkdir(work, 0o700)
+    else:
+        work = tempfile.mkdtemp(prefix="widget-render-")
     h = E2E(workdir=work)
     try:
         app = {"themeMode": "nord", "accent": "#58A6FF", "bgStyle": "none",

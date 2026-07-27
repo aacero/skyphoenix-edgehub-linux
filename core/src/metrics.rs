@@ -323,6 +323,10 @@ fn read_disk_info() -> DiskInfo {
     read_disk_info_at("/")
 }
 
+fn statvfs_value_to_u64<T: Into<u64>>(value: T) -> u64 {
+    value.into()
+}
+
 fn read_disk_info_at(path_value: &str) -> DiskInfo {
     let default = DiskInfo {
         available: false,
@@ -344,10 +348,10 @@ fn read_disk_info_at(path_value: &str) -> DiskInfo {
         return default;
     }
     disk_info_from_statvfs(
-        stat.f_blocks as u64,
-        stat.f_bfree as u64,
-        stat.f_bavail as u64,
-        stat.f_frsize as u64,
+        statvfs_value_to_u64(stat.f_blocks),
+        statvfs_value_to_u64(stat.f_bfree),
+        statvfs_value_to_u64(stat.f_bavail),
+        statvfs_value_to_u64(stat.f_frsize),
     )
 }
 

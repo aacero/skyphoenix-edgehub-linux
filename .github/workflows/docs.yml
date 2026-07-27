@@ -1,14 +1,14 @@
 name: Docs
 
-# Runs ONLY when documentation changes - the one CI concern docs edits have.
+# Runs only when documentation or its validation inputs change.
 # Everything else deliberately ignores docs (see ci.yml paths-ignore).
 on:
   push:
-    branches: [main, master, 'v1.0-alpha']
-    paths: ['docs/**', '**.md']
+    branches: [main, master, 'v1.0-alpha', 'release/1.0.0']
+    paths: ['docs/**', '**.md', 'release-metadata.toml', '.github/workflows/docs.yml', 'scripts/check_doc_links.sh', 'scripts/check_ci_release_metadata_contract.py']
   pull_request:
-    branches: [main, master, 'v1.0-alpha']
-    paths: ['docs/**', '**.md']
+    branches: [main, master, 'v1.0-alpha', 'release/1.0.0']
+    paths: ['docs/**', '**.md', 'release-metadata.toml', '.github/workflows/docs.yml', 'scripts/check_doc_links.sh', 'scripts/check_ci_release_metadata_contract.py']
   workflow_dispatch:
 
 jobs:
@@ -16,9 +16,11 @@ jobs:
     name: Docs & Links
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       # The check moved into scripts/check_doc_links.sh so it can be run locally
       # (and from run_all_tests.sh) instead of only ever failing after a push -
       # which is how it sat red on master while nobody could reproduce it.
       - name: Check relative links and anchors resolve
         run: bash scripts/check_doc_links.sh
+      - name: Check release documentation against build and CI truth
+        run: python3 scripts/check_ci_release_metadata_contract.py

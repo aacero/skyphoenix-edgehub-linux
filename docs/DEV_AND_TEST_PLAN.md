@@ -41,8 +41,9 @@ Baseline (verified 2026-07-13):
 
 ### Decisions locked with the user (2026-07-13)
 
-- **QML coverage = behavior/function traceability matrix** (there is no trustworthy QML
-  line-coverage tool). True line coverage is gated only on Rust + C++.
+- **QML verification = an enumerated behavior/function traceability matrix**
+  (there is no trustworthy QML line-coverage tool). True line coverage is gated
+  only on Rust + C++.
 - **C++ becomes testable via header extraction** - pull the logic classes out of the
   `main.cpp` TUs into headers/free functions.
 - **Deps approved:** QtTest (bundled), `cargo-llvm-cov`, `proptest` (Rust dev-dep).
@@ -60,8 +61,9 @@ Baseline (verified 2026-07-13):
   headers/free functions + `control_server.cpp`), gated ≥95%. Un-unit-testable glue
   (`main()`, live-`QScreen` matching, hardware ioctl loops, D-Bus fan-out) is **excluded
   from the denominator** and covered instead by offscreen smoke + the hardware E2E.
-- **QML:** **behavior-matrix** coverage - enumerated behaviors covered ÷ total 100%,
-  enforced by `scripts/qml_coverage.py`. Not presented as line coverage.
+- **QML:** a finite enumerated-requirements checklist, enforced by
+  `scripts/qml_coverage.py`. The gate requires `N/N` requirements to have
+  assertion-backed claims. It is checklist completeness, not source coverage.
 - **Genuinely unmeasurable (assert driving props, never output):** Canvas pixels
   (Sparkline/RingProgress/AnalogClock/Net/backgrounds), `MultiEffect` (AppIcon), real
   hardware (EDID/sensors), live network (Open-Meteo/geocode → FakeXHR + fixtures), MPRIS
@@ -182,7 +184,7 @@ New headers/free functions (production + tests compile identical code):
 
 ---
 
-## Part 4 - QML tests to 100% behavior matrix
+## Part 4 - QML tests for a complete enumerated-requirements matrix
 
 New `tst_*.qml` (pattern: `import QtTest` + `WidgetHarness`, `findPred` tree helpers,
 `tick`/store-epoch for time, props-not-pixels for Canvas):
@@ -210,10 +212,13 @@ New `tst_*.qml` (pattern: `import QtTest` + `WidgetHarness`, `findPred` tree hel
 + fixtures (valid forecast/geocode + failure shapes: non-200, missing fields, malformed
 JSON, empty results, timeout).
 
-**Matrix enforcement:** `scripts/qml_coverage.py` enumerates behaviors from source
-(functions, schema keys, control ids, catalog lengths) and covered behaviors from `tst_`
-files (each declares a `// COVERS:` header cross-checked against real assertions);
-`exit 1` if < 95%.
+**Matrix enforcement:** `scripts/qml_coverage.py` derives a finite requirement
+set from selected source functions, schema keys, widget types, backgrounds and
+wallpapers. It reports how many of those enumerated requirements have a
+`// COVERS:` claim backed by a real assertion, and exits nonzero unless all are
+backed. This is checklist completeness, not QML source coverage. Changes to the
+enumeration sources or rules require the CODEOWNER to review whether the
+denominator itself has gaps.
 
 ---
 
@@ -221,12 +226,14 @@ files (each declares a `// COVERS:` header cross-checked against real assertions
 
 - **`scripts/run_all_tests.sh`** - cargo test → run_ui_tests.sh → ctest → qml_coverage.py,
   aggregate pass/fail.
-- **`scripts/coverage.sh`** - Rust llvm-cov + C++ lcov, merge → `coverage/merged-lcov.info`
-  + genhtml, gate Rust+C++ merged ≥95, report QML behavior % separately.
+- **`scripts/coverage.sh`** - independently gates Rust and C++ at ≥95%, writes
+  `coverage/merged-lcov.info` as a diagnostic only, and reports `N/M` enumerated
+  QML requirements assertion-backed.
 - **CI overhaul (`.github/workflows/ci.yml`):**
   - **Fix trigger:** `branches: [master]` (or `[main, master]`).
   - Keep `format`/`lint`/`audit`/`build`/`docs`.
-  - Add **`qml-test`** (offscreen qmltestrunner + qml_coverage.py ≥95),
+  - Add **`qml-test`** (offscreen qmltestrunner plus an `N/N`
+    assertion-backed requirements checklist),
     **`cpp-test`** (`-DXENEON_BUILD_TESTS=ON -DXENEON_COVERAGE=ON` + ctest + lcov capture),
     **`coverage`** (needs `[test, cpp-test]`; llvm-cov + merge + ≥95 gate; upload artifact).
   - `concurrency` to cancel superseded runs.
@@ -256,8 +263,10 @@ frequently; shared files (`CMakeLists.txt`, `ci.yml`, `main.cpp`) are single-own
 - `V1-outstander-cpp`, `V2-outstander-qml`, `V3-outstander-rust` - adversarial review of
   each layer's tests: do they *assert*, or just execute? Any test that can't fail is rejected.
 - `D1-rubber-duck` - explain-back each nontrivial fix/test to catch flawed reasoning.
-- `C1-coverage-auditor` - runs `coverage.sh` + `qml_coverage.py`, reports the true numbers,
-  lists remaining uncovered behaviors, loops work back until ≥95% on every layer.
+- `C1-coverage-auditor` - runs `coverage.sh` plus `qml_coverage.py`, reports the
+  independent Rust/C++ line percentages and QML `N/M` requirement count, lists
+  missing assertion-backed requirements, and loops work back until Rust/C++ are
+  each ≥95% and QML is `N/N`.
 - `I1-integrator` - merges worktrees, resolves shared-file conflicts, runs
   `run_all_tests.sh` green, commits per Conventional Commits.
 
@@ -268,8 +277,11 @@ frequently; shared files (`CMakeLists.txt`, `ci.yml`, `main.cpp`) are single-own
 The old six-step acceptance list has been replaced by maintained runners:
 
 1. `./scripts/run_all_tests.sh` runs the development aggregate, including Rust,
-   offscreen QML, C++, behavior coverage, runtime, Manager and compositor tiers.
-2. `./scripts/coverage.sh` runs the maintained Rust/C++/merged/QML coverage gates.
+   offscreen QML, C++, the enumerated-requirements matrix, runtime, Manager and
+   compositor tiers.
+2. `./scripts/coverage.sh` runs the independent Rust and C++ line-coverage
+   gates plus the QML enumerated-requirements gate. The merged line report is
+   diagnostic only.
 3. Current real-device suites are `tests/hardware/edge_e2e.py`,
    `tests/hardware/e2e_buildup.py` and `tests/hardware/widget_render_matrix.py`;
    `edge_hw_test.py` is deprecated legacy coverage.

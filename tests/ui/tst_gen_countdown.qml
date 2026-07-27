@@ -90,6 +90,12 @@ Item {
             if (String(all[i].text).indexOf(str) >= 0) return all[i]
         return null
     }
+    function findObject(item, name) {
+        var all = collectTexts(item, [])
+        for (var i = 0; i < all.length; i++)
+            if (all[i].objectName === name) return all[i]
+        return null
+    }
 
     // ── Core config → days/valid mapping ─────────────────────────────────────
     TestCase {
@@ -593,6 +599,47 @@ Item {
             compare(w.horiz, false, "tall stacks vertically")
             compare(w.showDateRow, true, "tall shows the date row")
             compare(w.showProgress, true, "tall earns the progress bar")
+        }
+
+        function test_long_copy_reflows_in_constrained_micro_and_tall_tiles() {
+            tryVerify(function () { return hCMicro.ready && hCTall.ready }, 3000)
+            var longLabel = "Public production release and community launch"
+
+            hCMicro.storeCtl.patchSettings("test-instance",
+                { date: "2038-12-31", label: longLabel, precision: "seconds" })
+            hCMicro.item.sizeClass = "compact"
+            hCMicro.theme.textScale = 1.45
+            wait(0)
+            var microContext = findObject(hCMicro.item, "countdownContext")
+            verify(microContext !== null)
+            verify(!microContext.truncated,
+                   "the micro event context wraps instead of silently eliding")
+            verify(microContext.contentWidth <= microContext.width + 1)
+            verify(microContext.contentHeight <= microContext.height + 1)
+
+            cTallWrap.width = 278
+            cTallWrap.height = 654
+            hCTall.storeCtl.patchSettings("test-instance",
+                { date: "2038-12-31", label: longLabel, precision: "seconds" })
+            hCTall.item.sizeClass = "tall"
+            hCTall.theme.textScale = 1.45
+            wait(0)
+            var eventText = findObject(hCTall.item, "countdownEvent")
+            var targetText = findObject(hCTall.item, "countdownTarget")
+            verify(eventText !== null && targetText !== null)
+            verify(!eventText.truncated && eventText.contentHeight <= eventText.height + 1,
+                   "the long event heading reflows inside the narrow tall tile")
+            verify(!targetText.truncated && targetText.contentHeight <= targetText.height + 1,
+                   "the concise target context reflows inside the narrow tall tile")
+            verify(hCTall.item.Accessible.name.indexOf(longLabel) >= 0,
+                   "the accessible summary retains the complete event name")
+            verify(hCTall.item.Accessible.name.indexOf("Device local UTC") >= 0,
+                   "the accessible summary retains the complete timezone context")
+
+            hCMicro.theme.textScale = 1.15
+            hCTall.theme.textScale = 1.15
+            cTallWrap.width = 344
+            cTallWrap.height = 840
         }
 
         // A repeatYearly countdown carries its own honest baseline (the year

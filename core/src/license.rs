@@ -756,10 +756,11 @@ mod tests {
         // seed unlocks Pro against the issuer key that actually SHIPS in the binary
         // (armed 2026-07-19). This test closes that release-critical gap.
         //
-        // The key is read from the environment and is NEVER written to the repo.
-        // Set XENEON_TEST_LICENSE_KEY to a real Pro key to run it; without it the
-        // test SKIPS (so CI, which has no key, still passes). `verify()` uses the
-        // embedded ISSUER_PUBLIC_KEY - the real one.
+        // The release runners read a protected owner-only file, carry the key
+        // through private descriptor 3, and expose it in this test process only.
+        // Ordinary CI has no owner key, so this one test intentionally returns
+        // after a visible SKIP marker. The strict runner rejects that marker.
+        // `verify()` uses the embedded ISSUER_PUBLIC_KEY - the real one.
         let key = match std::env::var("XENEON_TEST_LICENSE_KEY") {
             Ok(k) if !k.trim().is_empty() => k,
             _ => {

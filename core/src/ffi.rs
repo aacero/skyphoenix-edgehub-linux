@@ -9,10 +9,12 @@
 
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
+use std::cell::Cell;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use uuid::Uuid;
 
-use crate::config::{self, AppConfig, FallbackBehavior, WidgetInstance};
+use crate::config::{self, AppConfig, ConfigGeneration, FallbackBehavior, WidgetInstance};
 use crate::display;
 use crate::logging;
 use crate::metrics::{self, SystemMetrics};
@@ -84,14 +86,144 @@ pub extern "C" fn xeneon_logging_log(
 /// Opaque handle to application configuration.
 pub struct ConfigHandle {
     config: AppConfig,
+    generation: Cell<ConfigGeneration>,
+    // Opaque process-local identity for the persisted generation held by this
+    // handle. This is deliberately random rather than a digest of config.toml:
+    // the control protocol can expose it without publishing an offline oracle
+    // for bearer tokens, calendar URLs, or other private config values.
+    generation_token: Cell<Uuid>,
+}
+
+impl ConfigHandle {
+    fn new(config: AppConfig, generation: ConfigGeneration) -> Self {
+        Self {
+            config,
+            generation: Cell::new(generation),
+            generation_token: Cell::new(Uuid::new_v4()),
+        }
+    }
+
+    fn clone_for_transaction(source: &Self) -> Self {
+        Self {
+            config: source.config.clone(),
+            generation: Cell::new(source.generation.get()),
+            generation_token: Cell::new(source.generation_token.get()),
+        }
+    }
+
+    fn adopt_generation(&self, generation: ConfigGeneration) {
+        if self.generation.get() != generation {
+            self.generation.set(generation);
+            self.generation_token.set(Uuid::new_v4());
+        }
+    }
+
+    #[cfg(test)]
+    fn untracked(config: AppConfig) -> Self {
+        Self::new(config, ConfigGeneration::Untracked)
+    }
+}
+
+/// Clone a configuration handle for an isolated transaction candidate.
+///
+/// Callers mutate the clone, then pass it with the live handle to
+/// `xeneon_config_commit`. The live in-memory state and its generation are
+/// replaced only after the candidate was durably published.
+#[no_mangle]
+pub extern "C" fn xeneon_config_clone(handle: *const ConfigHandle) -> *mut ConfigHandle {
+    if handle.is_null() {
+        return std::ptr::null_mut();
+    }
+    let source = unsafe { &*handle };
+    Box::into_raw(Box::new(ConfigHandle::clone_for_transaction(source)))
+}
+
+/// Atomically persist a mutated clone and adopt it into the live handle.
+///
+/// Returns 0 on fully durable success, 1 when the exact bytes were atomically
+/// published but the containing-directory fsync failed, and -1 on any failure
+/// before publication. On -1, `target` is logically unchanged.
+#[no_mangle]
+pub extern "C" fn xeneon_config_commit(
+    target: *mut ConfigHandle,
+    candidate: *const ConfigHandle,
+) -> i32 {
+    if target.is_null() || candidate.is_null() {
+        return -1;
+    }
+    if std::ptr::eq(target.cast_const(), candidate) {
+        return xeneon_config_save(target);
+    }
+
+    let target_handle = unsafe { &mut *target };
+    let candidate_handle = unsafe { &*candidate };
+    if target_handle.generation.get() != candidate_handle.generation.get() {
+        tracing::error!("Refused config transaction created from a different generation");
+        return -1;
+    }
+    match config::save_config_if_generation(
+        &candidate_handle.config,
+        candidate_handle.generation.get(),
+    ) {
+        Ok(generation) => {
+            target_handle.config = candidate_handle.config.clone();
+            target_handle.adopt_generation(generation);
+            0
+        }
+        Err(config::ConfigError::PublishedDurabilityUncertain { generation }) => {
+            target_handle.config = candidate_handle.config.clone();
+            target_handle.adopt_generation(generation);
+            tracing::warn!("Config transaction was published, but crash durability is uncertain");
+            1
+        }
+        Err(error) => {
+            tracing::error!("Failed to commit config transaction: {}", error);
+            -1
+        }
+    }
+}
+
+/// Return an opaque token identifying the persisted generation held in memory.
+///
+/// The caller owns the returned string and must release it with
+/// `xeneon_string_free`. The token is random and process-local; it is suitable
+/// only for equality checks during one live Hub session and discloses no config
+/// digest or content.
+#[no_mangle]
+pub extern "C" fn xeneon_config_generation_token(handle: *const ConfigHandle) -> *mut c_char {
+    if handle.is_null() {
+        return std::ptr::null_mut();
+    }
+    let handle = unsafe { &*handle };
+    to_c_string(handle.generation_token.get().hyphenated().to_string())
+}
+
+/// Check whether the default config path still matches this handle's generation.
+///
+/// Returns 1 for a match, 0 when another writer replaced the file, and -1 when
+/// the current path cannot be inspected safely.
+#[no_mangle]
+pub extern "C" fn xeneon_config_disk_generation_matches(handle: *const ConfigHandle) -> i32 {
+    if handle.is_null() {
+        return -1;
+    }
+    let handle = unsafe { &*handle };
+    match config::default_config_generation_matches(handle.generation.get()) {
+        Ok(true) => 1,
+        Ok(false) => 0,
+        Err(error) => {
+            tracing::error!("Failed to inspect current config generation: {}", error);
+            -1
+        }
+    }
 }
 
 /// Load configuration from default XDG path.
 /// Returns null on error (logs error internally).
 #[no_mangle]
 pub extern "C" fn xeneon_config_load() -> *mut ConfigHandle {
-    match config::load_config() {
-        Ok(c) => Box::into_raw(Box::new(ConfigHandle { config: c })),
+    match config::load_config_with_generation() {
+        Ok((config, generation)) => Box::into_raw(Box::new(ConfigHandle::new(config, generation))),
         Err(e) => {
             tracing::error!("Failed to load config: {}", e);
             std::ptr::null_mut()
@@ -100,15 +232,25 @@ pub extern "C" fn xeneon_config_load() -> *mut ConfigHandle {
 }
 
 /// Save configuration to default XDG path.
-/// Returns 0 on success, -1 on error.
+/// Returns 0 on fully durable success, 1 when the exact bytes were atomically
+/// published but the containing-directory fsync failed, and -1 on failure
+/// before publication.
 #[no_mangle]
 pub extern "C" fn xeneon_config_save(handle: *const ConfigHandle) -> i32 {
     if handle.is_null() {
         return -1;
     }
     let h = unsafe { &*handle };
-    match config::save_config(&h.config) {
-        Ok(()) => 0,
+    match config::save_config_if_generation(&h.config, h.generation.get()) {
+        Ok(generation) => {
+            h.adopt_generation(generation);
+            0
+        }
+        Err(config::ConfigError::PublishedDurabilityUncertain { generation }) => {
+            h.adopt_generation(generation);
+            tracing::warn!("Configuration was published, but crash durability is uncertain");
+            1
+        }
         Err(e) => {
             tracing::error!("Failed to save config: {}", e);
             -1
@@ -264,17 +406,45 @@ pub extern "C" fn xeneon_config_dir() -> *mut c_char {
 }
 
 /// Reset configuration to defaults.
-/// Returns a new ConfigHandle with default values.
+/// Returns a new ConfigHandle with default values on success, or null when the
+/// existing configuration could not first be backed up and removed safely.
 #[no_mangle]
 pub extern "C" fn xeneon_config_reset() -> *mut ConfigHandle {
+    xeneon_config_reset_with_status(std::ptr::null_mut())
+}
+
+/// Reset configuration and report whether the removal was confirmed crash
+/// durable. `status_out` receives 0 for durable success, 1 when the reset is
+/// already visible but directory fsync failed, and -1 for pre-publication
+/// failure. The returned handle is non-null for both successful states.
+#[no_mangle]
+pub extern "C" fn xeneon_config_reset_with_status(status_out: *mut i32) -> *mut ConfigHandle {
+    if !status_out.is_null() {
+        unsafe { *status_out = -1 };
+    }
     match config::reset_config() {
-        Ok(c) => Box::into_raw(Box::new(ConfigHandle { config: c })),
+        Ok(c) => {
+            if !status_out.is_null() {
+                unsafe { *status_out = 0 };
+            }
+            Box::into_raw(Box::new(ConfigHandle::new(c, ConfigGeneration::Absent)))
+        }
+        Err(config::ConfigError::ResetPublishedDurabilityUncertain) => {
+            tracing::warn!("Configuration reset was published, but crash durability is uncertain");
+            if !status_out.is_null() {
+                unsafe { *status_out = 1 };
+            }
+            Box::into_raw(Box::new(ConfigHandle::new(
+                AppConfig::default(),
+                ConfigGeneration::Absent,
+            )))
+        }
         Err(e) => {
             tracing::error!("Failed to reset config: {}", e);
-            // Return defaults even if file removal failed
-            Box::into_raw(Box::new(ConfigHandle {
-                config: AppConfig::default(),
-            }))
+            // Fail closed. Returning a writable default handle here would let
+            // the Hub announce a successful reset and later overwrite the
+            // untouched original even though its prerequisite backup failed.
+            std::ptr::null_mut()
         }
     }
 }
@@ -344,6 +514,15 @@ pub extern "C" fn xeneon_config_set_autostart(handle: *mut ConfigHandle, enabled
     }
     unsafe { &mut *handle }.config.startup.autostart = enabled != 0;
     0
+}
+
+/// Get the persisted autostart preference.
+#[no_mangle]
+pub extern "C" fn xeneon_config_get_autostart(handle: *const ConfigHandle) -> i32 {
+    if handle.is_null() {
+        return 0;
+    }
+    i32::from(unsafe { &*handle }.config.startup.autostart)
 }
 
 /// Get the stored licence key, or NULL if none is set. Caller must free with
@@ -641,13 +820,37 @@ pub extern "C" fn xeneon_config_set_ui_state(
     if json.is_null() {
         h.config.ui_state = None;
     } else {
-        h.config.ui_state = Some(
-            unsafe { CStr::from_ptr(json) }
-                .to_string_lossy()
-                .to_string(),
-        );
+        let raw = match unsafe { CStr::from_ptr(json) }.to_str() {
+            Ok(raw) => raw,
+            Err(_) => {
+                tracing::warn!("Rejected dashboard UI state with invalid UTF-8");
+                return -1;
+            }
+        };
+        if let Err(error) = config::validate_ui_state_json_for_write(raw) {
+            tracing::warn!("Rejected dashboard UI state: {}", error);
+            return -1;
+        }
+        h.config.ui_state = Some(raw.to_string());
     }
     0
+}
+
+/// Validate a dashboard UI-state document without mutating a ConfigHandle.
+#[no_mangle]
+pub extern "C" fn xeneon_ui_state_validate(json: *const c_char) -> i32 {
+    if json.is_null() {
+        return -1;
+    }
+    let raw = match unsafe { CStr::from_ptr(json) }.to_str() {
+        Ok(raw) => raw,
+        Err(_) => return -1,
+    };
+    if config::validate_ui_state_json_for_write(raw).is_ok() {
+        0
+    } else {
+        -1
+    }
 }
 
 // --- Display utilities ---
@@ -1058,6 +1261,7 @@ pub extern "C" fn xeneon_string_free(s: *mut c_char) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     /// Round-trip a to_c_string result back to a Rust &str for assertions,
     /// then free it. Safe: `p` is a live pointer from `to_c_string`.
@@ -1168,6 +1372,11 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let p = dir.path().join("tok");
             std::fs::write(&p, "").unwrap(); // empty → FileEmpty error
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600)).unwrap();
+            }
             let raw = CString::new(format!("file:{}", p.display())).unwrap();
             let mut err: *mut c_char = std::ptr::null_mut();
             let got = xeneon_secret_resolve(raw.as_ptr(), &mut err);
@@ -1256,10 +1465,10 @@ mod tests {
         );
     }
 
-    // While the issuer key is the unissued placeholder, even a well-formed key
-    // must resolve to free - the shipped default is "Pro is not unlockable".
+    // A malformed Pro-shaped claim must remain free even though the production
+    // issuer key is armed. Only a valid signature can unlock the entitlement.
     #[test]
-    fn license_verify_json_is_free_while_the_issuer_key_is_a_placeholder() {
+    fn malformed_pro_claim_remains_free_with_armed_issuer() {
         let v = license_json("XE1.eyJ0aWVyIjoicHJvIn0.AAAA");
         assert_eq!(v["tier"], "free");
         assert_eq!(v["state"], "unlicensed");
@@ -1363,20 +1572,275 @@ mod tests {
         use std::ptr;
         // Integer-returning guards.
         assert_eq!(xeneon_config_save(ptr::null()), -1);
+        assert_eq!(xeneon_config_disk_generation_matches(ptr::null()), -1);
         assert_eq!(xeneon_config_is_first_run(ptr::null()), -1);
         assert_eq!(xeneon_config_set_first_run_complete(ptr::null_mut()), -1);
         assert_eq!(xeneon_config_set_autostart(ptr::null_mut(), 1), -1);
+        assert_eq!(xeneon_config_get_autostart(ptr::null()), 0);
+        assert!(xeneon_config_clone(ptr::null()).is_null());
+        assert_eq!(xeneon_config_commit(ptr::null_mut(), ptr::null()), -1);
+        assert_eq!(xeneon_ui_state_validate(ptr::null()), -1);
         // String-returning guards.
+        assert!(xeneon_config_generation_token(ptr::null()).is_null());
         assert!(xeneon_config_get_target_connector(ptr::null()).is_null());
         assert!(xeneon_config_get_ui_state(ptr::null()).is_null());
         assert!(xeneon_config_to_json(ptr::null()).is_null());
     }
 
     #[test]
+    fn config_generation_token_is_opaque_stable_and_rotates_after_publish() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", dir.path());
+
+        let live = xeneon_config_load();
+        assert!(!live.is_null());
+        let initial = unsafe { take(xeneon_config_generation_token(live)) };
+        assert_eq!(
+            Uuid::parse_str(&initial).unwrap().get_version_num(),
+            4,
+            "the IPC token must be random, not a config digest"
+        );
+        assert_eq!(
+            unsafe { take(xeneon_config_generation_token(live)) },
+            initial,
+            "reading a generation token must not advance it"
+        );
+
+        let candidate = xeneon_config_clone(live);
+        assert_eq!(
+            unsafe { take(xeneon_config_generation_token(candidate)) },
+            initial,
+            "a transaction clone represents the same persisted generation"
+        );
+        let state = cstr(r#"{"version":1,"pages":[],"marker":"TOKEN_ROTATION"}"#);
+        assert_eq!(xeneon_config_set_ui_state(candidate, state.as_ptr()), 0);
+        assert_eq!(xeneon_config_commit(live, candidate), 0);
+
+        let published = unsafe { take(xeneon_config_generation_token(live)) };
+        assert_ne!(
+            published, initial,
+            "publishing different bytes must rotate the in-memory token"
+        );
+        assert_eq!(Uuid::parse_str(&published).unwrap().get_version_num(), 4);
+        assert!(
+            !published.contains("TOKEN_ROTATION"),
+            "the opaque token must not contain config data"
+        );
+
+        // A no-op save publishes the same serialized generation and keeps the
+        // equality token stable, avoiding a needless Manager reload.
+        assert_eq!(xeneon_config_save(live), 0);
+        assert_eq!(
+            unsafe { take(xeneon_config_generation_token(live)) },
+            published
+        );
+
+        xeneon_config_free(candidate);
+        xeneon_config_free(live);
+        std::env::remove_var("XDG_CONFIG_HOME");
+    }
+
+    #[test]
+    fn loaded_handle_cannot_overwrite_externally_replaced_config() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", dir.path());
+
+        let handle = xeneon_config_load();
+        assert!(!handle.is_null());
+        let mode = cstr("light");
+        assert_eq!(xeneon_config_set_theme_mode(handle, mode.as_ptr()), 0);
+
+        let path = config::config_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let external = b"schema_version = 99\nfuture_only = \"FFI_PRESERVE\"\n";
+        std::fs::write(&path, external).unwrap();
+
+        assert_eq!(xeneon_config_save(handle), -1);
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            external,
+            "FFI stale-write rejection must preserve external bytes exactly"
+        );
+
+        xeneon_config_free(handle);
+        std::env::remove_var("XDG_CONFIG_HOME");
+    }
+
+    #[test]
+    fn config_clone_commit_updates_disk_and_live_handle_only_on_success() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", dir.path());
+
+        let live = xeneon_config_load();
+        let candidate = xeneon_config_clone(live);
+        assert!(!live.is_null());
+        assert!(!candidate.is_null());
+        let state = cstr(r#"{"version":1,"pages":[],"marker":"COMMITTED"}"#);
+        assert_eq!(xeneon_config_set_ui_state(candidate, state.as_ptr()), 0);
+        assert!(
+            xeneon_config_get_ui_state(live).is_null(),
+            "candidate mutations must remain isolated before commit"
+        );
+
+        assert_eq!(xeneon_config_commit(live, candidate), 0);
+        assert_eq!(
+            unsafe { take(xeneon_config_get_ui_state(live)) },
+            r#"{"version":1,"pages":[],"marker":"COMMITTED"}"#
+        );
+        let reloaded = xeneon_config_load();
+        assert_eq!(
+            unsafe { take(xeneon_config_get_ui_state(reloaded)) },
+            r#"{"version":1,"pages":[],"marker":"COMMITTED"}"#
+        );
+
+        xeneon_config_free(reloaded);
+        xeneon_config_free(candidate);
+        xeneon_config_free(live);
+        std::env::remove_var("XDG_CONFIG_HOME");
+    }
+
+    #[test]
+    fn failed_config_commit_preserves_live_handle_and_external_bytes() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", dir.path());
+
+        let live = xeneon_config_load();
+        let candidate = xeneon_config_clone(live);
+        let generation_token = unsafe { take(xeneon_config_generation_token(live)) };
+        let state = cstr(r#"{"version":1,"pages":[],"marker":"STALE"}"#);
+        assert_eq!(xeneon_config_set_ui_state(candidate, state.as_ptr()), 0);
+
+        let path = config::config_path();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let external = b"schema_version = 99\nfuture_only = \"KEEP_EXTERNAL\"\n";
+        std::fs::write(&path, external).unwrap();
+
+        assert_eq!(xeneon_config_commit(live, candidate), -1);
+        assert!(xeneon_config_get_ui_state(live).is_null());
+        assert_eq!(
+            unsafe { take(xeneon_config_generation_token(live)) },
+            generation_token,
+            "a rejected publication must not advance the in-memory token"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), external);
+
+        xeneon_config_free(candidate);
+        xeneon_config_free(live);
+        std::env::remove_var("XDG_CONFIG_HOME");
+    }
+
+    #[test]
+    fn older_candidate_generation_and_null_inputs_are_rejected() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", dir.path());
+
+        let live = xeneon_config_load();
+        let old_candidate = xeneon_config_clone(live);
+        let current_candidate = xeneon_config_clone(live);
+        let light = cstr("light");
+        assert_eq!(
+            xeneon_config_set_theme_mode(current_candidate, light.as_ptr()),
+            0
+        );
+        assert_eq!(xeneon_config_commit(live, current_candidate), 0);
+
+        let dark = cstr("dark");
+        assert_eq!(
+            xeneon_config_set_theme_mode(old_candidate, dark.as_ptr()),
+            0
+        );
+        assert_eq!(xeneon_config_commit(live, old_candidate), -1);
+        assert_eq!(unsafe { take(xeneon_config_get_theme_mode(live)) }, "light");
+
+        assert_eq!(xeneon_config_commit(live, std::ptr::null()), -1);
+        assert_eq!(xeneon_config_commit(std::ptr::null_mut(), live), -1);
+        assert_eq!(
+            xeneon_config_commit(live, live),
+            0,
+            "same-pointer commit remains a supported direct-save compatibility path"
+        );
+
+        xeneon_config_free(current_candidate);
+        xeneon_config_free(old_candidate);
+        xeneon_config_free(live);
+        std::env::remove_var("XDG_CONFIG_HOME");
+    }
+
+    #[test]
+    fn disk_generation_probe_distinguishes_match_change_and_inspection_error() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", dir.path());
+
+        let handle = xeneon_config_load();
+        assert!(!handle.is_null());
+        assert_eq!(
+            xeneon_config_disk_generation_matches(handle),
+            1,
+            "an absent path must match a handle loaded from that absent path"
+        );
+
+        let path = config::config_path();
+        std::fs::write(&path, b"schema_version = 1\n").unwrap();
+        assert_eq!(
+            xeneon_config_disk_generation_matches(handle),
+            0,
+            "new external bytes must not match the loaded absent generation"
+        );
+
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        assert_eq!(
+            xeneon_config_disk_generation_matches(handle),
+            -1,
+            "an unsafe non-file path must be reported as an inspection error"
+        );
+
+        xeneon_config_free(handle);
+        std::env::remove_var("XDG_CONFIG_HOME");
+    }
+
+    fn ffi_ui_state_of_size(bytes: usize) -> CString {
+        const PREFIX: &str = r#"{"version":1,"pages":[],"padding":""#;
+        const SUFFIX: &str = r#""}"#;
+        assert!(bytes >= PREFIX.len() + SUFFIX.len());
+        CString::new(format!(
+            "{PREFIX}{}{SUFFIX}",
+            "x".repeat(bytes - PREFIX.len() - SUFFIX.len())
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn ffi_ui_state_limit_accepts_exact_boundary_and_rejects_plus_one_without_mutation() {
+        let exact = ffi_ui_state_of_size(config::MAX_UI_STATE_BYTES);
+        let oversized = ffi_ui_state_of_size(config::MAX_UI_STATE_BYTES + 1);
+        assert_eq!(xeneon_ui_state_validate(exact.as_ptr()), 0);
+        assert_eq!(xeneon_ui_state_validate(oversized.as_ptr()), -1);
+
+        let mut handle = ConfigHandle::untracked(AppConfig::default());
+        let handle_ptr = &mut handle as *mut ConfigHandle;
+        let original = cstr(r#"{"version":1,"pages":[],"marker":"ORIGINAL"}"#);
+        assert_eq!(xeneon_config_set_ui_state(handle_ptr, original.as_ptr()), 0);
+        assert_eq!(
+            xeneon_config_set_ui_state(handle_ptr, oversized.as_ptr()),
+            -1
+        );
+        assert_eq!(
+            unsafe { take(xeneon_config_get_ui_state(handle_ptr)) },
+            r#"{"version":1,"pages":[],"marker":"ORIGINAL"}"#,
+            "rejected oversized input must leave the live state unchanged"
+        );
+    }
+
+    #[test]
     fn diagnostics_json_omits_every_arbitrary_or_private_config_value() {
-        let mut h = ConfigHandle {
-            config: AppConfig::default(),
-        };
+        let mut h = ConfigHandle::untracked(AppConfig::default());
         h.config.license_key = Some("XE1.LICENSE_KEY_CANARY.HOLDER_IDENTITY".to_string());
         h.config.display.target_edid_hash = Some("DISPLAY_IDENTITY_CANARY".to_string());
         h.config.display.target_connector = Some("PRIVATE_CONNECTOR_CANARY".to_string());
@@ -1520,13 +1984,12 @@ mod tests {
 
     #[test]
     fn existing_config_setters_roundtrip_through_to_json() {
-        let mut h = ConfigHandle {
-            config: AppConfig::default(),
-        };
+        let mut h = ConfigHandle::untracked(AppConfig::default());
         let p = &mut h as *mut ConfigHandle;
 
         assert_eq!(xeneon_config_set_first_run_complete(p), 0);
         assert_eq!(xeneon_config_set_autostart(p, 1), 0);
+        assert_eq!(xeneon_config_get_autostart(p), 1);
         assert_eq!(xeneon_config_set_reconnect(p, 0), 0);
         assert_eq!(xeneon_config_set_notify_disconnect(p, 1), 0);
         let mode = cstr("light");
@@ -1535,7 +1998,7 @@ mod tests {
         assert_eq!(xeneon_config_set_theme_accent(p, accent.as_ptr()), 0);
         let layout = cstr("gaming");
         assert_eq!(xeneon_config_set_starter_layout(p, layout.as_ptr()), 0);
-        let ui = cstr(r#"{"pages":[1]}"#);
+        let ui = cstr(r#"{"pages":[{"name":"Test","tiles":[]}]}"#);
         assert_eq!(xeneon_config_set_ui_state(p, ui.as_ptr()), 0);
 
         // starter_layout has a dedicated getter - round-trip it.
@@ -1556,16 +2019,10 @@ mod tests {
         assert_eq!(v["ui_state"]["page_count"], 1);
     }
 
-    // --- BUG: no FFI setter for fallback_behavior ---
-
     #[test]
-    fn bug_no_ffi_setter_for_fallback_behavior() {
-        // Simulate the wizard choosing "Notify on missing display". There is no
-        // xeneon_config_set_fallback_behavior, so the choice cannot be persisted
-        // through the core API and the typed field stays at its default "hide".
-        let mut h = ConfigHandle {
-            config: AppConfig::default(),
-        };
+    fn fallback_behavior_setter_persists_the_wizard_choice() {
+        // Simulate the wizard choosing "Notify on missing display".
+        let mut h = ConfigHandle::untracked(AppConfig::default());
         let p = &mut h as *mut ConfigHandle;
         let notify = cstr("notify");
         assert_eq!(xeneon_config_set_fallback_behavior(p, notify.as_ptr()), 0);
@@ -1573,39 +2030,27 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(
             v["display"]["fallback_behavior"], "notify",
-            "BUG: no FFI setter for fallback_behavior; wizard 'notify' choice cannot be persisted"
+            "the wizard's fallback choice must cross the FFI boundary"
         );
     }
 
-    // --- BUG: no FFI setter for reduced_motion ---
-
     #[test]
-    fn bug_no_ffi_setter_for_reduced_motion() {
-        // Simulate the accessibility toggle "Reduce motion". Only theme_mode and
-        // accent have setters, so reduced_motion can never be toggled via FFI.
-        let mut h = ConfigHandle {
-            config: AppConfig::default(),
-        };
+    fn reduced_motion_setter_persists_the_accessibility_choice() {
+        // Simulate the accessibility toggle "Reduce motion".
+        let mut h = ConfigHandle::untracked(AppConfig::default());
         let p = &mut h as *mut ConfigHandle;
         assert_eq!(xeneon_config_set_reduced_motion(p, 1), 0);
         let json = unsafe { take(xeneon_config_to_json(p)) };
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(
             v["theme"]["reduced_motion"], true,
-            "BUG: no FFI setter for reduced_motion; accessibility toggle is dead"
+            "the accessibility choice must cross the FFI boundary"
         );
     }
 
-    // --- BUG: no FFI accessor for the typed widgets list ---
-
     #[test]
-    fn bug_no_ffi_accessor_for_typed_widgets() {
-        // The typed widgets.instances surface has no FFI setter/getter, so it can
-        // never be populated through the core API (widget layout lives only in
-        // the opaque ui_state). Anything trusting the typed list sees zero widgets.
-        let mut h = ConfigHandle {
-            config: AppConfig::default(),
-        };
+    fn typed_widget_accessors_cross_the_ffi_boundary() {
+        let mut h = ConfigHandle::untracked(AppConfig::default());
         let p = &mut h as *mut ConfigHandle;
         let id = cstr("clock-1");
         let ty = cstr("clock");
@@ -1622,10 +2067,8 @@ mod tests {
         assert_eq!(v["widgets"]["private_settings_omitted"], true);
     }
 
-    // --- BUG: -1.0 'unavailable' sentinel collides with a real -1.0 reading ---
-
     #[test]
-    fn bug_cpu_temp_sentinel_collides_with_subzero_reading() {
+    fn cpu_temp_uses_nan_for_unavailable_and_preserves_subzero_values() {
         // Unavailable (None) is the ONLY thing that maps to the NaN "no sensor"
         // signal.
         let none = MetricsHandle {
@@ -1926,9 +2369,7 @@ mod tests {
 
     #[test]
     fn config_target_fields_roundtrip_and_clear() {
-        let mut h = ConfigHandle {
-            config: AppConfig::default(),
-        };
+        let mut h = ConfigHandle::untracked(AppConfig::default());
         let p = &mut h as *mut ConfigHandle;
 
         let edid = cstr("deadbeef");
@@ -1957,9 +2398,7 @@ mod tests {
 
     #[test]
     fn config_fallback_behavior_roundtrip_all_variants() {
-        let mut h = ConfigHandle {
-            config: AppConfig::default(),
-        };
+        let mut h = ConfigHandle::untracked(AppConfig::default());
         let p = &mut h as *mut ConfigHandle;
 
         for value in ["hide", "notify", "ask"] {
@@ -1986,9 +2425,7 @@ mod tests {
 
     #[test]
     fn config_reconnect_and_notify_disconnect_getters_roundtrip() {
-        let mut h = ConfigHandle {
-            config: AppConfig::default(),
-        };
+        let mut h = ConfigHandle::untracked(AppConfig::default());
         let p = &mut h as *mut ConfigHandle;
 
         // Getters read whatever the setters wrote (independent of the defaults).
@@ -2011,9 +2448,7 @@ mod tests {
 
     #[test]
     fn config_reduced_motion_roundtrip() {
-        let mut h = ConfigHandle {
-            config: AppConfig::default(),
-        };
+        let mut h = ConfigHandle::untracked(AppConfig::default());
         let p = &mut h as *mut ConfigHandle;
         assert_eq!(xeneon_config_get_reduced_motion(p), 0);
         assert_eq!(xeneon_config_set_reduced_motion(p, 1), 0);
@@ -2036,9 +2471,7 @@ mod tests {
         // (`std::env::set_var` is unsound when another thread reads/writes env
         // concurrently).
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let mut h = ConfigHandle {
-            config: AppConfig::default(),
-        };
+        let mut h = ConfigHandle::untracked(AppConfig::default());
         let p = &mut h as *mut ConfigHandle;
         assert_eq!(xeneon_config_is_first_run(p), 1);
         assert_eq!(xeneon_config_set_first_run_complete(p), 0);
@@ -2057,9 +2490,7 @@ mod tests {
 
     #[test]
     fn config_widget_accessors_full_cycle() {
-        let mut h = ConfigHandle {
-            config: AppConfig::default(),
-        };
+        let mut h = ConfigHandle::untracked(AppConfig::default());
         let p = &mut h as *mut ConfigHandle;
         assert_eq!(xeneon_config_widget_count(p), 0);
 
@@ -2110,9 +2541,7 @@ mod tests {
 
     #[test]
     fn config_starter_layout_and_ui_state_clear() {
-        let mut h = ConfigHandle {
-            config: AppConfig::default(),
-        };
+        let mut h = ConfigHandle::untracked(AppConfig::default());
         let p = &mut h as *mut ConfigHandle;
         // Absent → getter null.
         assert!(xeneon_config_get_starter_layout(p).is_null());
@@ -2128,11 +2557,38 @@ mod tests {
         assert_eq!(xeneon_config_set_starter_layout(p, std::ptr::null()), 0);
         assert!(xeneon_config_get_starter_layout(p).is_null());
 
-        let ui = cstr("STATE");
+        let ui = cstr(r#"{"version":1,"pages":[]}"#);
         assert_eq!(xeneon_config_set_ui_state(p, ui.as_ptr()), 0);
-        assert_eq!(unsafe { take(xeneon_config_get_ui_state(p)) }, "STATE");
+        assert_eq!(
+            unsafe { take(xeneon_config_get_ui_state(p)) },
+            r#"{"version":1,"pages":[]}"#
+        );
         assert_eq!(xeneon_config_set_ui_state(p, std::ptr::null()), 0);
         assert!(xeneon_config_get_ui_state(p).is_null());
+    }
+
+    #[test]
+    fn ui_state_setter_rejects_malformed_and_future_documents_without_mutation() {
+        let mut h = ConfigHandle::untracked(AppConfig::default());
+        let p = &mut h as *mut ConfigHandle;
+        let current = cstr(r#"{"version":1,"pages":[],"marker":"current"}"#);
+        assert_eq!(xeneon_config_set_ui_state(p, current.as_ptr()), 0);
+
+        for rejected in [
+            "not json",
+            "[]",
+            r#"{"version":"1","pages":[]}"#,
+            r#"{"version":99,"pages":[],"futureOnly":true}"#,
+            r#"{"version":1,"pages":[],"settings":{"cpu-1":null}}"#,
+            r#"{"version":1,"pages":[{"tiles":[{"id":"duplicate","type":"cpu"},{"id":"duplicate","type":"memory"}]}]}"#,
+        ] {
+            let rejected = cstr(rejected);
+            assert_eq!(xeneon_config_set_ui_state(p, rejected.as_ptr()), -1);
+            assert_eq!(
+                unsafe { take(xeneon_config_get_ui_state(p)) },
+                r#"{"version":1,"pages":[],"marker":"current"}"#
+            );
+        }
     }
 
     // --- Invalid UTF-8 must not panic across the ABI ---
@@ -2141,15 +2597,16 @@ mod tests {
     fn setters_tolerate_invalid_utf8_without_panic() {
         // 0xFF/0xFE are valid C-string bytes (no interior NUL) but invalid UTF-8.
         let bad = CString::new(vec![0x66, 0xff, 0xfe, 0x6f]).unwrap();
-        let mut h = ConfigHandle {
-            config: AppConfig::default(),
-        };
+        let mut h = ConfigHandle::untracked(AppConfig::default());
         let p = &mut h as *mut ConfigHandle;
-        // to_string_lossy replaces the invalid bytes rather than panicking.
+        // Text settings retain their historical lossy conversion. UI state is
+        // a JSON compatibility boundary and rejects invalid UTF-8 without
+        // mutating the handle.
         assert_eq!(xeneon_config_set_theme_mode(p, bad.as_ptr()), 0);
         assert_eq!(xeneon_config_set_theme_accent(p, bad.as_ptr()), 0);
         assert_eq!(xeneon_config_set_target_connector(p, bad.as_ptr()), 0);
-        assert_eq!(xeneon_config_set_ui_state(p, bad.as_ptr()), 0);
+        assert_eq!(xeneon_config_set_ui_state(p, bad.as_ptr()), -1);
+        assert!(xeneon_config_get_ui_state(p).is_null());
         // Round-trips back through JSON without crashing.
         let json = unsafe { take(xeneon_config_to_json(p)) };
         assert!(json.contains("theme"));
@@ -2287,7 +2744,7 @@ mod tests {
         assert_eq!(xeneon_config_set_first_run_complete(h), 0);
         let mode = cstr("light");
         assert_eq!(xeneon_config_set_theme_mode(h, mode.as_ptr()), 0);
-        let ui = cstr("PERSISTED");
+        let ui = cstr(r#"{"version":1,"pages":[]}"#);
         assert_eq!(xeneon_config_set_ui_state(h, ui.as_ptr()), 0);
         assert_eq!(xeneon_config_save(h as *const ConfigHandle), 0);
         xeneon_config_free(h);
@@ -2296,14 +2753,48 @@ mod tests {
         let h2 = xeneon_config_load();
         assert!(!h2.is_null());
         assert_eq!(xeneon_config_is_first_run(h2), 0);
-        assert_eq!(unsafe { take(xeneon_config_get_ui_state(h2)) }, "PERSISTED");
+        assert_eq!(
+            unsafe { take(xeneon_config_get_ui_state(h2)) },
+            r#"{"version":1,"pages":[]}"#
+        );
         xeneon_config_free(h2);
 
         // Reset returns a fresh default handle.
-        let h3 = xeneon_config_reset();
+        let mut reset_status = -1;
+        let h3 = xeneon_config_reset_with_status(&mut reset_status);
         assert!(!h3.is_null());
+        assert_eq!(reset_status, 0);
         assert_eq!(xeneon_config_is_first_run(h3), 1);
         xeneon_config_free(h3);
+
+        std::env::remove_var("XDG_CONFIG_HOME");
+    }
+
+    #[test]
+    fn config_reset_backup_failure_returns_null_and_preserves_original() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", dir.path());
+
+        let path = config::config_path();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let original = b"precious reset input\n";
+        fs::write(&path, original).unwrap();
+        // The reset contract writes config.toml.bak before removing the source.
+        // A directory at that destination deterministically makes the backup
+        // fail on every privilege level.
+        fs::create_dir(path.with_extension("toml.bak")).unwrap();
+
+        let handle = xeneon_config_reset();
+        assert!(
+            handle.is_null(),
+            "the C ABI must not expose writable defaults after backup failure"
+        );
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            original,
+            "the failed reset must preserve the only original byte-for-byte"
+        );
 
         std::env::remove_var("XDG_CONFIG_HOME");
     }
@@ -2372,10 +2863,8 @@ mod tests {
         std::env::set_var("XDG_CONFIG_HOME", dir.path());
 
         let h = xeneon_config_load();
-        // With the placeholder (all-zero) issuer key, EVERY key resolves to free -
-        // so the stored-key convenience and the pasted-key path must return the
-        // SAME free-tier JSON. When a real issuer key is embedded, this same test
-        // continues to assert they never diverge.
+        // The stored-key convenience and pasted-key path must return the same
+        // free-tier JSON for one invalid key, with the production issuer armed.
         let garbage = "XE1.not.real";
         let key = cstr(garbage);
         assert_eq!(xeneon_config_set_license_key(h, key.as_ptr()), 0);
@@ -2388,7 +2877,7 @@ mod tests {
         );
         assert!(
             stored.contains("\"tier\":\"free\""),
-            "placeholder issuer => free: {stored}"
+            "invalid key must remain free: {stored}"
         );
 
         // A null handle is the free tier too, never a crash.
@@ -2491,18 +2980,24 @@ mod proptests {
             }
         }
 
-        /// Config setters never panic on arbitrary (NUL-free) C-string input,
-        /// including non-UTF-8 byte sequences, and the handle stays serializable.
+        /// Config setters never panic on arbitrary (NUL-free) C-string input.
+        /// The JSON setter accepts exactly valid, supported object documents and
+        /// never leaves the handle unserializable.
         #[test]
         fn config_setters_survive_arbitrary_cstring_input(
             bytes in prop::collection::vec(1u8..=255, 0..32)
         ) {
             let c = CString::new(bytes).unwrap();
-            let mut h = ConfigHandle { config: AppConfig::default() };
+            let mut h = ConfigHandle::untracked(AppConfig::default());
             let p = &mut h as *mut ConfigHandle;
             prop_assert_eq!(xeneon_config_set_theme_mode(p, c.as_ptr()), 0);
             prop_assert_eq!(xeneon_config_set_target_model(p, c.as_ptr()), 0);
-            prop_assert_eq!(xeneon_config_set_ui_state(p, c.as_ptr()), 0);
+            let expected = c.to_str().ok()
+                .is_some_and(|raw| config::validate_ui_state_json_for_write(raw).is_ok());
+            prop_assert_eq!(
+                xeneon_config_set_ui_state(p, c.as_ptr()),
+                if expected { 0 } else { -1 }
+            );
             let json = unsafe { take(xeneon_config_to_json(p)) };
             prop_assert!(serde_json::from_str::<serde_json::Value>(&json).is_ok());
         }

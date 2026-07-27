@@ -523,10 +523,10 @@
     },
     {
       "crop": null,
-      "file": "preset-landscape.png",
+      "file": "orientation-home-ambient-landscape.png",
       "height": 720,
-      "id": "preset-landscape",
-      "kind": "preset",
+      "id": "orientation-home-ambient-landscape",
+      "kind": "orientation",
       "sha256": "9396009a1fe9be4fb3dcf0ce067fd3000907891842450e3c66103e355e3d5344",
       "source": "shellpreset_append_landscape.png",
       "width": 2560

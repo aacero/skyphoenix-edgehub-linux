@@ -245,6 +245,18 @@ WidgetChrome {
 
     // ── Per-size layout (sizeClass injected by Dashboard) ────────────────────
     readonly property bool horiz: sizeClass === "wide"
+    // Half-size wide projections give the rate block roughly one third of the
+    // card. Direction arrows remain visible there while the complete Download /
+    // Upload wording stays in Accessible.name and in the chart's roomy layout.
+    readonly property bool compactRateReadout: w.horiz && !w.roomy
+    // The shared 480 px half-cell boundary is also the density boundary for
+    // chart prose. This keeps both rotated projections of a declared half size
+    // on the same concise information tier.
+    readonly property bool compactChartLabels: Math.min(width, height) < 480
+    readonly property string historyCaption: w.compactChartLabels
+        ? (w.historyWindow === "1m" ? "1 MIN HISTORY"
+           : w.historyWindow === "5m" ? "5 MIN HISTORY" : "2 MIN HISTORY")
+        : w.historyLabel.toUpperCase() + " THROUGHPUT"
 
     // Does this instance have half-screen room? The same predicate HabitWidget
     // derives, for the same reason: Dashboard injects a sizeClass, never a size
@@ -305,10 +317,11 @@ WidgetChrome {
     // already did): it exists so the overlay's short 456px landscape pane cannot
     // let width alone overreach. Only `roomy` boxes are allowed past 26.
     readonly property real rateFont: micro
-        ? Math.max(20, Math.min(width * 0.115, 38))
+        ? Math.max(theme.fontMinimum, 20, Math.min(width * 0.115, 38))
         : (big || horiz)
-        ? Math.max(16, Math.min(width * 0.05, height * 0.09, w.roomy ? 40 : 26))
-        : Math.max(15, Math.min(width * 0.032, 22))
+        ? Math.max(theme.fontMinimum,
+                   Math.min(width * 0.05, height * 0.09, w.roomy ? 40 : 26))
+        : Math.max(theme.fontMinimum, Math.min(width * 0.032, 22))
 
     GridLayout {
         id: lay
@@ -347,7 +360,9 @@ WidgetChrome {
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignVCenter
                 spacing: w.micro ? 2 : 0
-                Text { text: "↓ " + (w.micro ? "" : "Download  ")
+                Text {
+                    objectName: "netDownloadRate"
+                    text: "↓ " + (w.micro || w.compactRateReadout ? "" : "Download  ")
                               + (w.rateAvailable ? w.fmt(w.rx)
                                                  : w.freshness === "sampling" ? "Sampling" : "N/A")
                     color: w.rateAvailable ? theme.success : theme.textSecondary; font.bold: true
@@ -357,7 +372,9 @@ WidgetChrome {
                     horizontalAlignment: w.micro ? Text.AlignHCenter : Text.AlignLeft
                     Accessible.name: w.rateAvailable ? "Download " + w.fmt(w.rx)
                                                      : "Download " + w.unavailableReason }
-                Text { text: "↑ " + (w.micro ? "" : "Upload  ")
+                Text {
+                    objectName: "netUploadRate"
+                    text: "↑ " + (w.micro || w.compactRateReadout ? "" : "Upload  ")
                               + (w.rateAvailable ? w.fmt(w.tx)
                                                  : w.freshness === "sampling" ? "Sampling" : "N/A")
                     color: w.rateAvailable ? w.effAccent : theme.textSecondary; font.bold: true
@@ -466,7 +483,8 @@ WidgetChrome {
                 Layout.fillWidth: true
                 columns: width >= 520 ? 2 : 1
                 Text {
-                    text: w.historyLabel.toUpperCase() + " THROUGHPUT"
+                    objectName: "netHistoryCaption"
+                    text: w.historyCaption
                     color: theme.textPrimary
                     font.pixelSize: theme.fontLabel
                     font.bold: true
@@ -492,8 +510,8 @@ WidgetChrome {
                 comparisonValues: w.txHistory
                 color: theme.success
                 comparisonColor: w.effAccent
-                primaryLabel: "↓ Download"
-                comparisonLabel: "↑ Upload"
+                primaryLabel: w.compactChartLabels ? "↓" : "↓ Download"
+                comparisonLabel: w.compactChartLabels ? "↑" : "↑ Upload"
                 chartStyle: w.graphStyle
                 scaleMode: w.scaleMode === "fixed" ? "fixed" : "auto"
                 minimumValue: 0

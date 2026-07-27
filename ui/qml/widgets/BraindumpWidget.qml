@@ -78,6 +78,16 @@ WidgetChrome {
     property bool clearArmed: false
     property string captureNotice: ""
     property string actionNotice: ""
+    readonly property bool captureDraftPending:
+        input.text.trim().length > 0
+    readonly property bool editDraftPending: {
+        if (!w.editingId.length)
+            return false
+        if (w.editingIndex < 0 || w.editingIndex >= w.entries.length)
+            return w.editingText.length > 0
+        var entry = w.entries[w.editingIndex] || ({})
+        return w.editingText !== String(entry.text || "")
+    }
 
     function entryId(entry, index) {
         if (entry && entry.id) return String(entry.id)
@@ -103,15 +113,32 @@ WidgetChrome {
     }
     readonly property int editingIndex: indexOfId(editingId)
 
+    function reportSaveFailure() {
+        w.captureNotice = ""
+        w.actionNotice = "Save failed. Keep this widget open and try again."
+        noticeTimer.stop()
+    }
     function persistMutation(next, undoLabel, notice) {
-        if (!store) return
-        store.patchSettings(instanceId, {
-            entries: next,
-            undoEntries: w.entriesWithIds(),
-            undoLabel: undoLabel
-        })
+        if (!store) {
+            w.reportSaveFailure()
+            return false
+        }
+        try {
+            if (store.patchSettings(instanceId, {
+                    entries: next,
+                    undoEntries: w.entriesWithIds(),
+                    undoLabel: undoLabel
+                }) === false) {
+                w.reportSaveFailure()
+                return false
+            }
+        } catch (error) {
+            w.reportSaveFailure()
+            return false
+        }
         w.actionNotice = notice
         noticeTimer.restart()
+        return true
     }
 
     status: w.expanded || !w.entries.length ? "" : "" + w.entries.length
@@ -120,22 +147,25 @@ WidgetChrome {
     readonly property bool horiz: sizeClass === "wide"
                                   || ((sizeClass === "large" || sizeClass === "full")
                                       && width > height * 1.25)
-    // Entry rows are a READOUT on a tile (no tap target), so they scale with the
-    // box rather than sitting at a fixed 22px.
-    readonly property real rowH: w.expanded ? Math.max(theme.touchTertiary, 56)
-        : Math.max(52, Math.min(height * 0.07, 64))
-    readonly property real rowFont: w.expanded ? Math.max(theme.fontLabel, 17)
-        : Math.max(17, Math.min(w.rowH * 0.36, 20))
-    readonly property real stampFont: Math.max(13, Math.min(14,
-                                               Math.round(w.rowFont * 0.72)))
-    // Clearing is a deliberate act and needs the room: the overlay always, and a
-    // wide box whose capture column has spare height.
-    readonly property bool showClear: (w.expanded || w.horiz) && w.entries.length > 0
+    // Entry rows are a READOUT on a tile (no destructive tap target), but their
+    // typography still follows the user's viewing-distance scale. The row grows
+    // just enough to retain a comfortable two-line viewport at the largest
+    // supported scale.
+    readonly property real rowFont: Math.max(theme.fontLabel, 17)
+    readonly property real rowH: Math.max(
+        w.expanded ? theme.touchTertiary : 52,
+        Math.ceil(w.rowFont * 2.55),
+        w.expanded ? 56 : Math.min(height * 0.07, 64))
+    readonly property real stampFont: Math.max(
+        theme.fontMinimum, Math.round(w.rowFont * 0.78))
+    // Clear remains available in the expanded management surface. Compact and
+    // shallow wide tiles keep that height for capture and readable queue data.
+    readonly property bool showClear: w.expanded && w.entries.length > 0
 
     function add(text) {
-        if (!store) return
+        if (!store) return false
         var t = (text || "").trim()
-        if (!t.length) return
+        if (!t.length) return true
         // Newest first: the thing you just captured must be the thing you see,
         // without scrolling - otherwise a full list silently swallows the entry.
         var wasTruncated = t.length > w.maxEntryLength
@@ -144,17 +174,22 @@ WidgetChrome {
                    text: t, at: Date.now() }].concat(w.entriesWithIds())
         var dropped = Math.max(0, a.length - w.maxEntries)
         if (dropped) a = a.slice(0, w.maxEntries)
-        w.captureNotice = wasTruncated
+        var nextCaptureNotice = wasTruncated
             ? "Saved the first " + w.maxEntryLength + " characters."
             : dropped
               ? "Saved. The oldest thought was removed because the queue is full."
               : ""
-        w.persistMutation(a, "Undo captured thought", "Thought captured")
+        if (!w.persistMutation(a, "Undo captured thought", "Thought captured"))
+            return false
+        w.captureNotice = nextCaptureNotice
+        return true
     }
     function commitCapture() {
-        if (!input.text.trim().length) return
-        w.add(input.text)
+        if (!input.text.trim().length) return true
+        if (!w.add(input.text))
+            return false
         input.text = ""
+        return true
     }
     function remove(i) {
         if (!store || i < 0 || i >= w.entries.length) return
@@ -182,16 +217,78 @@ WidgetChrome {
         w.editingText = String(w.entries[i].text || "")
     }
     function commitEdit(text) {
-        if (!store || w.editingIndex < 0 || w.editingIndex >= w.entries.length) return
+        if (!store || w.editingIndex < 0 || w.editingIndex >= w.entries.length)
+            return false
         var t = String(text === undefined ? w.editingText : text).trim().slice(0, w.maxEntryLength)
-        if (!t.length) return
+        if (!t.length) {
+            w.actionNotice = "A thought cannot be empty. Save text or cancel the edit."
+            noticeTimer.restart()
+            return false
+        }
         var a = w.entriesWithIds()
         var old = a[w.editingIndex]
+        if (t === String(old.text || "")) {
+            w.editingId = ""
+            w.editingText = ""
+            return true
+        }
         a[w.editingIndex] = { id: old.id, text: t, at: old.at }
+        if (!w.persistMutation(a, "Undo edit", "Thought updated"))
+            return false
         w.editingId = ""
-        w.persistMutation(a, "Undo edit", "Thought updated")
+        w.editingText = ""
+        return true
     }
-    function cancelEdit() { w.editingId = ""; w.editingText = "" }
+    function cancelEdit() {
+        w.editingId = ""
+        w.editingText = ""
+        w.actionNotice = "Edit cancelled"
+        noticeTimer.restart()
+        return true
+    }
+    function saveOrBeginEdit(index) {
+        if (w.editingIndex === index)
+            return w.commitEdit(w.editingText)
+        w.beginEdit(index)
+        return true
+    }
+    function cancelOrRemove(index) {
+        if (w.editingIndex === index)
+            return w.cancelEdit()
+        w.remove(index)
+        return true
+    }
+    function hasPendingChanges() {
+        return w.captureDraftPending || w.editDraftPending
+    }
+    function flush() {
+        // Treat the two buffers independently. A malformed inline edit must make
+        // the overall flush fail closed, but it must not strand a separate valid
+        // capture draft in an overlay that is about to be destroyed.
+        var ok = true
+        var editValidationMessage = ""
+        var hadEditDraft = w.editDraftPending
+        if (hadEditDraft) {
+            if (w.editingIndex < 0 || w.editingIndex >= w.entries.length) {
+                editValidationMessage =
+                    "This thought changed elsewhere. Cancel or review the edit."
+                ok = false
+            } else if (!w.editingText.trim().length) {
+                editValidationMessage =
+                    "A thought cannot be empty. Save text or cancel the edit."
+                ok = false
+            } else if (!w.commitEdit(w.editingText))
+                ok = false
+        }
+        if (w.captureDraftPending && !w.commitCapture())
+            ok = false
+        if (editValidationMessage.length) {
+            w.captureNotice = ""
+            w.actionNotice = editValidationMessage
+            noticeTimer.restart()
+        }
+        return ok && !w.hasPendingChanges()
+    }
     function undoLastChange() {
         if (!store || !w.undoSnapshot) return
         var snapshot = w.undoSnapshot
@@ -213,6 +310,15 @@ WidgetChrome {
             w.captureNotice = ""
         }
     }
+    // Dashboard overlays are separate widget instances and may be destroyed
+    // without ever observing expanded=false. Commit local buffers on either
+    // lifecycle path so close, shutdown, and external-layout preflight share the
+    // same persistence contract.
+    onExpandedChanged: {
+        if (!w.expanded)
+            w.flush()
+    }
+    Component.onDestruction: w.flush()
 
     // Today → just the time; older → weekday + time. An entry with no usable
     // stamp (hand-edited config, an older schema) renders blank rather than
@@ -251,7 +357,7 @@ WidgetChrome {
                                  Math.floor(parent.height / rowPitch) * rowPitch - spacing)
                 anchors.top: parent.top
                 clip: true; spacing: 3
-                interactive: w.expanded
+                interactive: contentHeight > height + 1
                 model: w.entries
                 readonly property int visibleCapacity:
                     Math.max(1, Math.floor(height / rowPitch))
@@ -263,29 +369,70 @@ WidgetChrome {
                     id: entryRow
                     required property int index
                     required property var modelData
+                    readonly property bool editingThis:
+                        w.editingIndex === entryRow.index
                     objectName: "braindumpEntry-" + w.entryId(modelData, index)
                     width: ListView.view ? ListView.view.width : 0
                     height: w.rowH
                     spacing: theme.spacingSm
+                    // ListView may retain delegates just beyond its clipped
+                    // viewport. Do not paint or expose those recycled rows until
+                    // they actually intersect the visible queue.
+                    visible: y + height > list.contentY
+                             && y < list.contentY + list.height
 
                     Text {
+                        objectName: "braindumpStamp-" + entryRow.index
                         visible: w.showTimes
                         text: w.stampOf(entryRow.modelData)
                         color: theme.textPrimary
                         opacity: 0.72
                         font.family: theme.fontMono
                         font.pixelSize: Math.round(w.stampFont)
-                        Layout.preferredWidth: Math.round(w.stampFont * 4.1)
+                        Layout.minimumWidth: Math.ceil(implicitWidth) + 1
+                        Layout.preferredWidth: Layout.minimumWidth
                         Layout.alignment: Qt.AlignVCenter
+                        horizontalAlignment: Text.AlignRight
+                        wrapMode: Text.NoWrap
                     }
-                    Text {
+                    Flickable {
+                        id: thoughtViewport
+                        objectName: "braindumpThoughtViewport-" + entryRow.index
                         Layout.fillWidth: true; Layout.fillHeight: true
                         visible: w.editingIndex !== entryRow.index
-                        verticalAlignment: Text.AlignVCenter
-                        text: entryRow.modelData && entryRow.modelData.text !== undefined
-                              ? entryRow.modelData.text : ""
-                        color: theme.textPrimary; elide: Text.ElideRight
-                        font.pixelSize: Math.round(w.rowFont)
+                        clip: true
+                        contentWidth: width
+                        contentHeight: Math.max(height, thoughtText.implicitHeight)
+                        flickableDirection: Flickable.VerticalFlick
+                        interactive: contentHeight > height + 1
+                        boundsBehavior: Flickable.StopAtBounds
+
+                        ScrollBar.vertical: ScrollBar {
+                            id: thoughtScrollBar
+                            policy: thoughtViewport.contentHeight
+                                    > thoughtViewport.height + 1
+                                    ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+                        }
+
+                        Text {
+                            id: thoughtText
+                            objectName: "braindumpThought-" + entryRow.index
+                            // Reserve a stable overlay gutter. Binding width to
+                            // ScrollBar.visible creates a content-height cycle:
+                            // wrapping decides whether the bar is visible while
+                            // visibility would change the wrapping width.
+                            width: Math.max(1, thoughtViewport.width
+                                            - theme.spacingSm)
+                            height: Math.max(thoughtViewport.height, implicitHeight)
+                            verticalAlignment: implicitHeight <= thoughtViewport.height
+                                               ? Text.AlignVCenter : Text.AlignTop
+                            text: entryRow.modelData
+                                  && entryRow.modelData.text !== undefined
+                                  ? entryRow.modelData.text : ""
+                            color: theme.textPrimary
+                            wrapMode: Text.Wrap
+                            font.pixelSize: Math.round(w.rowFont)
+                        }
                     }
                     TextField {
                         objectName: "braindumpEditor-" + w.entryId(entryRow.modelData,
@@ -318,19 +465,20 @@ WidgetChrome {
                             border.color: theme.cardBorder
                             activeFocusOnTab: true
                             Accessible.role: Accessible.Button
-                            Accessible.name: "Edit thought " + (entryRow.index + 1)
-                            Accessible.onPressAction: w.beginEdit(entryRow.index)
-                            Keys.onSpacePressed: w.beginEdit(entryRow.index)
-                            Keys.onReturnPressed: w.beginEdit(entryRow.index)
+                            Accessible.name: (entryRow.editingThis ? "Save" : "Edit")
+                                             + " thought " + (entryRow.index + 1)
+                            Accessible.onPressAction: w.saveOrBeginEdit(entryRow.index)
+                            Keys.onSpacePressed: w.saveOrBeginEdit(entryRow.index)
+                            Keys.onReturnPressed: w.saveOrBeginEdit(entryRow.index)
                             AppIcon {
                                 anchors.centerIn: parent
-                                name: "ui-edit"; size: 20
+                                name: entryRow.editingThis ? "ui-check" : "ui-edit"; size: 20
                                 color: theme.textPrimary
                             }
                             MouseArea {
                                 id: editMA
                                 anchors.fill: parent
-                                onClicked: w.beginEdit(entryRow.index)
+                                onClicked: w.saveOrBeginEdit(entryRow.index)
                             }
                         }
                         Rectangle {
@@ -338,25 +486,32 @@ WidgetChrome {
                                                                        entryRow.index)
                             Layout.preferredWidth: theme.touchTertiary; Layout.fillHeight: true
                             radius: 8
-                            color: rmMA.pressed ? Qt.rgba(theme.error.r, theme.error.g,
-                                                          theme.error.b, 0.16) : "transparent"
+                            color: rmMA.pressed
+                                   ? (entryRow.editingThis
+                                      ? Qt.rgba(w.effAccent.r, w.effAccent.g,
+                                                w.effAccent.b, 0.18)
+                                      : Qt.rgba(theme.error.r, theme.error.g,
+                                                theme.error.b, 0.16))
+                                   : "transparent"
                             border.width: 1
                             border.color: theme.cardBorder
                             activeFocusOnTab: true
                             Accessible.role: Accessible.Button
-                            Accessible.name: "Remove thought " + (entryRow.index + 1)
-                            Accessible.onPressAction: w.remove(entryRow.index)
-                            Keys.onSpacePressed: w.remove(entryRow.index)
-                            Keys.onReturnPressed: w.remove(entryRow.index)
+                            Accessible.name: (entryRow.editingThis ? "Cancel edit for"
+                                             : "Remove") + " thought "
+                                             + (entryRow.index + 1)
+                            Accessible.onPressAction: w.cancelOrRemove(entryRow.index)
+                            Keys.onSpacePressed: w.cancelOrRemove(entryRow.index)
+                            Keys.onReturnPressed: w.cancelOrRemove(entryRow.index)
                             AppIcon {
                                 anchors.centerIn: parent
-                                name: "ui-trash"; size: 20
+                                name: entryRow.editingThis ? "ui-close" : "ui-trash"; size: 20
                                 color: theme.textPrimary
                             }
                             MouseArea {
                                 id: rmMA
                                 anchors.fill: parent
-                                onClicked: w.remove(entryRow.index)
+                                onClicked: w.cancelOrRemove(entryRow.index)
                             }
                         }
                     }
@@ -369,8 +524,8 @@ WidgetChrome {
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
                 width: overflowLabel.implicitWidth + 20
-                height: 34
-                radius: 17
+                height: Math.max(34, Math.ceil(theme.fontMinimum * 1.8))
+                radius: height / 2
                 color: w.effAccent
                 Text {
                     id: overflowLabel
@@ -391,7 +546,7 @@ WidgetChrome {
                 horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
                 text: "Ready for a thought\nCapture it below"
                 color: theme.textPrimary
-                font.pixelSize: w.expanded ? Math.max(theme.fontLabel, 18) : 17
+                font.pixelSize: Math.max(theme.fontLabel, 17)
                 font.bold: true
             }
         }
@@ -408,41 +563,60 @@ WidgetChrome {
             RowLayout {
                 Layout.fillWidth: true; spacing: theme.spacingSm
                 Layout.minimumHeight: theme.touchSecondary
-                Layout.preferredHeight: w.expanded || w.horiz ? 112 : 80
+                Layout.preferredHeight: w.expanded ? 112 : 80
                 Layout.maximumHeight: Layout.preferredHeight
-                TextArea {
-                    id: input
-                    objectName: "braindumpCaptureField"
+                ScrollView {
+                    id: captureViewport
+                    objectName: "braindumpCaptureViewport"
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    // The 500-character entry model needs an actual multiline
-                    // editor. Ctrl+Enter commits; Enter remains available for a
-                    // new line, and the adjacent Add action is always visible.
                     Layout.minimumHeight: theme.touchSecondary
-                    Layout.maximumHeight: w.expanded || w.horiz ? 112 : 80
-                    placeholderText: w.expanded || w.horiz ? "What's on your mind?" : "Dump..."
-                    wrapMode: TextArea.Wrap
-                    color: theme.textPrimary
-                    font.pixelSize: w.expanded ? Math.max(theme.fontLabel, 17) : 17
-                    placeholderTextColor: theme.textSecondary
-                    background: Rectangle {
-                        radius: theme.radiusSm; color: theme.backgroundColor
-                        border.color: input.activeFocus ? w.effAccent : theme.cardBorder; border.width: 1
-                    }
-                    onTextChanged: {
-                        if (text.length > w.maxEntryLength) {
-                            var keepCursor = Math.min(cursorPosition, w.maxEntryLength)
-                            text = text.slice(0, w.maxEntryLength)
-                            cursorPosition = keepCursor
-                            w.captureNotice = "Maximum " + w.maxEntryLength + " characters."
-                            noticeTimer.restart()
+                    Layout.maximumHeight: w.expanded ? 112 : 80
+                    clip: true
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                    // The 500-character entry model needs an actual multiline,
+                    // vertically scrollable editor. Ctrl+Enter commits; Enter
+                    // remains available for a new line.
+                    TextArea {
+                        id: input
+                        objectName: "braindumpCaptureField"
+                        width: captureViewport.availableWidth
+                        height: Math.max(captureViewport.availableHeight,
+                                         contentHeight + topPadding + bottomPadding)
+                        placeholderText: w.expanded || w.horiz
+                                         ? "What's on your mind?" : "Dump..."
+                        wrapMode: TextArea.Wrap
+                        color: theme.textPrimary
+                        font.pixelSize: Math.max(theme.fontLabel, 17)
+                        placeholderTextColor: theme.textSecondary
+                        background: Rectangle {
+                            radius: theme.radiusSm
+                            color: theme.backgroundColor
+                            border.color: input.activeFocus
+                                          ? w.effAccent : theme.cardBorder
+                            border.width: 1
                         }
-                    }
-                    Keys.onPressed: function(event) {
-                        if ((event.key === Qt.Key_Return || event.key === Qt.Key_Enter)
-                                && (event.modifiers & Qt.ControlModifier)) {
-                            w.commitCapture()
-                            event.accepted = true
+                        onTextChanged: {
+                            if (text.length > w.maxEntryLength) {
+                                var keepCursor = Math.min(cursorPosition,
+                                                          w.maxEntryLength)
+                                text = text.slice(0, w.maxEntryLength)
+                                cursorPosition = keepCursor
+                                w.captureNotice = "Maximum "
+                                                  + w.maxEntryLength
+                                                  + " characters."
+                                noticeTimer.restart()
+                            }
+                        }
+                        Keys.onPressed: function(event) {
+                            if ((event.key === Qt.Key_Return
+                                    || event.key === Qt.Key_Enter)
+                                    && (event.modifiers
+                                        & Qt.ControlModifier)) {
+                                w.commitCapture()
+                                event.accepted = true
+                            }
                         }
                     }
                 }
@@ -454,9 +628,15 @@ WidgetChrome {
 
             Text {
                 Layout.fillWidth: true
-                text: input.text.length + " / " + w.maxEntryLength
-                      + " characters | Queue " + w.entries.length + " / "
-                      + w.maxEntries + ", oldest replaced at limit"
+                visible: w.captureNotice.length === 0
+                         && w.actionNotice.length === 0
+                text: w.expanded
+                      ? input.text.length + " / " + w.maxEntryLength
+                        + " characters | Queue " + w.entries.length + " / "
+                        + w.maxEntries + ", oldest replaced at limit"
+                      : input.text.length + " / " + w.maxEntryLength
+                        + " characters | " + w.entries.length + " / "
+                        + w.maxEntries + " thoughts"
                 color: theme.textPrimary
                 opacity: 0.75
                 font.pixelSize: Math.max(theme.fontMinimum, 13)

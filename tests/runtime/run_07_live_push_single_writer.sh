@@ -20,10 +20,10 @@
 #                          hub is the writer, and the ack is the save receipt
 #                          (applyExternalUiState saves BEFORE the ack - an
 #                          explicit Qt::DirectConnection, app/src/main.cpp).
-#   3. setUiState ""     - rejected with an error ack, and config.toml is
-#                          byte-identical: a rejected push writes NOTHING. Only
-#                          meaningful next to step 2, which proves an accepted
-#                          push on this same socket DOES write.
+#   3. Invalid, malformed, and future-schema states are rejected with an error
+#                          ack, and config.toml is byte-identical: a rejected
+#                          push writes NOTHING. This is meaningful next to step
+#                          2, which proves an accepted push on this socket writes.
 #   4. RESTART           - the pushed layout is what loads: the hub's write was
 #                          durable, not just an in-memory apply.
 #
@@ -115,20 +115,36 @@ else
 fi
 
 # ── 3. A rejected push writes nothing ───────────────────────────────────────
-echo "Step 3 - a rejected (empty) push must not touch config.toml"
+echo "Step 3 - rejected states must not touch config.toml"
 cp "$RT_CFG/config.toml" "$RT_WORK/after-push.toml"
-ack="$(ipc '{"type":"setUiState","state":""}')" || ack=""
-if [ "$(rt_json "${ack:-\{\}}" 'd.get("type")' 2>/dev/null)" = "error" ]; then
-    echo "  [reject] PASS: hub rejected the empty state with an error ack"
-else
-    echo "  [reject] FAIL: expected an error ack for an empty state, got '$ack'"
-    fail=1
-fi
-if cmp -s "$RT_WORK/after-push.toml" "$RT_CFG/config.toml"; then
-    echo "  [reject] PASS: config.toml byte-identical - a rejected push writes nothing"
-else
-    echo "  [reject] FAIL: a rejected push still rewrote config.toml"
-    fail=1
+reject_names=("empty" "malformed JSON" "missing pages" "future schema")
+reject_states=(
+    ""
+    "not json"
+    '{"version":1}'
+    '{"version":99,"pages":[],"futureOnly":{"preserve":true}}'
+)
+reject_fail=0
+for i in "${!reject_states[@]}"; do
+    reject_msg="$(python3 -c \
+        'import json,sys; print(json.dumps({"type":"setUiState","state":sys.argv[1]}))' \
+        "${reject_states[$i]}")"
+    ack="$(ipc "$reject_msg")" || ack=""
+    if [ "$(rt_json "${ack:-\{\}}" 'd.get("type")' 2>/dev/null)" = "error" ]; then
+        echo "  [reject] PASS: hub rejected ${reject_names[$i]} with an error ack"
+    else
+        echo "  [reject] FAIL: expected an error ack for ${reject_names[$i]}, got '$ack'"
+        fail=1
+        reject_fail=1
+    fi
+    if ! cmp -s "$RT_WORK/after-push.toml" "$RT_CFG/config.toml"; then
+        echo "  [reject] FAIL: ${reject_names[$i]} rewrote config.toml"
+        fail=1
+        reject_fail=1
+    fi
+done
+if [ "$reject_fail" -eq 0 ]; then
+    echo "  [reject] PASS: config.toml stayed byte-identical for every rejected state"
 fi
 
 # Let the hub go before the restart: two hubs must never share one config dir.

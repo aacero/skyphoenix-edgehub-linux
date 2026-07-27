@@ -1,7 +1,8 @@
 [package]
 name = "xeneon-core"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
+rust-version = "1.86"
 description = "Core library for Xeneon Edge Linux Hub"
 # The repo ships LICENSE-MIT + LICENSE-APACHE and the README grants both, but the
 # manifest declared nothing - so cargo-deny reported our OWN crate as
@@ -29,4 +30,3 @@ ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 [dev-dependencies]
 tempfile = "3"
 proptest = "1"
-

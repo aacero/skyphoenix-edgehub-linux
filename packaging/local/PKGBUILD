@@ -7,21 +7,99 @@
 # It must stay TAG-derived: a hardcoded base silently rots the moment a release
 # tag moves past it (it did - see the comment on pkgver()).
 pkgname=xeneon-edge-hub
+# One-time ordering repair for already-installed dotted prerelease builds.
+# Never remove or reduce this epoch.
+epoch=1
 pkgver=1.0.0.beta.1.r11.g2526cf5   # overwritten by pkgver() at build time
 pkgrel=1
 pkgdesc="Native Linux widget dashboard for the Corsair Xeneon Edge (local working-tree build)"
 arch=('x86_64')
 url="https://github.com/skyphoenix-it/skyphoenix-edgehub-linux"
-license=('MIT' 'Apache-2.0')
+license=('MIT' 'Apache-2.0' 'OFL-1.1' 'BSD-3-Clause' 'MPL-2.0' 'Unicode-3.0')
 depends=('qt6-base' 'qt6-declarative' 'qt6-svg' 'qt6-virtualkeyboard' 'qt6-wayland' 'hicolor-icon-theme')
 makedepends=('cmake' 'rust' 'git')
 install="$pkgname.install"
 source=()
 sha256sums=()
 
-# The repo root, resolved from the PKGBUILD's own location so the recipe works
-# from any clone - never a hardcoded home path.
-_repo() { realpath "$startdir/../.."; }
+# update-local.sh copies this recipe into a disposable makepkg directory so
+# makepkg's mandatory pkgver rewrite cannot dirty the tracked checkout. Direct
+# recipe users still get the historical path-relative behavior.
+_repo() {
+  if [ -n "${XENEON_LOCAL_REPO:-}" ]; then
+    realpath "$XENEON_LOCAL_REPO"
+  else
+    realpath "$startdir/../.."
+  fi
+}
+
+# makepkg calls pkgver(), rewrites the tracked `pkgver=` line, and can call
+# pkgver() again in the same source directory. A plain `git describe --dirty`
+# therefore produces a false dirty suffix on the second call. Build the dirty
+# decision from porcelain status and ignore only makepkg's exact, unstaged
+# pkgver-line rewrite. Staged changes, untracked files and every other tracked
+# change remain visible.
+_makepkg_only_changed_pkgver() {
+  local repo="$1"
+  git -C "$repo" diff --cached --quiet -- packaging/local/PKGBUILD || return 1
+  [ -z "$(git -C "$repo" diff --summary -- packaging/local/PKGBUILD)" ] ||
+    return 1
+  cmp -s \
+    <(git -C "$repo" show HEAD:packaging/local/PKGBUILD |
+      sed 's/^pkgver=.*/pkgver=__MAKEPKG_GENERATED__/') \
+    <(sed 's/^pkgver=.*/pkgver=__MAKEPKG_GENERATED__/' \
+      "$repo/packaging/local/PKGBUILD")
+}
+
+_source_tree_is_dirty() {
+  local repo="$1" status_line
+  while IFS= read -r status_line; do
+    [ -n "$status_line" ] || continue
+    if [ "$status_line" = " M packaging/local/PKGBUILD" ] &&
+       _makepkg_only_changed_pkgver "$repo"; then
+      continue
+    fi
+    return 0
+  done < <(git -C "$repo" status --porcelain=v1 --untracked-files=all)
+  return 1
+}
+
+_capture_build_version() {
+  local repo version
+  repo="$(_repo)"
+  mkdir -p "$srcdir"
+  version="$(git -C "$repo" describe --tags --always)"
+  if _source_tree_is_dirty "$repo"; then
+    version="${version}-dirty"
+  fi
+  printf '%s\n' "${version#v}" > "$srcdir/.xeneon-build-version"
+}
+
+_captured_build_version() {
+  local version_file="$srcdir/.xeneon-build-version"
+  if [ ! -s "$version_file" ]; then
+    printf 'missing captured build identity: %s\n' "$version_file" >&2
+    return 1
+  fi
+  tr -d '\n' < "$version_file"
+}
+
+_arch_pkgver_from_describe() {
+  local d="${1#v}"
+  if [[ "$d" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-(alpha|beta|rc)\.([0-9]+)-([0-9]+)-g([0-9A-Fa-f]+)$ ]]; then
+    # Pacman orders 1.0.0beta1 < 1.0.0rc1 < 1.0.0. Keeping the prerelease
+    # label adjacent to the patch component is therefore load-bearing.
+    printf '%s%s%s.r%s.g%s' \
+      "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" \
+      "${BASH_REMATCH[4]}" "${BASH_REMATCH[5]}"
+  elif [[ "$d" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)-g([0-9A-Fa-f]+)$ ]]; then
+    printf '%s.r%s.g%s' \
+      "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"
+  else
+    printf 'unsupported tag shape for local package version: %s\n' "$d" >&2
+    return 1
+  fi
+}
 
 pkgver() {
   cd "$(_repo)"
@@ -33,23 +111,26 @@ pkgver() {
   # silently reverted the owner to the AUR release mid-session.
   # Standard AUR VCS form `<tag>.r<commits-since>.g<sha>`, which vercmp orders
   # strictly above `<tag>` itself, so local always beats the published package.
-  local d
+  local d resolved_pkgver
   d="$(git describe --long --tags 2>/dev/null)" || d=""
   if [ -z "$d" ]; then
     # No tags reachable (shallow clone): fall back to a 0.0.0 base, which is
     # honest - an untagged tree makes no claim to be newer than any release.
-    printf '0.0.0.r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
-    return
+    resolved_pkgver="0.0.0.r$(git rev-list --count HEAD).g$(git rev-parse --short HEAD)"
+  else
+    resolved_pkgver="$(_arch_pkgver_from_describe "$d")"
   fi
-  printf '%s' "$d" | sed 's/^v//; s/\([^-]*-g\)/r\1/; s/-/./g'
+  _capture_build_version
+  printf '%s' "$resolved_pkgver"
 }
 
 build() {
   local repo ver
   repo="$(_repo)"
-  # git describe (not pkgver) into the UI so Diagnostics shows the exact commit,
-  # including -dirty when you built uncommitted work.
-  ver="$(cd "$repo" && git describe --tags --always --dirty)"
+  # The value was captured by pkgver() before makepkg rewrote this tracked file.
+  # A genuinely dirty source tree still carries -dirty; makepkg's own mechanical
+  # pkgver update does not create a false dirty build.
+  ver="$(_captured_build_version)"
   # QA hooks stay OFF (the default): this is a product install, so
   # XENEON_GRAB/XENEON_EXPAND must be compiled out (blocker B7).
   cmake -B "$srcdir/build" -S "$repo" \

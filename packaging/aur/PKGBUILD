@@ -1,11 +1,15 @@
 # Maintainer: Simon Kreitmayer <simon.kreitmayer@skyphoenix-it.com>
 pkgname=xeneon-edge-hub
+# One-time ordering repair. Legacy local packages used 1.0.0.beta.1..., which
+# pacman considers newer than the corrected 1.0.0beta1... and final 1.0.0.
+# Never remove or reduce this epoch.
+epoch=1
 pkgver=1.0.0beta1
-pkgrel=1
+pkgrel=2
 pkgdesc="Native Linux widget dashboard for the Corsair Xeneon Edge and other secondary touchscreens (includes the companion Manager)"
 arch=('x86_64')
 url="https://github.com/skyphoenix-it/skyphoenix-edgehub-linux"
-license=('MIT' 'Apache-2.0')
+license=('MIT' 'Apache-2.0' 'OFL-1.1' 'BSD-3-Clause' 'MPL-2.0' 'Unicode-3.0')
 depends=('qt6-base' 'qt6-declarative' 'qt6-svg' 'qt6-virtualkeyboard' 'qt6-wayland' 'hicolor-icon-theme')
 makedepends=('cmake' 'rust')
 install="$pkgname.install"
@@ -17,6 +21,8 @@ install="$pkgname.install"
 # separator (1.0.0alpha.2 < 1.0.0) and the real tag is spelled out here.
 _tag="v1.0.0-beta.1"
 _srcver="${_tag#v}"
+_phosphor_commit="2b75f3ad12b420c9504ef05df8d2564a28f8500e"
+_rust_lock_sha256="1cf7d7bc7aacd0963b2e522b723fe6794cc31f892662993fcda70bf688ff36a7"
 
 # Source is the maintainer-uploaded release asset, NOT GitHub's auto-generated
 # archive tarball. Two reasons, both load-bearing:
@@ -27,7 +33,9 @@ _srcver="${_tag#v}"
 #      produces the tarball and the .sig together from the tag), so validpgpkeys
 #      below verifies something the maintainer actually attested to.
 source=("$pkgname-$_srcver.tar.gz::$url/releases/download/$_tag/$pkgname-$_srcver.tar.gz"
-        "$pkgname-$_srcver.tar.gz.sig::$url/releases/download/$_tag/$pkgname-$_srcver.tar.gz.sig")
+        "$pkgname-$_srcver.tar.gz.sig::$url/releases/download/$_tag/$pkgname-$_srcver.tar.gz.sig"
+        "LICENSE-MIT-PhosphorIcons.txt::https://raw.githubusercontent.com/phosphor-icons/core/$_phosphor_commit/LICENSE"
+        "THIRD_PARTY_NOTICES-RUST.txt")
 
 # EdgeHub release key - SKYPhoenix IT <simon.kreitmayer@skyphoenix-it.com>.
 # Full fingerprint, never the short id: short key ids are trivially forgeable, so
@@ -45,7 +53,9 @@ validpgpkeys=('2F0CAD36DC1D46F3347B7EF293CDC77EACF98990')
 # adds no security an attacker who could edit this PKGBUILD couldn't also edit.
 # Run `updpkgsums` when bumping pkgver if you want the redundant integrity check.
 sha256sums=('2ed4ed3967acffe1566025ce75e12c37d7dc0129b580e373704cae869990d184'
-            'SKIP')
+            'SKIP'
+            'b5b1f1da112d18ea2147decfd48ddc1bf2b5aeb6c265381579340e95b15a2bb2'
+            '4c2f5f3e5235433bc3ee9cf53409f2b24ca8cd2b60ab8b2489f77812e07baa2c')
 
 # Future bumps must update pkgver, _tag and the source checksum together; never
 # point this recipe at an unsigned GitHub-generated source archive.
@@ -54,6 +64,12 @@ _srcdir="skyphoenix-edgehub-linux-$_srcver"
 
 build() {
   cd "$_srcdir"
+  # The signed beta.1 source predates the top-level locked Cargo invocation.
+  # Build Rust first and fail if its lockfile differs from the exact graph used
+  # to generate the bundled third-party notices.
+  printf '%s  %s\n' "$_rust_lock_sha256" core/Cargo.lock |
+    sha256sum --check --strict
+  cargo build --release --locked --manifest-path core/Cargo.toml
   cmake -B build -S . \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/usr \
@@ -65,4 +81,19 @@ build() {
 package() {
   cd "$_srcdir"
   DESTDIR="$pkgdir" cmake --install build
+  # beta.1 bundled Chakra Petch for its wordmark but its CMake install manifest
+  # omitted the corresponding OFL text. Keep this explicit copy for that
+  # published source and as a harmless idempotent safeguard for later releases.
+  install -Dm644 assets/fonts/LICENSE-OFL-ChakraPetch.txt \
+    "$pkgdir/usr/share/licenses/$pkgname/LICENSE-OFL-ChakraPetch.txt"
+  # The public beta.1 source predates the repository's exact Phosphor notice.
+  # Fetch it from an immutable upstream commit and install it beside the other
+  # third-party notices. Later release tarballs carry the same bytes themselves.
+  install -Dm644 "$srcdir/LICENSE-MIT-PhosphorIcons.txt" \
+    "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT-PhosphorIcons.txt"
+  # beta.1 also predates the generated lockfile-derived Rust notice bundle.
+  # This checked local source is generated from the byte-identical beta.1
+  # Cargo.lock and closes the attribution gap without changing source bytes.
+  install -Dm644 "$srcdir/THIRD_PARTY_NOTICES-RUST.txt" \
+    "$pkgdir/usr/share/licenses/$pkgname/THIRD_PARTY_NOTICES-RUST.txt"
 }

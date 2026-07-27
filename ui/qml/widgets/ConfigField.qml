@@ -68,7 +68,96 @@ Item {
     function onAccent() { return (col && col.textOnAccent) ? col.textOnAccent : "#0D1117" }
     // Tasks values are user/IPC-sourced - coerce to an array so a corrupt (non-array)
     // stored value renders as empty instead of throwing on .slice()/Repeater.
-    function curTasks() { var v = cur(); return Array.isArray(v) ? v : [] }
+    readonly property int maxTasks: 200
+    readonly property int maxTaskLength: 500
+    readonly property int maxTaskScanEntries: 1000
+    readonly property var taskSource: {
+        if (field.type !== "tasks") return []
+        var v = cur()
+        return Array.isArray(v) ? v : []
+    }
+    function _boundedTasks(v) {
+        var bounded = []
+        for (var i = 0; i < v.length
+                && i < maxTaskScanEntries
+                && bounded.length < maxTasks; i++) {
+            var entry = v[i]
+            if (!entry || typeof entry !== "object") continue
+            bounded.push(Object.assign({}, entry, {
+                text: String(entry.text === undefined ? "" : entry.text)
+                          .slice(0, maxTaskLength),
+                done: entry.done === true,
+                sourceIndex: i
+            }))
+        }
+        return bounded
+    }
+    readonly property var renderedTasks: _boundedTasks(taskSource)
+    readonly property int taskHiddenEntryCount:
+        Math.max(0, taskSource.length - renderedTasks.length)
+    function rawTasks() {
+        return taskSource.slice()
+    }
+    function curTasks() {
+        return renderedTasks
+    }
+    function hiddenTaskEntryCount() {
+        return taskHiddenEntryCount
+    }
+    function taskLimitReached() {
+        return renderedTasks.length >= maxTasks
+    }
+    function toggleTaskAt(sourceIndex) {
+        var a = rawTasks()
+        if (sourceIndex < 0 || sourceIndex >= a.length
+                || !a[sourceIndex] || typeof a[sourceIndex] !== "object")
+            return false
+        a[sourceIndex] = Object.assign({}, a[sourceIndex], {
+            done: a[sourceIndex].done !== true
+        })
+        setV(a)
+        return true
+    }
+    function editTaskAt(sourceIndex, text) {
+        var a = rawTasks()
+        if (sourceIndex < 0 || sourceIndex >= a.length
+                || !a[sourceIndex] || typeof a[sourceIndex] !== "object"
+                || text === undefined || text === null)
+            return false
+        var boundedText = String(text).trim().slice(0, maxTaskLength)
+        if (!boundedText.length) return false
+        a[sourceIndex] = Object.assign({}, a[sourceIndex], {
+            text: boundedText
+        })
+        setV(a)
+        return true
+    }
+    function removeTaskAt(sourceIndex) {
+        var a = rawTasks()
+        if (sourceIndex < 0 || sourceIndex >= a.length)
+            return false
+        a.splice(sourceIndex, 1)
+        setV(a)
+        return true
+    }
+    function addTask(text) {
+        var a = rawTasks()
+        if (taskLimitReached() || text === undefined || text === null)
+            return false
+        var boundedText = String(text).trim().slice(0, maxTaskLength)
+        if (!boundedText.length) return false
+        var entry = {
+            id: "task-" + Date.now() + "-" + (a.length + 1),
+            text: boundedText,
+            done: false
+        }
+        if (taskHiddenEntryCount > 0)
+            a.unshift(entry)
+        else
+            a.push(entry)
+        setV(a)
+        return true
+    }
     function numStr() {
         var n = Number(cur())
         if (isNaN(n)) n = 0
@@ -1480,20 +1569,14 @@ Item {
         ColumnLayout {
             spacing: 6
             Repeater {
-                model: f.curTasks()
+                model: f.renderedTasks
                 delegate: RowLayout {
                     required property int index
                     required property var modelData
                     Layout.fillWidth: true; spacing: 8
                     Rectangle {
                         function activate() {
-                            var a = f.curTasks().slice()
-                            if (!a[index]) return
-                            a[index] = Object.assign({}, a[index], {
-                                text: a[index].text !== undefined ? String(a[index].text) : "",
-                                done: !a[index].done
-                            })
-                            f.setV(a)
+                            f.toggleTaskAt(modelData.sourceIndex)
                         }
                         width: Math.max(48, Math.min(f.ctlH, f.ctlH - 4)); height: width; radius: 6
                         color: modelData.done ? f.col.accent : "transparent"
@@ -1511,24 +1594,22 @@ Item {
                     }
                     TextField {
                         Layout.fillWidth: true; text: modelData.text; implicitHeight: Math.max(48, f.ctlH - 8)
+                        property bool userEdited: false
+                        maximumLength: f.maxTaskLength
                         color: f.col.textPrimary; font.pixelSize: f.fontBase - 1
                         Accessible.name: "Edit task: " + String(modelData.text || "")
                         background: Rectangle { radius: 6; color: f.col.bg; border.width: 1
                             border.color: parent.activeFocus ? f.col.accent : f.col.border }
+                        onTextEdited: userEdited = true
                         onEditingFinished: {
-                            var a = f.curTasks().slice()
-                            if (!a[index]) return   // row vanished (live push) - drop the edit
-                            a[index] = Object.assign({}, a[index], {
-                                text: text, done: a[index].done === true
-                            }); f.setV(a)
+                            if (userEdited)
+                                f.editTaskAt(modelData.sourceIndex, text)
+                            userEdited = false
                         }
                     }
                     Rectangle {
                         function activate() {
-                            var a = f.curTasks().slice()
-                            if (index < 0 || index >= a.length) return
-                            a.splice(index, 1)
-                            f.setV(a)
+                            f.removeTaskAt(modelData.sourceIndex)
                         }
                         width: Math.max(48, Math.min(f.ctlH, f.ctlH - 4)); height: width; radius: 6; color: f.col.panelAlt
                         activeFocusOnTab: true
@@ -1546,25 +1627,48 @@ Item {
                 Layout.fillWidth: true; spacing: 8
                 TextField {
                     id: newTask; Layout.fillWidth: true; placeholderText: "Add a task…"; implicitHeight: Math.max(38, f.ctlH - 10)
+                    maximumLength: f.maxTaskLength
+                    enabled: !f.taskLimitReached()
                     color: f.col.textPrimary; placeholderTextColor: f.col.textSecondary; font.pixelSize: f.fontBase - 1
                     background: Rectangle { radius: 6; color: f.col.bg; border.width: 1
                         border.color: parent.activeFocus ? f.col.accent : f.col.border }
                     function commit() {
-                        if (!text.trim().length) return
-                        var a = f.curTasks().slice()
-                        a.push({ id: "task-" + Date.now() + "-" + (a.length + 1),
-                                   text: text.trim(), done: false })
-                        f.setV(a)
-                        text = ""
+                        if (f.addTask(text))
+                            text = ""
                     }
                     onAccepted: commit()
                 }
                 Rectangle {
                     Layout.preferredWidth: 64; Layout.preferredHeight: Math.max(38, f.ctlH - 10); radius: 8
+                    enabled: !f.taskLimitReached()
                     color: addMA.pressed ? f.col.accent : f.col.panelAlt; border.width: 1; border.color: f.col.accent
+                    opacity: enabled ? 1 : 0.46
                     Text { anchors.centerIn: parent; text: "Add"; color: f.col.textPrimary; font.pixelSize: f.fontBase - 1 }
                     MouseArea { id: addMA; anchors.fill: parent; onClicked: newTask.commit() }
                 }
+            }
+            Text {
+                visible: f.taskLimitReached()
+                Layout.fillWidth: true
+                text: "Task limit reached (" + f.maxTasks + "). Remove an item to add another."
+                color: f.col.textSecondary
+                font.pixelSize: f.fontMinimum
+                wrapMode: Text.WordWrap
+            }
+            Text {
+                objectName: "tasksHiddenEntryNotice"
+                visible: f.taskHiddenEntryCount > 0
+                Layout.fillWidth: true
+                text: f.taskHiddenEntryCount
+                    + " stored "
+                    + (f.taskHiddenEntryCount === 1 ? "entry is" : "entries are")
+                    + " hidden by safety limits. Edits preserve "
+                    + (f.taskHiddenEntryCount === 1 ? "it." : "them.")
+                color: f.col.textSecondary
+                font.pixelSize: f.fontMinimum
+                wrapMode: Text.WordWrap
+                Accessible.role: Accessible.StaticText
+                Accessible.name: text
             }
         }
     }

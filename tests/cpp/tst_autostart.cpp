@@ -7,6 +7,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QTemporaryDir>
 
 #include <unistd.h>
 
@@ -55,14 +56,85 @@ private slots:
     }
 
     void enableCreatesEntry() {
+        const QString directory = QFileInfo(path_).absolutePath();
+        QVERIFY(QDir().mkpath(directory));
+        QVERIFY(QFile(directory).setPermissions(
+            QFileDevice::ReadOwner | QFileDevice::WriteOwner
+            | QFileDevice::ExeOwner | QFileDevice::ReadGroup
+            | QFileDevice::ExeGroup | QFileDevice::ReadOther
+            | QFileDevice::ExeOther));
         QVERIFY(applyAutostart(true));
         QVERIFY(QFile::exists(path_));
         QFile f(path_);
         QVERIFY(f.open(QIODevice::ReadOnly | QIODevice::Text));
-        const QString content = QString::fromUtf8(f.readAll());
-        QVERIFY(content.contains("[Desktop Entry]"));
-        QVERIFY(content.contains("Exec="));
-        QVERIFY(content.contains("X-GNOME-Autostart-enabled=true"));
+        const QByteArray content = f.readAll();
+        QCOMPARE(
+            content,
+            hubAutostartDesktopEntry(QCoreApplication::applicationFilePath()));
+
+        const QFileDevice::Permissions filePermissions =
+            QFileInfo(path_).permissions();
+        QCOMPARE(
+            filePermissions,
+            QFileDevice::Permissions(
+                QFileDevice::ReadOwner | QFileDevice::WriteOwner));
+
+        const QFileDevice::Permissions directoryPermissions =
+            QFileInfo(directory).permissions();
+        QCOMPARE(
+            directoryPermissions,
+            QFileDevice::Permissions(
+                QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                | QFileDevice::ExeOwner));
+        QCOMPARE(QFileInfo(path_).ownerId(), static_cast<uint>(::geteuid()));
+    }
+
+    void managerProgramUsesTheSharedExactEntry() {
+        const QString nativeHubProgram =
+            QStringLiteral("/opt/SkyPhoenix Edge/bin/xeneon-edge-hub");
+        QVERIFY(applyAutostartForProgram(true, nativeHubProgram));
+
+        QFile entry(path_);
+        QVERIFY(entry.open(QIODevice::ReadOnly));
+        QCOMPARE(entry.readAll(), hubAutostartDesktopEntry(nativeHubProgram));
+    }
+
+    void shortWritePreservesPreviousBytes() {
+        const QByteArray previous =
+            QByteArrayLiteral("previous desktop entry bytes\n");
+        QVERIFY(QDir().mkpath(QFileInfo(path_).absolutePath()));
+        QFile existing(path_);
+        QVERIFY(existing.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        QCOMPARE(existing.write(previous), qint64(previous.size()));
+        existing.close();
+
+        AutostartAtomicWriteHooks hooks;
+        hooks.write = [](QSaveFile& file, const QByteArray& contents) {
+            return file.write(contents.constData(), contents.size() - 1);
+        };
+        QVERIFY(!applyAutostartForProgram(
+            true, QStringLiteral("/new/hub"), hooks));
+
+        QVERIFY(existing.open(QIODevice::ReadOnly));
+        QCOMPARE(existing.readAll(), previous);
+    }
+
+    void commitFailurePreservesPreviousBytes() {
+        const QByteArray previous =
+            QByteArrayLiteral("another previous desktop entry\n");
+        QVERIFY(QDir().mkpath(QFileInfo(path_).absolutePath()));
+        QFile existing(path_);
+        QVERIFY(existing.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        QCOMPARE(existing.write(previous), qint64(previous.size()));
+        existing.close();
+
+        AutostartAtomicWriteHooks hooks;
+        hooks.commit = [](QSaveFile&) { return false; };
+        QVERIFY(!applyAutostartForProgram(
+            true, QStringLiteral("/new/hub"), hooks));
+
+        QVERIFY(existing.open(QIODevice::ReadOnly));
+        QCOMPARE(existing.readAll(), previous);
     }
 
     void disableRemovesEntry() {
@@ -125,6 +197,56 @@ private slots:
         // A path with multiple spaces is wrapped exactly once, as a whole.
         QCOMPARE(quoteExecForDesktop(QStringLiteral("/a b/c d/hub")),
                  QStringLiteral("\"/a b/c d/hub\""));
+        QCOMPARE(quoteExecForDesktop(QStringLiteral("/opt/Cost $5/Hub")),
+                 QStringLiteral("\"/opt/Cost \\$5/Hub\""));
+        QCOMPARE(quoteExecForDesktop(QStringLiteral("/opt/100%/Hub")),
+                 QStringLiteral("/opt/100%%/Hub"));
+        QCOMPARE(quoteExecForDesktop(QStringLiteral("/opt/a\"b/Hub")),
+                 QStringLiteral("\"/opt/a\\\"b/Hub\""));
+    }
+
+    void appImageUsesPersistentOriginalForAutostart() {
+        QTemporaryDir imageDir(
+            QStandardPaths::writableLocation(QStandardPaths::TempLocation)
+            + QStringLiteral("/Edge Hub AppImage.XXXXXX"));
+        QVERIFY(imageDir.isValid());
+        const QString imagePath =
+            imageDir.filePath(QStringLiteral("EdgeHub $ Candidate.AppImage"));
+        QFile image(imagePath);
+        QVERIFY(image.open(QIODevice::WriteOnly));
+        QCOMPARE(image.write("#!/bin/sh\n"), qint64(10));
+        image.close();
+        QVERIFY(image.setPermissions(
+            QFile::ReadUser | QFile::WriteUser | QFile::ExeUser));
+
+        const bool hadAppImage = qEnvironmentVariableIsSet("APPIMAGE");
+        const QByteArray previousAppImage = qgetenv("APPIMAGE");
+        qputenv("APPIMAGE", imagePath.toUtf8());
+        const HubLaunchCommand command =
+            hubLaunchCommand(QStringLiteral("/tmp/.mount-edge/usr/bin/xeneon-edge-hub"));
+        const QString execLine = hubAutostartExecLine(
+            QStringLiteral("/tmp/.mount-edge/usr/bin/xeneon-edge-hub"));
+        const QByteArray expectedEntry = hubAutostartDesktopEntry(
+            QStringLiteral("/tmp/.mount-edge/usr/bin/xeneon-edge-hub"));
+        const bool applied = applyAutostart(true);
+        QFile entry(path_);
+        const bool opened = entry.open(QIODevice::ReadOnly | QIODevice::Text);
+        const QString contents =
+            opened ? QString::fromUtf8(entry.readAll()) : QString();
+        entry.close();
+        if (hadAppImage)
+            qputenv("APPIMAGE", previousAppImage);
+        else
+            qunsetenv("APPIMAGE");
+
+        QVERIFY(applied);
+        QVERIFY(opened);
+        QCOMPARE(command.program, imagePath);
+        QCOMPARE(command.arguments, QStringList{QStringLiteral("--hub")});
+        QCOMPARE(execLine,
+                 quoteExecForDesktop(imagePath) + QStringLiteral(" --hub"));
+        QVERIFY(contents.contains(QStringLiteral("Exec=") + execLine + u'\n'));
+        QCOMPARE(contents.toUtf8(), expectedEntry);
     }
 };
 

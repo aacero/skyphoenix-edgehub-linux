@@ -132,10 +132,21 @@ WidgetChrome {
         var temperature = (w.showTemp && w.tempAvailable) ? w.temp.toFixed(0) + "°C" : ""
         var state = w.alertLevel === "warning" || w.alertLevel === "critical"
                     ? w.alertText : ""
-        if (w.width < 480 && state === "Critical temperature")
-            state = "Temp critical"
-        else if (w.width < 480 && state === "High temperature")
-            state = "High temp"
+        // A narrow tall projection has room for the full supporting data below,
+        // but not for a temperature, freshness, and a repeated thermal phrase
+        // in the trailing header slot. Keep the exact reading plus the severity
+        // there; accessibleSummary retains the full "Critical temperature" /
+        // "High temperature" wording for assistive technology.
+        if (w.width < 480 && state.length) {
+            if (state === "Critical temperature")
+                return temperature.length ? temperature + " critical" : "Temp critical"
+            if (state === "High temperature")
+                return temperature.length ? temperature + " high" : "High temp"
+            // The ring already carries the utilization reading, so a narrow
+            // load alert should name the condition instead of competing with
+            // an unrelated temperature and freshness string.
+            return state === "Critical load" ? "Load critical" : state
+        }
         var base = !w.hasExplicitState
                    ? temperature
                    : (temperature.length ? temperature + " · " + w.freshness : w.freshness)
@@ -216,7 +227,10 @@ WidgetChrome {
         if (w.showTopProcess && w.topProcessText.length)
             out.push({ label: "BUSIEST", value: w.topProcessText })
         if (w.showTemp)
-            out.push({ label: "TEMP SOURCE",
+            // In a one-column footprint the value ("CPU sensor", "Core 0", ...)
+            // already supplies the temperature context. The shorter label keeps
+            // that context legible at the largest supported text scale.
+            out.push({ label: w.width < 480 ? "SENSOR" : "TEMP SOURCE",
                        value: w.tempAvailable ? w.tempSourceLabel : "Unavailable" })
         return out.slice(0, 4)
     }

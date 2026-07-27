@@ -15,10 +15,8 @@ import "../../ui/qml" as App
 // fallback, header status, touch-target sizing, the reduce-motion progress
 // animation bug, and the shared config-schema area.
 //
-// Some assertions intentionally encode the CORRECT behaviour and therefore
-// FAIL against real bugs (effAccent loop → black accent; leading " · " when
-// artist is empty; progress animation ignoring reduceMotion). Those failures
-// are the point and are reported as likelyRealBug.
+// Regression assertions encode the corrected behaviour for the accent,
+// subtitle, reduce-motion, responsive metadata, and minimum type-size defects.
 //
 // NOT covered here (C++-only, needs the real MprisBridge - MockMedia cannot
 // model them): GetAll-timeout debounce, Identity→friendly-name mapping, the
@@ -532,13 +530,59 @@ Item {
         when: windowShown
 
         function initTestCase() { tryVerify(function () { return hS.ready }, 3000) }
+        function init() {
+            hS.theme.textScale = 1.15
+            hS.theme.fontChoice = "system"
+            hS.mediaCtl.busConnected = true
+        }
+        function cleanup() {
+            hS.theme.textScale = 1.15
+            hS.theme.fontChoice = "system"
+            hS.mediaCtl.busConnected = true
+        }
 
-        function shape(width, height, cls) {
+        function shape(width, height, cls, title, artist) {
             sizeWrap.width = width; sizeWrap.height = height
             hS.item.sizeClass = cls
-            hS.mediaCtl.loadTrack("Everything In Its Right Place", "Radiohead")
+            hS.mediaCtl.busConnected = true
+            hS.mediaCtl.loadTrack(
+                title === undefined ? "Everything In Its Right Place" : title,
+                artist === undefined ? "Radiohead" : artist)
             wait(32)
             return hS.item
+        }
+        function named(item, objectName) {
+            return findByProp(item, "objectName", objectName)
+        }
+        function verifyReadableText(item, node, label) {
+            verify(node !== null, label + " exists")
+            verify(effVisible(node), label + " is visible")
+            verify(node.font.pixelSize >= hS.theme.fontMinimum,
+                   label + " uses " + node.font.pixelSize + "px, floor is "
+                   + hS.theme.fontMinimum + "px")
+            verify(node.truncated !== true, label + " is not truncated")
+            verify(node.contentHeight <= node.height + 1,
+                   label + " content height fits its allocation")
+            var topLeft = item.mapFromItem(node, 0, 0)
+            var bottomRight = item.mapFromItem(node, node.width, node.height)
+            verify(topLeft.x >= -1 && topLeft.y >= -1
+                   && bottomRight.x <= item.width + 1
+                   && bottomRight.y <= item.height + 1,
+                   label + " remains inside " + item.width + "x" + item.height)
+        }
+        function projectionCases() {
+            return [
+                [348, 409, "compact", "portrait 0.5x0.5"],
+                [423, 306, "compact", "landscape 0.5x0.5"],
+                [348, 818, "tall", "portrait 0.5x1"],
+                [846, 306, "wide", "landscape 0.5x1"],
+                [696, 409, "wide", "portrait 1x0.5"],
+                [423, 612, "tall", "landscape 1x0.5"],
+                [696, 818, "compact", "portrait 1x1"],
+                [846, 612, "compact", "landscape 1x1"],
+                [696, 1227, "tall", "portrait 1x1.5"],
+                [1269, 612, "wide", "landscape 1x1.5"]
+            ]
         }
         // Every visible circular transport button (a Rectangle holding one MouseArea).
         function transport(item) {
@@ -602,6 +646,8 @@ Item {
             compare(w.micro, true, "a 423x306 compact box is the half-cell")
             compare(w.showHeader, false, "micro drops the header")
             compare(w.rich, false, "micro carries the readout, not the full transport")
+            compare(w.sideBySide, true,
+                    "the short landscape micro tile places metadata beside the art")
             var btns = transport(w)
             compare(btns.length, 1, "exactly one control survives - play")
             verify(btns[0].height >= hS.theme.touchTertiary,
@@ -622,6 +668,88 @@ Item {
             verify(w.titlePx > 13, "the title scales with the box (" + w.titlePx + "px), it is not the old 13px")
             var t = findByProp(w.item ? w.item : w, "text", "Everything In Its Right Place")
             verify(t !== null, "the track title is rendered")
+        }
+
+        function test_long_metadata_is_readable_in_all_supported_projections_and_scales() {
+            var cases = projectionCases()
+            var scales = [1.0, 1.15, 1.3, 1.45]
+            var outputScales = [1.0, 1.25]
+            var fullTitle = "A Carefully Produced Release for Every Linux Desktop"
+            var fullArtist = "The EdgeHub Community Ensemble"
+
+            for (var c = 0; c < cases.length; c++) {
+                for (var o = 0; o < outputScales.length; o++) {
+                    for (var s = 0; s < scales.length; s++) {
+                        hS.theme.textScale = scales[s]
+                        var outputScale = outputScales[o]
+                        var width = Math.round(cases[c][0] / outputScale)
+                        var height = Math.round(cases[c][1] / outputScale)
+                        var tag = cases[c][3] + ", output " + outputScale
+                                  + ", text " + scales[s]
+                        var w = shape(width, height, cases[c][2],
+                                      fullTitle, fullArtist)
+                        var titleNode = named(w, "mediaTrackTitle")
+                        verifyReadableText(w, titleNode, tag + " title")
+                        compare(titleNode.text, fullTitle,
+                                tag + " retains the complete visual title")
+
+                        if (w.rich) {
+                            var artistNode = named(w, "mediaTrackArtist")
+                            verifyReadableText(w, artistNode, tag + " artist")
+                            compare(artistNode.text, fullArtist,
+                                    tag + " retains the complete visual artist")
+                            verifyReadableText(w, named(w, "mediaElapsed"),
+                                               tag + " elapsed time")
+                            verifyReadableText(w, named(w, "mediaDuration"),
+                                               tag + " duration")
+                        }
+
+                        var header = findByProp(w, "text", "Now Playing")
+                        if (w.showHeader)
+                            verifyReadableText(w, header, tag + " header")
+                        if (w.showHeaderStatus) {
+                            var statusNode = findByProp(w, "text",
+                                                       "MockPlayer · Playing")
+                            verifyReadableText(w, statusNode, tag + " status")
+                        } else {
+                            compare(w.status, "",
+                                    tag + " removes redundant narrow header status")
+                        }
+
+                        verify(w.accessibleTrackSummary.indexOf(fullTitle) >= 0,
+                               tag + " accessible summary retains the title")
+                        verify(w.accessibleTrackSummary.indexOf(fullArtist) >= 0,
+                               tag + " accessible summary retains the artist")
+                        verify(w.accessibleTrackSummary.indexOf("MockPlayer · Playing") >= 0,
+                               tag + " accessible summary retains player state")
+                    }
+                }
+            }
+        }
+
+        function test_disconnected_state_is_readable_at_every_projection_and_scale() {
+            var cases = projectionCases()
+            var scales = [1.0, 1.15, 1.3, 1.45]
+            for (var c = 0; c < cases.length; c++) {
+                for (var s = 0; s < scales.length; s++) {
+                    hS.theme.textScale = scales[s]
+                    sizeWrap.width = Math.round(cases[c][0] / 1.25)
+                    sizeWrap.height = Math.round(cases[c][1] / 1.25)
+                    hS.item.sizeClass = cases[c][2]
+                    hS.mediaCtl.clearTrack()
+                    hS.mediaCtl.busConnected = false
+                    wait(32)
+                    var tag = cases[c][3] + ", output 1.25, text " + scales[s]
+                    var emptyNode = named(hS.item, "mediaEmptyState")
+                    verifyReadableText(hS.item, emptyNode,
+                                       tag + " disconnected message")
+                    compare(emptyNode.text, "Media service disconnected",
+                            tag + " keeps the full recovery state")
+                    verify(hS.item.accessibleTrackSummary.indexOf(
+                               "Media service disconnected") >= 0,
+                           tag + " exposes the recovery state accessibly")
+                }
+            }
         }
 
         // Tile controls stay real touch targets at every declared size.

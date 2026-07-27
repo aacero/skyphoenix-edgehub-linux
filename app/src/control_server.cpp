@@ -6,6 +6,7 @@
 #include <QLocalServer>
 #include <QLocalSocket>
 
+#include "control_protocol.h"
 #include "control_socket_path.h"
 
 ControlServer::ControlServer(QObject* parent) : QObject(parent) {}
@@ -62,15 +63,6 @@ void ControlServer::onReadyRead() {
     if (it == m_buffers.end())
         return;
     it.value().append(sock->readAll());
-    // Cap the buffer so a misbehaving client can't grow it unbounded.
-    if (it.value().size() > 8 * 1024 * 1024) {
-        qWarning() << "ControlServer: oversized message, dropping connection";
-        // abort() may not emit disconnected(), so free the buffer entry here.
-        m_buffers.remove(sock);
-        sock->abort();
-        sock->deleteLater();
-        return;
-    }
     // Process complete lines. Re-look up the buffer each iteration and splice the
     // line out of it BEFORE dispatching: handleLine() can re-enter the event loop
     // (writeJson()'s flush, or a slot on uiStateReceived that reloads the UI) and
@@ -83,10 +75,25 @@ void ControlServer::onReadyRead() {
         const int nl = bit.value().indexOf('\n');
         if (nl < 0)
             break;
+        if (nl > xeneon::kMaxControlFrameBytes) {
+            qWarning() << "ControlServer: oversized message, dropping connection";
+            m_buffers.remove(sock);
+            sock->abort();
+            sock->deleteLater();
+            return;
+        }
         const QByteArray line = bit.value().left(nl);
         bit.value().remove(0, nl + 1);
         if (!line.trimmed().isEmpty())
             handleLine(sock, line);
+    }
+    auto remaining = m_buffers.find(sock);
+    if (remaining != m_buffers.end()
+        && remaining.value().size() > xeneon::kMaxControlFrameBytes) {
+        qWarning() << "ControlServer: oversized partial message, dropping connection";
+        m_buffers.remove(sock);
+        sock->abort();
+        sock->deleteLater();
     }
 }
 
@@ -109,6 +116,7 @@ void ControlServer::handleLine(QLocalSocket* sock, const QByteArray& line) {
     }
     const QJsonObject obj = doc.object();
     const QString type = obj.value("type").toString();
+    const QString requestId = obj.value("requestId").toString();
 
     if (type == "getUiState") {
         const QString state = m_provider ? m_provider() : QString();
@@ -122,6 +130,13 @@ void ControlServer::handleLine(QLocalSocket* sock, const QByteArray& line) {
         // hub mirrored its selected screen (and a test can assert it).
         if (m_pageProvider)
             reply["currentPage"] = m_pageProvider();
+        if (m_stateLiveProvider)
+            reply["stateLive"] = m_stateLiveProvider();
+        if (m_configGenerationTokenProvider) {
+            const QString token = m_configGenerationTokenProvider();
+            if (!token.isEmpty())
+                reply["configGenerationToken"] = token;
+        }
         writeJson(sock, QJsonDocument(reply).toJson(QJsonDocument::Compact));
     } else if (type == "setActivePage") {
         // The Manager selected a screen; show it on the panel so the device
@@ -130,11 +145,11 @@ void ControlServer::handleLine(QLocalSocket* sock, const QByteArray& line) {
         const int p = obj.value("page").toInt(-1);
         if (m_activePageHandler)
             m_activePageHandler(p);
-        writeJson(sock, QJsonDocument(QJsonObject{{"type", "ok"}}).toJson(QJsonDocument::Compact));
+        writeAck(sock, true, type, QString(), requestId);
     } else if (type == "setUiState") {
         const QString state = obj.value("state").toString();
         if (state.isEmpty()) {
-            writeAck(sock, false, type, QStringLiteral("empty state"));
+            writeAck(sock, false, type, QStringLiteral("empty state"), requestId);
             return;
         }
         // Let the owner apply the state and report whether it stuck. The signal is
@@ -142,49 +157,75 @@ void ControlServer::handleLine(QLocalSocket* sock, const QByteArray& line) {
         // the real result once emit returns - the ack must reflect it, otherwise
         // the Manager treats a failed persist as success and silently diverges.
         bool ok = false;
-        emit uiStateReceived(state, &ok);
-        writeAck(sock, ok, type, QStringLiteral("failed to apply state"));
+        bool liveApplied = false;
+        emit uiStateReceived(state, &ok, &liveApplied);
+        writeAck(
+            sock,
+            ok,
+            type,
+            QStringLiteral("failed to apply state"),
+            requestId,
+            QJsonObject{{QStringLiteral("liveApplied"), liveApplied},
+                        {QStringLiteral("queued"), ok && !liveApplied}});
     } else if (type == "setTargetDisplay") {
         const QString connector = obj.value("connector").toString();
         const QString model = obj.value("model").toString();
         // At least one identifier is required: an all-empty target would blank the
         // hub's display match rather than express a choice.
         if (connector.isEmpty() && model.isEmpty()) {
-            writeAck(sock, false, type, QStringLiteral("empty target display"));
+            writeAck(sock, false, type, QStringLiteral("empty target display"), requestId);
             return;
         }
         bool ok = false;
-        emit targetDisplayReceived(connector, model, &ok);
-        writeAck(sock, ok, type, QStringLiteral("failed to apply target display"));
+        bool durabilityUncertain = false;
+        emit targetDisplayReceived(
+            connector, model, &ok, &durabilityUncertain);
+        writeAck(
+            sock,
+            ok,
+            type,
+            QStringLiteral("failed to apply target display"),
+            requestId,
+            QJsonObject{{QStringLiteral("durabilityUncertain"),
+                         ok && durabilityUncertain}});
     } else if (type == "setAutostart") {
         // Require a real bool: toBool() on a missing/garbage value silently means
         // false, which would turn a malformed request into "autostart off".
         if (!obj.value("enabled").isBool()) {
-            writeAck(sock, false, type, QStringLiteral("missing enabled flag"));
+            writeAck(sock, false, type, QStringLiteral("missing enabled flag"), requestId);
             return;
         }
         bool ok = false;
-        emit autostartReceived(obj.value("enabled").toBool(), &ok);
-        writeAck(sock, ok, type, QStringLiteral("failed to apply autostart"));
+        bool durabilityUncertain = false;
+        emit autostartReceived(
+            obj.value("enabled").toBool(), &ok, &durabilityUncertain);
+        writeAck(
+            sock,
+            ok,
+            type,
+            QStringLiteral("failed to apply autostart"),
+            requestId,
+            QJsonObject{{QStringLiteral("durabilityUncertain"),
+                         ok && durabilityUncertain}});
     } else if (type == "setLicenseKey") {
         // The `key` field must be present as a string (an absent field would be
         // an empty string → a silent CLEAR of the user's licence, which is not
         // what a malformed request should do). An empty string IS the explicit
         // "remove my key" and is allowed only when sent deliberately.
         if (!obj.value("key").isString()) {
-            writeAck(sock, false, type, QStringLiteral("missing key field"));
+            writeAck(sock, false, type, QStringLiteral("missing key field"), requestId);
             return;
         }
         bool ok = false;
         emit licenseKeyReceived(obj.value("key").toString(), &ok);
-        writeAck(sock, ok, type, QStringLiteral("failed to apply licence key"));
+        writeAck(sock, ok, type, QStringLiteral("failed to apply licence key"), requestId);
     } else if (type == "ping") {
         writeJson(sock, QJsonDocument(QJsonObject{{"type", "pong"}}).toJson(QJsonDocument::Compact));
     } else if (type == "shutdown") {
         // The companion Manager asked the hub to quit cleanly (Start/Stop control).
         // Ack first so the client sees it, then let main() quit gracefully (which
         // persists config + tears down normally).
-        writeJson(sock, QJsonDocument(QJsonObject{{"type", "ok"}}).toJson(QJsonDocument::Compact));
+        writeAck(sock, true, type, QString(), requestId);
         emit shutdownRequested();
     } else {
         writeJson(sock, QJsonDocument(QJsonObject{{"type", "error"},
@@ -194,10 +235,15 @@ void ControlServer::handleLine(QLocalSocket* sock, const QByteArray& line) {
 }
 
 void ControlServer::writeAck(QLocalSocket* sock, bool ok, const QString& forType,
-                             const QString& failMessage) {
+                             const QString& failMessage, const QString& requestId,
+                             const QJsonObject& extra) {
     QJsonObject o{{"type", ok ? "ok" : "error"}, {"for", forType}};
+    if (!requestId.isEmpty())
+        o.insert(QStringLiteral("requestId"), requestId);
     if (!ok)
         o.insert("message", failMessage);
+    for (auto it = extra.constBegin(); it != extra.constEnd(); ++it)
+        o.insert(it.key(), it.value());
     writeJson(sock, QJsonDocument(o).toJson(QJsonDocument::Compact));
 }
 

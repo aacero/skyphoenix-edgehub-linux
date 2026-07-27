@@ -17,6 +17,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -31,6 +32,8 @@ REPO = Path(__file__).resolve().parent.parent
 DEFAULT_CASES = REPO / "tests" / "visual" / "cases.json"
 DEFAULT_BASELINES = REPO / "tests" / "visual" / "baselines"
 DEFAULT_CURRENT = REPO / "gui-evidence"
+WIDGET_CATALOG = REPO / "ui" / "qml" / "WidgetCatalog.qml"
+PRESET_CATALOG = REPO / "ui" / "qml" / "PresetCatalog.qml"
 
 
 def git_output(*args: str) -> str:
@@ -75,6 +78,26 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def catalog_ids(path: Path, key: str) -> set[str]:
+    """Extract the literal IDs from a first-party QML catalog.
+
+    Both catalogs intentionally declare one top-level object per line inside
+    their `items` array. Nested tile declarations use a different key, so this
+    is a narrow machine-readable export of the shipped catalog rather than an
+    independently maintained count.
+    """
+
+    pattern = re.compile(
+        rf'^\s*\{{\s*{re.escape(key)}:\s*"([^"]+)"', re.MULTILINE
+    )
+    ids = pattern.findall(path.read_text(encoding="utf-8"))
+    if not ids:
+        raise ValueError(f"{path}: no literal {key!r} catalog entries found")
+    if len(ids) != len(set(ids)):
+        raise ValueError(f"{path}: duplicate literal {key!r} catalog entry")
+    return set(ids)
+
+
 def load_spec(path: Path) -> dict:
     raw = json.loads(path.read_text(encoding="utf-8"))
     cases = raw.get("cases", [])
@@ -86,7 +109,11 @@ def load_spec(path: Path) -> dict:
         case_id = case.get("id", "")
         source = case.get("source", "")
         kind = case.get("kind", "")
-        if not case_id or not source or kind not in {"widget", "preset"}:
+        if not case_id or not source or kind not in {
+            "widget",
+            "preset",
+            "orientation",
+        }:
             raise ValueError(f"{path}: malformed case {case!r}")
         if case_id in ids:
             raise ValueError(f"{path}: duplicate case id {case_id!r}")
@@ -118,10 +145,37 @@ def load_spec(path: Path) -> dict:
     expected = raw.get("expected", {})
     widget_count = sum(c["kind"] == "widget" for c in cases)
     preset_count = sum(c["kind"] == "preset" for c in cases)
-    if widget_count != expected.get("widgets") or preset_count != expected.get("presets"):
+    orientation_count = sum(c["kind"] == "orientation" for c in cases)
+    if (
+        widget_count != expected.get("widgets")
+        or preset_count != expected.get("presets")
+        or orientation_count != expected.get("orientations")
+    ):
         raise ValueError(
             f"{path}: anti-vacuity counts are widgets={widget_count}, "
-            f"presets={preset_count}, expected={expected}"
+            f"presets={preset_count}, orientations={orientation_count}, "
+            f"expected={expected}"
+        )
+
+    widget_cases = {
+        c["id"].removeprefix("widget-") for c in cases if c["kind"] == "widget"
+    }
+    preset_cases = {
+        c["id"].removeprefix("preset-") for c in cases if c["kind"] == "preset"
+    }
+    shipped_widgets = catalog_ids(WIDGET_CATALOG, "type")
+    shipped_presets = catalog_ids(PRESET_CATALOG, "id")
+    if widget_cases != shipped_widgets:
+        raise ValueError(
+            f"{path}: widget baseline IDs differ from WidgetCatalog.qml; "
+            f"missing={sorted(shipped_widgets - widget_cases)}, "
+            f"extra={sorted(widget_cases - shipped_widgets)}"
+        )
+    if preset_cases != shipped_presets:
+        raise ValueError(
+            f"{path}: preset baseline IDs differ from PresetCatalog.qml; "
+            f"missing={sorted(shipped_presets - preset_cases)}, "
+            f"extra={sorted(preset_cases - shipped_presets)}"
         )
     return raw
 
@@ -253,6 +307,15 @@ def compare(spec: dict, current: Path, baselines: Path, diffs: Path) -> int:
         current_image = current / case["source"]
         if not entry or not baseline.is_file() or not current_image.is_file():
             print(f"FAIL {case['id']}: missing manifest, baseline, or current image")
+            failures += 1
+            continue
+        if (
+            entry.get("id") != case["id"]
+            or entry.get("kind") != case["kind"]
+            or entry.get("source") != case["source"]
+            or entry.get("file") != baseline.name
+        ):
+            print(f"FAIL {case['id']}: manifest identity differs from cases.json")
             failures += 1
             continue
         if sha256(baseline) != entry.get("sha256"):

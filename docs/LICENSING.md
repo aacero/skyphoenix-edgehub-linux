@@ -1,10 +1,10 @@
 # Licensing - the Pro tier
 
 Xeneon Edge is free and fully functional. **Pro** is a low-cost "supporter" tier
-that unlocks cosmetic/convenience extras - premium themes, premium preset packs,
-and custom user widgets. Nothing functional is ever gated: every widget
-(including the live-data HTTP/JSON and KPI ones), all accessibility, the base
-themes and the base preset library stay free.
+that currently unlocks nine optional colour themes. Nothing functional is
+gated: every widget (including the live-data HTTP/JSON and KPI ones), all
+presets, custom user widgets, every accessibility feature, and the base themes
+stay free. Pro keys are not sold as part of the beta.
 
 ## How it works (and why it's private)
 
@@ -36,7 +36,7 @@ Pro keys.
 1. Generate the issuer keypair **once, ever**:
 
    ```
-   cargo run -q --manifest-path tools/license-tool/Cargo.toml -- keygen
+   cargo run -q --locked --manifest-path tools/license-tool/Cargo.toml -- keygen
    ```
 
 2. Paste the printed **public key** into `core/src/license.rs` as
@@ -45,12 +45,14 @@ Pro keys.
 3. Store the printed **private seed** in your password manager (next to the GPG
    signing key). **Never commit it.** Anyone with the seed can mint Pro keys.
 
-Before a release, provide a genuine owner-issued Pro key as
-`XENEON_TEST_LICENSE_KEY` on the release command. The strict gate immediately
-removes it from the general child environment, exposes it only to the Rust core
-attestations, and requires that it unlock Pro against the issuer public key
-embedded in the candidate. Missing, mismatched, or tampered keys block the
-release before artifacts are built or signed.
+Before a release, place a genuine owner-issued Pro key in an absolute,
+current-user-owned, owner-only regular file and name it with
+`XENEON_TEST_LICENSE_KEY_FILE`. The strict gate rejects a raw key in the process
+environment, reads the protected file through a validated no-follow descriptor,
+and carries the value through private descriptor 3. It exposes the entitlement
+only to the Rust core attestations and requires that it unlock Pro against the
+issuer public key embedded in the candidate. Missing, mismatched, or tampered
+keys block the release before artifacts are built or signed.
 
 ## Selling: Lemon Squeezy (or Gumroad)
 
@@ -72,21 +74,27 @@ product URL.
 
 ## Issuing a key
 
-Never put the seed on the command line (shell history, `ps`). Prefer a protected
-file; the wrapper opens a private descriptor, clears seed variables, and feeds
-the issuer through stdin so Cargo and the tool never receive it in argv or their
-environment:
+Never put the seed on the command line or in an environment variable. Both are
+observable by another process running as the same user. The wrapper accepts only
+an absolute path to a current-user, owner-only regular file of at most 256
+bytes. It builds the issuer before opening that file, removes the related
+variables from the build environment, and then feeds the seed only to the
+already-built issuer through stdin:
 
 ```
-XENEON_LICENSE_SEED_FILE=~/.secrets/xeneon-license-seed \
+env XENEON_LICENSE_SEED_FILE=/absolute/path/to/xeneon-license-seed \
   ./scripts/mint-license.sh --to "Ada Lovelace <ada@example.com>" --id XE-0007
 # → XE1.eyJ0aWVy…
 ```
 
-For direct CLI use, redirect stdin rather than using a seed argument:
+The wrapper is the recommended production path. For direct CLI use, build first
+and then redirect stdin to the already-built issuer. This direct form does not
+perform the wrapper's ownership, type, permission, symlink, or size checks:
 
 ```
-cargo run -q --manifest-path tools/license-tool/Cargo.toml -- \
+cargo build -q --locked --manifest-path tools/license-tool/Cargo.toml \
+  --bin xeneon-license
+./tools/license-tool/target/debug/xeneon-license \
   mint --seed-stdin --to "Ada Lovelace <ada@example.com>" --id XE-0007 \
   < ~/.secrets/xeneon-license-seed
 ```
@@ -108,9 +116,9 @@ signed with the old seed stops verifying (fails soft to free). Re-issue current
 customers' keys under the new seed. This is why every key carries an `id` -
 support and re-issue.
 
-## What's Pro (adjustable)
+## What's Pro
 
-Gating is a `pro:` flag on catalog items plus one `license.isPro` check, so moving
-something in or out of Pro is a one-line change. Current intent: premium
-theme/skin pack, premium preset pack, and custom user widgets. Functional widgets,
-accessibility, base themes, and the base presets are always free.
+The implemented Pro delta is nine optional colour themes. Presets and custom
+user widgets do not have a licence gate. Any future expansion would require a
+separately documented product decision and release; this page does not promise
+or advertise an unimplemented entitlement.

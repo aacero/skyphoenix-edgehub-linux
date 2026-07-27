@@ -14,7 +14,7 @@
 # Verified: built here and smoke-tested in a bare ubuntu:24.04 container with no
 # Qt installed. See .github/workflows/distro.yml (appimage / appimage-smoke).
 #
-# Usage:  ./packaging/appimage/build-appimage.sh [--print-name]
+# Usage:  ./packaging/appimage/build-appimage.sh [--print-name|--print-tool-lock]
 # Output: xeneon-edge-hub-<version>-x86_64.AppImage in the repo root.
 #
 # --print-name prints the artifact name that a real run would produce and exits
@@ -31,22 +31,37 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO"
 
-# VERSION must be the RELEASE version, not project(... VERSION 0.1.0): that field
-# is deliberately frozen across commits (see CMakeLists.txt) and is NOT what a
-# release is called. Deriving the filename from it named EVERY release's AppImage
-# "xeneon-edge-hub-0.1.0-x86_64.AppImage" - indistinguishable between releases -
-# and, because the value was never passed back to cmake, the binary's own
-# appVersion() disagreed with the filename on top of that. scripts/release.sh
-# already documents this exact trap for cpack and overrides it there; the same
-# trap applied here and did not.
+readonly LINUXDEPLOY_VERSION="1-alpha-20251107-1"
+readonly LINUXDEPLOY_NAME="linuxdeploy-x86_64.AppImage"
+readonly LINUXDEPLOY_URL="https://github.com/linuxdeploy/linuxdeploy/releases/download/${LINUXDEPLOY_VERSION}/${LINUXDEPLOY_NAME}"
+readonly LINUXDEPLOY_SHA256="c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d"
+readonly LINUXDEPLOY_QT_VERSION="1-alpha-20250213-1"
+readonly LINUXDEPLOY_QT_NAME="linuxdeploy-plugin-qt-x86_64.AppImage"
+readonly LINUXDEPLOY_QT_URL="https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/${LINUXDEPLOY_QT_VERSION}/${LINUXDEPLOY_QT_NAME}"
+readonly LINUXDEPLOY_QT_SHA256="15106be885c1c48a021198e7e1e9a48ce9d02a86dd0a1848f00bdbf3c1c92724"
+
+if [ "${1:-}" = "--print-tool-lock" ]; then
+  printf '%s\t%s\t%s\n' \
+    "$LINUXDEPLOY_NAME" "$LINUXDEPLOY_URL" "$LINUXDEPLOY_SHA256"
+  printf '%s\t%s\t%s\n' \
+    "$LINUXDEPLOY_QT_NAME" "$LINUXDEPLOY_QT_URL" "$LINUXDEPLOY_QT_SHA256"
+  exit 0
+fi
+
+# VERSION must identify the exact source candidate, not only project(VERSION).
+# CMake's semantic project version is now 1.0.0, but it cannot distinguish a
+# prerelease, tag, or later commit by itself. Deriving the filename only from
+# that field would make distinct candidates share a name and could make the
+# binary identity disagree with its artifact. scripts/release.sh therefore
+# supplies the exact release version explicitly.
 #
 # Order: explicit XENEON_VERSION (what a release passes) > git describe > the
-# frozen project() version as a last resort. The leading "v" is stripped so this
+# project() version as a last resort. The leading "v" is stripped so this
 # matches the pkgver style of every other artifact ("1.0.0-alpha.2", not
 # "v1.0.0-alpha.2"); scripts/release.sh does the same with ${VERSION#v}.
 #
-# NOTE for CI: git describe needs TAGS. actions/checkout@v4 defaults to
-# fetch-depth 1, which fetches none, and `--always` then silently degrades to a
+# NOTE for CI: git describe needs tags. The pinned actions/checkout v5.1.0 still
+# defaults to fetch-depth 1, which fetches none, and `--always` then degrades to a
 # bare commit sha - which UpdateChecker.qml cannot order against a release tag,
 # so the AppImage would never report an available update. The appimage job in
 # .github/workflows/distro.yml pins fetch-depth: 0 for exactly this reason.
@@ -65,13 +80,12 @@ export ARCH=x86_64
 export OUTPUT="xeneon-edge-hub-${VERSION}-${ARCH}.AppImage"
 
 # Self-update discovery. Embedded in the binary as `X-AppImage-UpdateInformation`
-# so AppImageUpdate/appimaged can find and delta-patch to the newest release
-# WITHOUT the user knowing any URL. `latest` = always the newest GitHub release;
-# the wildcard matches the versioned artifact name (the version is part of it, by
-# design - see the pkgver trap). This is the DISCOVERY half; the .zsync that this
-# points at carries the versioned target URL for the actual byte delta (release.sh
-# builds it with zsyncmake -u against the versioned download). Both halves are
-# required and are checked together by scripts/check_appimage_update_contract.sh.
+# so AppImageUpdate/appimaged can find and delta-patch to the newest stable
+# release without the user knowing any URL. GitHub's `latest` selector excludes
+# prereleases. Prerelease builds therefore use the explicit versioned .zsync URL
+# published in their release notes rather than claiming beta-to-beta discovery.
+# The wildcard matches the versioned artifact name. This is the discovery half;
+# the .zsync carries the versioned target URL for the actual byte delta.
 # LDAI_* is what linuxdeploy's appimage plugin reads; UPDATE_INFORMATION is the
 # older appimagetool name - set both so it works regardless of tool vintage.
 export LDAI_UPDATE_INFORMATION="gh-releases-zsync|skyphoenix-it|skyphoenix-edgehub-linux|latest|xeneon-edge-hub-*-${ARCH}.AppImage.zsync"
@@ -86,13 +100,47 @@ command -v qmake6 >/dev/null || { echo "ERROR: qmake6 not on PATH (need Qt6 >= 6
 QT_LIBS="$(qmake6 -query QT_INSTALL_LIBS)"
 
 mkdir -p "$TOOLS"
-_get() { # url -> tools/name (chmod +x); progress goes to stderr, path to stdout
-  local url="$1" out="$TOOLS/$(basename "$1")"
-  [ -x "$out" ] || { echo "==> fetching $(basename "$out")" >&2; curl -fL "$url" -o "$out" >&2; chmod +x "$out"; }
-  echo "$out"
+_verify_tool() {
+  local path="$1" expected="$2" actual
+  [ -f "$path" ] && [ ! -L "$path" ] \
+    || { echo "ERROR: pinned tool is not a regular non-symlink file: $path" >&2; return 1; }
+  actual="$(sha256sum -- "$path")"
+  actual="${actual%% *}"
+  [ "$actual" = "$expected" ] \
+    || {
+      echo "ERROR: pinned tool SHA-256 mismatch for $(basename "$path")" >&2
+      echo "       expected: $expected" >&2
+      echo "       actual:   $actual" >&2
+      return 1
+    }
 }
-LD="$(_get https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage)"
-_get https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage >/dev/null
+_get_verified() {
+  local name="$1" url="$2" expected="$3" out="$TOOLS/$1" temporary
+  if [ -e "$out" ] || [ -L "$out" ]; then
+    _verify_tool "$out" "$expected" || return 1
+  else
+    temporary="$(mktemp "$TOOLS/.${name}.download.XXXXXX")"
+    echo "==> fetching pinned $name" >&2
+    if ! curl --fail --location --proto '=https' --tlsv1.2 \
+        --retry 3 --retry-all-errors --output "$temporary" "$url" >&2; then
+      rm -f -- "$temporary"
+      return 1
+    fi
+    if ! _verify_tool "$temporary" "$expected"; then
+      rm -f -- "$temporary"
+      return 1
+    fi
+    chmod 0755 "$temporary"
+    mv -f -- "$temporary" "$out"
+  fi
+  chmod 0755 "$out"
+  printf '%s\n' "$out"
+}
+LD="$(_get_verified \
+  "$LINUXDEPLOY_NAME" "$LINUXDEPLOY_URL" "$LINUXDEPLOY_SHA256")"
+_get_verified \
+  "$LINUXDEPLOY_QT_NAME" "$LINUXDEPLOY_QT_URL" "$LINUXDEPLOY_QT_SHA256" \
+  >/dev/null
 export PATH="$TOOLS:$PATH"
 
 # Containers/CI have no FUSE, so the linuxdeploy AppImages cannot mount themselves.
@@ -135,6 +183,7 @@ export EXTRA_PLATFORM_PLUGINS="libqoffscreen.so;libqwayland-generic.so;libqwayla
 "$LD" --appdir "$APPDIR" \
   --executable "$APPDIR/usr/bin/xeneon-edge-hub" \
   --executable "$APPDIR/usr/bin/xeneon-edge-manager" \
+  --custom-apprun "$REPO/packaging/appimage/AppRun" \
   --desktop-file "$APPDIR/usr/share/applications/xeneon-edge-hub.desktop" \
   --icon-file "$APPDIR/usr/share/icons/hicolor/256x256/apps/xeneon-edge-hub.png" \
   --plugin qt \

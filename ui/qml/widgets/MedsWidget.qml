@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -316,14 +317,14 @@ WidgetChrome {
     // leads with the schedule (whose rows are themselves the tap target).
     readonly property bool showFocus: w.horiz
     readonly property bool showSchedule: !w.horiz || w.width > 560
-    // A dose row is a full touch target at EVERY size - never thinned for density.
-    readonly property real rowH: Math.max(theme.touchSecondary, 72)
-    readonly property real rowFont: w.expanded ? Math.max(theme.fontLabel, 17)
-        : Math.max(17,
-                   Math.min((w.horiz ? width * 0.55 : width) * 0.034, 21))
-    readonly property real timeFont: w.expanded ? 20
-        : Math.max(18,
-                   Math.min((w.horiz ? width * 0.55 : width) * 0.038, 22))
+    // Typography follows the global viewing-distance scale. Row height is a
+    // minimum only: long medication names can earn additional wrapped lines.
+    readonly property real rowFont: theme.fontTitle
+    readonly property real timeFont: theme.fontTitle
+    readonly property real stateFont: theme.fontLabel
+    readonly property real rowH: Math.max(
+        theme.touchSecondary,
+        w.timeFont + w.rowFont + theme.spacingLg)
 
     // Toggle, not a one-way "confirm": a mis-tap must be undoable, and an undo is
     // strictly safer than leaving a false "taken" on the record.
@@ -346,7 +347,7 @@ WidgetChrome {
               : (w.expanded ? "Add a dose, time, and weekdays in settings."
                             : "Add doses\nin settings")
         color: theme.textPrimary
-        font.pixelSize: w.expanded ? Math.max(theme.fontLabel, 17) : 17
+        font.pixelSize: theme.fontTitle
         font.bold: true
         horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap
     }
@@ -377,23 +378,31 @@ WidgetChrome {
                 color: w.focusDose ? w.colorOf(w.stateOf(w.focusDose)) : theme.textTertiary
             }
             Text {
+                objectName: "medsFocusName"
                 Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
                 text: w.focusDose ? w.focusDose.name : ""
                 font.pixelSize: Math.round(w.rowFont); color: theme.textPrimary
-                elide: Text.ElideRight
+                wrapMode: Text.WordWrap
+                elide: Text.ElideNone
             }
             Text {
+                objectName: "medsFocusState"
                 Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
                 text: w.focusDose ? w.labelOf(w.stateOf(w.focusDose)) : ""
-                font.pixelSize: Math.max(15, Math.round(w.rowFont * 0.9))
-                color: theme.textPrimary; font.bold: true; elide: Text.ElideRight
+                font.pixelSize: Math.round(w.stateFont)
+                color: theme.textPrimary
+                font.bold: true
+                wrapMode: Text.WordWrap
+                elide: Text.ElideNone
             }
             Text {
                 Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
                 visible: !w.showSchedule
                 text: w.takenCount + " of " + w.doses.length + " marked taken today"
-                font.pixelSize: Math.max(theme.fontMinimum, Math.round(w.rowFont * 0.75))
-                color: theme.textTertiary; elide: Text.ElideRight
+                font.pixelSize: theme.fontLabel
+                color: theme.textTertiary
+                wrapMode: Text.WordWrap
+                elide: Text.ElideNone
             }
             // Logging from the tile itself - the whole point is that it takes one
             // tap. A PillButton is theme.touchSecondary (60), above the minimum.
@@ -416,31 +425,44 @@ WidgetChrome {
             spacing: theme.spacingSm
 
             Text {
+                objectName: "medsScheduleSummary"
                 Layout.fillWidth: true
                 visible: !w.showFocus
                 text: w.takenCount + " of " + w.doses.length + " marked taken today"
                       + (w.scheduleIssues.length ? " · " + w.scheduleIssues.length + " line"
                          + (w.scheduleIssues.length === 1 ? "" : "s") + " need review" : "")
                 color: theme.textPrimary
-                font.pixelSize: Math.round(w.rowFont * 0.95)
+                font.pixelSize: w.stateFont
                 font.bold: true
-                elide: Text.ElideRight
+                wrapMode: Text.WordWrap
+                elide: Text.ElideNone
             }
 
-            // The viewport is snapped to a WHOLE number of rows: filling the
-            // height outright slices the last dose in half at the card edge.
             Item {
                 Layout.fillWidth: true; Layout.fillHeight: true
                 ListView {
                     id: doseList
                     objectName: "medsDoseList"
-                    readonly property real rowPitch: w.rowH + spacing
-                    width: parent.width
-                    height: Math.max(w.rowH,
-                                     Math.floor(parent.height / rowPitch) * rowPitch - spacing)
-                    anchors.top: parent.top
+                    anchors.fill: parent
                     clip: true; spacing: theme.spacingSm
-                    interactive: w.expanded
+                    interactive: contentHeight > height + 1
+                    flickableDirection: Flickable.VerticalFlick
+                    boundsBehavior: Flickable.StopAtBounds
+                    pixelAligned: true
+                    Accessible.name: interactive
+                                     ? "Today's medication schedule. Swipe vertically for more doses."
+                                     : "Today's medication schedule."
+                    onInteractiveChanged: {
+                        if (!interactive)
+                            positionViewAtBeginning()
+                    }
+                    ScrollBar.vertical: ScrollBar {
+                        id: doseScroll
+                        objectName: "medsDoseScrollBar"
+                        policy: doseList.interactive
+                                ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                        interactive: false
+                    }
                     model: w.doses
                     delegate: Rectangle {
                         id: doseRow
@@ -448,11 +470,19 @@ WidgetChrome {
                         required property var modelData
                         objectName: "medsDoseRow-" + index
                         readonly property string st: w.stateOf(modelData)
+                        readonly property bool narrow: width < 420
+                        readonly property bool fullyVisible: {
+                            var view = ListView.view
+                            return view
+                                && y >= view.contentY - 0.5
+                                && y + height <= view.contentY + view.height + 0.5
+                        }
                         width: ListView.view ? ListView.view.width : 0
-                        // A full-width row IS the touch target - above
-                        // touchTertiary (52), so a shaky tap still lands on the
-                        // right dose. Fixed across sizes: room buys rows, not bulk.
-                        height: w.rowH
+                        // A full-width row remains at least a touch target, while
+                        // long names increase the row rather than being discarded.
+                        height: Math.max(
+                            w.rowH,
+                            doseContent.implicitHeight + 2 * theme.spacingSm)
                         radius: theme.radiusSm
                         color: doseRow.st === "due" ? Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.12)
                                                     : "transparent"
@@ -461,47 +491,73 @@ WidgetChrome {
                                       : doseRow.st === "due" ? w.effAccent : theme.cardBorder
 
                         RowLayout {
+                            id: doseContent
                             anchors.fill: parent
-                            anchors.leftMargin: theme.spacingMd; anchors.rightMargin: theme.spacingMd
-                            spacing: theme.spacingMd
+                            anchors.leftMargin: doseRow.narrow
+                                                ? theme.spacingSm : theme.spacingMd
+                            anchors.rightMargin: doseRow.narrow
+                                                 ? theme.spacingSm : theme.spacingMd
+                            spacing: doseRow.narrow ? theme.spacingSm : theme.spacingMd
 
-                            Text {
-                                text: w.symbolOf(doseRow.st)
-                                font.pixelSize: Math.round(w.timeFont)
-                                font.bold: true
-                                color: w.colorOf(doseRow.st)
-                                Layout.preferredWidth: Math.round(w.timeFont * 1.2)
-                                horizontalAlignment: Text.AlignHCenter
-                                Accessible.ignored: true
-                            }
-                            Text {
-                                text: w.timeOf(doseRow.modelData)
-                                font.pixelSize: Math.round(w.timeFont); font.family: theme.fontMono
-                                color: w.colorOf(doseRow.st)
-                                Layout.preferredWidth: Math.round(w.timeFont * 3.6)
-                            }
                             ColumnLayout {
-                                Layout.fillWidth: true; spacing: 0
-                                Text {
-                                    text: doseRow.modelData.name; color: theme.textPrimary
-                                    font.pixelSize: Math.round(w.rowFont)
-                                    elide: Text.ElideRight; Layout.fillWidth: true
+                                Layout.fillWidth: true
+                                spacing: theme.spacingXs
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: theme.spacingSm
+
+                                    Text {
+                                        visible: !doseRow.narrow
+                                        text: w.symbolOf(doseRow.st)
+                                        font.pixelSize: Math.round(w.timeFont)
+                                        font.bold: true
+                                        color: w.colorOf(doseRow.st)
+                                        Layout.preferredWidth: Math.round(w.timeFont * 1.2)
+                                        horizontalAlignment: Text.AlignHCenter
+                                        Accessible.ignored: true
+                                    }
+                                    Text {
+                                        objectName: "medsDoseTime-" + doseRow.index
+                                        text: w.timeOf(doseRow.modelData)
+                                        font.pixelSize: Math.round(w.timeFont)
+                                        font.family: theme.fontMono
+                                        color: w.colorOf(doseRow.st)
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    Text {
+                                        objectName: "medsDoseState-" + doseRow.index
+                                        text: w.labelOf(doseRow.st)
+                                        color: theme.textPrimary
+                                        font.pixelSize: Math.round(w.stateFont)
+                                        font.bold: true
+                                        wrapMode: Text.WordWrap
+                                        elide: Text.ElideNone
+                                        horizontalAlignment: Text.AlignRight
+                                    }
                                 }
+
                                 Text {
-                                    text: w.labelOf(doseRow.st)
+                                    objectName: "medsDoseName-" + doseRow.index
+                                    text: doseRow.modelData.name
                                     color: theme.textPrimary
-                                    font.pixelSize: Math.max(15,
-                                                             Math.round(w.rowFont * 0.82))
-                                    font.bold: true
-                                    elide: Text.ElideRight; Layout.fillWidth: true
+                                    font.pixelSize: Math.round(w.rowFont)
+                                    wrapMode: Text.WordWrap
+                                    elide: Text.ElideNone
+                                    Layout.fillWidth: true
                                 }
                             }
                             Item {
                                 objectName: "medsDoseAction-" + doseRow.index
-                                Layout.preferredWidth: theme.touchSecondary
+                                Layout.preferredWidth: doseRow.narrow
+                                                       ? theme.touchTertiary
+                                                       : theme.touchSecondary
                                 Layout.fillHeight: true
-                                activeFocusOnTab: true
+                                enabled: doseRow.fullyVisible
+                                opacity: enabled ? 1 : 0
+                                activeFocusOnTab: doseRow.fullyVisible
                                 Accessible.role: Accessible.CheckBox
+                                Accessible.ignored: !doseRow.fullyVisible
                                 Accessible.name: (doseRow.st === "taken" ? "Undo taken mark for " : "Mark taken: ")
                                                  + doseRow.modelData.name
                                 Accessible.checked: doseRow.st === "taken"

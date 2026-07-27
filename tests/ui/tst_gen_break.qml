@@ -522,6 +522,29 @@ Item {
             root.clear(hh)
             hh.storeCtl.patchSettings("test-instance", patch || { running: false, due: false, pausedRemaining: 600 })
         }
+        function cleanup() {
+            hBMicro.theme.textScale = 1.15
+            hBMicro.theme.fontChoice = "hyperlegible"
+            bMicroWrap.width = 344
+            bMicroWrap.height = 416
+            hBWide.theme.textScale = 1.15
+            hBWide.theme.fontChoice = "hyperlegible"
+            bWideWrap.width = 696
+            bWideWrap.height = 416
+            hBTall.theme.textScale = 1.15
+            hBTall.theme.fontChoice = "hyperlegible"
+            bTallWrap.width = 344
+            bTallWrap.height = 840
+        }
+        function verifyInside(item, label) {
+            verify(item !== null, label + " exists")
+            verify(item.x >= -1, label + " stays inside the left edge")
+            verify(item.y >= -1, label + " stays inside the top edge")
+            verify(item.x + item.width <= item.parent.width + 1,
+                   label + " stays inside the right edge")
+            verify(item.y + item.height <= item.parent.height + 1,
+                   label + " stays inside the bottom edge")
+        }
 
         // 0.5x0.5 - a bare headerless ring: no caption, no controls.
         function test_micro_is_a_bare_ring() {
@@ -663,6 +686,104 @@ Item {
             compare(w.horiz, false, "tall stacks vertically")
             compare(w.showTileControls, true, "tall carries the controls")
             verify(w.ringDia <= 344 * 0.8, "the ring is width-bound in the narrow tall box")
+        }
+
+        function test_scaled_micro_state_uses_the_active_type_floor() {
+            tryVerify(function () { return hBMicro.ready }, 3000)
+            hBMicro.theme.textScale = 1.45
+            hBMicro.theme.fontChoice = "system"
+            bMicroWrap.width = 278
+            bMicroWrap.height = 327
+            prep(hBMicro, {
+                running: false, due: false, pausedRemaining: 900
+            })
+            var w = hBMicro.item
+            w.sizeClass = "compact"
+            wait(32)
+
+            var state = root.findByProp(w, "objectName", "breakRingState")
+            verify(state !== null && state.visible)
+            verify(state.font.pixelSize >= hBMicro.theme.fontMinimum,
+                   "micro state follows the active type floor")
+            verify(!state.truncated, "micro state remains complete")
+        }
+
+        function test_scaled_state_description_uses_the_active_type_floor() {
+            tryVerify(function () { return hBWide.ready }, 3000)
+            hBWide.theme.textScale = 1.45
+            hBWide.theme.fontChoice = "hyperlegible"
+            bWideWrap.width = 557
+            bWideWrap.height = 327
+            prep(hBWide, {
+                intervalMin: 240, running: false, due: false,
+                pausedRemaining: 86399
+            })
+            var w = hBWide.item
+            w.sizeClass = "wide"
+            wait(32)
+
+            var ringState = root.findByProp(w, "objectName", "breakRingState")
+            var description = root.findByProp(
+                w, "objectName", "breakStateDescription")
+            verify(ringState !== null && ringState.visible)
+            verify(description !== null && description.visible)
+            verify(ringState.font.pixelSize >= hBWide.theme.fontMinimum,
+                   "ring state follows the active type floor")
+            verify(description.font.pixelSize >= hBWide.theme.fontMinimum,
+                   "state description follows the active type floor")
+            verify(!ringState.truncated && !description.truncated,
+                   "both paused labels remain complete")
+        }
+
+        function test_output_scaled_narrow_header_preserves_the_title() {
+            tryVerify(function () { return hBTall.ready }, 3000)
+            hBTall.theme.textScale = 1.45
+            hBTall.theme.fontChoice = "lexend"
+            bTallWrap.width = 278
+            bTallWrap.height = 654
+            prep(hBTall, {
+                running: false, due: false, pausedRemaining: 86399
+            })
+            var w = hBTall.item
+            w.sizeClass = "tall"
+            wait(32)
+
+            compare(w.compactHeaderStatus, true)
+            compare(w.status, "",
+                    "the duplicate status yields to the widget title")
+            var title = root.findByProp(w, "text", "Break Reminder")
+            verify(title !== null && title.visible)
+            verify(!title.truncated,
+                   "the narrow header keeps the complete widget title")
+        }
+
+        function test_output_scaled_short_due_reflows_touch_actions() {
+            tryVerify(function () { return hBWide.ready }, 3000)
+            hBWide.theme.textScale = 1.3
+            hBWide.theme.fontChoice = "lexend"
+            bWideWrap.width = 677
+            bWideWrap.height = 245
+            prep(hBWide, {
+                running: false, due: true, message: "Time to move",
+                showSuggestion: true, snoozeMin: 5
+            })
+            var w = hBWide.item
+            w.sizeClass = "wide"
+            wait(32)
+
+            compare(w.compactDueLayout, true)
+            var layout = root.findByProp(w, "objectName", "breakDueLayout")
+            var message = root.findByProp(w, "objectName", "breakDueMessage")
+            var controls = root.findByProp(w, "objectName", "breakDueControls")
+            var done = root.findByProp(w, "objectName", "breakDueDone")
+            var snooze = root.findByProp(w, "objectName", "breakDueSnooze")
+            verify(message !== null && message.visible && !message.truncated,
+                   "the due message remains complete")
+            compare(controls.columns, 2,
+                    "short-wide actions reflow into two columns")
+            verify(done.height >= hBWide.theme.touchSecondary)
+            verify(snooze.height >= hBWide.theme.touchSecondary)
+            verifyInside(layout, "short-wide due layout")
         }
 
         // The overlay (full) keeps the complete control set - ±5m lives there.

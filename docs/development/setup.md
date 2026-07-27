@@ -1,176 +1,140 @@
-# Development Guide
+# Development setup
 
-**Current Phase: Phase 1 - Application Shell**
-Last updated: 2026-07-11
-
----
+**Status:** current implementation guide
+**Last updated:** 2026-07-27
 
 ## Prerequisites
 
-### Rust
-Install Rust via rustup:
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-# Then restart shell or: source ~/.cargo/env (bash) / source ~/.cargo/env.fish (fish)
+EdgeHub requires:
+
+- Rust 1.86 or newer
+- A C++17 compiler
+- CMake 3.22 or newer
+- Qt 6.5 or newer with Core, GUI, Quick, QML, Quick Controls, DBus,
+  Network, SVG and Virtual Keyboard development components
+- A Qt Wayland platform plugin for normal Wayland execution
+
+The Rust minimum is declared in each workspace manifest. Builds use the
+committed lockfiles and fail rather than resolving a different dependency
+graph.
+
+### Arch and CachyOS
+
+```sh
+sudo pacman -S rust cmake gcc qt6-base qt6-declarative qt6-svg \
+  qt6-virtualkeyboard qt6-wayland
 ```
 
-Verify:
-```bash
-rustc --version  # 1.75+
-cargo --version
+### Ubuntu
+
+The exact native Ubuntu workflow target is Ubuntu 26.04 LTS:
+
+```sh
+sudo apt install rustc cargo cmake g++ make libgl1-mesa-dev \
+  qt6-base-dev qt6-declarative-dev qt6-svg-dev \
+  qt6-virtualkeyboard-dev
 ```
 
-### C++ Compiler & CMake
+Ubuntu 24.04's apt Qt 6.4.2 is below the required 6.5 floor. Use an upstream
+Qt 6.5 or newer development toolchain there. The AppImage workflow deliberately
+builds on Ubuntu 24.04 with upstream Qt 6.7.3 so the artifact keeps an older
+glibc floor while bundling a compatible Qt.
 
-**CachyOS / Arch Linux:**
-```bash
-sudo pacman -S cmake gcc
+### Fedora
+
+The exact native Fedora workflow target is Fedora 43:
+
+```sh
+sudo dnf install rust cargo cmake gcc-c++ make mesa-libGL-devel \
+  qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
+  qt6-qtvirtualkeyboard-devel qt6-qtwayland-devel
 ```
 
-**Ubuntu 24.04 LTS:**
-```bash
-sudo apt install cmake g++
+## Build
+
+The supported helper builds Rust first and then configures and builds CMake:
+
+```sh
+./scripts/build.sh debug
+./scripts/build.sh release
 ```
 
-### Qt 6
+The equivalent release commands are:
 
-**CachyOS / Arch Linux:**
-```bash
-sudo pacman -S qt6-base qt6-declarative qt6-wayland qt6-tools
+```sh
+cargo build --manifest-path core/Cargo.toml --release --locked
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j"$(nproc)"
 ```
 
-**Ubuntu 24.04 LTS:**
-```bash
-sudo apt install qt6-base-dev qt6-declarative-dev qt6-wayland-dev qt6-tools-dev
-```
+CMake also has a locked Rust custom command so a direct CMake build cannot
+silently resolve a different crate graph.
 
----
+## Run
 
-## Quick Build (Automated)
-
-Use the build script which checks prerequisites and handles Rust + CMake:
-
-```bash
-./scripts/build.sh debug     # Debug build
-./scripts/build.sh release   # Optimized build
-```
-
-## Manual Build
-
-### Step 1: Build Rust Core Library
-
-```bash
-cd core
-cargo build          # Debug
-cargo build --release  # Release
-```
-
-The output is `core/target/{debug,release}/libxeneon_core.a` - a static library with 30 exported FFI symbols.
-
-### Step 2: Build C++/QML Application
-
-```bash
-cd ..
-cmake -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build -j$(nproc)
-```
-
-### Step 3: Run
-
-```bash
+```sh
 ./build/xeneon-edge-hub
+./build/xeneon-edge-manager
 ```
 
----
+Useful Hub options:
 
-## Testing
+```sh
+./build/xeneon-edge-hub --safe-mode
+./build/xeneon-edge-hub --reset
+./build/xeneon-edge-hub --reset-wizard
+./build/xeneon-edge-hub --diagnostics
+```
 
-### Rust (Self-contained - no system deps beyond Rust)
-```bash
+Safe mode is session-only. It leaves the saved layout unchanged and does not
+instantiate widget QML.
+
+## Test and lint
+
+Focused Rust checks:
+
+```sh
 cd core
-cargo test           # 15 tests, ~0.1s
-cargo clippy -- -D warnings
-cargo fmt -- --check
+cargo fmt --all -- --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --locked
 ```
 
-### Full application (requires Qt6 display)
-```bash
-./build/xeneon-edge-hub --safe-mode   # Skip widgets
-./build/xeneon-edge-hub --reset       # Reset config
-./build/xeneon-edge-hub --reset-wizard  # Re-run first-run wizard
+Product suites:
+
+```sh
+./scripts/run_ui_tests.sh
+./scripts/run_cpp_tests.sh
+./scripts/run_all_tests.sh
 ```
 
----
+`run_ui_tests.sh` uses the resource-aware QuickTest runner and compiled product
+assets. `run_cpp_tests.sh` builds the QtTest targets against an isolated
+configuration home. `run_all_tests.sh` also runs the enumerated QML requirement
+matrix and structural lints. See
+[the development and test plan](../DEV_AND_TEST_PLAN.md) for the complete gate
+inventory.
+
+## Implementation boundary
+
+The Rust core is compiled as `libxeneon_core.a`. Qt and Rust communicate through
+the hand-written C ABI in `core/src/ffi.rs` and `core/xeneon_core.h`; this
+project does not use Corrosion or `cxx-qt`. Strings returned by the ABI are
+caller-owned and must be released with `xeneon_string_free()`.
+
+Hub and Manager QML is compiled into Qt resource collections. When adding or
+removing QML files, update the corresponding `.qrc` file and add an
+assertion-backed UI test.
 
 ## Debugging
 
-```bash
-# Rust logging control
-RUST_LOG=xeneon_core=debug ./build/xeneon-edge-hub
-RUST_LOG=trace ./build/xeneon-edge-hub
-
-# Backtrace on panic
-RUST_BACKTRACE=1 ./build/xeneon-edge-hub
-
-# QML debugging
-QT_QPA_EGLFS_DEBUG=1 ./build/xeneon-edge-hub
-
-# Wayland debugging
-WAYLAND_DEBUG=1 ./build/xeneon-edge-hub
+```sh
+env RUST_LOG=xeneon_core=debug ./build/xeneon-edge-hub
+env RUST_BACKTRACE=1 ./build/xeneon-edge-hub
+env WAYLAND_DEBUG=1 ./build/xeneon-edge-hub
 ```
 
----
-
-## Project Structure
-
-```
-skyphoenix-edgehub-linux/
-├── core/                   # Rust core library (xeneon-core)
-│   ├── Cargo.toml
-│   ├── xeneon_core.h       # C FFI header
-│   └── src/
-│       ├── lib.rs          # Module declarations
-│       ├── config.rs       # Configuration (TOML, XDG, serialization)
-│       ├── display.rs      # EDID parsing, display identity
-│       ├── ffi.rs          # C-compatible FFI (30 exported functions)
-│       ├── logging.rs      # Structured logging (tracing)
-│       └── metrics.rs      # System metrics (/proc, /sys, hwmon)
-├── app/
-│   └── src/
-│       └── main.cpp        # C++ Qt entry point
-├── ui/
-│   ├── qml.qrc             # Qt resource file
-│   └── qml/
-│       ├── main.qml        # Application window
-│       ├── FirstRunWizard.qml  # 4-step onboarding wizard
-│       └── Dashboard.qml   # Clock, CPU, RAM, focus timer widgets
-├── assets/
-│   └── xeneon-edge-hub.desktop
-├── scripts/
-│   └── build.sh            # Automated build with dependency checks
-├── docs/                   # Full documentation tree
-├── .github/workflows/
-│   └── ci.yml              # CI pipeline
-├── CMakeLists.txt          # Root build file
-└── README.md
-```
-
-## Conventional Commits
-
-```
-feat: add display enumeration support
-fix: correct EDID hash calculation for DisplayPort
-docs: update installation guide for Ubuntu 24.04
-test: add widget lifecycle integration tests
-refactor: extract sensor polling to async module
-chore: update Qt dependency to 6.7
-perf: reduce memory allocations in config parser
-```
-
-## Current Blockers
-
-- **cmake not installed** on this development machine. Install with:
-  ```bash
-  sudo pacman -S cmake   # Arch/CachyOS
-  ```
-  Without cmake, the full C++/QML build cannot be verified locally, but the CI pipeline handles it.
+Configuration is stored under
+`${XDG_CONFIG_HOME:-~/.config}/xeneon-edge-hub/`. Use an isolated
+`XDG_CONFIG_HOME` and `XDG_RUNTIME_DIR` for manual experiments that must not
+touch the installed user's state.

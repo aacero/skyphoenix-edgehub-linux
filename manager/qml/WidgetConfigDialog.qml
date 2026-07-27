@@ -36,10 +36,31 @@ Dialog {
     // documented geocoder, but merely opening a live widget preview must never poll
     // the network. The separate offline preview gate is injected into every loaded
     // network widget below, before its debounce timer can fire.
-    property var netHub: null
+    property var orgPolicy: (typeof backend !== "undefined" && backend
+                             && typeof backend.policy === "function")
+                            ? backend.policy() : ({ active: false,
+                                                   netOffline: false,
+                                                   allowedHosts: [] })
+    readonly property bool managedPolicyActive:
+        orgPolicy && orgPolicy.active === true
+    readonly property var managedAllowedHosts:
+        managedPolicyActive && Array.isArray(orgPolicy.allowedHosts)
+        ? orgPolicy.allowedHosts : []
+    readonly property bool userOffline: {
+        var revision = dlg.widgetStore ? dlg.widgetStore.revision : 0
+        return dlg.widgetStore && dlg.widgetStore.appearance
+                ? dlg.widgetStore.appearance().netOffline === true : false
+    }
+    readonly property bool managedOffline:
+        managedPolicyActive && orgPolicy.netOffline === true
+    readonly property bool geocodeAllowedByPolicy:
+        !managedPolicyActive || managedAllowedHosts.length === 0
+        || managedAllowedHosts.indexOf("geocoding-api.open-meteo.com") >= 0
     NetHub {
         id: _geocodeHub
         objectName: "managerGeocodeNetHub"
+        offline: dlg.userOffline || dlg.managedOffline
+                 || !dlg.geocodeAllowedByPolicy
         allowHosts: ["geocoding-api.open-meteo.com"]
     }
     NetHub {
@@ -50,11 +71,9 @@ Dialog {
     NetHub {
         id: _connectionHub
         objectName: "managerConnectionTestNetHub"
-        offline: {
-            var revision = dlg.widgetStore ? dlg.widgetStore.revision : 0
-            return dlg.widgetStore && dlg.widgetStore.appearance
-                    ? dlg.widgetStore.appearance().netOffline === true : false
-        }
+        offline: dlg.userOffline || dlg.managedOffline
+        allowHosts: dlg.managedPolicyActive ? dlg.managedAllowedHosts : []
+        secretResolver: (typeof backend !== "undefined") ? backend : null
         xhrFactory: dlg.xhrFactory
     }
     // Non-visual QtObjects are not guaranteed to appear below a Control in a
@@ -62,9 +81,9 @@ Dialog {
     // diagnostics and tests can inspect the exact objects used by the dialog.
     property alias geocodeNetHub: _geocodeHub
     property alias previewNetHub: _previewHub
+    property alias connectionNetHub: _connectionHub
     readonly property var previewItem: previewLoader.item
     readonly property bool previewAcceptsInput: previewLoader.acceptsInput
-    function _hub() { return netHub ? netHub : _geocodeHub }
     // Test seam: a per-request XHR factory handed to the gate, so a FakeXHR can be
     // injected. null in production → the gate builds the real XHR.
     property var xhrFactory: null
@@ -144,7 +163,7 @@ Dialog {
             dlg._cancelGeo()                       // supersede any in-flight lookup
             geoStatus = "Searching…"
             var seq = ++dlg._geoSeq
-            var xhr = dlg._hub().request({
+            var xhr = _geocodeHub.request({
                 url: "https://geocoding-api.open-meteo.com/v1/search?count=1&name="
                      + encodeURIComponent(place.trim()),
                 timeout: 8000,

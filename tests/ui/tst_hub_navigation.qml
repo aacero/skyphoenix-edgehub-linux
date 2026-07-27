@@ -12,7 +12,8 @@ import "../../ui/qml" as App
 // COVERS: fn:Dashboard.appendPreset, fn:Dashboard.goToPageExternal
 // COVERS: fn:Dashboard.goToPage, fn:Dashboard._applyWant
 // COVERS: fn:main.requestHubPage, fn:main.hubCurrentPage
-// COVERS: fn:main.applyExternalUiState
+// COVERS: fn:main.applyExternalUiState, fn:main.preflightExternalUiState
+// COVERS: fn:Dashboard.preflightExternalState, fn:DashboardStore.canApplyExternal
 //
 // Honest caveat: qmltestrunner runs offscreen with no Wayland compositor, so its
 // relayout timing differs from the device - this may not force the exact snap, but
@@ -38,6 +39,22 @@ Item {
     property int _targetScreenY: 0
     property int _targetScreenWidth: 2560
     property int _targetScreenHeight: 720
+    property string savedUiState: ""
+    property int saveCalls: 0
+    property alias configBridge: fakeConfigBridge
+    QtObject {
+        id: fakeConfigBridge
+        function uiState() { return "" }
+        function saveUiState(json) {
+            root.savedUiState = json
+            root.saveCalls++
+            return true
+        }
+        function starterLayout() { return "blank" }
+        function policy() { return ({ active: false }) }
+        function configJson() { return "" }
+        function appVersion() { return "test" }
+    }
 
     property var win: null
 
@@ -161,6 +178,95 @@ Item {
                     && s.pages()[0].tiles[0].id === "direct-quote"
                     && sw.count === 1
             }, 3000, "the direct C++ bridge method repainted the running dashboard")
+        }
+
+        function test_unflushed_note_conflicts_before_manager_push_is_persisted() {
+            var s = store(), d = dash()
+            var localDoc = JSON.stringify({
+                version: 1,
+                appearance: { themeMode: "midnight", hubControlsMode: "standard" },
+                settings: {
+                    "hub-note": { text: "saved before typing", history: [] }
+                },
+                pages: [
+                    { name: "Hub work", tiles: [
+                        { id: "hub-note", type: "notes", size: "1x1" }
+                    ] }
+                ]
+            })
+            verify(s.applyExternal(localDoc), "loaded the Hub document")
+            d.expandedId = "hub-note"
+            d.expandedType = "notes"
+            tryVerify(function () {
+                return d.overlayLoaderItem !== null
+                       && d.overlayLoaderItem.instanceId === "hub-note"
+            }, 5000, "opened the real Quick Note editor")
+
+            var editor = findPred(d.overlayLoaderItem, function (x) {
+                return x && x.objectName === "notesEditor"
+            })
+            verify(editor !== null, "found the real NotesWidget TextEdit")
+            editor.text = "unfinished local Hub edit"
+            compare(d.overlayLoaderItem.hasPendingChanges(), true,
+                    "the note is still inside its 400 ms local buffer")
+            compare(s.settingsFor("hub-note").text, "saved before typing",
+                    "the shared document does not contain the buffered text yet")
+
+            var managerDoc = JSON.stringify({
+                version: 1,
+                appearance: { themeMode: "light", hubControlsMode: "standard" },
+                settings: { "manager-clock": {} },
+                pages: [
+                    { name: "Manager replacement", tiles: [
+                        { id: "manager-clock", type: "clock", size: "1x1" }
+                    ] }
+                ]
+            })
+            compare(d.preflightExternalState("not json"), "rejected",
+                    "Dashboard preflight rejects an invalid document without flushing")
+            compare(d.overlayLoaderItem.hasPendingChanges(), true,
+                    "invalid input cannot consume or overwrite the local buffer")
+            compare(s.canApplyExternal(managerDoc), true,
+                    "the valid Manager replacement passes non-mutating validation")
+            root.savedUiState = ""
+            var savesBefore = root.saveCalls
+            compare(win.preflightExternalUiState(managerDoc), "conflict",
+                    "the first Manager push is rejected as an explicit conflict")
+            compare(root.saveCalls, savesBefore + 1,
+                    "preflight persisted the unfinished Hub edit exactly once")
+            compare(s.settingsFor("hub-note").text, "unfinished local Hub edit",
+                    "the live Hub document retained the local edit")
+            compare(JSON.parse(root.savedUiState).settings["hub-note"].text,
+                    "unfinished local Hub edit",
+                    "the disk-facing bridge received the same local edit")
+            compare(s.pages()[0].tiles[0].id, "hub-note",
+                    "the rejected Manager document did not rebuild the panel")
+            verify(win.persistenceWarningText.indexOf("unfinished edit") >= 0,
+                    "the Hub makes the conflict visible")
+
+            compare(win.preflightExternalUiState(managerDoc), "ready",
+                    "retry is allowed only after the local buffer is saved")
+            verify(root.configBridge.saveUiState(managerDoc),
+                    "simulate ConfigBridge persisting the accepted retry")
+            var savesAfterManagerPersist = root.saveCalls
+            verify(win.applyExternalUiState(managerDoc),
+                    "the accepted retry applies to the live Dashboard")
+            tryVerify(function () {
+                return s.pages()[0].name === "Manager replacement"
+                       && s.pages()[0].tiles[0].id === "manager-clock"
+                       && s.pageIndexForTile("hub-note") === -1
+            }, 3000, "the Hub now renders the Manager document")
+            wait(900)
+            compare(root.saveCalls, savesAfterManagerPersist,
+                    "destroying the old note cannot echo stale text after the push")
+            compare(Object.keys(s.settingsFor("hub-note")).length, 0,
+                    "the removed note is not resurrected as orphan settings")
+            compare(JSON.stringify(s._persistableData()), managerDoc,
+                    "the live Hub document exactly matches the Manager retry")
+            compare(root.savedUiState, managerDoc,
+                    "disk, live Hub, and the Manager retry converge on one document")
+            compare(win.persistenceWarningText, "",
+                    "a successful explicit retry clears the resolved conflict")
         }
 
         // The bug: after adding pages the view must LAND on the new page and STAY -

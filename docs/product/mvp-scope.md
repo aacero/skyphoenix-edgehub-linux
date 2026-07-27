@@ -1,8 +1,8 @@
 # MVP scope and evidence status
 
-**Product baseline:** `v1.0.0-alpha.2`
+**Product baseline:** `v1.0.0-beta.1`
 **Document status:** active requirements audit
-**Last updated:** 2026-07-21
+**Last updated:** 2026-07-27
 
 ## Authority and historical documents
 
@@ -60,9 +60,9 @@ released, frozen, supported on every desktop, or within its performance targets.
 | Touch-only add/move/resize/configure | Covered across GUI/Manager/hardware layers; final integrated run pending |
 | Idle CPU <1% and RAM <150 MiB | **Current development candidate fails:** CPU 0.120%, peak RSS 408.094 MiB |
 | Active CPU <5% and RAM <250 MiB | **Current development candidate fails:** CPU 2.053%, peak RSS 472.820 MiB with the exact 10-widget load |
-| Startup <2 s and 24-hour memory growth <10% | Current development startup passed at 0.223 s; 24/48-hour growth is unproven |
-| 48–72-hour physical-hardware stability | **Not completed** for the candidate |
-| Legal review of Inspired premium themes | **Open** |
+| Startup <2 s and bounded growth during the accepted observation | Historical development startup passed at 0.223 s; exact-candidate measurement is pending |
+| Stability observation | The owner waived the historical 48-hour soak. A literal 30-minute, 14-widget instrumented substitute is required; it does not support a long-duration stability claim |
+| Qt Virtual Keyboard distribution choice and legal review of Inspired premium themes | **Open** |
 | Store, pricing, refunds, support and key delivery | **Open; no live-store claim permitted** |
 
 ## MVP success gate
@@ -74,13 +74,14 @@ released, frozen, supported on every desktop, or within its performance targets.
    and rotation evidence is attached.
 4. Native package and portable artifact install/upgrade/uninstall paths are
    exercised on every advertised platform.
-5. Performance and endurance limits are measured and pass.
+5. Performance limits and the owner-approved stability observation are measured
+   and pass without being presented as long-duration evidence.
 6. Documentation, legal/product decisions and support boundaries match reality.
 7. The immutable final candidate passes the strict release gate, is signed, is
    published, and its downloaded artifacts verify in a clean environment.
 
 None of these criteria may be checked merely because an implementation or CI
-workflow exists. Until all seven are satisfied, status remains alpha/development.
+workflow exists. Until all seven are satisfied, status remains beta/development.
 
 ### Current performance evidence is a failed development measurement
 
@@ -93,7 +94,8 @@ therefore **FAIL**.
 
 This is evidence about that dirty development binary, not an immutable release
 candidate and not a publishable performance claim. A clean candidate must still
-pass the same short profiles and the complete long-duration gate.
+pass the short profiles and the owner-approved literal 30-minute, 14-widget
+instrumented substitute. That substitute is not long-duration evidence.
 
 ## Requirements disposition
 
@@ -111,7 +113,7 @@ pass the same short profiles and the complete long-duration gate.
 | Arbitrary custom-hex accent editor | **Deferred** |
 | Application launcher / arbitrary command execution | **Deferred** |
 | Current on-device settings and diagnostics surfaces | **MVP required** |
-| Search across a full settings taxonomy, diagnostics ZIP export and persistent safe mode | **Deferred** |
+| Search across a full settings taxonomy, diagnostics ZIP export and persistent safe mode | **Deferred**; the implemented `--safe-mode` is session-only and leaves all widget QML unloaded without changing the saved layout |
 | Unknown/policy-disabled widget fallback | **MVP required and implemented** |
 | Per-widget CPU budgets, restart/disable/reset error UI and three-strike isolation | **Deferred** with the third-party sandbox/runtime work |
 | Pixel-golden visual regression, touch-to-photon latency and 25/50-widget stress profiles | **Deferred**; they are not implied by the current behavior and resource gates |

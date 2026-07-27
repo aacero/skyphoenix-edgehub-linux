@@ -6,13 +6,16 @@
 #include <QHash>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QVariantMap>
 
 #include <cstring>
+#include <sys/stat.h>
 #include <utility>
 
 #include "config_bridge.h"
+#include "license_bridge.h"
 #include "xeneon_core.h"
 
 // Refuse to run outside a sandbox: this test would otherwise clobber the
@@ -23,23 +26,147 @@ XENEON_REQUIRE_HERMETIC_ENV();
 class TstConfigBridge : public QObject {
     Q_OBJECT
     ConfigHandle* cfg_ = nullptr;
+    void removePersistedFixture() {
+        XeneonString directory(xeneon_config_dir());
+        const QString base =
+            directory.qstring() + QStringLiteral("/config.toml");
+        QFile::remove(base);
+        QFile::remove(base + QStringLiteral(".bak"));
+    }
 private slots:
-    void init() { cfg_ = xeneon_config_load(); QVERIFY(cfg_); }
-    void cleanup() { if (cfg_) { xeneon_config_free(cfg_); cfg_ = nullptr; } }
+    void init() {
+        removePersistedFixture();
+        cfg_ = xeneon_config_load();
+        QVERIFY(cfg_);
+    }
+    void cleanup() {
+        if (cfg_) {
+            xeneon_config_free(cfg_);
+            cfg_ = nullptr;
+        }
+        removePersistedFixture();
+    }
 
     void uiStateRoundTrip() {
         ConfigBridge b(cfg_);
-        const QString json = QStringLiteral("{\"widgets\":[{\"id\":\"clock\"}]}");
+        const QString json =
+            QStringLiteral("{\"version\":1,\"pages\":[],\"marker\":\"clock\"}");
         QVERIFY(b.saveUiState(json));
         QCOMPARE(b.uiState(), json);
+    }
+
+    void generationTokenIsOpaqueStableAndTracksPublishedState() {
+        ConfigBridge b(cfg_);
+        const QString before = b.configGenerationToken();
+        QCOMPARE(before.size(), 36);
+        QCOMPARE(b.configGenerationToken(), before);
+
+        const QString secretMarker =
+            QStringLiteral("PRIVATE_GENERATION_TOKEN_CANARY");
+        const QString json = QStringLiteral(
+                                 "{\"version\":1,\"pages\":[],\"marker\":\"%1\"}")
+                                 .arg(secretMarker);
+        QVERIFY(b.saveUiState(json));
+        const QString after = b.configGenerationToken();
+        QVERIFY(!after.isEmpty());
+        QVERIFY(after != before);
+        QVERIFY(!after.contains(secretMarker));
     }
 
     void applyExternalUiStatePersists() {
         ConfigBridge b(cfg_);
         QVERIFY(!b.applyExternalUiState(QString()));         // empty rejected
-        const QString json = QStringLiteral("{\"a\":1}");
+        const QString json =
+            QStringLiteral("{\"version\":1,\"pages\":[],\"marker\":\"external\"}");
         QVERIFY(b.applyExternalUiState(json));
         QCOMPARE(b.uiState(), json);
+    }
+
+    void invalidOrFutureUiStateIsRejectedWithoutMutation() {
+        ConfigBridge b(cfg_);
+        const QString current =
+            QStringLiteral("{\"version\":1,\"pages\":[],\"marker\":\"current\"}");
+        QVERIFY(b.saveUiState(current));
+
+        QVERIFY(!b.saveUiState(QStringLiteral("not json")));
+        QCOMPARE(b.uiState(), current);
+
+        QVERIFY(!b.applyExternalUiState(
+            QStringLiteral("{\"version\":99,\"pages\":[],\"futureOnly\":true}")));
+        QCOMPARE(b.uiState(), current);
+    }
+
+    void failedUiStatePersistenceLeavesLiveAndExternalBytesUntouched() {
+        ConfigBridge b(cfg_);
+        const QString current =
+            QStringLiteral("{\"version\":1,\"pages\":[],\"marker\":\"current\"}");
+        const QString candidate =
+            QStringLiteral("{\"version\":1,\"pages\":[],\"marker\":\"candidate\"}");
+        QVERIFY(b.saveUiState(current));
+
+        XeneonString directory(xeneon_config_dir());
+        const QString path =
+            directory.qstring() + QStringLiteral("/config.toml");
+        const QByteArray external =
+            QByteArrayLiteral("schema_version = 99\nfuture_only = \"KEEP_EXTERNAL\"\n");
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        QCOMPARE(file.write(external), external.size());
+        file.close();
+
+        QVERIFY(!b.saveUiState(candidate));
+        QCOMPARE(b.uiState(), current);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(file.readAll(), external);
+    }
+
+    void recoveryExportIsOwnerOnlyExactAndBounded() {
+        ConfigBridge b(cfg_);
+        const QString payload =
+            QStringLiteral("{\"version\":1,\"pages\":[],\"marker\":\"recover-me\"}");
+        const QString path = b.exportUiStateRecovery(payload);
+        QVERIFY(!path.isEmpty());
+        QVERIFY(QFileInfo::exists(path));
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(file.readAll(), payload.toUtf8());
+        struct stat fileStatus {};
+        QCOMPARE(::stat(QFile::encodeName(path).constData(), &fileStatus), 0);
+        QCOMPARE(fileStatus.st_mode & 0777, static_cast<mode_t>(0600));
+        const QFileInfo directory(QFileInfo(path).absolutePath());
+        struct stat directoryStatus {};
+        QCOMPARE(::stat(QFile::encodeName(directory.absoluteFilePath()).constData(),
+                        &directoryStatus), 0);
+        QCOMPARE(directoryStatus.st_mode & 0777, static_cast<mode_t>(0700));
+
+        QVERIFY(b.exportUiStateRecovery(QString()).isEmpty());
+        const QString oversized(16 * 1024 * 1024 + 1, QLatin1Char('x'));
+        QVERIFY(b.exportUiStateRecovery(oversized).isEmpty());
+    }
+
+    void failedLicensePersistenceLeavesEffectiveStatusUnchanged() {
+        QVERIFY(xeneon_config_save(cfg_) >= 0);
+        LicenseBridge bridge(cfg_);
+        const bool beforeHasKey = bridge.hasKey();
+        const QString beforeTier = bridge.tier();
+        const QString beforeState = bridge.state();
+
+        XeneonString directory(xeneon_config_dir());
+        const QString path =
+            directory.qstring() + QStringLiteral("/config.toml");
+        const QByteArray external =
+            QByteArrayLiteral("schema_version = 99\nfuture_only = \"KEEP_LICENSE_FILE\"\n");
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        QCOMPARE(file.write(external), external.size());
+        file.close();
+
+        QVERIFY(!bridge.setKey(QStringLiteral("XE1.invalid.signature")));
+        QCOMPARE(bridge.hasKey(), beforeHasKey);
+        QCOMPARE(bridge.tier(), beforeTier);
+        QCOMPARE(bridge.state(), beforeState);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(file.readAll(), external);
     }
 
     void imageUrl_data() {
@@ -65,8 +192,9 @@ private slots:
     void configJsonIsStructuredAndRedacted() {
         const QByteArray key("XE1.HUB_LICENSE_CANARY.HUB_IDENTITY_CANARY");
         const QByteArray state(
-            "{\"pages\":[{\"name\":\"HUB_PRIVATE_PAGE_CANARY\","
-            "\"tiles\":[{\"type\":\"notes\"}]}],\"settings\":{"
+            "{\"version\":1,\"pages\":[{\"name\":\"HUB_PRIVATE_PAGE_CANARY\","
+            "\"tiles\":[{\"id\":\"HUB_PRIVATE_TILE_CANARY\","
+            "\"type\":\"notes\"}]}],\"settings\":{"
             "\"notes-1\":{\"notes\":\"HUB_PRIVATE_NOTES_CANARY\"},"
             "\"http-1\":{\"authToken\":\"HUB_PRIVATE_AUTH_CANARY\"},"
             "\"calendar-1\":{\"url\":\"https://HUB_PRIVATE_URL_CANARY\"}}}");
@@ -80,6 +208,7 @@ private slots:
                  QStringLiteral("HUB_LICENSE_CANARY"),
                  QStringLiteral("HUB_IDENTITY_CANARY"),
                  QStringLiteral("HUB_PRIVATE_PAGE_CANARY"),
+                 QStringLiteral("HUB_PRIVATE_TILE_CANARY"),
                  QStringLiteral("HUB_PRIVATE_NOTES_CANARY"),
                  QStringLiteral("HUB_PRIVATE_AUTH_CANARY"),
                  QStringLiteral("HUB_PRIVATE_URL_CANARY")}) {
@@ -519,6 +648,8 @@ private slots:
         QVERIFY(f.open(QIODevice::WriteOnly));
         f.write("file-token\n");   // trailing newline is the realistic case
         f.close();
+        QVERIFY(QFile::setPermissions(
+            p, QFileDevice::ReadOwner | QFileDevice::WriteOwner));
 
         ConfigBridge b(cfg_);
         const QVariantMap r = b.resolveSecret("file:" + p);
@@ -635,6 +766,48 @@ private slots:
         if (hadConfigHome) qputenv("XDG_CONFIG_HOME", savedConfigHome);
         else qunsetenv("XDG_CONFIG_HOME");
         QVERIFY(!ok);
+    }
+
+    void wizardCommitFailureRollsBackLiveConfigAndAutostart() {
+        QVERIFY(xeneon_config_save(cfg_) >= 0);
+        XeneonString beforeConnectorValue(
+            xeneon_config_get_target_connector(cfg_));
+        const QString beforeConnector = beforeConnectorValue.qstring();
+        const int beforeFirstRun = xeneon_config_is_first_run(cfg_);
+        const QString autostartPath =
+            QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
+            + QStringLiteral("/autostart/xeneon-edge-hub.desktop");
+        QFile::remove(autostartPath);
+
+        XeneonString directory(xeneon_config_dir());
+        const QString path =
+            directory.qstring() + QStringLiteral("/config.toml");
+        const QByteArray external =
+            QByteArrayLiteral("schema_version = 99\nfuture_only = \"WIZARD_PRESERVE\"\n");
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        QCOMPARE(file.write(external), external.size());
+        file.close();
+
+        WizardBridge wizard(cfg_);
+        QVERIFY(!wizard.completeWizard(
+            QStringLiteral("hash-new"),
+            QStringLiteral("DP-NEW"),
+            QStringLiteral("Model new"),
+            QStringLiteral("developer"),
+            QStringLiteral("dark"),
+            QStringLiteral("#00ff00"),
+            true,
+            true,
+            true));
+
+        XeneonString afterConnectorValue(
+            xeneon_config_get_target_connector(cfg_));
+        QCOMPARE(afterConnectorValue.qstring(), beforeConnector);
+        QCOMPARE(xeneon_config_is_first_run(cfg_), beforeFirstRun);
+        QVERIFY(!QFile::exists(autostartPath));
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        QCOMPARE(file.readAll(), external);
     }
 
     void wizardPersistsAndMarksFirstRunComplete() {

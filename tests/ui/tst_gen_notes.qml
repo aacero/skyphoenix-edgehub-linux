@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtTest
 import "../../ui/qml" as App
 
@@ -132,10 +133,11 @@ Item {
             return n.hasOwnProperty("persistentSelection") && n.hasOwnProperty("wrapMode")
         })
     }
-    // Flickable has contentY + flicking.
+    // The tile preview is also a Flickable now, so select the expanded editor's
+    // named viewport rather than relying on declaration order.
     function findFlickable(w) {
         return findOne(w, function (n) {
-            return n.hasOwnProperty("contentY") && n.hasOwnProperty("flicking")
+            return n.objectName === "notesEditorViewport"
         })
     }
     // All Text nodes (have elide; TextEdit does not).
@@ -162,9 +164,10 @@ Item {
         })
     }
     function clearStore(h) {
-        var s = h.storeCtl.settingsFor("test-instance")
-        for (var k in s) delete s[k]
-        h.storeCtl._touchSettings()
+        // Recreate the bucket as well as clearing it. A preceding authoritative
+        // Manager document can legitimately remove the instance entirely, and
+        // mutating settingsFor() would then only mutate its detached empty value.
+        h.storeCtl.resetSettings("test-instance", {})
     }
 
     // ── Config: the `text` option + reactivity ───────────────────────────────
@@ -230,9 +233,21 @@ Item {
             var ed = findEditor(w)
             verify(ed !== null, "found the TextEdit")
             ed.text = "typed but not idle yet"     // starts the 400ms debounce
+            compare(w.hasPendingChanges(), true,
+                    "the editor exposes an unflushed local change")
             compare(w.current, "", "debounced write has NOT landed yet")
-            w.flush()                                // simulate an explicit flush
+            verify(w.flush(), "an explicit flush reports success")
             compare(w.current, "typed but not idle yet", "flush persists the pending text now")
+            compare(w.hasPendingChanges(), false,
+                    "the successful flush retires the local buffer")
+        }
+        function test_programmatic_sync_does_not_create_a_false_pending_edit() {
+            var w = hNotes.item
+            hNotes.storeCtl.setSetting("test-instance", "text", "stored text")
+            var ed = findEditor(w)
+            compare(ed.text, "stored text")
+            compare(w.hasPendingChanges(), false,
+                    "syncing the editor from stored state is not a user edit")
         }
         function test_debounce_eventually_saves() {
             var w = hNotes.item
@@ -357,6 +372,24 @@ Item {
             w.flush()                                // the still-pending local write lands
             compare(hNotes.storeCtl.settingsFor("test-instance").text, "server text",
                     "a stale local edit must not overwrite the Manager's pushed value")
+        }
+        function test_authoritative_external_remove_does_not_recreate_note_history() {
+            var w = hNotes.item
+            w.save("local body")
+            verify(hNotes.storeCtl.applyExternal(JSON.stringify({
+                version: 1,
+                appearance: {},
+                settings: {},
+                pages: [ { name: "Manager", tiles: [] } ]
+            })))
+            wait(50)
+            compare(Object.keys(hNotes.storeCtl.settingsFor("test-instance")).length, 0,
+                    "external removal does not recreate an orphan history bucket")
+            compare(w.hasPendingChanges(), false,
+                    "the authoritative external sync leaves no stale editor buffer")
+            verify(w.flush())
+            compare(Object.keys(hNotes.storeCtl.settingsFor("test-instance")).length, 0,
+                    "destroy or flush cannot resurrect the removed note")
         }
         // Compact preview DOES react to external revision bumps - this passes.
         function test_compact_reacts_to_external_bump() {
@@ -581,12 +614,12 @@ Item {
 
     // ── Per-sizeClass structure (W1 wave 2b) ────────────────────────────────
     // Fixed-size hosts at the real projected cell footprints.
-    Item { width: 348; height: 409
+    Item { id: qMicroWrap; width: 348; height: 409
         WidgetHarness { id: qMicro; anchors.fill: parent; widgetFile: "NotesWidget.qml"; expanded: false } }
-    Item { width: 696; height: 819
+    Item { id: qBaseWrap; width: 696; height: 819
         WidgetHarness { id: qBase; anchors.fill: parent; widgetFile: "NotesWidget.qml"; expanded: false } }
     // 1x3 portrait - the whole panel.
-    Item { width: 696; height: 2459
+    Item { id: qBoardWrap; width: 696; height: 2459
         WidgetHarness { id: qBoard; anchors.fill: parent; widgetFile: "NotesWidget.qml"; expanded: false } }
 
     TestCase {
@@ -612,6 +645,11 @@ Item {
             return findAll(host.item, function (n) {
                 return n.hasOwnProperty("wrapMode") && n.hasOwnProperty("elide")
                        && n.visible && String(n.text).indexOf("Pick up the dry") === 0 }, [])[0]
+        }
+        function previewViewport(host) {
+            return findAll(host.item, function (n) {
+                return n.objectName === "notesPreviewViewport"
+            }, [])[0]
         }
 
         // 0.5x0.5 - the note IS the tile; 36px of chrome is a line you cannot spare.
@@ -676,7 +714,8 @@ Item {
             wait(16)
             compare(meta[0].visible, false,
                     "long notes spend the footer space on reading content")
-            compare(previewItem.anchors.bottomMargin, qBase.theme.spacingSm,
+            compare(previewViewport(qBase).anchors.bottomMargin,
+                    qBase.theme.spacingSm,
                     "a hidden footer reserves no blank line")
 
             qBase.storeCtl.setSetting(qBase.instanceId, "text", "")
@@ -689,6 +728,67 @@ Item {
                 return n.hasOwnProperty("text")
                     && String(n.text) === "Capture it before it disappears"
             }, []).length === 1, "the empty state explains the widget's purpose")
+        }
+
+        function test_long_preview_is_complete_and_vertically_scrollable() {
+            tryVerify(function () { return qMicro.ready }, 3000)
+            var oldScale = qMicro.theme.textScale
+            var oldFont = qMicro.theme.fontChoice
+            var longNote = new Array(120).join(
+                "Release note content stays readable and scrollable. ")
+            try {
+                qMicroWrap.z = 100
+                qMicroWrap.width = 278
+                qMicroWrap.height = 327
+                qMicro.item.sizeClass = "compact"
+                qMicro.theme.textScale = 1.45
+                qMicro.theme.fontChoice = "hyperlegible"
+                qMicro.storeCtl.setSetting(qMicro.instanceId, "text", longNote)
+                wait(32)
+
+                var viewport = previewViewport(qMicro)
+                var body = findAll(qMicro.item, function(node) {
+                    return node.objectName === "notesPreviewText"
+                }, [])[0]
+                var scrollBar = findAll(qMicro.item, function(node) {
+                    return node.objectName === "notesPreviewScrollBar"
+                }, [])[0]
+                verify(viewport && body && scrollBar)
+                compare(body.text, longNote,
+                        "the tile retains the complete maximum-content fixture")
+                compare(body.elide, Text.ElideNone)
+                compare(body.truncated, false)
+                verify(body.font.pixelSize >= qMicro.theme.fontMinimum)
+                verify(body.height >= body.contentHeight)
+                verify(viewport.contentHeight > viewport.height)
+                compare(viewport.interactive, true)
+                compare(viewport.flickableDirection, Flickable.VerticalFlick,
+                        "vertical reading leaves horizontal page navigation free")
+                compare(scrollBar.policy, ScrollBar.AlwaysOn,
+                        "overflow is visibly disclosed before the first swipe")
+                compare(scrollBar.interactive, false,
+                        "the narrow indicator is not presented as a touch target")
+
+                viewport.contentY = 0
+                mouseDrag(viewport, viewport.width / 2,
+                          viewport.height - qMicro.theme.spacingLg,
+                          0, -Math.min(120, viewport.height / 2),
+                          Qt.LeftButton)
+                tryVerify(function () { return viewport.contentY > 0 }, 1000,
+                          "a vertical drag reveals later note content")
+
+                qMicro.storeCtl.setSetting(qMicro.instanceId, "text", "Short note")
+                tryVerify(function () { return !viewport.interactive }, 1000)
+                compare(viewport.contentY, 0,
+                        "short content returns the preview to its beginning")
+                compare(scrollBar.policy, ScrollBar.AlwaysOff)
+            } finally {
+                qMicro.theme.textScale = oldScale
+                qMicro.theme.fontChoice = oldFont
+                qMicroWrap.width = 348
+                qMicroWrap.height = 409
+                qMicroWrap.z = 0
+            }
         }
 
         // 1x3 earns more LINES, not bigger type: a note is one body of text.

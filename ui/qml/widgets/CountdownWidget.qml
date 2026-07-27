@@ -134,6 +134,20 @@ WidgetChrome {
         : w.days === 7 ? "One week to go" : w.days === 1 ? "Tomorrow" : ""
     readonly property string eventIdentity: w.label.length ? w.label
         : (w.repeatYearly ? "Yearly event" : "Upcoming event")
+    readonly property string countdownContext: {
+        if (!w.valid)
+            return w.expanded ? "Set a valid date and time in the configuration panel"
+                              : "Set a date in settings"
+        if (w.precision === "auto" && w.hoursRemaining > 0 && w.hoursRemaining < 48)
+            return "hours until " + (w.label || "the event")
+        if (w.days > 0)
+            return (w.days === 1 ? "day until " : "days until ")
+                   + (w.label || "the day")
+        if (w.days === 0)
+            return (w.label || "Today") + "!"
+        return w.afterEvent === "complete" ? (w.label || "Event") + " complete"
+                                           : (w.label || "the day") + " passed"
+    }
     readonly property string timezoneText: {
         var offset = -w.currentDate().getTimezoneOffset()
         var sign = offset >= 0 ? "+" : "-"
@@ -157,6 +171,17 @@ WidgetChrome {
         return prefix + ": " + Qt.formatDate(target, "ddd, d MMM yyyy")
                + " at " + w.timeStr + " (" + w.timezoneText + ")"
     }
+    function visibleOccurrence() {
+        var target = w.nextTarget()
+        if (!target) return ""
+        return (w.repeatYearly ? "Next" : "Target") + " · "
+               + Qt.formatDate(target, "ddd, d MMM yyyy")
+               + " · " + w.timeStr + " local"
+    }
+
+    Accessible.role: Accessible.Pane
+    Accessible.name: w.title + ". " + w.eventIdentity + ". " + w.countdownContext
+                     + (w.valid ? ". " + w.occurrenceExplanation() : "")
 
     // ── Progress context (an honest baseline or none at all) ────────────────
     // • repeatYearly: previous → next occurrence (the year cycle) - always real.
@@ -244,6 +269,7 @@ WidgetChrome {
             spacing: w.micro ? 0 : theme.spacingXs
 
             Text {
+                objectName: "countdownEvent"
                 visible: w.valid && !w.micro
                 Layout.fillWidth: true
                 horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
@@ -252,36 +278,45 @@ WidgetChrome {
                 font.pixelSize: w.sizeClass === "full" ? 28
                     : Math.max(theme.fontTitle, Math.min(w.width * 0.05, 24))
                 font.bold: true
-                elide: Text.ElideRight
+                wrapMode: Text.WordWrap
             }
             Text {
+                objectName: "countdownContext"
                 Layout.fillWidth: true
                 horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
-                text: !w.valid ? (w.expanded ? "Set a valid date and time in the configuration panel"
-                                            : "Set a date in settings") :
-                      (w.precision === "auto" && w.hoursRemaining > 0 && w.hoursRemaining < 48
-                       ? "hours until " + (w.label || "the event")
-                       : w.days > 0 ? (w.days === 1 ? "day until " : "days until ") + (w.label || "the day")
-                       : w.days === 0 ? (w.label || "Today") + "!"
-                       : w.afterEvent === "complete" ? (w.label || "Event") + " complete"
-                       : (w.label || "the day") + " passed")
+                // The event name is already the heading outside the micro tile.
+                // Avoid repeating an unbounded user string in the supporting
+                // sentence while retaining it in the micro tile and accessible
+                // summary, where no separate heading is present.
+                text: (w.micro || w.expanded) ? w.countdownContext
+                              : (!w.valid ? w.countdownContext
+                                          : (w.precision === "auto"
+                                             && w.hoursRemaining > 0
+                                             && w.hoursRemaining < 48
+                                             ? "hours remaining"
+                                             : w.days === 1 ? "day remaining"
+                                             : w.days > 1 ? "days remaining"
+                                             : w.days === 0 ? "Happening now"
+                                             : w.afterEvent === "complete"
+                                               ? "Complete" : "Passed"))
                 font.pixelSize: w.sizeClass === "full" ? 22
                                 : (w.micro ? theme.fontMinimum
                                            : Math.max(theme.fontLabel, Math.min(w.width * 0.04, 19)))
                 color: theme.textSecondary
-                wrapMode: Text.WordWrap; maximumLineCount: w.micro ? 1 : 2; elide: Text.ElideRight
+                wrapMode: Text.WordWrap
             }
             Text {
+                objectName: "countdownTarget"
                 visible: w.showDateRow
                 Layout.fillWidth: true
                 horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
-                text: w.occurrenceExplanation()
+                text: w.expanded ? w.occurrenceExplanation() : w.visibleOccurrence()
                       + (w.milestoneText.length ? " · " + w.milestoneText : "")
                 font.pixelSize: w.sizeClass === "full" ? 18
                                 : Math.max(theme.fontLabel, Math.min(w.width * 0.038, 20))
                 font.family: theme.fontMono
                 color: theme.textSecondary
-                elide: Text.ElideRight; maximumLineCount: 1
+                wrapMode: Text.WordWrap
             }
             Text {
                 visible: w.showDateRow && w.leapPolicyText.length > 0

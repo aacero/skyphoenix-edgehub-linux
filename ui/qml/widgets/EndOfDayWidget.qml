@@ -169,6 +169,20 @@ WidgetChrome {
         if (phase === "complete") return "Complete"
         return "Working"
     }
+    // A half-width portrait tile has enough room for the full title or the full
+    // state, but not both once the user selects the largest supported type
+    // scale. Keep the full state in the widget's accessible summary and use a
+    // concise glance label only in that constrained header.
+    readonly property bool narrowHeader: !micro
+        && width < Math.round(360 * theme.textScaleEff / 1.15)
+    readonly property string conciseStateLabel: {
+        if (phase === "invalid") return "Fix"
+        if (phase === "no-days" || phase === "off") return "Off"
+        if (phase === "before") return "Soon"
+        if (phase === "complete") return "Done"
+        return "On"
+    }
+    readonly property string headerStateLabel: narrowHeader ? conciseStateLabel : stateLabel
     readonly property string scheduleRange: w.fmtTime(w.startHour, w.startMinute)
         + " to " + w.fmtTime(w.endHour, w.endMinute)
     readonly property string progressSummary: {
@@ -180,7 +194,9 @@ WidgetChrome {
         if (phase === "off") return "Not scheduled for this start day"
         return w.remaining
     }
-    status: w.stateLabel
+    status: w.headerStateLabel
+    Accessible.role: Accessible.Pane
+    Accessible.name: w.title + ". " + w.stateLabel + ". " + w.progressSummary
     // Keep a 1-hour minimum span: whichever end the user moved yields, so the
     // work window can never invert (end ≤ start) and get stuck.
     function setHours(sh, eh) {

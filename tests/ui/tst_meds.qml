@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtTest
 
 
@@ -618,7 +619,7 @@ Item {
     // ── Per-sizeClass structure (W1 wave 2b) ────────────────────────────────
     // Fixed-size hosts at the real projected cell footprints. meds declares no
     // 0.5x0.5, so there is no micro case.
-    Item { width: 348; height: 819
+    Item { id: mTallWrap; width: 348; height: 819
         WidgetHarness { id: mTall; anchors.fill: parent; widgetFile: "MedsWidget.qml"; expanded: false } }
     Item { id: mWideWrap; width: 696; height: 409
         WidgetHarness { id: mWide; anchors.fill: parent; widgetFile: "MedsWidget.qml"; expanded: false } }
@@ -640,7 +641,31 @@ Item {
         }
         function listOf(host) {
             return root.findAll(host.item, function (n) {
-                return n.hasOwnProperty("contentY") && n.hasOwnProperty("model") }, [])[0]
+                return n.objectName === "medsDoseList" }, [])[0]
+        }
+        function named(host, name) {
+            return root.findAll(host.item, function (n) {
+                return n.objectName === name
+            }, [])[0]
+        }
+        function prefixed(host, prefix) {
+            return root.findAll(host.item, function (n) {
+                return String(n.objectName).indexOf(prefix) === 0
+            }, [])
+        }
+        function structuredDoses(count, longNames) {
+            var result = []
+            for (var i = 0; i < count; i++) {
+                result.push({
+                    id: "scaled-dose-" + i,
+                    time: (i < 10 ? "0" : "") + (i % 24) + ":30",
+                    name: longNames
+                          ? "Prescribed morning medicine " + (i + 1)
+                          : "Medicine " + (i + 1),
+                    days: "0,1,2,3,4,5,6"
+                })
+            }
+            return result
         }
 
         // A tall tile shows the SCHEDULE - it used to be overlay-only.
@@ -719,6 +744,164 @@ Item {
                     "…and renders quiet, never error/warning coloured")
             verify(String(m.colorOf(open)) !== String(mLarge.theme.error), "never red")
             compare(m.labelOf(open), "Not marked", "…and says 'Not marked'")
+        }
+
+        function test_scaled_long_schedule_wraps_and_remains_reachable() {
+            tryVerify(function () { return mTall.ready }, 3000)
+            var oldScale = mTall.theme.textScale
+            var oldFont = mTall.theme.fontChoice
+            try {
+                mTallWrap.z = 100
+                mTallWrap.width = 278
+                mTallWrap.height = 654
+                mTall.item.sizeClass = "tall"
+                mTall.theme.textScale = 1.45
+                mTall.theme.fontChoice = "lexend"
+                mTall.storeCtl.resetSettings(mTall.instanceId, {
+                    scheduleFormat: "structured",
+                    scheduleItems: structuredDoses(24, true),
+                    dueWindowMin: 240,
+                    taken: [],
+                    takenDay: ""
+                })
+                wait(64)
+
+                var floor = mTall.theme.fontMinimum
+                var summary = named(mTall, "medsScheduleSummary")
+                var list = listOf(mTall)
+                var scrollBar = named(mTall, "medsDoseScrollBar")
+                verify(summary && list && scrollBar)
+                verify(summary.font.pixelSize >= floor)
+                compare(summary.elide, Text.ElideNone)
+                compare(summary.truncated, false)
+                verify(summary.contentHeight <= summary.height + 1)
+                compare(list.orientation, ListView.Vertical)
+                compare(list.flickableDirection, Flickable.VerticalFlick,
+                        "dose reading does not take the horizontal page gesture")
+                compare(list.interactive, true,
+                        "a long tile schedule can be read without opening the widget")
+                compare(scrollBar.policy, ScrollBar.AlwaysOn,
+                        "overflow is disclosed before the first swipe")
+                compare(scrollBar.interactive, false)
+
+                var names = prefixed(mTall, "medsDoseName-")
+                var times = prefixed(mTall, "medsDoseTime-")
+                var states = prefixed(mTall, "medsDoseState-")
+                var actions = prefixed(mTall, "medsDoseAction-")
+                verify(names.length > 0 && times.length > 0 && states.length > 0)
+                for (var i = 0; i < names.length; i++) {
+                    verify(names[i].font.pixelSize >= floor)
+                    compare(names[i].elide, Text.ElideNone)
+                    compare(names[i].truncated, false)
+                    verify(names[i].contentHeight <= names[i].height + 1,
+                           "medication name " + i + " receives every wrapped line")
+                }
+                for (var j = 0; j < times.length; j++)
+                    verify(times[j].font.pixelSize >= floor)
+                for (var k = 0; k < states.length; k++) {
+                    verify(states[k].font.pixelSize >= floor)
+                    compare(states[k].truncated, false)
+                    verify(states[k].contentHeight <= states[k].height + 1)
+                }
+                for (var a = 0; a < actions.length; a++) {
+                    verify(actions[a].width >= mTall.theme.touchTertiary)
+                    verify(actions[a].height >= mTall.theme.touchTertiary)
+                }
+                var rows = doseRows(mTall)
+                verify(rows.length > 0)
+                list.contentY = rows[0].height / 2
+                wait(16)
+                var clippedAction = named(mTall, "medsDoseAction-0")
+                verify(clippedAction !== undefined)
+                compare(clippedAction.enabled, false,
+                        "a partially clipped row cannot accept an accidental mark")
+                compare(clippedAction.opacity, 0)
+
+                list.positionViewAtBeginning()
+                wait(16)
+                mouseDrag(list, list.width / 2,
+                          list.height - mTall.theme.spacingLg,
+                          0, -Math.min(160, list.height / 2),
+                          Qt.LeftButton)
+                tryVerify(function () { return list.contentY > 0 }, 1000,
+                          "a vertical drag reveals later doses")
+                list.positionViewAtEnd()
+                tryVerify(function () {
+                    return named(mTall, "medsDoseName-23") !== undefined
+                }, 1000, "the final supported dose is reachable")
+
+                mTall.storeCtl.resetSettings(mTall.instanceId, {
+                    scheduleFormat: "structured",
+                    scheduleItems: structuredDoses(2, false),
+                    taken: [],
+                    takenDay: ""
+                })
+                tryVerify(function () { return !list.interactive }, 1000)
+                compare(list.contentY, 0,
+                        "a short schedule returns to its beginning")
+                compare(scrollBar.policy, ScrollBar.AlwaysOff)
+            } finally {
+                mTall.theme.textScale = oldScale
+                mTall.theme.fontChoice = oldFont
+                mTallWrap.width = 348
+                mTallWrap.height = 819
+                mTallWrap.z = 0
+            }
+        }
+
+        function test_scaled_focus_view_keeps_name_status_and_action() {
+            tryVerify(function () { return mWide.ready }, 3000)
+            var oldScale = mWide.theme.textScale
+            var oldFont = mWide.theme.fontChoice
+            try {
+                mWideWrap.z = 100
+                mWideWrap.width = 557
+                mWideWrap.height = 327
+                mWide.item.sizeClass = "wide"
+                mWide.item.nowMinsOverride = 45
+                mWide.theme.textScale = 1.45
+                mWide.theme.fontChoice = "hyperlegible"
+                mWide.storeCtl.resetSettings(mWide.instanceId, {
+                    scheduleFormat: "structured",
+                    scheduleItems: [{
+                        id: "focus-dose",
+                        time: "00:30",
+                        name: "Prescribed morning medicine with extended instructions",
+                        days: "0,1,2,3,4,5,6"
+                    }],
+                    taken: [],
+                    takenDay: ""
+                })
+                wait(64)
+
+                compare(mWide.item.showFocus, true)
+                compare(mWide.item.showSchedule, false)
+                var name = named(mWide, "medsFocusName")
+                var state = named(mWide, "medsFocusState")
+                verify(name && state)
+                verify(name.font.pixelSize >= mWide.theme.fontMinimum)
+                verify(state.font.pixelSize >= mWide.theme.fontMinimum)
+                compare(name.elide, Text.ElideNone)
+                compare(name.truncated, false)
+                verify(name.contentHeight <= name.height + 1)
+                compare(state.truncated, false)
+                verify(state.contentHeight <= state.height + 1)
+
+                var buttons = root.findAll(mWide.item, function (n) {
+                    return n.hasOwnProperty("label")
+                           && (n.label === "Mark taken" || n.label === "Undo taken")
+                }, [])
+                compare(buttons.length, 1)
+                verify(buttons[0].width >= mWide.theme.touchTertiary)
+                verify(buttons[0].height >= mWide.theme.touchTertiary)
+            } finally {
+                mWide.theme.textScale = oldScale
+                mWide.theme.fontChoice = oldFont
+                mWide.item.nowMinsOverride = -1
+                mWideWrap.width = 696
+                mWideWrap.height = 409
+                mWideWrap.z = 0
+            }
         }
     }
 }

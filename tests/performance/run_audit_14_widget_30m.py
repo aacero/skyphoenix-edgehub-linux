@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Run the audit-requested 30-minute, 14-widget Hub measurement.
+"""Run the owner-approved 30-minute, 14-widget release observation.
 
-This is diagnostic evidence, not a release gate. It deliberately has no
-duration override and does not reuse the shorter 10-widget qualification
-profile under a different name.
+The release owner explicitly waived the historical 48-hour soak. This exact,
+non-scalable observation is the accepted substitute. It proves a complete live
+load and complete resource measurements while retaining the existing active
+CPU/RSS budgets.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import argparse
 import datetime
 import json
+import math
 import os
 import statistics
 import sys
@@ -43,6 +45,8 @@ from run_hub_profiles import validate_candidate_build  # noqa: E402
 AUDIT_DURATION_SECONDS = 1800.0
 AUDIT_INTERVAL_SECONDS = 30.0
 WARMUP_SECONDS = 30.0
+MAXIMUM_AVERAGE_CPU_PERCENT = 5.0
+MAXIMUM_RSS_MIB = 250.0
 AUDIT_WIDGET_TYPES = (
     "cpu",
     "gpu",
@@ -354,12 +358,67 @@ def run(binary: Path, output_dir: Path) -> int:
             else None,
             "method": "deduplicated DRM client resident VRAM plus GTT from /proc/PID/fdinfo",
         }
+        failures: list[str] = []
+        if startup.get("qualified") is not True:
+            failures.append("startup-to-first-frame gate failed")
+        if metrics["observed_duration_seconds"] + 1e-6 < AUDIT_DURATION_SECONDS:
+            failures.append("the full 30-minute observation was not completed")
+        minimum_samples = math.ceil(
+            (math.floor(AUDIT_DURATION_SECONDS / AUDIT_INTERVAL_SECONDS) + 1)
+            * 0.95
+        )
+        if metrics["sample_count"] < minimum_samples:
+            failures.append(
+                f"only {metrics['sample_count']} samples were retained; "
+                f"at least {minimum_samples} are required"
+            )
+        if metrics["maximum_sample_gap_seconds"] > AUDIT_INTERVAL_SECONDS * 3.0:
+            failures.append("the sample trace contains an excessive time gap")
+        if metrics["average_cpu_percent"] >= MAXIMUM_AVERAGE_CPU_PERCENT:
+            failures.append(
+                f"average CPU {metrics['average_cpu_percent']:.3f}% is not "
+                f"below {MAXIMUM_AVERAGE_CPU_PERCENT:.3f}%"
+            )
+        steady_cpu = metrics["steady_state_last_20m"]["average_cpu_percent"]
+        if steady_cpu >= MAXIMUM_AVERAGE_CPU_PERCENT:
+            failures.append(
+                f"steady-state CPU {steady_cpu:.3f}% is not below "
+                f"{MAXIMUM_AVERAGE_CPU_PERCENT:.3f}%"
+            )
+        if metrics["rss_peak_mib"] >= MAXIMUM_RSS_MIB:
+            failures.append(
+                f"peak RSS {metrics['rss_peak_mib']:.3f}MiB is not below "
+                f"{MAXIMUM_RSS_MIB:.3f}MiB"
+            )
+        if metrics["gpu_memory"]["available"] is not True:
+            failures.append("GPU memory could not be measured for every sample")
+        for metric_name in (
+            "rss_mib",
+            "file_descriptors",
+            "threads",
+            "cpu_percent",
+        ):
+            trend = metrics["slopes"].get(metric_name)
+            if not isinstance(trend, dict) or not math.isfinite(
+                float(trend.get("per_hour", math.nan))
+            ):
+                failures.append(f"{metric_name} slope is unavailable")
         report = {
             "schema_version": 1,
             "evidence_type": "xeneon-hub-14-widget-30-minute-audit",
-            "status": "MEASURED",
-            "qualified": None,
-            "qualification_note": "Diagnostic substitute requested by the release owner; no release threshold is invented.",
+            "status": "PASS" if not failures else "FAIL",
+            "qualified": not failures,
+            "failures": failures,
+            "qualification_note": (
+                "Owner-approved substitute for the waived 48-hour soak. "
+                "Qualification requires the complete 30-minute trace, exact "
+                "14-widget load, startup pass, CPU/RSS budgets, GPU-memory "
+                "availability, and finite CPU/RSS/FD/thread slopes."
+            ),
+            "accepted_risk": (
+                "The release owner explicitly waived the historical 48-hour "
+                "idle soak; this result does not claim 48-hour endurance."
+            ),
             "started_utc": started_utc,
             "completed_utc": _iso_now(),
             "candidate": candidate,
@@ -377,7 +436,7 @@ def run(binary: Path, output_dir: Path) -> int:
             "metrics": metrics,
         }
         write_json_atomic(output_dir / "report.json", report)
-        return 0
+        return 0 if not failures else 1
     except BaseException as exc:
         write_error_report(
             output_dir / "report.json",

@@ -62,8 +62,9 @@ filecount=0
 # this landed nothing anywhere treated them as failures: the inert
 # BackgroundPicker threw a TypeError on every click while three suites reported
 # 5/5, 16/16 and 16/16.
-short_sha="$(git rev-parse --short=12 HEAD)"
-QLOGDIR="${QLOGDIR:-$PROJECT_DIR/artifacts/$short_sha/qml-ui-logs}"
+full_sha="$(git rev-parse HEAD)"
+qml_run_id="qml-ui-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+QLOGDIR="${QLOGDIR:-$PROJECT_DIR/artifacts/$full_sha/$qml_run_id}"
 mkdir -p "$QLOGDIR"
 
 for t in tests/ui/tst_*.qml; do

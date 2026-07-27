@@ -270,6 +270,23 @@ Item {
             verify(store._addSizeFor(0, "gpu").length > 0, "_addSizeFor returns a size")
         }
 
+        function test_columns_refuses_full_two_to_one_without_false_state() {
+            store.load("blank")
+            verify(store.setPageColumns(0, 2), "two-column mode is available")
+            // Six half-width 0.5x1 tiles fill all six long half-cells. Reflowing
+            // them to full width would require twelve and must be refused.
+            var types = ["cpu", "gpu", "ram", "net", "disk", "clock"]
+            for (var i = 0; i < types.length; i++)
+                verify(store.addTile(0, types[i]) !== null, "added " + types[i])
+            var before = store.pages()[0].tiles.map(function (t) { return t.size })
+            verify(!store.setPageColumns(0, 1),
+                   "an overflowing one-column reflow is refused")
+            compare(store.pageColumns(0), 2,
+                    "the persisted selector state remains two columns")
+            compare(store.pages()[0].tiles.map(function (t) { return t.size }),
+                    before, "every existing tile keeps its prior size")
+        }
+
         // The Hub add-slot helpers: pageIsFull gates the "new screen" hint, nextAddSize
         // previews where/what the in-page "＋" ghost shows.
         function test_add_affordance_helpers() {

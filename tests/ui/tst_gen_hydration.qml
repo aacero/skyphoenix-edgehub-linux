@@ -399,6 +399,14 @@ Item {
         WidgetHarness { id: yBase; anchors.fill: parent; widgetFile: "HydrationWidget.qml"; expanded: false } }
     Item { id: yWideWrap; width: 696; height: 409
         WidgetHarness { id: yWide; anchors.fill: parent; widgetFile: "HydrationWidget.qml"; expanded: false } }
+    Item { width: 278; height: 654
+        WidgetHarness { id: yTightTall; anchors.fill: parent; widgetFile: "HydrationWidget.qml"; expanded: false } }
+    Item { width: 557; height: 327
+        WidgetHarness { id: yTightWide; anchors.fill: parent; widgetFile: "HydrationWidget.qml"; expanded: false } }
+    Item { width: 557; height: 654
+        WidgetHarness { id: yTightBase; anchors.fill: parent; widgetFile: "HydrationWidget.qml"; expanded: false } }
+    Item { width: 677; height: 490
+        WidgetHarness { id: yTightLandscape; anchors.fill: parent; widgetFile: "HydrationWidget.qml"; expanded: false } }
 
     // The OVERLAY, at the two boxes Dashboard actually gives it. `expanded: true`
     // AND sizeClass "full" - the real pairing - because a mode-keyed literal can
@@ -546,6 +554,71 @@ Item {
             verify(dropAfter === dropBefore,
                    "the same droplet object survives the class flip (no rebuild)")
             y.sizeClass = "compact"
+        }
+
+        function test_constrained_tiles_keep_grid_and_actions_inside_the_body() {
+            tryVerify(function () {
+                return yTightTall.ready && yTightWide.ready
+                       && yTightBase.ready && yTightLandscape.ready
+            }, 3000)
+            var cases = [
+                { host: yTightTall, cls: "tall", scale: 1.45 },
+                { host: yTightWide, cls: "wide", scale: 1.45 },
+                { host: yTightBase, cls: "compact", scale: 1.45 },
+                { host: yTightLandscape, cls: "compact", scale: 1.3 }
+            ]
+            for (var c = 0; c < cases.length; c++) {
+                var host = cases[c].host
+                host.theme.textScale = cases[c].scale
+                host.storeCtl.patchSettings(host.instanceId, {
+                    goal: 50,
+                    count: 0,
+                    glassMl: 1250,
+                    day: Qt.formatDate(new Date(), "yyyy-MM-dd")
+                })
+                var widget = host.item
+                widget.sizeClass = cases[c].cls
+                wait(32)
+                compare(widget.goal, 20,
+                        "external goals use the same maximum as the UI")
+                compare(widget.glassMl, 1000,
+                        "external serving sizes use the same maximum as the UI")
+
+                var tile = findAll(widget, function (n) {
+                    return n.objectName === "hydrationTileLayout"
+                }, [])[0]
+                var grid = findAll(widget, function (n) {
+                    return n.objectName === "hydrationGlassGrid"
+                }, [])[0]
+                var actions = findAll(widget, function (n) {
+                    return n.objectName === "hydrationTileActions"
+                }, [])[0]
+                verify(tile && grid && actions, "responsive tile sections resolve")
+                var body = tile.parent
+                var sections = [tile, grid, actions]
+                for (var s = 0; s < sections.length; s++) {
+                    var section = sections[s]
+                    var point = section.mapToItem(body, 0, 0)
+                    verify(point.x >= -1 && point.y >= -1
+                           && point.x + section.width <= body.width + 1
+                           && point.y + section.height <= body.height + 1,
+                           section.objectName + " stays inside " + cases[c].cls
+                           + " body at text scale " + cases[c].scale)
+                }
+                verify(grid.width <= widget.tileColumnWidth + 1,
+                       "glass grid respects its actual layout column")
+                var controls = pills(host)
+                for (var p = 0; p < controls.length; p++) {
+                    var controlPoint = controls[p].mapToItem(body, 0, 0)
+                    verify(controlPoint.x >= -1 && controlPoint.y >= -1
+                           && controlPoint.x + controls[p].width <= body.width + 1
+                           && controlPoint.y + controls[p].height <= body.height + 1,
+                           controls[p].label + " remains visible and reachable")
+                    verify(controls[p].height >= host.theme.touchTertiary,
+                           controls[p].label + " retains its touch-target floor")
+                }
+                host.theme.textScale = 1.15
+            }
         }
 
         // ── size, not mode ──────────────────────────────────────────────────

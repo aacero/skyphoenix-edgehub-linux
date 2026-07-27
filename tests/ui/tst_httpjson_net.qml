@@ -400,6 +400,23 @@ Item {
             }, [])
             return g.length ? g[0] : null
         }
+        function sparkOf(item) {
+            var charts = findAllNodes(item, function (n) {
+                return n.objectName === "httpTrendChart"
+            }, [])
+            return charts.length ? charts[0] : null
+        }
+        function named(item, objectName) {
+            var matches = findAllNodes(item, function (n) {
+                return n.objectName === objectName
+            }, [])
+            return matches.length ? matches[0] : null
+        }
+        function cleanup() {
+            hS.expanded = false
+            hS.theme.textScale = 1.15
+            hS.theme.fontChoice = "hyperlegible"
+        }
         function visibleListRows(item) {
             return findAllNodes(item, function (n) {
                 return n.hasOwnProperty("text") && /^• service-/.test(String(n.text))
@@ -495,13 +512,6 @@ Item {
         // the sparkline collapsed to ~6px - a flat line pretending to be a chart.
         function test_the_trend_gets_real_height_when_it_is_the_point() {
             var hist = [0.31, 0.36, 0.29, 0.42, 0.55, 0.48, 0.61, 0.44]
-            function sparkOf(item) {
-                var s = findAllNodes(item, function (n) {
-                    return n.hasOwnProperty("values") && n.hasOwnProperty("color")
-                           && root.effVisible(n)
-                }, [])
-                return s.length ? s[0] : null
-            }
             var base = shape(696, 819, "compact", { url: "http://x/y", mode: "value" })
             seedValue(128); base.hist = hist; wait(32)
             var baseSpark = sparkOf(base)
@@ -522,10 +532,135 @@ Item {
             verify(tallH > 100, "not a 6px flat line (" + tallH + "px)")
         }
 
+        function test_expanded_value_chart_exposes_axes_and_statistics() {
+            hS.expanded = true
+            hS.theme.textScale = 1.45
+            var hist = [31, 36, 29, 42, 55, 48, 61, 44]
+            var w = shape(760, 620, "full",
+                          { url: "http://x/y", mode: "value",
+                            jsonPath: "production.regions.europe.latency",
+                            unit: "milliseconds" })
+            seedValue(44); w.hist = hist; wait(32)
+            var chart = sparkOf(w)
+            var section = named(w, "httpTrendSection")
+            var legend = named(w, "httpTrendLegend")
+            verify(chart !== null && chart.visible, "expanded trend is rendered")
+            verify(section !== null && legend !== null,
+                   "trend exposes its semantic section and visual legend")
+            verify(chart.height >= w.chartDetailHeight - 1,
+                   "expanded chart receives its detailed allocation ("
+                   + chart.height + "px)")
+            compare(chart.axesVisible, true,
+                    "the expanded trend identifies value and time domains")
+            compare(chart.statisticsVisible, true,
+                    "the expanded trend identifies average and peak")
+            compare(legend.text,
+                    "production.regions.europe.latency · milliseconds")
+            verify(!legend.truncated && legend.contentWidth <= legend.width + 0.5,
+                   "the complete configured path and unit fit the visual legend")
+            verify(section.Accessible.name.indexOf(
+                       "production.regions.europe.latency") >= 0,
+                   "accessibility retains the configured JSON path")
+            verify(section.Accessible.name.indexOf("unit milliseconds") >= 0,
+                   "accessibility retains the configured unit")
+            verify(section.Accessible.name.indexOf("average") >= 0
+                   && section.Accessible.name.indexOf("peak") >= 0,
+                   "accessibility retains the chart statistics")
+            compare(chart.Accessible.ignored, true,
+                    "the nested chart does not duplicate the semantic section")
+        }
+
+        function test_large_value_charts_keep_context_in_both_orientations() {
+            var hist = [31, 36, 29, 42, 55, 48, 61, 44]
+            var projections = [
+                [696, 1637, "portrait"],
+                [1692, 612, "landscape"]
+            ]
+            for (var i = 0; i < projections.length; i++) {
+                var p = projections[i]
+                var w = shape(p[0], p[1], "large",
+                              { url: "http://x/y", mode: "value",
+                                jsonPath: "service.latency", unit: "ms" })
+                seedValue(44); w.hist = hist; wait(32)
+                var chart = sparkOf(w)
+                verify(chart !== null && chart.visible,
+                       p[2] + " large trend is rendered")
+                compare(chart.axesVisible, true,
+                        p[2] + " large trend has value/time axes")
+                compare(chart.statisticsVisible, true,
+                        p[2] + " large trend has average/peak context")
+            }
+        }
+
         function test_value_micro_shows_the_number_alone() {
             var w = shape(423, 306, "compact", { url: "http://x/y", mode: "value", jsonPath: "d.v" })
             seedValue(128); wait(32)
             compare(w.rich, false, "no trend, no path caption on a half-cell")
+        }
+
+        function test_narrow_high_scale_header_is_complete_and_accessible() {
+            hS.theme.textScale = 1.45
+            hS.theme.fontChoice = "lexend"
+            var w = shape(278, 654, "tall",
+                          { url: "http://x/y", mode: "value" })
+            seedValue(42.7); wait(32)
+            compare(w.narrowHeader, true)
+            compare(w.title, "HTTP",
+                    "the constrained visual title uses a complete abbreviation")
+            compare(w.Accessible.name, "HTTP / JSON",
+                    "the accessibility name keeps the full widget identity")
+        }
+
+        function test_wide_high_scale_max_reading_and_unit_fit() {
+            hS.theme.textScale = 1.45
+            hS.theme.fontChoice = "hyperlegible"
+            var w = shape(557, 327, "wide",
+                          { url: "http://x/y", mode: "value",
+                            jsonPath: "production.regions.europe.latency",
+                            unit: "milliseconds", decimals: 6 })
+            seedValue(999999.999999)
+            w.hist = [31, 36, 29, 42, 55, 48, 61, 44]
+            wait(32)
+            var value = named(w, "httpValueLabel")
+            var unit = named(w, "httpUnitLabel")
+            verify(value !== null && unit !== null,
+                   "the reading and its configured unit are rendered")
+            compare(value.text, "999999.999999")
+            compare(unit.text, "milliseconds")
+            verify(!value.truncated && value.contentWidth <= value.width + 0.5,
+                   "the maximum-precision reading fits its allocated column")
+            verify(!unit.truncated && unit.contentWidth <= unit.width + 0.5,
+                   "the complete unit fits without abbreviation")
+            verify(value.font.pixelSize >= hS.theme.fontMinimum,
+                   "the reading stays at or above the selected type floor")
+            verify(unit.font.pixelSize >= hS.theme.fontMinimum,
+                   "the unit stays at or above the selected type floor")
+            verify(w.Accessible.description.indexOf("999999.999999") >= 0
+                   && w.Accessible.description.indexOf("milliseconds") >= 0,
+                   "the accessible reading preserves value and unit")
+        }
+
+        function test_micro_error_wraps_and_keeps_recovery_context() {
+            hS.theme.textScale = 1.15
+            hS.theme.fontChoice = "hyperlegible"
+            var w = shape(278, 327, "compact",
+                          { url: "http://x/y", mode: "value",
+                            httpErr: "Endpoint returned an oversized response",
+                            httpHelp: "Reduce the response size or select a narrower JSON path." })
+            wait(32)
+            var error = named(w, "httpReadingContext")
+            verify(error !== null && error.visible, "the error replaces the reading")
+            compare(error.text, "Endpoint returned an oversized response")
+            verify(!error.truncated && error.contentWidth <= error.width + 0.5,
+                   "the complete error wraps inside the micro tile")
+            verify(error.font.pixelSize >= hS.theme.fontMinimum,
+                   "the wrapped error stays at the selected type floor")
+            verify(w.Accessible.description.indexOf(
+                       "Endpoint returned an oversized response") >= 0,
+                   "accessibility retains the complete error")
+            verify(w.Accessible.description.indexOf(
+                       "Reduce the response size") >= 0,
+                   "accessibility retains recovery guidance even when it is not visual")
         }
 
         // ── mode: list - the same rule calendar applies to maxEvents ─────────

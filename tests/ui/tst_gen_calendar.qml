@@ -110,6 +110,33 @@ Item {
             if (/^E\d+$/.test(t[i].text) && t[i].visible) n++
         return n
     }
+    function effectiveVisible(node) {
+        var current = node
+        while (current) {
+            if (current.visible === false || current.opacity <= 0) return false
+            current = current.parent
+        }
+        return true
+    }
+    function objectsNamed(harness, name) {
+        var out = []
+        function scan(node) {
+            if (!node) return
+            if (node.objectName === name && effectiveVisible(node)) out.push(node)
+            for (var i = 0; node.children && i < node.children.length; i++)
+                scan(node.children[i])
+        }
+        scan(harness.item)
+        return out
+    }
+    function longFakeEvents(n) {
+        var out = fakeEvents(n)
+        for (var i = 0; i < out.length; i++) {
+            out[i].title = "Quarterly release readiness review " + (i + 1)
+            out[i].location = "Conference room Vienna"
+        }
+        return out
+    }
 
     // ── DTSTART / zone parsing ──────────────────────────────────────────────
     TestCase {
@@ -603,15 +630,37 @@ Item {
         when: windowShown
 
         function initTestCase() { tryVerify(function () { return hS.ready }, 3000) }
+        function cleanup() {
+            hS.theme.textScale = 1.15
+            hS.theme.fontChoice = "hyperlegible"
+            sizeWrap.width = 696
+            sizeWrap.height = 819
+            hS.item.errorText = ""
+            hS.item.stateHelp = ""
+            hS.item.loading = false
+        }
 
         function shape(width, height, cls, maxEvents, nEvents) {
             sizeWrap.width = width; sizeWrap.height = height
             hS.item.sizeClass = cls
             hS.storeCtl.patchSettings("test-instance",
                 { url: "http://127.0.0.1:1/x.ics", maxEvents: maxEvents })
+            hS.item.errorText = ""
+            hS.item.stateHelp = ""
+            hS.item.loading = false
             hS.item.events = fakeEvents(nEvents === undefined ? 12 : nEvents)
             wait(32)
             return hS.item
+        }
+        function verifyInside(item, ancestor, label) {
+            verify(item !== null, label + " exists")
+            var p = item.mapToItem(ancestor, 0, 0)
+            verify(p.x >= -1 && p.y >= -1,
+                   label + " starts inside the agenda")
+            verify(p.x + item.width <= ancestor.width + 1,
+                   label + " stays inside the agenda width")
+            verify(p.y + item.height <= ancestor.height + 1,
+                   label + " stays inside the agenda height")
         }
 
         // ── THE DECISION, both directions ───────────────────────────────────
@@ -687,6 +736,93 @@ Item {
             var big = shape(696, 1637, "large", 12, 12)
             verify(big.rowH > smallH,
                    "a taller box earns taller rows (" + smallH + " → " + big.rowH + ")")
+        }
+
+        function test_matrix_narrow_titles_wrap_without_losing_source_text() {
+            hS.theme.textScale = 1.3
+            hS.theme.fontChoice = "hyperlegible"
+            var w = shape(348, 818, "tall", 5, 5)
+            w.events = longFakeEvents(5)
+            wait(32)
+
+            compare(w.shownCount, 5)
+            compare(w.wrapEventTitles, true)
+            var titles = objectsNamed(hS, "calendarEventTitle")
+            var rows = objectsNamed(hS, "calendarEventRow")
+            compare(titles.length, 5)
+            compare(rows.length, 5)
+            for (var i = 0; i < titles.length; i++) {
+                var expected = "Quarterly release readiness review " + (i + 1)
+                compare(titles[i].text, expected,
+                        "the visual title retains the source string")
+                verify(!titles[i].truncated,
+                       "the two-line title is complete at row " + i)
+                verify(titles[i].font.pixelSize >= hS.theme.fontMinimum)
+                verify(rows[i].accessibleSummary.indexOf(expected) === 0,
+                       "the accessible row retains the complete title")
+            }
+        }
+
+        function test_matrix_error_state_is_single_centered_and_bounded() {
+            hS.theme.textScale = 1.45
+            hS.theme.fontChoice = "lexend"
+            var w = shape(278, 654, "tall", 5, 0)
+            w.events = []
+            w.errorText = "Calendar source could not be reached"
+            w.stateHelp =
+                "Check the private calendar reference and network permission."
+            wait(32)
+
+            var header = root.objectsNamed(hS, "calendarAgendaHeader")
+            compare(header.length, 0,
+                    "an empty agenda does not duplicate its error in the header")
+            var empty = root.objectsNamed(hS, "calendarEmptyState")
+            var titles = root.objectsNamed(hS, "calendarEmptyTitle")
+            var help = root.objectsNamed(hS, "calendarEmptyHelp")
+            compare(empty.length, 1)
+            compare(titles.length, 1)
+            compare(help.length, 1)
+            compare(titles[0].text, "Calendar source could not be reached")
+            compare(help[0].text,
+                    "Check the private calendar reference and network permission.")
+            verify(!titles[0].truncated && !help[0].truncated)
+            verify(titles[0].paintedWidth <= titles[0].width + 1)
+            verify(help[0].paintedWidth <= help[0].width + 1)
+            verifyInside(titles[0], empty[0], "calendar error title")
+            verifyInside(help[0], empty[0], "calendar error help")
+        }
+
+        function test_matrix_short_projections_bound_every_rendered_row() {
+            var cases = [
+                { w: 846, h: 306, cls: "wide", scale: 1.15,
+                  font: "hyperlegible", count: 5, longTitles: true },
+                { w: 557, h: 327, cls: "wide", scale: 1.45,
+                  font: "hyperlegible", count: 12, longTitles: false },
+                { w: 338, h: 490, cls: "tall", scale: 1.3,
+                  font: "hyperlegible", count: 12, longTitles: false }
+            ]
+            for (var c = 0; c < cases.length; c++) {
+                var row = cases[c]
+                hS.theme.textScale = row.scale
+                hS.theme.fontChoice = row.font
+                var w = shape(row.w, row.h, row.cls, 12, row.count)
+                if (row.longTitles) w.events = longFakeEvents(row.count)
+                wait(32)
+
+                var agenda = root.objectsNamed(hS, "calendarTileAgenda")[0]
+                var rows = root.objectsNamed(hS, "calendarEventRow")
+                var times = root.objectsNamed(hS, "calendarEventWhen")
+                compare(rows.length, w.shownCount)
+                compare(times.length, w.shownCount)
+                verify(w.shownCount > 0)
+                for (var i = 0; i < rows.length; i++) {
+                    verify(!times[i].truncated,
+                           "time remains complete in projection " + c
+                           + ", row " + i)
+                    verifyInside(rows[i], agenda,
+                                 "projection " + c + " event row " + i)
+                }
+            }
         }
 
         // 1x2 is calendar's largest declared size, and 12 events is why: the cap

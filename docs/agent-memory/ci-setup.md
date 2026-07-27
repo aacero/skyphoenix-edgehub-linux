@@ -16,9 +16,12 @@ run before because it triggered only on `main` while the repo is on `master` - f
 (offscreen qmltestrunner + `scripts/qml_coverage.py` gate), `cpp-test` (cmake
 `-DXENEON_BUILD_TESTS=ON -DXENEON_COVERAGE=ON` + ctest + gcovr → uploads `cpp-lcov`
 artifact), `coverage` (needs `[test, cpp-test]`: cargo-llvm-cov for Rust, downloads
-cpp-lcov, `lcov` merge, gates **Rust ≥95 AND merged Rust+C++ ≥95** via a DA-line count).
-Measured green: Rust 96.04%, merged 96.64%, QML behavior-matrix 99.4%. See
-[[companion-and-testing]] for the test suites themselves.
+cpp-lcov and an `lcov` merge. Current gates require Rust ≥95 and C++ ≥95
+independently; the merged DA-line count is diagnostic only).
+The last historical run measured Rust at 96.04% and the merged diagnostic at
+96.64%. QML is not assigned a percentage: every enumerated requirement must
+have an assertion-backed claim. See [[companion-and-testing]] for the test
+suites themselves.
 
 GOTCHAS (each cost a red CI run the first time CI ever executed - the dev box is Qt
 **6.11.1**, CI runs Qt **6.7.3**, so version-specific issues ONLY show in CI):
@@ -35,7 +38,8 @@ GOTCHAS (each cost a red CI run the first time CI ever executed - the dev box is
 2. **gcovr MUST come from pipx, not apt.** The C++ sources mark hardware/QScreen/QProcess
    glue with in-source `// GCOVR_EXCL_START/STOP/LINE`. apt gcovr does NOT honor them, so
    it counts those lines (e.g. `orientation_sensor.cpp` 57% / 114 lines instead of the
-   excluded ~100% / fewer lines) → C++ ~85% → **merged coverage 94.10% < 95, gate fails**.
+   excluded ~100% / fewer lines) → C++ ~85%, which fails the independent C++
+   gate even if a merged percentage appears higher.
    FIX: `pipx install gcovr` (preinstalled on the runner) + `echo "$HOME/.local/bin" >>
    $GITHUB_PATH`; matches the local gcovr 8.x → excluded lines dropped → C++ 96.7% → merged
    96.64%. Locally: gcovr installed via `uv tool install gcovr` (pip/pip3 are BOTH absent

@@ -19,7 +19,9 @@ WidgetChrome {
     // rolling over at midnight on a 24/7 device instead of freezing at boot-day.
     property int tick: 0
 
-    title: "Break Reminder"; iconName: "break"; accentColor: theme.success
+    title: "Break Reminder"
+    iconName: compactHeaderStatus ? "" : "break"
+    accentColor: theme.success
     // The micro tile is a bare ring - a header would compete for a twelfth of
     // the screen (see the sizing flags below WidgetChrome's contract props).
     showHeader: !micro
@@ -84,9 +86,15 @@ WidgetChrome {
     // The body carries the full schedule explanation. Keep the header state
     // glanceable in the narrow supported column without squeezing the widget
     // title out of its own header.
-    status: w.stateLabel === "Outside active hours" ? "Off hours"
-            : w.stateLabel === "Schedule disabled" ? "Disabled"
-            : w.stateLabel
+    readonly property string fullHeaderStatus:
+        w.stateLabel === "Outside active hours" ? "Off hours"
+        : w.stateLabel === "Schedule disabled" ? "Disabled"
+        : w.stateLabel
+    // The state remains explicit in the body at constrained widths. Yield the
+    // duplicate header status before it can force the widget title to elide.
+    readonly property bool compactHeaderStatus:
+        !micro && width < theme.fontTitle * 18
+    status: w.compactHeaderStatus ? "" : w.fullHeaderStatus
     readonly property var breakIdeas: [
         "Stand up & stretch", "Drink some water", "Look 20ft away for 20s",
         "Roll your shoulders", "Take 5 slow breaths", "Quick walk around"
@@ -203,8 +211,8 @@ WidgetChrome {
             accent: w.effAccent,
             primaryLabel: "I took a break",
             secondaryLabel: "Snooze " + w.snoozeMin + " min",
-            primaryCallback: function() { w.takeBreak() },
-            secondaryCallback: function() { w.snooze() }
+            primaryAction: "breakTake",
+            secondaryAction: "breakSnooze"
         })
     }
     function markDue() {
@@ -287,6 +295,16 @@ WidgetChrome {
     // the full control set stay in the overlay (a mode, not a size).
     readonly property bool showTileControls: !expanded && !micro
     readonly property bool showDetails: !expanded && !micro && Math.min(width, height) >= 600
+    readonly property real bodyHeightBudget: Math.max(
+        0, height - 2 * contentMargins
+           - (showHeader
+              ? headerHeight + (big ? theme.spacingSm : theme.spacingXs)
+              : 0))
+    // A wide tile with less than four and a half touch rows cannot stack both
+    // due actions below the message. Keep each action touch sized and reflow
+    // them side by side instead of shrinking type or clipping the glyph.
+    readonly property bool compactDueLayout: due && !expanded && !micro && horiz
+        && bodyHeightBudget < theme.touchSecondary * 4.5
     function scheduleLabel() {
         function hour(h) { return (h < 10 ? "0" : "") + h + ":00" }
         return workStartHour === workEndHour ? "All day"
@@ -312,6 +330,7 @@ WidgetChrome {
     // ── Tile layout (all sizes; the overlay has its own below) ──────────────
     GridLayout {
         id: tileLayout
+        objectName: "breakTileLayout"
         anchors.centerIn: parent
         width: parent.width * 0.94
         visible: !w.expanded && !w.due
@@ -357,7 +376,7 @@ WidgetChrome {
                     text: w.micro && w.stateLabel === "Running" ? "break"
                         : w.stateLabel === "Outside active hours" ? "off hours"
                         : w.stateLabel.toLowerCase()
-                    font.pixelSize: Math.max(18,
+                    font.pixelSize: Math.max(18, theme.fontMinimum,
                                              Math.min(ringBox.width * 0.075, theme.fontLabel))
                     color: theme.textPrimary
                     opacity: 0.78
@@ -374,7 +393,7 @@ WidgetChrome {
                 objectName: "breakStateDescription"
                 Layout.alignment: Qt.AlignHCenter
                 text: w.stateDescription
-                font.pixelSize: Math.max(18,
+                font.pixelSize: Math.max(18, theme.fontMinimum,
                                          Math.min(w.width * 0.032, theme.fontLabel))
                 color: theme.textPrimary
                 opacity: 0.82
@@ -449,24 +468,33 @@ WidgetChrome {
 
     // ── Due state on the tile: the reminder is the content ──────────────────
     ColumnLayout {
+        id: dueLayout
+        objectName: "breakDueLayout"
         anchors.centerIn: parent
         width: parent.width * 0.92
         visible: !w.expanded && w.due
         spacing: w.micro ? theme.spacingXs : theme.spacingSm
         Text {
+            objectName: "breakDueMessage"
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
             // Custom due-messages are user text and can be long - cap the width and
             // wrap/elide so they never overflow the tile (S12).
-            wrapMode: Text.WordWrap; maximumLineCount: w.micro ? 2 : 3; elide: Text.ElideRight
+            wrapMode: Text.WordWrap
+            maximumLineCount: w.micro || w.compactDueLayout ? 2 : 3
+            elide: Text.ElideRight
             text: w.message.length ? w.message : "Take a break!"
             font.pixelSize: w.micro ? Math.max(18, Math.min(w.width * 0.09, 26))
-                                    : Math.max(22, Math.min(w.width * 0.06, 44))
+                           : w.compactDueLayout
+                             ? Math.max(theme.fontTitle,
+                                        Math.min(w.width * 0.045, 34))
+                             : Math.max(22, Math.min(w.width * 0.06, 44))
             font.bold: true; font.family: theme.fontDisplay
             color: w.effAccent
         }
         // Break-activity suggestion when a break is due (ADHD "what do I do now?").
         Text {
+            objectName: "breakDueSuggestion"
             Layout.fillWidth: true; visible: w.showSuggestion && !w.micro
             horizontalAlignment: Text.AlignHCenter
             text: "Try: " + w.breakIdeas[w.breaksToday % w.breakIdeas.length]
@@ -475,10 +503,29 @@ WidgetChrome {
             elide: Text.ElideRight; maximumLineCount: 1
         }
         // Quick acknowledge - reachable at touch size in EVERY tile size.
-        PillButton { Layout.alignment: Qt.AlignHCenter
-            label: "Done"; primary: true; tint: w.effAccent; onClicked: w.takeBreak() }
-        PillButton { Layout.alignment: Qt.AlignHCenter; visible: !w.micro
-            label: "Snooze " + w.snoozeMin + "m"; glyph: "⏱"; onClicked: w.snooze() }
+        // A short-wide due card uses two columns; all other projections keep the
+        // familiar vertical action order.
+        GridLayout {
+            objectName: "breakDueControls"
+            Layout.alignment: Qt.AlignHCenter
+            columns: w.compactDueLayout ? 2 : 1
+            columnSpacing: theme.spacingSm
+            rowSpacing: theme.spacingSm
+            PillButton {
+                objectName: "breakDueDone"
+                label: "Done"
+                primary: true
+                tint: w.effAccent
+                onClicked: w.takeBreak()
+            }
+            PillButton {
+                objectName: "breakDueSnooze"
+                visible: !w.micro
+                label: "Snooze " + w.snoozeMin + "m"
+                glyph: "⏱"
+                onClicked: w.snooze()
+            }
+        }
     }
 
     // ── Expanded overlay: the full control set ───────────────────────────────

@@ -26,9 +26,10 @@ import QtQuick
 // full stop. Reusing `w`/`h` would have silently reinterpreted them - old `h:2`
 // meant "twice as tall as my siblings", new means "two thirds of the screen" -
 // and there would have been no way to tell a migrated tile from a stale one.
-// `version` cannot serve as that guard: it is WRITTEN (here and by
-// PresetCatalog) but never read or branched on anywhere in the codebase, so
-// every document on disk claims `1` regardless of its actual shape.
+// `version` protects the whole document from an older build. Rust enforces the
+// same boundary before loading or saving config, while this QML check protects
+// direct test bridges and keeps an incompatible Manager push from mutating the
+// live model.
 // ─────────────────────────────────────────────────────────────────────────
 Item {
     id: store
@@ -37,6 +38,7 @@ Item {
     // The full document. Structural changes reassign this (clone) to fire
     // bindings; per-widget settings changes mutate in place + bump `revision`.
     property var document: ({ "version": 1, "appearance": {}, "pages": [], "settings": {} })
+    readonly property int schemaVersion: 1
     property int revision: 0
     // Bumps ONLY on structural changes (pages/tiles added/removed/moved/resized,
     // page rename/bg/cols, load/applyExternal). The dashboard's page+tile Repeater
@@ -44,6 +46,9 @@ Item {
     // keystroke/toggle) no longer tear down and rebuild every tile Loader.
     property int structureRevision: 0
     property bool loaded: false
+    // Safe mode is a process-local recovery session. It may normalise or edit
+    // the in-memory document for display, but must never publish those bytes.
+    property bool persistenceEnabled: true
 
     signal changed()
 
@@ -54,6 +59,17 @@ Item {
     }
     // True while a debounced disk save is pending (introspection for tests).
     readonly property alias _savePending: saveTimer.running
+    // Persistence is an explicit state machine. A failed write leaves the live
+    // document dirty and recoverable instead of looking saved until restart.
+    property bool dirty: false
+    property bool saveFailed: false
+    property string saveFailureMessage: ""
+    property string recoveryPath: ""
+    property string _lastFailedPayload: ""
+    // True only while an authoritative document is replacing the live model.
+    // Widgets use this narrow guard to avoid turning reactive change handlers
+    // into new local writes after the Manager document was already persisted.
+    property bool externalApplyInProgress: false
 
     function _hasBridge() {
         return (typeof configBridge !== "undefined") && configBridge
@@ -83,6 +99,10 @@ Item {
         if (d.settings) {
             for (var id in d.settings) {
                 var b = d.settings[id]
+                if (!store._isPlainObject(b)) {
+                    d.settings[id] = {}
+                    continue
+                }
                 for (var k in store._ephemeralKeys)
                     if (b[k] !== undefined) delete b[k]
             }
@@ -91,18 +111,91 @@ Item {
     }
 
     function _flush() {
+        // Every call is an immediate commit boundary, including preset seeding
+        // and shutdown. Retire any older debounce first so it cannot issue a
+        // duplicate write after this newer document has already been saved.
+        saveTimer.stop()
+        if (!persistenceEnabled) {
+            dirty = false
+            saveFailed = false
+            saveFailureMessage = ""
+            recoveryPath = ""
+            _lastFailedPayload = ""
+            return true
+        }
         // E9 forced-preset lock: never write. The in-memory document is the
         // org's preset; persisting it would overwrite the user's OWN saved
         // layout (which must come back intact if the policy is ever removed),
         // and "user edits to layout don't persist" is the policy's contract.
         if (policyLockedPreset !== "") return true
-        if (_hasBridge())
-            return configBridge.saveUiState(JSON.stringify(store._persistableData())) !== false
-        return true
+        if (!_hasBridge()) {
+            dirty = false
+            saveFailed = false
+            saveFailureMessage = ""
+            recoveryPath = ""
+            _lastFailedPayload = ""
+            return true
+        }
+        var payload = JSON.stringify(store._persistableData())
+        var ok = configBridge.saveUiState(payload) !== false
+        if (ok) {
+            dirty = false
+            saveFailed = false
+            saveFailureMessage = ""
+            recoveryPath = ""
+            _lastFailedPayload = ""
+            return true
+        }
+
+        dirty = true
+        saveFailed = true
+        saveFailureMessage = payload.length > 1024 * 1024
+            ? "This layout is too large to save. Remove or shorten stored text, then retry."
+            : "The latest changes could not be saved. They remain open in this session."
+        if (_lastFailedPayload !== payload) {
+            _lastFailedPayload = payload
+            recoveryPath = ""
+            if (typeof configBridge.exportUiStateRecovery === "function")
+                recoveryPath = configBridge.exportUiStateRecovery(payload) || ""
+        }
+        return false
     }
 
-    // Force an immediate (non-debounced) save - used on structural edits.
-    function flushNow() { saveTimer.stop(); return _flush() }
+    // Force an immediate (non-debounced) save when a real mutation is pending.
+    // A clean shutdown or offline file-watch preflight must not rewrite the
+    // current generation merely because it asked whether anything was dirty.
+    function flushNow() {
+        saveTimer.stop()
+        return dirty ? _flush() : true
+    }
+    function retrySave() { return flushNow() }
+    function markSaveFailed(message) {
+        // A conflict/rejection is a decision point, not another debounce cycle.
+        // Stop any armed write so only the user's explicit Retry can overwrite
+        // the competing document.
+        saveTimer.stop()
+        var payload = JSON.stringify(store._persistableData())
+        dirty = true
+        saveFailed = true
+        saveFailureMessage = message && message.length
+            ? message : "The latest changes could not be saved."
+        if (_lastFailedPayload !== payload) {
+            _lastFailedPayload = payload
+            recoveryPath = ""
+            if (_hasBridge()
+                    && typeof configBridge.exportUiStateRecovery === "function")
+                recoveryPath = configBridge.exportUiStateRecovery(payload) || ""
+        }
+    }
+    function discardUnsaved(seedLayout) {
+        saveTimer.stop()
+        saveFailed = false
+        saveFailureMessage = ""
+        recoveryPath = ""
+        _lastFailedPayload = ""
+        dirty = false
+        return load(seedLayout || "")
+    }
 
     function _clone(o) { return JSON.parse(JSON.stringify(o)) }
 
@@ -112,6 +205,10 @@ Item {
     // only enforces them on the way in.
     property QtObject _sizes: WidgetSizes {}
     property QtObject _catalog: WidgetCatalog {}
+    // Safe mode deliberately skips user-widget discovery. Preserve any legal
+    // size belonging to a then-unknown type so an intentional recovery edit
+    // cannot accidentally serialize that tile back at the baseline size.
+    property bool preserveUnknownTileSizes: false
     // The same packer the Dashboard/EdgeClone render with, so capacity is measured
     // by real placement (half-width tiles pair across the short axis), never by a
     // naive area sum. Used to enforce "one page = one screen, never scrolls".
@@ -132,6 +229,11 @@ Item {
     }
     function _sizeSupported(type, size) {
         if (!store._sizes.isLegal(size)) return false
+        if (store.preserveUnknownTileSizes) {
+            var sizesFn = store._catalogFn("sizesFor")
+            if (sizesFn && sizesFn(type).length === 0)
+                return true
+        }
         var fn = store._catalogFn("supports")
         return fn ? (fn(type, size) === true) : true
     }
@@ -271,12 +373,25 @@ Item {
     function _isPlainObject(v) {
         return v !== null && typeof v === "object" && !Array.isArray(v)
     }
+    function _schemaSupported(doc) {
+        if (!_isPlainObject(doc)) return false
+        if (doc.version === undefined) return true
+        return typeof doc.version === "number"
+                && isFinite(doc.version)
+                && Math.floor(doc.version) === doc.version
+                && doc.version >= 0
+                && doc.version <= schemaVersion
+    }
     function _normaliseDoc(doc) {
+        doc.version = schemaVersion
         if (!_isPlainObject(doc.appearance)) doc.appearance = {}
         if (doc.appearance.hubControlsMode !== "immersive"
                 && doc.appearance.hubControlsMode !== "standard")
             doc.appearance.hubControlsMode = "standard"
         if (!_isPlainObject(doc.settings)) doc.settings = {}
+        for (var settingId in doc.settings)
+            if (!_isPlainObject(doc.settings[settingId]))
+                doc.settings[settingId] = {}
         // Pages MUST be an array; anything else (number/object/string/null) is junk.
         if (!Array.isArray(doc.pages)) doc.pages = []
 
@@ -287,6 +402,7 @@ Item {
         // number, or id-less object is dropped rather than crashing addTile/binds).
         var cleanPages = []
         var migrationLog = []
+        var seenTileIds = Object.create(null)
         for (var i = 0; i < doc.pages.length; i++) {
             var p = doc.pages[i]
             if (!_isPlainObject(p)) continue
@@ -299,10 +415,22 @@ Item {
             // here, so the declared count is the best available truth.
             var declaredCols = Number(p.cols) || Number(doc.appearance.gridCols) || 1
             var srcTiles = Array.isArray(p.tiles) ? p.tiles : []
+            if (!_isPlainObject(p.bg))
+                delete p.bg
             var cleanTiles = []
             for (var j = 0; j < srcTiles.length; j++) {
                 var t = srcTiles[j]
-                if (_isPlainObject(t) && typeof t.id === "string" && t.id !== "") {
+                if (_isPlainObject(t)
+                        && typeof t.id === "string" && t.id !== ""
+                        && typeof t.type === "string" && t.type !== "") {
+                    if (seenTileIds[t.id] === true) {
+                        var previousId = t.id
+                        t.id = _newId(t.type, doc)
+                        if (_isPlainObject(doc.settings[previousId])
+                                && doc.settings[t.id] === undefined)
+                            doc.settings[t.id] = _clone(doc.settings[previousId])
+                    }
+                    seenTileIds[t.id] = true
                     // Every tile entering `document` leaves here with a legal, supported
                     // `size` - migrated from w/h, or coerced if the document handed
                     // us junk. This runs on load AND applyExternal (another process
@@ -363,13 +491,13 @@ Item {
         }
         // Prune settings whose id is no longer owned by any surviving tile (plus the
         // stray empty-id entry).
-        var live = {}
+        var live = Object.create(null)
         for (var k = 0; k < doc.pages.length; k++) {
             var tiles = doc.pages[k].tiles
             for (var j2 = 0; j2 < tiles.length; j2++) live[tiles[j2].id] = true
         }
         for (var key in doc.settings)
-            if (!live.hasOwnProperty(key)) delete doc.settings[key]
+            if (live[key] !== true) delete doc.settings[key]
         return doc
     }
 
@@ -379,7 +507,10 @@ Item {
     function _touchSettings(persist) {
         revision++
         changed()
-        if (persist === undefined || persist) saveTimer.restart()
+        if (persist === undefined || persist) {
+            dirty = true
+            saveTimer.restart()
+        }
     }
 
     // Reassign `document` (clone) for structural mutations so Repeaters refresh.
@@ -390,6 +521,7 @@ Item {
         revision++
         structureRevision++
         changed()
+        dirty = true
         flushNow()
     }
 
@@ -429,40 +561,74 @@ Item {
         // Honour any valid saved layout - including an intentionally-blank
         // pages:[] - consistently with applyExternal(); only re-seed when there
         // is no usable document at all.
-        if (parsed && parsed.pages) {
+        if (parsed && parsed.pages && _schemaSupported(parsed)) {
+            // This is an explicit authoritative reload from the persistence
+            // bridge, including the Discard path after a conflict. Retire all
+            // stale local-save and recovery state before exposing the document.
+            saveTimer.stop()
+            dirty = false
+            saveFailed = false
+            saveFailureMessage = ""
+            recoveryPath = ""
+            _lastFailedPayload = ""
             document = _normaliseDoc(parsed)
+        } else if (parsed && !_schemaSupported(parsed)) {
+            // Never turn a future document into this build's defaults. Production
+            // rejects it in Rust before QML starts; this branch protects direct
+            // bridges and tests without mutating or persisting anything.
+            return false
         } else {
             // Seeded docs are normalised too: the curated presets still declare the
             // old w/h vocabulary, so this is what gives a fresh install's tiles a
             // `size` - the invariant "every tile in `document` has one" must hold on
             // EVERY path into `document`, not just the load-from-disk one.
             document = _normaliseDoc(seed(seedLayout && seedLayout.length ? seedLayout : "starter"))
+            dirty = true
             _flush()
         }
         loaded = true
         revision++
         structureRevision++
         changed()
+        return true
     }
 
-    // Apply a UI-state document pushed from the companion Manager app (over the
-    // hub's control socket). Reassigns `document` and bumps reactivity so the live
-    // dashboard rebuilds - WITHOUT persisting again (the hub already saved it).
-    function applyExternal(json) {
+    // Non-mutating validation used by the Hub preflight before it flushes any
+    // unfinished local editor state.
+    function canApplyExternal(json) {
         // E9: a Manager push must not override an org-forced preset any more
         // than a local edit may - IPC is just another editing surface.
         if (policyLockedPreset !== "") return false
         var parsed = null
         try { parsed = JSON.parse(json) } catch (e) { parsed = null }
-        if (!parsed || !parsed.pages) return false
+        return !!parsed && !!parsed.pages && _schemaSupported(parsed)
+    }
+
+    // Apply a UI-state document pushed from the companion Manager app (over the
+    // hub's control socket). Reassigns `document` and bumps reactivity so the live
+    // dashboard rebuilds without persisting again because the Hub already saved it.
+    function applyExternal(json) {
+        if (!canApplyExternal(json)) return false
+        var parsed = null
+        try { parsed = JSON.parse(json) } catch (e) { parsed = null }
         // Cancel any pending debounced save so the externally-applied doc is
         // never echoed back to the hub 400ms later.
         saveTimer.stop()
-        document = _normaliseDoc(parsed)
-        loaded = true
-        revision++
-        structureRevision++
-        changed()
+        externalApplyInProgress = true
+        try {
+            document = _normaliseDoc(parsed)
+            loaded = true
+            dirty = false
+            saveFailed = false
+            saveFailureMessage = ""
+            recoveryPath = ""
+            _lastFailedPayload = ""
+            revision++
+            structureRevision++
+            changed()
+        } finally {
+            externalApplyInProgress = false
+        }
         return true
     }
 
@@ -578,12 +744,31 @@ Item {
     function pages() { return document.pages || [] }
     function pageCount() { return pages().length }
 
-    function _newId(type) {
-        // Stable-ish unique id from type + revision + running counter.
-        _idSeq++
-        return type + "-" + _idSeq + "-" + revision
+    function _newId(type, sourceDocument) {
+        // Counters restart with every process, so a counter alone can reproduce
+        // an existing persisted id after restart. Probe both live tiles and
+        // settings buckets until the candidate is globally unused.
+        var candidate = ""
+        do {
+            _idSeq++
+            candidate = type + "-" + _idSeq + "-" + revision
+        } while (_idInUse(candidate, sourceDocument))
+        return candidate
     }
     property int _idSeq: 0
+    function _idInUse(candidate, sourceDocument) {
+        if (!candidate) return true
+        var source = sourceDocument || document
+        var ps = source && Array.isArray(source.pages)
+                 ? source.pages : []
+        for (var p = 0; p < ps.length; p++) {
+            var ts = Array.isArray(ps[p].tiles) ? ps[p].tiles : []
+            for (var t = 0; t < ts.length; t++)
+                if (ts[t].id === candidate) return true
+        }
+        return _isPlainObject(source && source.settings)
+                && source.settings[candidate] !== undefined
+    }
 
     // ── One page = one screen (never scrolls) ────────────────────────────────
     // Pack the page's tiles PLUS a probe of `size`; there is room iff the packing
@@ -635,8 +820,9 @@ Item {
     // reflow still fits one screen (it must never create overflow). Narrowing to 2
     // columns always fits; widening to 1 column is applied only when it does.
     function setPageColumns(pageIdx, n) {
-        if (pageIdx < 0 || pageIdx >= document.pages.length) return
+        if (pageIdx < 0 || pageIdx >= document.pages.length) return false
         var cols = (n >= 2) ? 2 : 1
+        if (pageColumns(pageIdx) === cols) return true
         var targetShort = (cols === 2) ? 0.5 : 1
         var page = document.pages[pageIdx]
         var tiles = page.tiles || []
@@ -644,10 +830,13 @@ Item {
             var ns = store._sizeAtShort(t.type, t.size, targetShort)
             return { "id": t.id, "type": t.type, "size": (ns && ns.length ? ns : t.size) }
         })
-        if (store._packer.longExtent(store._packer.pack(reflowed)) <= store._sizes.longHalves)
-            for (var i = 0; i < tiles.length; i++) tiles[i].size = reflowed[i].size
+        if (store._packer.longExtent(store._packer.pack(reflowed))
+                > store._sizes.longHalves)
+            return false
+        for (var i = 0; i < tiles.length; i++) tiles[i].size = reflowed[i].size
         page.columns = cols
         _commitStructure()
+        return true
     }
 
     // ── UI helpers for the add-widget affordances ────────────────────────────
@@ -725,16 +914,17 @@ Item {
         return id
     }
     function removeTile(pageIdx, tileId) {
-        if (pageIdx < 0 || pageIdx >= document.pages.length) return
+        if (pageIdx < 0 || pageIdx >= document.pages.length) return false
         var tiles = document.pages[pageIdx].tiles || []
         for (var i = 0; i < tiles.length; i++) {
             if (tiles[i].id === tileId) {
                 tiles.splice(i, 1)
                 if (document.settings) delete document.settings[tileId]
                 _commitStructure()
-                return
+                return true
             }
         }
+        return false
     }
     // Set a tile's NAMED size (a WidgetSizes name - not a w/h span). Rejects a
     // size the widget type does not support, so the picker/drag UI cannot put a
@@ -917,12 +1107,7 @@ Item {
     // legacy _mk/_page helpers are kept for any code-built layouts.
     property QtObject _presetCatalog: PresetCatalog {}
     function _mk(type) {
-        var id = type + "-" + (_idSeq++)
-        // Guard the fresh-launch counter reset: if a persisted settings bucket
-        // still owns this id from a prior session, drop it so the freshly-seeded
-        // tile can't silently inherit stale state.
-        if (document.settings && document.settings.hasOwnProperty(id)) delete document.settings[id]
-        return { "id": id, "type": type }
+        return { "id": _newId(type), "type": type }
     }
     function _page(name, types) {
         var tiles = []

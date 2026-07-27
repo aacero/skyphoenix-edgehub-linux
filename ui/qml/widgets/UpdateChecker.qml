@@ -208,9 +208,15 @@ QtObject {
         for (var i = 0; i < list.length; i++) {
             var r = list[i]
             if (!r || r.draft === true) continue
-            if (r.prerelease === true && !onPre) continue
             var t = (typeof r.tag_name === "string") ? r.tag_name.trim() : ""
             if (!t.length) continue
+            // A stable tag may temporarily be public with GitHub's prerelease
+            // flag while its versioned AppImage update is certified. It is not
+            // an offerable release until promotion clears that flag. This also
+            // protects alpha, beta, and RC users, for whom the generic channel
+            // rule below would otherwise expose the staged stable candidate.
+            if (r.prerelease === true && !checker._isPrerelease(t)) continue
+            if (r.prerelease === true && !onPre) continue
             if (best === "" || compareVersions(best, t) === -1) best = t
         }
         return best

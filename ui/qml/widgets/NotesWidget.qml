@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 
 // Quick note / scratchpad - persisted. Uses a plain TextEdit (not Controls
@@ -50,6 +51,7 @@ WidgetChrome {
     property string _observedCurrent: ""
     property bool _trackingCurrent: false
     property bool _suppressHistoryOnce: false
+    property bool _localSaveInProgress: false
     readonly property int wordCount: current.trim().length
         ? current.trim().split(/\s+/).filter(function (s) { return s.length }).length : 0
     readonly property bool roomyPreview: !expanded && !micro
@@ -68,7 +70,12 @@ WidgetChrome {
         var prior = history.slice()
         if (current.length && (prior.length === 0 || prior[prior.length - 1] !== current)) prior.push(current)
         if (prior.length > 10) prior = prior.slice(prior.length - 10)
-        store.patchSettings(instanceId, { text: t, history: prior })
+        w._localSaveInProgress = true
+        try {
+            store.patchSettings(instanceId, { text: t, history: prior })
+        } finally {
+            w._localSaveInProgress = false
+        }
         saveState = "saved"
         return true
     }
@@ -76,8 +83,29 @@ WidgetChrome {
     // keystroke; flushed immediately when the editor closes OR is destroyed.
     property string _pending: ""
     property bool _dirty: false
-    Timer { id: saveDebounce; interval: 400; onTriggered: { w.save(w._pending); w._dirty = false } }
-    function flush() { if (w._dirty) { saveDebounce.stop(); w.save(w._pending); w._dirty = false } }
+    Timer {
+        id: saveDebounce
+        interval: 400
+        onTriggered: {
+            if (w.save(w._pending))
+                w._dirty = false
+        }
+    }
+    function hasPendingChanges() {
+        return w._dirty && w._pending !== w.current
+    }
+    function flush() {
+        saveDebounce.stop()
+        if (!w.hasPendingChanges()) {
+            w._dirty = false
+            w.saveState = "saved"
+            return true
+        }
+        var ok = w.save(w._pending)
+        if (ok)
+            w._dirty = false
+        return ok
+    }
     // The expanded overlay creates a SEPARATE instance that is destroyed on close
     // - before onExpandedChanged/the debounce can fire - so flush here too, or the
     // last edit is silently lost.
@@ -90,6 +118,12 @@ WidgetChrome {
         if (!w._trackingCurrent) return
         var priorText = w._observedCurrent
         w._observedCurrent = w.current
+        if (w._localSaveInProgress)
+            return
+        if (w.store && w.store.externalApplyInProgress) {
+            w._suppressHistoryOnce = false
+            return
+        }
         if (w._suppressHistoryOnce) {
             w._suppressHistoryOnce = false
             return
@@ -113,16 +147,23 @@ WidgetChrome {
         if (h.length && h[h.length - 1] === priorText) return
         h.push(priorText)
         if (h.length > 10) h = h.slice(h.length - 10)
+        var expectedRevision = w.store ? w.store.revision : -1
+        var expectedText = w.current
         Qt.callLater(function () {
-            if (w.store && w.current !== priorText)
+            if (w.store
+                    && w.store.revision === expectedRevision
+                    && w.current === expectedText
+                    && w.current !== priorText)
                 w.store.setSetting(w.instanceId, "history", h)
         })
     }
 
-    // Tile preview - as many lines as the box holds, at a size the box earns.
-    Text {
-        id: previewText
-        objectName: "notesPreviewText"
+    // Tile preview. Long notes remain complete in a vertical reading viewport;
+    // the persistent overflow bar discloses continuation instead of silently
+    // replacing the final visible line with an ellipsis.
+    Flickable {
+        id: previewFlick
+        objectName: "notesPreviewViewport"
         anchors.fill: parent
         anchors.leftMargin: w.micro ? theme.spacingXs : theme.spacingSm
         anchors.rightMargin: w.micro ? theme.spacingXs : theme.spacingSm
@@ -131,13 +172,46 @@ WidgetChrome {
                               ? previewMeta.height + theme.spacingSm
                               : (w.micro ? theme.spacingXs : theme.spacingSm)
         visible: !w.expanded && (!w.roomyPreview || w.current.trim().length > 0)
-        // A whitespace-only note is effectively empty - show the placeholder.
-        text: w.current.trim().length ? w.current
-                                      : (w.micro ? "Jot a note…" : "Tap to jot a note…")
-        color: theme.textPrimary
-        opacity: w.current.trim().length ? 1 : 0.78
-        font.pixelSize: Math.round(w.previewPx)
-        wrapMode: Text.WordWrap; elide: Text.ElideRight
+        clip: true
+        contentWidth: width
+        contentHeight: Math.max(height, previewText.implicitHeight)
+        flickableDirection: Flickable.VerticalFlick
+        interactive: contentHeight > height + 1
+        onInteractiveChanged: {
+            if (!interactive)
+                contentY = 0
+        }
+        boundsBehavior: Flickable.StopAtBounds
+        pixelAligned: true
+        Accessible.name: interactive
+                         ? "Quick Note preview. Swipe vertically to read the full note."
+                         : "Quick Note preview."
+
+        ScrollBar.vertical: ScrollBar {
+            id: previewScroll
+            objectName: "notesPreviewScrollBar"
+            policy: previewFlick.interactive
+                    ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            interactive: false
+        }
+
+        Text {
+            id: previewText
+            objectName: "notesPreviewText"
+            // Reserve a stable gutter. Binding width to scrollbar visibility
+            // would make wrapping decide whether the bar exists while the bar
+            // simultaneously changes the wrapping width.
+            width: Math.max(1, previewFlick.width - theme.spacingMd)
+            height: Math.max(previewFlick.height, implicitHeight)
+            // A whitespace-only note is effectively empty - show the placeholder.
+            text: w.current.trim().length ? w.current
+                                          : (w.micro ? "Jot a note…" : "Tap to jot a note…")
+            color: theme.textPrimary
+            opacity: w.current.trim().length ? 1 : 0.78
+            font.pixelSize: Math.round(w.previewPx)
+            wrapMode: Text.WordWrap
+            elide: Text.ElideNone
+        }
     }
 
     ColumnLayout {
@@ -210,6 +284,7 @@ WidgetChrome {
     // Expanded editor
     Flickable {
         id: editorFlick
+        objectName: "notesEditorViewport"
         anchors.fill: parent
         anchors.bottomMargin: editorFooter.visible
                               ? editorFooter.height + theme.spacingSm : 0
@@ -218,13 +293,24 @@ WidgetChrome {
         clip: true
         TextEdit {
             id: editor
+            objectName: "notesEditor"
             width: parent.width
             text: w.current
             font.pixelSize: w.editorPx; color: theme.textPrimary
             wrapMode: TextEdit.Wrap; selectByMouse: true
             persistentSelection: true
             Accessible.name: "Quick Note editor"
-            onTextChanged: { w._pending = text; w._dirty = true; w.saveState = "saving"; saveDebounce.restart() }
+            onTextChanged: {
+                w._pending = text
+                w._dirty = text !== w.current
+                if (w._dirty) {
+                    w.saveState = "saving"
+                    saveDebounce.restart()
+                } else {
+                    saveDebounce.stop()
+                    w.saveState = "saved"
+                }
+            }
             // Keep the caret in view as the note grows past the viewport -
             // otherwise long notes scroll off the bottom while typing.
             onCursorRectangleChanged: {

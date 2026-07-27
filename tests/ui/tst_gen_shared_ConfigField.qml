@@ -851,6 +851,66 @@ Item {
             compare(items[1].done, true, "the rebuilt second row toggled correctly")
         }
 
+        function test_task_editor_bounds_untrusted_count_and_text() {
+            var oversized = []
+            for (var i = 0; i < cfTasks.maxTasks + 25; i++)
+                oversized.push({ id: "task-" + i,
+                                 text: "x".repeat(cfTasks.maxTaskLength + 10),
+                                 done: false })
+            cstore.setSetting("cf", "items", oversized)
+            compare(cfTasks.curTasks().length, cfTasks.maxTasks)
+            compare(cfTasks.curTasks()[0].text.length, cfTasks.maxTaskLength)
+            verify(cfTasks.toggleTaskAt(0))
+            var stored = cstore.settingsFor("cf").items
+            compare(stored.length, cfTasks.maxTasks + 25,
+                    "toggling a rendered row preserves the hidden tail")
+            compare(stored[stored.length - 1].id,
+                    "task-" + (cfTasks.maxTasks + 24))
+            compare(stored[0].text.length, cfTasks.maxTaskLength + 10,
+                    "an unrelated toggle preserves long legacy text")
+            compare(stored[0].done, true)
+        }
+
+        function test_task_editor_discloses_hidden_entries_and_uses_valid_limit() {
+            var malformed = []
+            for (var i = 0; i < cfTasks.maxTasks; i++)
+                malformed.push(null)
+            cstore.setSetting("cf", "items", malformed)
+
+            compare(cfTasks.curTasks().length, 0)
+            compare(cfTasks.hiddenTaskEntryCount(), cfTasks.maxTasks)
+            verify(!cfTasks.taskLimitReached(),
+                   "malformed entries do not consume the task limit")
+            var notice = findChild(cfTasks, "tasksHiddenEntryNotice")
+            verify(notice && notice.visible,
+                   "the Manager discloses hidden preserved entries")
+            verify(String(notice.text).indexOf(
+                       cfTasks.maxTasks + " stored entries") >= 0)
+
+            verify(cfTasks.addTask("Reachable"))
+            var stored = cstore.settingsFor("cf").items
+            compare(stored.length, cfTasks.maxTasks + 1)
+            compare(stored[0].text, "Reachable",
+                    "new work is inserted before hidden entries")
+            compare(stored[1], null, "legacy data is preserved")
+        }
+
+        function test_task_editor_scan_is_bounded() {
+            var hostile = []
+            for (var i = 0; i < cfTasks.maxTaskScanEntries; i++)
+                hostile.push(null)
+            hostile.push({ id: "after-scan", text: "Tail", done: false })
+            cstore.setSetting("cf", "items", hostile)
+
+            compare(cfTasks.curTasks().length, 0)
+            compare(cfTasks.hiddenTaskEntryCount(), hostile.length)
+            verify(cfTasks.addTask("Visible"))
+            var stored = cstore.settingsFor("cf").items
+            compare(stored[0].text, "Visible")
+            compare(stored[stored.length - 1].id, "after-scan",
+                    "the unscanned tail remains preserved")
+        }
+
         // The slider FIELD must actually drag and write through (no test dragged a
         // slider before - the class of bug the glass slider shipped with).
         function test_slider_field_drags_and_writes() {

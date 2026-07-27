@@ -124,6 +124,102 @@ Item {
             compare(w.items[0].text, "spaced", "surrounding whitespace trimmed")
         }
 
+        function test_task_storage_is_bounded_by_count_and_text_length() {
+            var w = hTasks.item
+            var oversized = []
+            for (var i = 0; i < w.maxTasks + 25; i++)
+                oversized.push({ id: "task-" + i, text: "x".repeat(w.maxTaskLength + 20),
+                                 done: i % 2 === 0 })
+            setItems(oversized)
+            compare(w.items.length, w.maxTasks,
+                    "only the documented maximum number of delegates is created")
+            compare(w.items[0].text.length, w.maxTaskLength,
+                    "task text is bounded before rendering")
+            verify(w.taskLimitReached)
+            compare(w.add("one more"), false, "the full list rejects another task")
+            compare(w.items.length, w.maxTasks)
+
+            w.toggle(0)
+            var stored = cfg().items
+            compare(stored.length, w.maxTasks + 25,
+                    "an unrelated toggle preserves the hidden legacy tail")
+            compare(stored[stored.length - 1].id,
+                    "task-" + (w.maxTasks + 24),
+                    "the last hidden task remains intact")
+            compare(stored[0].text.length, w.maxTaskLength + 20,
+                    "toggling completion does not truncate the original text")
+            compare(stored[0].done, false,
+                    "the requested completion field still changes")
+        }
+
+        function test_malformed_entries_do_not_count_as_tasks_or_block_add() {
+            var w = hTasks.item
+            setItems([null, "legacy", { id: "valid", text: "Visible", done: true }])
+            compare(w.items.length, 1, "only a valid task counts")
+            compare(w.doneCount, 1)
+            compare(w.openCount, 0)
+            compare(w.completionPercent, 100)
+            compare(w.status, "1/1")
+            compare(w.storageHiddenCount, 2,
+                    "malformed stored entries are disclosed as hidden")
+            verify(!w.taskLimitReached,
+                   "malformed entries do not consume the rendered task limit")
+
+            verify(w.add("New visible task"))
+            var stored = cfg().items
+            compare(stored.length, 4, "adding preserves every legacy entry")
+            compare(stored[0].text, "New visible task",
+                    "a new task is inserted before hidden entries so it remains visible")
+            compare(stored[1], null)
+            compare(stored[2], "legacy")
+        }
+
+        function test_task_scan_is_bounded_and_hidden_tail_is_disclosed() {
+            var w = hTasks.item
+            var hostile = []
+            for (var i = 0; i < w.maxTaskScanEntries; i++)
+                hostile.push(null)
+            hostile.push({ id: "after-scan", text: "Must stay stored", done: false })
+            setItems(hostile)
+
+            compare(w.items.length, 0,
+                    "render projection stops at the documented scan boundary")
+            compare(w.storageHiddenCount, hostile.length)
+            verify(!w.taskLimitReached)
+            var footer = findObject(w, "tasksOverflowFooter")
+            verify(footer && footer.visible,
+                   "expanded view discloses entries hidden by safety limits")
+            verify(String(footer.Accessible.name).indexOf("stored entries") >= 0)
+
+            verify(w.add("Reachable"))
+            compare(cfg().items.length, hostile.length + 1)
+            compare(cfg().items[0].text, "Reachable")
+            compare(cfg().items[cfg().items.length - 1].id, "after-scan",
+                    "the unscanned tail remains byte-for-byte represented")
+        }
+
+        function test_expanded_view_discloses_over_cap_preserved_tasks() {
+            var w = hTasks.item
+            var oversized = []
+            for (var i = 0; i < w.maxTasks + 25; i++)
+                oversized.push({ id: "task-" + i, text: "Task " + i, done: false })
+            setItems(oversized)
+            compare(w.storageHiddenCount, 25)
+            var footer = findObject(w, "tasksOverflowFooter")
+            verify(footer && footer.visible)
+            verify(String(footer.Accessible.name).indexOf(
+                       "25 stored entries are hidden by safety limits") >= 0)
+        }
+
+        function test_add_and_edit_bound_programmatic_text() {
+            var w = hTasks.item
+            var longText = "z".repeat(w.maxTaskLength + 30)
+            verify(w.add(longText))
+            compare(w.items[0].text.length, w.maxTaskLength)
+            verify(w.edit(0, longText + "again"))
+            compare(w.items[0].text.length, w.maxTaskLength)
+        }
+
         function test_edit_and_reorder_preserve_identity() {
             var w = hTasks.item
             setItems([{ id: "a", text: "First", done: false }, { id: "b", text: "Second", done: false }])
@@ -497,6 +593,12 @@ Item {
     // 1x3 portrait - the whole panel.
     Item { width: 696; height: 2459
         WidgetHarness { id: tBoard; anchors.fill: parent; widgetFile: "TasksWidget.qml"; expanded: false } }
+    // Exact legibility-matrix projections for the two responsive regressions:
+    // 0.5x1 portrait at native output, and 1x0.5 portrait at 125 percent.
+    Item { width: 348; height: 818
+        WidgetHarness { id: tMatrixNarrow; anchors.fill: parent; widgetFile: "TasksWidget.qml"; expanded: false } }
+    Item { width: 557; height: 327
+        WidgetHarness { id: tMatrixWide; anchors.fill: parent; widgetFile: "TasksWidget.qml"; expanded: false } }
 
     // The OVERLAY, at the two boxes Dashboard actually gives it. `expanded: true`
     // AND sizeClass "full" - the real pairing - because a mode-keyed literal can
@@ -539,6 +641,33 @@ Item {
         function field(host) {
             return findAll(host.item, function (n) {
                 return n.objectName === "tasksAddField" }, [])[0]
+        }
+        function maximumTasks() {
+            var result = []
+            for (var i = 0; i < 100; i++)
+                result.push({ id: "matrix-" + i,
+                              text: "Release check " + (i + 1),
+                              done: i % 3 === 0 })
+            return result
+        }
+        function longTasks() {
+            var result = []
+            for (var i = 0; i < 6; i++)
+                result.push({ id: "long-" + i,
+                              text: "Review release checkpoint " + (i + 1),
+                              done: i % 3 === 0 })
+            return result
+        }
+        function assertInside(item, ancestor, label) {
+            var p = item.mapToItem(ancestor, 0, 0)
+            verify(p.x >= -1 && p.y >= -1
+                   && p.x + item.width <= ancestor.width + 1
+                   && p.y + item.height <= ancestor.height + 1,
+                   label + " stays inside its container: "
+                   + p.x.toFixed(1) + "," + p.y.toFixed(1) + " "
+                   + item.width.toFixed(1) + "x" + item.height.toFixed(1)
+                   + " in " + ancestor.width.toFixed(1) + "x"
+                   + ancestor.height.toFixed(1))
         }
 
         function test_hero_tile_turns_empty_space_into_guidance_and_progress() {
@@ -618,6 +747,107 @@ Item {
                 verify(label.font.pixelSize >= hosts[i].theme.fontLabel,
                        classes[i] + " task text uses at least fontLabel")
             }
+        }
+
+        function test_scaled_completion_marks_respect_the_active_type_floor() {
+            tryVerify(function () {
+                return tMatrixNarrow.ready && tMatrixWide.ready
+            }, 3000)
+            var hosts = [tMatrixNarrow, tMatrixWide]
+            var classes = ["tall", "wide"]
+            var scales = [1.3, 1.45]
+            for (var i = 0; i < hosts.length; i++) {
+                hosts[i].item.sizeClass = classes[i]
+                hosts[i].theme.textScale = scales[i]
+                hosts[i].theme.fontChoice = "lexend"
+                hosts[i].storeCtl.setSetting(hosts[i].instanceId, "items",
+                                             longTasks())
+                wait(32)
+                var marks = findAll(hosts[i].item, function (n) {
+                    return String(n.objectName).indexOf("taskCheckmark-") === 0
+                           && n.visible
+                }, [])
+                verify(marks.length > 0, classes[i] + " renders completed marks")
+                for (var j = 0; j < marks.length; j++) {
+                    verify(marks[j].font.pixelSize >= hosts[i].theme.fontMinimum,
+                           classes[i] + " mark " + j + " uses the "
+                           + hosts[i].theme.fontMinimum + "px type floor")
+                    assertInside(marks[j], marks[j].parent,
+                                 classes[i] + " mark " + j)
+                }
+            }
+        }
+
+        function test_narrow_tall_long_tasks_wrap_without_truncation() {
+            tryVerify(function () { return tMatrixNarrow.ready }, 3000)
+            var host = tMatrixNarrow
+            host.item.sizeClass = "tall"
+            host.theme.textScale = 1.3
+            host.theme.fontChoice = "lexend"
+            host.storeCtl.setSetting(host.instanceId, "items", longTasks())
+            wait(32)
+
+            var labels = findAll(host.item, function (n) {
+                return String(n.objectName).indexOf("taskLabel-") === 0
+                       && n.visible
+            }, [])
+            compare(labels.length, 6, "all six long matrix labels render")
+            for (var i = 0; i < labels.length; i++) {
+                verify(!labels[i].truncated,
+                       "long task " + i + " is complete rather than ellipsized")
+                verify(labels[i].lineCount <= 2,
+                       "long task " + i + " stays within the two-line hierarchy")
+                verify(labels[i].contentHeight <= labels[i].height + 1,
+                       "long task " + i + " fits its scaled row")
+            }
+            verify(host.item.rowH >= Math.ceil(host.theme.fontLabel * 3),
+                   "the scaled row reserves two-line room")
+        }
+
+        function test_scaled_wide_half_tile_keeps_actions_and_footer_inside() {
+            tryVerify(function () { return tMatrixWide.ready }, 3000)
+            var host = tMatrixWide
+            var widget = host.item
+            widget.sizeClass = "wide"
+            host.theme.textScale = 1.45
+            host.theme.fontChoice = "lexend"
+            host.storeCtl.setSetting(host.instanceId, "items", maximumTasks())
+            wait(32)
+            field(host).text =
+                "Validate the longest supported field value before the production release"
+            wait(32)
+
+            verify(widget.compactHorizontalActions,
+                   "the compressed action column selects concise labels")
+            var pane = findAll(widget, function (n) {
+                return n.objectName === "tasksControlPane"
+            }, [])[0]
+            var addButton = findAll(widget, function (n) {
+                return n.objectName === "tasksAddButton"
+            }, [])[0]
+            var clearButton = findAll(widget, function (n) {
+                return n.objectName === "tasksClearCompleted"
+            }, [])[0]
+            var footer = findAll(widget, function (n) {
+                return n.objectName === "tasksOverflowFooter"
+            }, [])[0]
+            var footerText = findAll(widget, function (n) {
+                return n.objectName === "tasksOverflowFooterText"
+            }, [])[0]
+            verify(pane && addButton && clearButton && footer && footerText)
+            compare(clearButton.label, "Clear 34",
+                    "the concise action retains the affected count")
+            assertInside(addButton, pane, "add button")
+            assertInside(clearButton, pane, "clear-completed button")
+            assertInside(footerText, footer, "overflow footer text")
+            verify(!footerText.truncated,
+                   "the concise overflow message is not ellipsized")
+            verify(footerText.contentWidth <= footerText.width + 1
+                   && footerText.contentHeight <= footerText.height + 1,
+                   "the overflow message fits its assigned text box")
+            var clearLabel = findText(clearButton, clearButton.label)
+            verify(clearLabel !== null && !clearLabel.truncated,
+                   "the concise clear action remains fully readable")
         }
 
         function test_tile_reports_tasks_hidden_by_height_or_first3() {

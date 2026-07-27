@@ -37,12 +37,38 @@ xeneon_gate_accepts_result() {
 # runners. Capture a command's combined output and reject those markers while
 # preserving the command's real non-zero status.
 xeneon_run_rejecting_skips() {
-    local gate_log command_rc tee_rc had_errexit=0
+    _xeneon_run_rejecting_skips_to "" "$@"
+}
+
+# Keep the complete combined output at an explicit audit path while applying the
+# same strict skip scanner. The destination must not already exist.
+xeneon_run_rejecting_skips_to() {
+    local destination="${1:-}"
+    shift
+    [ -n "$destination" ] || return 2
+    [ ! -e "$destination" ] || {
+        echo "ERROR: strict gate log already exists: $destination" >&2
+        return 2
+    }
+    _xeneon_run_rejecting_skips_to "$destination" "$@"
+}
+
+_xeneon_run_rejecting_skips_to() {
+    local retained_log="${1:-}"
+    shift
+    local gate_log command_rc tee_rc had_errexit=0 remove_log=1
     local -a pipeline_status
 
     # Descriptor 3 is reserved for the release owner's entitlement. Only the
     # command under test may inherit it; capture/scanner helpers must not.
-    gate_log="$(mktemp "${TMPDIR:-/tmp}/xe-release-gate.XXXXXX" 3<&-)" || return 1
+    if [ -n "$retained_log" ]; then
+        gate_log="$retained_log"
+        : >"$gate_log" || return 1
+        chmod 0600 "$gate_log" || return 1
+        remove_log=0
+    else
+        gate_log="$(mktemp "${TMPDIR:-/tmp}/xe-release-gate.XXXXXX" 3<&-)" || return 1
+    fi
     case "$-" in *e*) had_errexit=1 ;; esac
     set +e
     "$@" 2>&1 | { exec 3<&-; tee "$gate_log"; }
@@ -70,6 +96,8 @@ xeneon_run_rejecting_skips() {
         [ "$command_rc" -eq 0 ] && command_rc=1
     fi
 
-    rm -f "$gate_log" 3<&-
+    if [ "$remove_log" -eq 1 ]; then
+        rm -f "$gate_log" 3<&-
+    fi
     return "$command_rc"
 }

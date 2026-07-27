@@ -1,10 +1,12 @@
 #pragma once
 
+#include <QByteArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QObject>
 #include <QString>
 
+#include "config_transaction.h"
 #include "xeneon_core.h"
 #include "xeneon_string.h"
 
@@ -58,10 +60,21 @@ public:
     // applyExternalKey(). Returns whether the persist succeeded.
     Q_INVOKABLE bool setKey(const QString& key) {
         if (!m_config) return false;
-        xeneon_config_set_license_key(
-            m_config, key.isEmpty() ? nullptr : key.toUtf8().constData());
-        bool ok = xeneon_config_save(m_config) == 0;
-        refresh();
+        ConfigTransaction transaction(m_config);
+        if (!transaction)
+            return false;
+        const QByteArray utf8 = key.toUtf8();
+        if (xeneon_config_set_license_key(
+                transaction.candidate(),
+                key.isEmpty() ? nullptr : utf8.constData()) != 0)
+            return false;
+        const bool ok = transaction.commit();
+        if (ok) {
+            if (transaction.durabilityUncertain())
+                emit persistenceWarning(QStringLiteral(
+                    "The licence was published, but storage could not confirm crash durability."));
+            refresh();
+        }
         return ok;
     }
 
@@ -109,6 +122,7 @@ public:
 
 signals:
     void changed();
+    void persistenceWarning(const QString& message);
 
 private:
     ConfigHandle* m_config = nullptr;

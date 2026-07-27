@@ -122,9 +122,14 @@ private slots:
                                    &service, QDBusConnection::ExportAllSlots));
 
         NotificationBridge bridge;
+        QSignalSpy confirmed(&bridge, &NotificationBridge::deliveryConfirmed);
+        QSignalSpy failed(&bridge, &NotificationBridge::deliveryFailed);
         QVERIFY(bridge.send(QStringLiteral("Medication reminder"),
                             QStringLiteral("Time for the evening dose.")));
         QTRY_COMPARE_WITH_TIMEOUT(service.calls, 1, 2000);
+        QTRY_COMPARE_WITH_TIMEOUT(confirmed.count(), 1, 2000);
+        QCOMPARE(confirmed.at(0).at(0).toUInt(), 42U);
+        QCOMPARE(failed.count(), 0);
         QCOMPARE(service.seen.applicationName, QStringLiteral("EdgeHub"));
         QCOMPARE(service.seen.summary, QStringLiteral("Medication reminder"));
         QCOMPARE(service.seen.body, QStringLiteral("Time for the evening dose."));

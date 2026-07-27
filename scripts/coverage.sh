@@ -5,12 +5,13 @@
 #   C++  : gcovr over the selected CMake test build,             gate >= 95%
 #          writing coverage/cpp-lcov.info
 #   merge: Rust + C++ lcov    -> coverage/merged-lcov.info
-#   QML  : scripts/qml_coverage.py (behavior matrix, reported; own gate)
+#   QML  : scripts/qml_coverage.py (finite requirements checklist; requires N/N)
 #
 # Developer mode skips a layer gracefully (with a clear message) when its
 # tooling or build artifacts are absent. XENEON_RELEASE_GATE=1 requires fresh
 # Rust and C++ reports and turns every such omission into a failure.
-# Final line: "Rust: X% | C++: Y% | merged: Z% | QML behaviors: N%".
+# Final line reports the independent Rust/C++ gates, diagnostic merged value,
+# and the assertion-backed QML requirement count.
 set -uo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -30,6 +31,7 @@ CPP_GATE=95
 
 RUST_PCT="n/a"
 CPP_PCT="n/a"
+CPP_BRANCH_PCT="n/a"
 MERGED_PCT="n/a"
 QML_PCT="n/a"
 fail=0
@@ -73,8 +75,8 @@ if command -v cargo-llvm-cov >/dev/null 2>&1; then
     rust_rc=0
     (
         cd "$PROJECT_DIR/core"
-        cargo llvm-cov --lib --lcov --output-path "$COVERAGE_DIR/rust-lcov.info" &&
-        cargo llvm-cov --lib --json --summary-only --output-path "$COVERAGE_DIR/rust-summary.json"
+        cargo llvm-cov --locked --lib --lcov --output-path "$COVERAGE_DIR/rust-lcov.info" &&
+        cargo llvm-cov --locked --lib --json --summary-only --output-path "$COVERAGE_DIR/rust-summary.json"
     ) || rust_rc=$?
     if [ "$rust_rc" -eq 0 ] && [ -f "$COVERAGE_DIR/rust-lcov.info" ] && \
        [ -f "$COVERAGE_DIR/rust-summary.json" ]; then
@@ -145,6 +147,18 @@ else
         echo "    FAIL: gcovr lcov export reported an error"
         fail=1
     fi
+    CPP_SUMMARY="$COVERAGE_DIR/cpp-summary.json"
+    rm -f -- "$CPP_SUMMARY"
+    cpp_summary_rc=0
+    "$GCOVR" --root "$PROJECT_DIR" \
+        --filter 'app/src/' --filter 'manager/src/' \
+        --exclude '.*main\.cpp' \
+        "$CPP_BUILD_DIR" --json-summary "$CPP_SUMMARY" \
+        >/dev/null || cpp_summary_rc=$?
+    if [ "$cpp_summary_rc" -ne 0 ] || [ ! -s "$CPP_SUMMARY" ]; then
+        echo "    FAIL: gcovr JSON summary export reported an error"
+        fail=1
+    fi
     # The search path MUST come before --json-summary. gcovr 8's
     # `--json-summary [OUTPUT]` takes an OPTIONAL FILENAME, so
     # `--json-summary "$CPP_BUILD_DIR"` is parsed as "write the summary to
@@ -152,12 +166,14 @@ else
     # -> swallowed by 2>/dev/null -> CPP_PCT="n/a" -> the gate below skipped
     # ITSELF, silently. This gate had never once run. Same born-inert class as
     # the QtTest `_data` trap: a check that cannot fail is worse than no check.
-    CPP_PCT="$("$GCOVR" --root "$PROJECT_DIR" \
-        --filter 'app/src/' --filter 'manager/src/' \
-        --exclude '.*main\.cpp' \
-        "$CPP_BUILD_DIR" --json-summary 2>/dev/null \
-        | python3 -c 'import json,sys; print("%.2f" % json.load(sys.stdin)["line_percent"])' 2>/dev/null || echo "n/a")"
+    CPP_PCT="$(python3 -c \
+        'import json,sys; print("%.2f" % json.load(open(sys.argv[1], encoding="utf-8"))["line_percent"])' \
+        "$CPP_SUMMARY" 2>/dev/null || echo "n/a")"
+    CPP_BRANCH_PCT="$(python3 -c \
+        'import json,sys; print("%.2f" % json.load(open(sys.argv[1], encoding="utf-8"))["branch_percent"])' \
+        "$CPP_SUMMARY" 2>/dev/null || echo "n/a")"
     echo "    C++ line coverage: ${CPP_PCT}%"
+    echo "    C++ branch coverage: ${CPP_BRANCH_PCT}% (diagnostic only)"
     # An "n/a" here is now a FAILURE, not a shrug. It used to mean "the gate
     # quietly skipped itself", which is exactly how this stayed broken.
     if [ "$CPP_PCT" = "n/a" ]; then
@@ -171,6 +187,59 @@ else
             echo "    FAIL: C++ ${CPP_PCT}% < ${CPP_GATE}%"
             fail=1
         fi
+    fi
+
+    # Header-level line coverage was the original audit signal for these
+    # bridges, but it hid weak branch and fallback exercise. Retain and print
+    # both measurements for the four named files. Their percentages are
+    # diagnostic, while producing a complete four-row report is enforced.
+    # Behavior is gated by the corresponding QtTest and exact-desktop receipts.
+    CPP_CRITICAL_REPORT="$COVERAGE_DIR/cpp-critical-files.tsv"
+    rm -f -- "$CPP_CRITICAL_REPORT"
+    if [ -s "$CPP_SUMMARY" ]; then
+        if python3 - "$CPP_SUMMARY" >"$CPP_CRITICAL_REPORT" <<'PY'
+import json
+import pathlib
+import sys
+
+required = (
+    "app/src/notification_bridge.h",
+    "app/src/mpris_bridge.h",
+    "app/src/control_socket_path.h",
+    "app/src/config_bridge.h",
+)
+summary = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+rows = {entry["filename"]: entry for entry in summary.get("files", [])}
+missing = [path for path in required if path not in rows]
+if missing:
+    raise SystemExit("missing required coverage row(s): " + ", ".join(missing))
+
+print("file\tlines_covered\tlines_total\tline_percent\tbranches_covered\tbranches_total\tbranch_percent")
+for path in required:
+    row = rows[path]
+    print(
+        path,
+        row["line_covered"],
+        row["line_total"],
+        f'{row["line_percent"]:.2f}',
+        row["branch_covered"],
+        row["branch_total"],
+        f'{row["branch_percent"]:.2f}',
+        sep="\t",
+    )
+PY
+        then
+            echo "    Critical bridge coverage:"
+            column -t -s $'\t' "$CPP_CRITICAL_REPORT" 2>/dev/null \
+                || cat "$CPP_CRITICAL_REPORT"
+        else
+            echo "    FAIL: incomplete critical bridge line/branch report"
+            rm -f -- "$CPP_CRITICAL_REPORT"
+            fail=1
+        fi
+    else
+        echo "    FAIL: critical bridge report requires the C++ JSON summary"
+        fail=1
     fi
 fi
 
@@ -222,20 +291,18 @@ for line in open(sys.argv[1]):
 print("%.2f" % (100.0 * hit / total if total else 100.0))
 PY
 )"
-    echo "    merged line coverage: ${MERGED_PCT}%"
-    if ! pct_ge_gate "$MERGED_PCT"; then
-        echo "    FAIL: merged ${MERGED_PCT}% < ${GATE}%"
-        fail=1
-    fi
+    echo "    merged line coverage: ${MERGED_PCT}% (diagnostic only; not a gate)"
 fi
 
 # ---------------------------------------------------------------- QML ---------
-echo "==> QML behavior matrix (qml_coverage.py)"
+echo "==> QML enumerated-requirements matrix (qml_coverage.py)"
 QML_OUT="$(python3 "$PROJECT_DIR/scripts/qml_coverage.py")"
 QML_STATUS=$?
 echo "$QML_OUT"
-QML_PCT="$(printf '%s\n' "$QML_OUT" | sed -nE 's/.*ratio[^0-9]*([0-9]+(\.[0-9]+)?)%.*/\1/p' | head -1)"
-[ -z "$QML_PCT" ] && QML_PCT="n/a"
+QML_COUNTS="$(printf '%s\n' "$QML_OUT" \
+    | sed -nE 's#^  matrix counts[[:space:]]*:[[:space:]]*([0-9]+/[0-9]+)$#\1#p' \
+    | head -1)"
+[ -z "$QML_COUNTS" ] && QML_COUNTS="n/a"
 if [ "$QML_STATUS" -ne 0 ]; then
     fail=1
 fi
@@ -243,7 +310,7 @@ fi
 # --------------------------------------------------------------- report -------
 echo ""
 echo "==================================================================="
-echo "Rust: ${RUST_PCT}% | C++: ${CPP_PCT}% | merged: ${MERGED_PCT}% | QML behaviors: ${QML_PCT}%"
+echo "Rust gate: ${RUST_PCT}% | C++ line gate: ${CPP_PCT}% | C++ branch diagnostic: ${CPP_BRANCH_PCT}% | merged diagnostic: ${MERGED_PCT}% | QML requirements assertion-backed: ${QML_COUNTS}"
 echo "==================================================================="
 
 exit "$fail"

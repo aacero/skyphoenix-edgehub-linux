@@ -82,7 +82,26 @@ WidgetChrome {
     readonly property string playbackLabel: !w.avail ? w.emptyStateLabel
         : media.status === "Playing" ? "Playing"
         : media.status === "Paused" ? "Paused" : "Stopped"
-    status: avail ? media.playerName + " · " + w.playbackLabel : w.emptyStateLabel
+    readonly property string fullStatus: w.avail
+        ? media.playerName + " · " + w.playbackLabel : w.emptyStateLabel
+    // The player state is already represented by the transport and empty-state
+    // body. On narrow cards, repeating it in the header steals enough width to
+    // truncate both strings. Keep the complete status on roomy cards and in the
+    // overlay, and expose it to assistive technology at every size.
+    readonly property bool showHeaderStatus: w.expanded
+                                             || w.width >= Math.max(560,
+                                                                    theme.fontMinimum * 30)
+    status: w.showHeaderStatus ? w.fullStatus : ""
+    readonly property string accessibleTrackSummary: w.avail
+        ? "Now Playing, " + media.title
+          + (media.artist ? ", by " + media.artist : "")
+          + (media.album ? ", from " + media.album : "")
+          + ". " + w.fullStatus
+        : "Now Playing. " + w.emptyStateLabel
+    Accessible.name: w.accessibleTrackSummary
+    Accessible.description: w.avail
+        ? "Playback controls and seek position for the current track"
+        : "No active media is available"
 
     function formatTime(ms) {
         var seconds = Math.max(0, Math.floor(Number(ms || 0) / 1000))
@@ -107,6 +126,12 @@ WidgetChrome {
 
     // ── Per-size layout (sizeClass injected by Dashboard) ────────────────────
     readonly property bool horiz: sizeClass === "wide"
+    // A micro tile projected onto a landscape panel is too short for a useful
+    // vertical stack once the user's type scale is applied. Reflow it beside
+    // the artwork, just like a wide tile, while retaining the single primary
+    // transport action appropriate to the micro size.
+    readonly property bool microLandscape: w.micro && w.width > w.height
+    readonly property bool sideBySide: w.horiz || w.microLandscape
     readonly property bool tallish: sizeClass === "tall" || sizeClass === "large"
     // Everything past "art + title + play" is gated on having more than a
     // half-cell. `micro` is chrome's half-cell footprint - not re-derived here.
@@ -116,26 +141,50 @@ WidgetChrome {
     // min(width*0.5, 260), a portrait-shaped assumption: in the 846x306
     // landscape projection of 0.5x1 that is a 260px square under a title under a
     // 52px transport row - ~420px of content in a 306px box.
+    readonly property real tileContentWidth: Math.max(
+        80, w.width - 2 * w.contentMargins)
+    readonly property real tileContentHeight: Math.max(
+        80, w.height - 2 * w.contentMargins
+            - (w.showHeader ? w.headerHeight
+                              + (w.big ? theme.spacingSm : theme.spacingXs) : 0))
     readonly property real artSize: {
-        if (w.horiz)
+        if (w.sideBySide) {
             // Side-by-side: bounded by the height, and capped at ~2/5 of the
-            // width so the metadata keeps the majority.
-            return Math.max(40, Math.min(w.height * 0.80, w.width * 0.42))
+            // width so the metadata keeps the majority. At larger type scales,
+            // yield decorative artwork width to readable metadata first.
+            var widthShare = w.microLandscape
+                ? Math.max(0.34, 0.42 - (theme.textScaleEff - 1) * 0.18)
+                : 0.42
+            return Math.max(40, Math.min(
+                w.tileContentHeight * (w.microLandscape ? 0.78 : 0.92),
+                w.tileContentWidth * widthShare))
+        }
         // Stacked: the art may take a chunk of the height, never so much that
-        // the transport row is pushed out of the box.
-        return Math.max(40, Math.min(w.width * 0.72, w.height * 0.45,
+        // the transport row is pushed out of the box. A micro tile similarly
+        // yields decorative height when the user requests larger text.
+        var narrowRichStack = w.rich && w.tileContentWidth < 400
+        var heightShare = w.micro
+            ? Math.max(0.38, 0.48 - (theme.textScaleEff - 1) * 0.20)
+            : narrowRichStack
+                ? Math.max(0.24, 0.42 - (theme.textScaleEff - 1) * 0.40)
+                : 0.48
+        return Math.max(40, Math.min(w.tileContentWidth * 0.72,
+                                     w.tileContentHeight * heightShare,
                                      w.expanded ? 420 : 100000))
     }
     // The width the metadata actually gets - what its type is sized against.
-    readonly property real infoW: w.horiz
-        ? Math.max(80, w.width - w.artSize - theme.spacingMd)
-        : Math.max(80, w.width)
+    readonly property real infoW: w.sideBySide
+        ? Math.max(80, w.tileContentWidth - w.artSize - theme.spacingMd)
+        : w.tileContentWidth
     // Type scales with the box and clamps. The horizontal projections are short,
     // so their height budget is a bigger share of a smaller number.
-    readonly property real titlePx: Math.max(17, Math.min(w.infoW * 0.075,
-                                     w.height * (w.horiz ? 0.10 : 0.06), 28))
-    readonly property real artistPx: Math.max(15,
-                                              Math.round(w.titlePx * 0.66))
+    readonly property real titlePx: Math.max(
+        theme.fontTitle,
+        Math.min(w.infoW * 0.075,
+                 w.tileContentHeight * (w.sideBySide ? 0.10 : 0.06),
+                 Math.max(28, theme.fontTitle + 4)))
+    readonly property real artistPx: Math.max(
+        theme.fontLabel, Math.round(w.titlePx * 0.72))
     // Tile transport: play is the primary target, prev/next the secondary ones.
     readonly property real playSize: w.micro ? theme.touchTertiary : theme.touchSecondary
 
@@ -155,21 +204,25 @@ WidgetChrome {
             size: Math.max(32, Math.min(w.width * 0.18, w.height * 0.18,
                                         w.expanded ? 96 : 72))
         }
-        Text { Layout.alignment: Qt.AlignHCenter; text: w.emptyStateLabel
+        Text {
+            objectName: "mediaEmptyState"
+            Layout.alignment: Qt.AlignHCenter
+            text: w.emptyStateLabel
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
-            fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum; elide: Text.ElideRight
+            wrapMode: Text.WordWrap
             color: theme.textSecondary
-            font.pixelSize: Math.max(17,
-                                     Math.min(w.width * 0.05, w.height * 0.05,
-                                                  w.expanded ? 20 : 16)) }
+            font.pixelSize: theme.fontLabel
+            Accessible.name: w.emptyStateLabel
+        }
     }
 
     component MediaProgress: Item {
         id: progress
         property bool showLabels: true
         objectName: "mediaProgress"
-        implicitHeight: progress.showLabels ? 54 : 48
+        implicitHeight: progress.showLabels
+            ? Math.max(theme.touchTertiary, theme.fontLabel + 34) : 48
         activeFocusOnTab: w.canSeek
         Accessible.role: Accessible.Slider
         Accessible.name: "Playback position, " + Math.round(w.progressFraction * 100) + " percent"
@@ -209,20 +262,22 @@ WidgetChrome {
             }
         }
         Text {
+            objectName: "mediaElapsed"
             visible: progress.showLabels
             anchors.left: parent.left
             anchors.bottom: parent.bottom
             text: w.formatTime(w.positionMs)
             color: theme.textSecondary
-            font.pixelSize: 15
+            font.pixelSize: theme.fontLabel
         }
         Text {
+            objectName: "mediaDuration"
             visible: progress.showLabels
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             text: w.durationMs > 0 ? w.formatTime(w.durationMs) : "Live"
             color: theme.textSecondary
-            font.pixelSize: 15
+            font.pixelSize: theme.fontLabel
         }
         MouseArea {
             anchors.fill: parent
@@ -283,14 +338,14 @@ WidgetChrome {
         visible: w.avail && !w.expanded
         // Wide reflows the SAME children into two columns: art beside the
         // metadata, which is the only shape that fits a 306px-tall box.
-        columns: w.horiz ? 2 : 1
+        columns: w.sideBySide ? 2 : 1
         rowSpacing: theme.spacingSm
         columnSpacing: theme.spacingMd
 
         // Stacked: split the slack above/below so the block sits centred rather
         // than jammed against the top edge. Invisible items are skipped by
         // GridLayout, so these never consume a cell in the 2-column arrangement.
-        Item { Layout.fillWidth: true; Layout.fillHeight: true; visible: !w.horiz }
+        Item { Layout.fillWidth: true; Layout.fillHeight: true; visible: !w.sideBySide }
 
         Rectangle {
             id: artTile
@@ -311,7 +366,7 @@ WidgetChrome {
 
         ColumnLayout {
             Layout.fillWidth: true
-            Layout.fillHeight: w.horiz
+            Layout.fillHeight: w.sideBySide
             // Released explicitly: a nested Layout inherits an implicit
             // maximumWidth from a child that sets Layout.alignment (the transport
             // row), which would cap this column at the transport's own width and
@@ -320,16 +375,35 @@ WidgetChrome {
             spacing: theme.spacingXs
 
             // Centre the metadata against the art when side-by-side.
-            Item { Layout.fillHeight: true; visible: w.horiz }
+            Item { Layout.fillHeight: true; visible: w.sideBySide }
 
-            Text { text: w.avail ? media.title : ""; color: theme.textPrimary
-                font.pixelSize: w.titlePx; font.bold: true
-                horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
-                elide: Text.ElideRight; Layout.fillWidth: true }
-            Text { visible: w.rich; text: w.avail ? media.artist : ""
-                color: theme.textSecondary; font.pixelSize: w.artistPx
-                horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
-                elide: Text.ElideRight; Layout.fillWidth: true }
+            Text {
+                objectName: "mediaTrackTitle"
+                text: w.avail ? media.title : ""
+                color: theme.textPrimary
+                font.pixelSize: w.titlePx
+                font.bold: true
+                horizontalAlignment: w.sideBySide ? Text.AlignLeft : Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+                Layout.preferredHeight: implicitHeight
+                Accessible.name: w.avail ? media.title : ""
+                Accessible.description: w.avail
+                    ? (media.artist ? "Track by " + media.artist : "Current track")
+                    : ""
+            }
+            Text {
+                objectName: "mediaTrackArtist"
+                visible: w.rich
+                text: w.avail ? media.artist : ""
+                color: theme.textSecondary
+                font.pixelSize: w.artistPx
+                horizontalAlignment: w.sideBySide ? Text.AlignLeft : Text.AlignHCenter
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+                Layout.preferredHeight: implicitHeight
+                Accessible.name: w.avail ? media.artist : ""
+            }
 
             // Progress - the half-cell has no room for it.
             MediaProgress {
@@ -343,13 +417,13 @@ WidgetChrome {
                 Layout.fillWidth: true
                 text: w.artworkNotice
                 color: theme.textSecondary
-                font.pixelSize: 15
-                elide: Text.ElideRight
+                font.pixelSize: theme.fontMinimum
+                wrapMode: Text.WordWrap
             }
 
             // Transport. Micro keeps ONLY play - at a full-size hit area.
             RowLayout {
-                Layout.alignment: w.horiz ? Qt.AlignLeft : Qt.AlignHCenter
+                Layout.alignment: w.sideBySide ? Qt.AlignLeft : Qt.AlignHCenter
                 Layout.topMargin: theme.spacingXs
                 spacing: theme.spacingMd
                 TransportButton {
@@ -379,10 +453,10 @@ WidgetChrome {
                 }
             }
 
-            Item { Layout.fillHeight: true; visible: w.horiz }
+            Item { Layout.fillHeight: true; visible: w.sideBySide }
         }
 
-        Item { Layout.fillWidth: true; Layout.fillHeight: true; visible: !w.horiz }
+        Item { Layout.fillWidth: true; Layout.fillHeight: true; visible: !w.sideBySide }
     }
 
     // Expanded
@@ -406,10 +480,25 @@ WidgetChrome {
         }
         ColumnLayout {
             Layout.fillWidth: true; spacing: 2
-            Text { Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
-                text: w.avail ? media.title : ""; font.pixelSize: 26; font.bold: true
-                color: theme.textPrimary; elide: Text.ElideRight }
-            Text { Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
+            Text {
+                objectName: "mediaExpandedTitle"
+                Layout.fillWidth: true
+                Layout.preferredHeight: implicitHeight
+                horizontalAlignment: Text.AlignHCenter
+                text: w.avail ? media.title : ""
+                font.pixelSize: Math.max(26, theme.fontTitle + 4)
+                font.bold: true
+                color: theme.textPrimary
+                wrapMode: Text.WordWrap
+                maximumLineCount: 3
+                elide: Text.ElideRight
+                Accessible.name: w.avail ? media.title : ""
+            }
+            Text {
+                objectName: "mediaExpandedByline"
+                Layout.fillWidth: true
+                Layout.preferredHeight: implicitHeight
+                horizontalAlignment: Text.AlignHCenter
                 // Join artist + album with a middot, but omit the separator (and any
                 // stray leading " · ") when either side is empty (podcasts/streams).
                 text: w.avail
@@ -417,7 +506,13 @@ WidgetChrome {
                         ? (media.artist + (media.album ? "  ·  " + media.album : ""))
                         : (media.album || ""))
                     : ""
-                font.pixelSize: theme.fontLabel; color: theme.textSecondary; elide: Text.ElideRight }
+                font.pixelSize: theme.fontLabel
+                color: theme.textSecondary
+                wrapMode: Text.WordWrap
+                maximumLineCount: 2
+                elide: Text.ElideRight
+                Accessible.name: text
+            }
         }
         MediaProgress {
             Layout.fillWidth: true
@@ -430,7 +525,8 @@ WidgetChrome {
             horizontalAlignment: Text.AlignHCenter
             text: w.artworkNotice
             color: theme.textSecondary
-            font.pixelSize: 15
+            font.pixelSize: theme.fontMinimum
+            wrapMode: Text.WordWrap
         }
         RowLayout {
             Layout.alignment: Qt.AlignHCenter; spacing: theme.spacingXl

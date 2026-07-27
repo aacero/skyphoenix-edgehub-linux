@@ -83,10 +83,37 @@ WidgetChrome {
     readonly property bool tallish: sizeClass === "tall" || sizeClass === "large"
 
     readonly property real rowH: Math.max(40, Math.min(height * 0.075, 64))
+    readonly property real eventTitlePixelSize: Math.max(
+        theme.fontMinimum, Math.min(rowH * 0.34, theme.fontTitle))
+    readonly property real eventWhenPixelSize: Math.max(
+        theme.fontMinimum, Math.min(rowH * 0.28, theme.fontLabel))
+    // Narrow agenda columns spend a second line on the event title. The full
+    // source title remains the Text value and the row's accessible name.
+    readonly property bool wrapEventTitles: width < theme.fontTitle * 20
+    readonly property int eventTitleLines: wrapEventTitles ? 2 : 1
+    TextMetrics {
+        id: eventTitleMetrics
+        font.family: theme.fontDisplay
+        font.pixelSize: w.eventTitlePixelSize
+    }
+    TextMetrics {
+        id: eventWhenMetrics
+        font.family: theme.fontDisplay
+        font.pixelSize: w.eventWhenPixelSize
+    }
+    readonly property real eventRowH: Math.max(
+        rowH,
+        Math.ceil(eventTitleMetrics.height * eventTitleLines
+                  + eventWhenMetrics.height))
+    readonly property real eventRowSpacing: theme.spacingXs
     // Rows one column can hold without overflowing.
     readonly property int rowsPerCol: {
-        var avail = w.height - w.headerHeight - 24 - 2 * theme.spacingSm
-        return Math.max(1, Math.floor(avail / (w.rowH + 4)))
+        var headerUse = agendaHeader.visible
+            ? agendaHeader.implicitHeight + tileAgenda.spacing : 0
+        var avail = Math.max(0, tileAgenda.height - headerUse)
+        return Math.max(1, Math.floor(
+            (avail + w.eventRowSpacing)
+            / (w.eventRowH + w.eventRowSpacing)))
     }
     // What we would show if the box were unlimited.
     readonly property int wantCount: Math.max(0, Math.min(w.maxEvents, w.events.length))
@@ -501,6 +528,8 @@ WidgetChrome {
     // Every size used to render the same 12px rows with a fixed 26px bar, so a
     // 696x1637 box showed five 12px lines and a metre of nothing.
     ColumnLayout {
+        id: tileAgenda
+        objectName: "calendarTileAgenda"
         anchors.fill: parent; anchors.margins: theme.spacingSm
         visible: !w.expanded; spacing: theme.spacingXs
 
@@ -524,6 +553,9 @@ WidgetChrome {
             spacing: theme.spacingXs
 
             RowLayout {
+                id: agendaHeader
+                objectName: "calendarAgendaHeader"
+                visible: w.events.length > 0
                 Layout.fillWidth: true
                 Text {
                     text: (w.tick, "Up next"); color: theme.textTertiary
@@ -532,7 +564,8 @@ WidgetChrome {
                 }
                 Item { Layout.fillWidth: true }
                 Text {
-                    visible: w.loading || w.errorText.length > 0 || w.stale
+                    visible: w.events.length > 0
+                             && (w.loading || w.errorText.length > 0 || w.stale)
                     text: w.loading ? "Loading calendar..."
                         : (w.errorText.length ? w.errorText : "Calendar data is stale")
                     color: w.loading ? theme.textSecondary : theme.warning
@@ -544,11 +577,14 @@ WidgetChrome {
             }
 
             GridLayout {
-                Layout.fillWidth: true; Layout.fillHeight: true
+                id: eventGrid
+                objectName: "calendarEventGrid"
+                visible: w.events.length > 0
+                Layout.fillWidth: true
                 // A wide box flows the SAME rows into columns instead of stretching
                 // a 12px title across 1692px.
                 columns: w.eventCols
-                rowSpacing: 4; columnSpacing: theme.spacingLg
+                rowSpacing: w.eventRowSpacing; columnSpacing: theme.spacingLg
 
                 Repeater {
                     // The model is the COUNT: a refetch moves the bound values in
@@ -556,57 +592,98 @@ WidgetChrome {
                     model: w.shownCount
                     delegate: RowLayout {
                         id: evRow
+                        objectName: "calendarEventRow"
                         required property int index
                         readonly property var ev: w.shownEvents[evRow.index]
+                        readonly property string accessibleSummary: ev
+                            ? (ev.title || "(busy)") + ", " + w.fmtWhen(ev)
+                              + (ev.location ? ", " + ev.location : "")
+                            : ""
+                        Accessible.name: accessibleSummary
                         Layout.fillWidth: true
-                        Layout.preferredHeight: Math.round(w.rowH)
+                        Layout.preferredHeight: Math.round(w.eventRowH)
                         Layout.alignment: Qt.AlignTop
                         spacing: theme.spacingSm
                         Rectangle {
                             Layout.preferredWidth: 3
-                            Layout.preferredHeight: Math.round(w.rowH * 0.62)
+                            Layout.preferredHeight: Math.round(w.eventRowH * 0.62)
                             radius: 2; color: w.effAccent
                         }
                         ColumnLayout {
                             Layout.fillWidth: true; spacing: 0
-                            Text { text: evRow.ev ? (evRow.ev.title || "(busy)") : ""
+                            Text {
+                                objectName: "calendarEventTitle"
+                                text: evRow.ev ? (evRow.ev.title || "(busy)") : ""
                                 color: theme.textPrimary
-                                font.pixelSize: Math.max(theme.fontMinimum,
-                                                         Math.min(w.rowH * 0.34, theme.fontTitle))
-                                elide: Text.ElideRight; Layout.fillWidth: true }
-                            Text { text: evRow.ev ? w.fmtWhen(evRow.ev) : ""
+                                font.pixelSize: w.eventTitlePixelSize
+                                font.family: theme.fontDisplay
+                                wrapMode: w.wrapEventTitles
+                                          ? Text.WordWrap : Text.NoWrap
+                                maximumLineCount: w.eventTitleLines
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                                Accessible.name: text
+                            }
+                            Text {
+                                objectName: "calendarEventWhen"
+                                text: evRow.ev ? w.fmtWhen(evRow.ev) : ""
                                 color: theme.textSecondary
-                                font.pixelSize: Math.max(theme.fontMinimum,
-                                                         Math.min(w.rowH * 0.28, theme.fontLabel))
-                                elide: Text.ElideRight; Layout.fillWidth: true }
+                                font.pixelSize: w.eventWhenPixelSize
+                                font.family: theme.fontDisplay
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
                         }
                     }
                 }
             }
-            ColumnLayout {
+
+            Item {
+                objectName: "calendarEmptyState"
                 visible: w.events.length === 0
                 Layout.fillWidth: true; Layout.fillHeight: true
-                spacing: theme.spacingXs
-                Text {
-                    Layout.fillWidth: true
-                    horizontalAlignment: Text.AlignHCenter
-                    text: w.errorText || (w.loading ? "Loading calendar..." : "No upcoming events")
-                    color: w.errorText.length ? theme.warning : theme.textSecondary
-                    font.pixelSize: Math.max(theme.fontLabel,
-                                             Math.min(w.width * 0.04, w.rowH * 0.4, 22))
-                    wrapMode: Text.WordWrap
-                }
-                Text {
-                    visible: !w.loading && (w.stateHelp.length > 0 || w.errorText.length > 0)
-                    Layout.fillWidth: true
-                    horizontalAlignment: Text.AlignHCenter
-                    text: w.stateHelp
-                    color: theme.textTertiary
-                    font.pixelSize: Math.max(theme.fontMinimum, Math.min(w.rowH * 0.3, 17))
-                    wrapMode: Text.WordWrap
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    width: Math.max(0, parent.width - 2 * theme.spacingSm)
+                    spacing: theme.spacingXs
+                    Text {
+                        objectName: "calendarEmptyTitle"
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignHCenter
+                        text: w.errorText
+                              || (w.loading ? "Loading calendar..."
+                                            : "No upcoming events")
+                        color: w.errorText.length
+                               ? theme.warning : theme.textSecondary
+                        font.pixelSize: Math.max(
+                            theme.fontLabel,
+                            Math.min(w.width * 0.04, w.rowH * 0.4, 22))
+                        font.family: theme.fontDisplay
+                        wrapMode: Text.WordWrap
+                        Accessible.name: text
+                    }
+                    Text {
+                        objectName: "calendarEmptyHelp"
+                        visible: !w.loading
+                                 && (w.stateHelp.length > 0
+                                     || w.errorText.length > 0)
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignHCenter
+                        text: w.stateHelp
+                        color: theme.textTertiary
+                        font.pixelSize: Math.max(
+                            theme.fontMinimum,
+                            Math.min(w.rowH * 0.3, 17))
+                        font.family: theme.fontDisplay
+                        wrapMode: Text.WordWrap
+                        Accessible.name: text
+                    }
                 }
             }
-            Item { Layout.fillHeight: true }
+            Item {
+                visible: w.events.length > 0
+                Layout.fillHeight: true
+            }
         }
     }
 

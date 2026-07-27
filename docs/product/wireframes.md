@@ -433,6 +433,11 @@
 └──────────────────────────────────────────────────────────┘
 ```
 
+The Safe Mode button in this discovery-era wireframe is not implemented.
+Current recovery is the session-only CLI command
+`xeneon-edge-hub --safe-mode`; it leaves all widget QML unloaded and does not
+change the saved layout. A persistent in-app control remains deferred.
+
 ---
 
 ## 9. Widget Error State

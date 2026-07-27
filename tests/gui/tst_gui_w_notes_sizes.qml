@@ -104,9 +104,7 @@ Item {
             var editor = G.findPred(wh.item, function (n) {
                 return n && n.persistentSelection !== undefined
             })
-            var flick = G.findPred(wh.item, function (n) {
-                return n && n.flicking !== undefined && n.contentY !== undefined
-            })
+            var flick = G.byObjName(wh.item, "notesEditorViewport")
             verify(footer && footer.visible && editor && flick)
             verify(editor.font.pixelSize >= wh.theme.fontTitle,
                    "expanded editor keeps the reading-size floor")

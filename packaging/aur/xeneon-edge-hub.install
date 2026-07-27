@@ -12,5 +12,22 @@ EOF
 }
 
 post_upgrade() {
-  :
+  cat <<'EOF'
+:: EdgeHub updated. The package manager does not restart either graphical
+   application because it cannot safely inspect or control your user session.
+   Close and reopen the Hub to use the new build. If the Manager was open during
+   the upgrade, close and reopen it too; do not start the Manager otherwise.
+   Hub autostart, when enabled, uses the new binary at the next login.
+EOF
+}
+
+post_remove() {
+  cat <<'EOF'
+:: EdgeHub package files removed. Per-user data is deliberately preserved:
+     ${XDG_CONFIG_HOME:-$HOME/.config}/xeneon-edge-hub/
+     ${XDG_CONFIG_HOME:-$HOME/.config}/autostart/xeneon-edge-hub.desktop
+   Disable autostart in the Manager before uninstalling, or remove the second
+   file yourself. Remove the first directory only if you want to erase layouts,
+   widget data, settings and credentials.
+EOF
 }

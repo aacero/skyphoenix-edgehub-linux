@@ -47,6 +47,27 @@ Item {
     // Never touched by any test: proves the shipped default is off.
     W.UpdateChecker { id: pristine }
 
+    // Mirrors a persisted opt-in at Hub startup. `enabled` is already true
+    // during construction, which must still create exactly one request.
+    // This pins the application lifecycle separately from Qt 6.11's delayed
+    // HTTP/2 cleanup warning, which occurs after a successful request.
+    property int startupFactoryCount: 0
+    property var startupFirstFake: null
+    property var startupLastFake: null
+    W.NetHub { id: startupGate }
+    W.UpdateChecker {
+        id: startupEnabled
+        netHub: startupGate
+        enabled: true
+        xhrFactory: function () {
+            root.startupFactoryCount++
+            var fake = root.makeFake()
+            if (!root.startupFirstFake) root.startupFirstFake = fake
+            root.startupLastFake = fake
+            return fake
+        }
+    }
+
     // No gate injected: must fail closed, not build its own XHR.
     W.UpdateChecker { id: gateless }
 
@@ -136,6 +157,16 @@ Item {
             compare(gate.requests, 0, "the egress gate counted nothing")
             compare(gate.blocked, 0, "…and refused nothing (nothing was attempted)")
             compare(checker.status, "idle")
+        }
+
+        function test_persisted_optin_at_startup_fires_one_request_without_abort() {
+            compare(startupEnabled.enabled, true)
+            compare(startupFactoryCount, 1,
+                    "construction and Component.onCompleted must not duplicate the startup check")
+            compare(startupGate.requests, 1, "the gate sees one startup request")
+            verify(startupFirstFake === startupLastFake, "only one XHR object was created")
+            verify(!startupFirstFake.aborted,
+                   "startup must not abort a just-opened TLS request with a duplicate check")
         }
 
         // ── opt-in: exactly one gated request, nothing identifying ──────────
@@ -239,6 +270,32 @@ Item {
                 ' {"tag_name":"v1.1.0-beta.1","prerelease":true,"draft":false}]')
             compare(checker.latestTag, "v1.2.0")
             compare(checker.updateAvailable, true)
+        }
+
+        function test_staged_stable_tag_is_never_offered_before_promotion() {
+            var staged =
+                '[{"tag_name":"v1.0.0","prerelease":true,"draft":false},' +
+                ' {"tag_name":"v1.0.0-rc.1","prerelease":true,"draft":false}]'
+
+            checker.currentVersion = "v1.0.0-beta.1"
+            checker.enabled = true
+            lastFake.resolveWith(200, staged)
+            compare(checker.latestTag, "v1.0.0-rc.1",
+                    "beta users must not see the staged stable candidate")
+
+            checker.check()
+            checker.currentVersion = "v1.0.0-rc.1"
+            lastFake.resolveWith(200, staged)
+            compare(checker.latestTag, "v1.0.0-rc.1",
+                    "RC users must not see the staged stable candidate")
+
+            checker.check()
+            checker.currentVersion = "v0.9.0"
+            lastFake.resolveWith(200,
+                '[{"tag_name":"v1.0.0","prerelease":true,"draft":false},' +
+                ' {"tag_name":"v0.9.0","prerelease":false,"draft":false}]')
+            compare(checker.latestTag, "v0.9.0",
+                    "stable users must not see the staged stable candidate")
         }
 
         function test_drafts_are_never_offered() {

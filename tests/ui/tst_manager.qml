@@ -2,16 +2,19 @@ import QtQuick
 import QtTest
 
 // COVERS: fn:Manager.confirmDeleteImage, fn:Manager.currentPageName, fn:Manager.onChanged, fn:Manager.onConfigChanged, fn:Manager.onHubConnectedChanged, fn:Manager.onImagesChanged
+// COVERS: fn:Manager.onHubCurrentPageChanged, fn:Manager.onLayoutSaveError, fn:Manager.onSaveError
 // COVERS: fn:Manager.onScreensChanged, fn:Manager.pageTiles, fn:Manager.refreshImages, fn:Manager.syncTheme
 // COVERS: fn:Manager.previewTheme, fn:Manager.previewAccent, fn:Manager.endThemePreview, fn:Manager.confirmRemovePage
-// COVERS: fn:Manager.scopeDetail, fn:Manager.commitRename
+// COVERS: fn:Manager.scopeDetail, fn:Manager.commitRename, fn:Manager.syncCurrentPageFromHub
 // COVERS: fn:Manager.applyPresetScreen, fn:Manager.confirmResetLayout, fn:Manager.hoverPreview
 // COVERS: fn:Manager.commitTheme, fn:Manager._themeDef
 // COVERS: fn:Manager._val, fn:Manager._lab, fn:Manager.catColor
 // COVERS: fn:Manager.refreshLicense, fn:Manager.onLicenseChanged, fn:Manager.reVerify
 // COVERS: fn:Manager.addScreen, fn:Manager.addWidget
-// COVERS: fn:Manager.flushPendingUiState
-// COVERS: fn:Manager.previewPreset
+// COVERS: fn:Manager.flushPendingUiState, fn:Manager.hasPendingUiState
+// COVERS: fn:Manager.previewPreset, fn:Manager.confirmRemoveWidget
+// COVERS: fn:Manager.on_SavePendingChanged, fn:Manager.onHubConfigChanged
+// COVERS: fn:Manager.onExternalConfigConflict
 //
 // manager/qml/Manager.qml (hosted with a STUBBED `backend`) -
 //   • the 5-tab StackLayout (Layout/Appearance/Images/Display/About) switches
@@ -36,10 +39,15 @@ Item {
     QtObject {
         id: backend
         property bool hubConnected: false
+        property int hubCurrentPage: -1
         signal imagesChanged()
         signal configChanged()
         signal screensChanged()
         signal licenseChanged()
+        signal saveError(string message)
+        signal layoutSaveError(string message)
+        signal hubConfigChanged()
+        signal externalConfigConflict()
         // Licence stub: `storedKey` is what setLicenseKey persists; the status
         // reflects it. `proKeys` is the set the fake verifier accepts as Pro, so
         // a test can assert the dialog/card react to a valid vs invalid key
@@ -65,6 +73,22 @@ Item {
         property bool stopHubCalled: false
         property bool syncCalled: false
         property bool autostart: false
+        property bool targetSaveSucceeds: true
+        property bool layoutSaveSucceeds: true
+        property int layoutSaveCount: 0
+        property string lastLayoutJson: ""
+        property int recoveryExportCount: 0
+        property string recoveryExportJson: ""
+        property string recoveryExportPath: "/mock/recovery/manager-layout.json"
+        property int discardLocalCount: 0
+        property int discardPendingCount: 0
+        property string authoritativeUiState: ""
+        property int activePagePushCount: 0
+        property int lastActivePage: -1
+        property int layoutSavePendingCount: 0
+        property bool lastLayoutSavePending: false
+        property var policyValue: ({ active: false, source: "absent",
+                                     netOffline: false, allowedHosts: [] })
         function imageUrl(n) {
             var shipped = [
                 "aurora.png", "blossom.png", "daylight.png", "edge-cyan.png",
@@ -79,21 +103,56 @@ Item {
             return "qrc:/wallpapers/" + shipped[hash % shipped.length]
         }
         function starterLayout() { return "blank" }
+        function uiState() { return authoritativeUiState }
+        function saveUiState(json) {
+            layoutSaveCount++
+            lastLayoutJson = json
+            return layoutSaveSucceeds
+        }
+        function exportUiStateRecovery(json) {
+            recoveryExportCount++
+            recoveryExportJson = json
+            return recoveryExportPath
+        }
         function autoConfig() { return "" }
         function startTab() { return 0 }
         function metricsJson() { return "{}" }
+        function policy() { return policyValue }
+        function resolveSecret(raw) {
+            return ({ ok: true, value: String(raw), error: "", plaintext: true })
+        }
+        function readMetricFile(path) {
+            return ({ ok: false, body: "", error: "not-found",
+                      message: "Test fixture has no metric file." })
+        }
         function screensJson() { return "[]" }
         function targetConnector() { return "" }
         function listImages() { return imagesList }
         function importImage(u) { lastImported = String(u) }
         function deleteImage(n) { lastDeleted = n }
-        function setTargetDisplay(a, b) {}
+        function setTargetDisplay(a, b) { return targetSaveSucceeds }
         function isAutostart() { return autostart }
         function setAutostart(v) { autostart = v }
         function syncFromHub() { syncCalled = true }
+        function discardLocalAndReload() {
+            discardLocalCount++
+            configChanged()
+        }
+        function discardPendingLayoutAndSync() {
+            discardPendingCount++
+        }
         function startHub() { startHubCalled = true; return true }
         function stopHub() { stopHubCalled = true }
+        function setHubActivePage(page) {
+            activePagePushCount++
+            lastActivePage = page
+        }
+        function setLayoutSavePending(pending) {
+            layoutSavePendingCount++
+            lastLayoutSavePending = pending
+        }
     }
+    property var configBridge: backend
 
     property var win: null
 
@@ -180,6 +239,7 @@ Item {
         function cleanupTestCase() { if (win) win.destroy() }
 
         function init() {
+            backend.authoritativeUiState = ""
             _store.load("blank")
             win.currentPageIndex = 0
             win.hubStarting = false
@@ -187,6 +247,170 @@ Item {
             backend.startHubCalled = false
             backend.stopHubCalled = false
             backend.malformedLicenseStatus = false
+            backend.layoutSaveSucceeds = true
+            backend.layoutSaveCount = 0
+            backend.targetSaveSucceeds = true
+            backend.lastLayoutJson = ""
+            backend.recoveryExportCount = 0
+            backend.recoveryExportJson = ""
+            backend.recoveryExportPath = "/mock/recovery/manager-layout.json"
+            backend.discardLocalCount = 0
+            backend.discardPendingCount = 0
+            backend.activePagePushCount = 0
+            backend.lastActivePage = -1
+            backend.hubCurrentPage = -1
+            backend.layoutSavePendingCount = 0
+            backend.lastLayoutSavePending = false
+            backend.policyValue = ({ active: false, source: "absent",
+                                     netOffline: false, allowedHosts: [] })
+            var configDialog = findPred(win, function (x) {
+                return x && typeof x.openFor === "function"
+            })
+            if (configDialog)
+                configDialog.orgPolicy = backend.policyValue
+            win.persistentSaveError = ""
+            win.externalConfigConflictActive = false
+            _store.dirty = false
+            _store.saveFailed = false
+            _store.saveFailureMessage = ""
+            _store.recoveryPath = ""
+        }
+
+        // ── Persistence error surfaces ──────────────────────────────────────
+        function test_layout_save_error_is_persistent_actionable_and_retryable() {
+            var banner = findPred(win, function (x) {
+                return x && x.objectName === "managerPersistenceBanner"
+            })
+            verify(banner, "the Manager persistence banner exists")
+
+            backend.layoutSaveSucceeds = false
+            backend.layoutSaveError("The live layout could not be committed.")
+            tryVerify(function () { return banner.visible }, 1000)
+            compare(_store.dirty, true)
+            compare(_store.saveFailed, true)
+            compare(_store.saveFailureMessage, "The live layout could not be committed.", "onLayoutSaveError forwards the backend reason")
+            compare(_store.recoveryPath, "/mock/recovery/manager-layout.json")
+            compare(backend.recoveryExportCount, 1,
+                    "the failed Manager layout is exported for recovery")
+            compare(backend.recoveryExportJson, JSON.stringify(_store._persistableData()))
+
+            var retry = findButton("Retry")
+            var discard = findButton("Discard")
+            verify(retry && retry.visible, "the failure offers Retry")
+            verify(discard && discard.visible, "the failure offers Discard")
+            tryVerify(function () {
+                return retry.width >= 48 && retry.height >= 48
+                       && discard.width >= 48 && discard.height >= 48
+            }, 1000, "Retry and Discard are touch-safe targets")
+
+            backend.layoutSaveSucceeds = true
+            retry.clicked()
+            compare(_store.dirty, false)
+            compare(_store.saveFailed, false)
+            compare(_store.saveFailureMessage, "")
+            compare(_store.recoveryPath, "")
+            compare(banner.visible, false, "a successful retry removes the warning")
+        }
+
+        function test_general_save_error_stays_until_dismissed() {
+            var banner = findPred(win, function (x) {
+                return x && x.objectName === "managerPersistenceBanner"
+            })
+            backend.saveError("Configuration storage is unavailable.")
+            tryVerify(function () { return banner.visible }, 1000)
+            compare(win.persistentSaveError, "Configuration storage is unavailable.", "onSaveError keeps the warning visible")
+            compare(_store.saveFailed, false,
+                    "a non-layout storage error does not claim the layout is dirty")
+
+            var dismiss = findButton("Dismiss")
+            verify(dismiss && dismiss.visible, "a general storage warning can be dismissed")
+            tryVerify(function () {
+                return dismiss.width >= 48 && dismiss.height >= 48
+            }, 1000, "Dismiss is a touch-safe target")
+            dismiss.clicked()
+            compare(win.persistentSaveError, "")
+            compare(banner.visible, false,
+                    "the warning does not disappear until the user dismisses it")
+        }
+
+        function test_layout_failure_discard_routes_to_backend_and_hides_banner() {
+            var banner = findPred(win, function (x) {
+                return x && x.objectName === "managerPersistenceBanner"
+            })
+            backend.hubConnected = false
+            backend.layoutSaveError("Rejected edit")
+            tryVerify(function () { return banner.visible }, 1000)
+            var discard = findButton("Discard")
+            verify(discard && discard.visible)
+            discard.clicked()
+            compare(backend.discardLocalCount, 1,
+                    "offline discard reloads the last committed local config")
+            compare(backend.discardPendingCount, 0)
+            compare(_store.saveFailed, false)
+            compare(banner.visible, false)
+        }
+
+        function test_connected_discard_waits_for_and_adopts_authoritative_state() {
+            var banner = findPred(win, function (x) {
+                return x && x.objectName === "managerPersistenceBanner"
+            })
+            backend.hubConnected = true
+            backend.layoutSaveError("Hub changed during edit")
+            tryVerify(function () { return banner.visible }, 1000)
+            verify(_store.dirty)
+            verify(_store.saveFailed)
+            verify(_store.recoveryPath.length > 0)
+
+            var discard = findButton("Discard")
+            verify(discard && discard.visible)
+            discard.clicked()
+            compare(backend.discardPendingCount, 1)
+            verify(_store.dirty,
+                   "the local document remains recoverable until the Hub replies")
+            verify(_store.saveFailed)
+            verify(banner.visible)
+
+            backend.authoritativeUiState = JSON.stringify({
+                version: 1,
+                appearance: {},
+                settings: {},
+                pages: [ { name: "Hub truth", tiles: [] } ]
+            })
+            backend.configChanged()
+            compare(_store.pages()[0].name, "Hub truth")
+            compare(_store.dirty, false)
+            compare(_store.saveFailed, false)
+            compare(_store.saveFailureMessage, "")
+            compare(_store.recoveryPath, "")
+            compare(win.externalConfigConflictActive, false)
+            compare(banner.visible, false)
+        }
+
+        function test_hub_config_change_refreshes_target_license_and_autostart() {
+            _nav.currentIndex = 3
+            var autostartSwitch = findSwitch("Start the hub automatically on login")
+            verify(autostartSwitch, "found the autostart switch")
+            win.currentTarget = "stale-target"
+            backend.storedKey = "XE1.valid.pro"
+            backend.autostart = true
+            backend.hubConfigChanged()
+            compare(win.currentTarget, "", "onHubConfigChanged refreshes the backend target")
+            compare(win.isPro, true,
+                    "the same event refreshes the verified licence status")
+            compare(autostartSwitch.checked, true,
+                    "the same event refreshes the effective autostart state")
+        }
+
+        function test_external_config_conflict_marks_and_flushes_local_work() {
+            _store.setSetting("conflict-probe", "text", "pending")
+            verify(_store._savePending, "precondition: local work is pending")
+            var savesBefore = backend.layoutSaveCount
+            backend.externalConfigConflict()
+            compare(win.externalConfigConflictActive, true, "onExternalConfigConflict marks the decision point")
+            compare(_store._savePending, false,
+                    "the conflict handler drains the local debounce")
+            compare(backend.layoutSaveCount, savesBefore + 1,
+                    "the conflict handler exports the current local document")
         }
 
         // ── tabs ──────────────────────────────────────────────────────────────
@@ -399,6 +623,22 @@ Item {
             compare(win.currentPageName(), "", "currentPageName returns '' for an out-of-range page")
         }
 
+        function test_hub_page_change_updates_manager_without_echo() {
+            _store.addPage("Second")
+            win.currentPageIndex = 0
+            backend.activePagePushCount = 0
+
+            backend.hubCurrentPage = 1
+            tryCompare(win, "currentPageIndex", 1, 2000)
+            compare(win.currentPageIndex, 1, "syncCurrentPageFromHub adopts the panel page")
+            compare(backend.activePagePushCount, 0, "onHubCurrentPageChanged does not echo")
+
+            win.currentPageIndex = 0
+            compare(backend.activePagePushCount, 1,
+                    "a Manager-originated page change is pushed to the Hub")
+            compare(backend.lastActivePage, 0)
+        }
+
         // ── backend Connections: onImagesChanged → refreshImages ──────────────
         function test_onImagesChanged_rebuilds_images() {
             backend.imagesList = ["x.png", "y.png"]
@@ -493,6 +733,41 @@ Item {
             _confirm.onConfirm()                             // user says Yes
             compare(_store.pageCount(), 1, "confirming removes the page")
             compare(win.currentPageIndex, 0, "selection clamped back into range")
+        }
+
+        function test_confirmRemoveWidget_names_data_and_requires_confirmation() {
+            var id = _store.addTile(0, "tasks")
+            _store.setSetting(id, "items", [
+                { id: "task-1", text: "Keep until confirmed", done: false }
+            ])
+
+            win.confirmRemoveWidget(id, "tasks")
+            verify(_confirm.message.indexOf("Tasks") >= 0, "confirmRemoveWidget names the exact widget")
+            verify(_confirm.message.indexOf("tasks") >= 0,
+                   "the confirmation discloses personal data removal")
+            _confirm.reject()
+            compare(_store.pages()[0].tiles.length, 1,
+                    "cancelling preserves the widget")
+            compare(_store.settingsFor(id).items.length, 1,
+                    "cancelling preserves widget data")
+
+            win.confirmRemoveWidget(id, "tasks")
+            _confirm.onConfirm()
+            compare(_store.pages()[0].tiles.length, 0,
+                    "confirming removes the named widget")
+            compare(Object.keys(_store.settingsFor(id)).length, 0,
+                    "confirming removes its settings and personal data")
+        }
+
+        function test_confirmRemoveWidget_refuses_stale_structure() {
+            var id = _store.addTile(0, "tasks")
+            win.confirmRemoveWidget(id, "tasks")
+            _store.addTile(0, "clock")
+            _confirm.onConfirm()
+
+            var tiles = _store.pages()[0].tiles
+            verify(tiles.some(function (tile) { return tile.id === id }),
+                   "a confirmation captured before a structural change is stale")
         }
 
         // ── Appearance tab hosts a live, read-only Edge preview ───────────────
@@ -663,6 +938,60 @@ Item {
             dlg.close()
         }
 
+        function test_config_actions_obey_user_and_managed_network_policy() {
+            var dlg = findPred(win, function (x) {
+                return x && typeof x.openFor === "function"
+            })
+            verify(dlg, "found the widget configuration dialog")
+            var geocode = dlg.geocodeNetHub
+            var connection = dlg.connectionNetHub
+            verify(geocode && connection, "both explicit action gates are exposed")
+            compare(connection.secretResolver, backend,
+                    "HTTP and KPI tests resolve credentials exactly as the Hub does")
+
+            dlg.orgPolicy = ({ active: false, source: "absent",
+                               netOffline: false, allowedHosts: [] })
+            _store.setAppearance("netOffline", false)
+            compare(geocode.isAllowed(
+                        "https://geocoding-api.open-meteo.com/v1/search"), true)
+            compare(connection.isAllowed("https://api.example.com/value"), true)
+
+            _store.setAppearance("netOffline", true)
+            compare(geocode.isAllowed(
+                        "https://geocoding-api.open-meteo.com/v1/search"), false,
+                    "the user's offline switch blocks Manager geocoding")
+            compare(connection.isAllowed("https://api.example.com/value"), false,
+                    "the user's offline switch blocks Manager connection tests")
+
+            _store.setAppearance("netOffline", false)
+            dlg.orgPolicy = ({ active: true, source: "policy",
+                               netOffline: true, allowedHosts: [] })
+            compare(geocode.offline, true,
+                    "managed net_offline pins the geocoder off")
+            compare(connection.offline, true,
+                    "managed net_offline pins connection tests off")
+
+            dlg.orgPolicy = ({ active: true, source: "policy",
+                               netOffline: false,
+                               allowedHosts: ["internal.example.com"] })
+            compare(geocode.offline, true,
+                    "a managed host list that excludes Open-Meteo blocks geocoding")
+            compare(connection.isAllowed(
+                        "https://internal.example.com/value"), true)
+            compare(connection.isAllowed(
+                        "https://api.example.com/value"), false,
+                    "connection tests cannot widen the managed host list")
+
+            dlg.orgPolicy = ({ active: true, source: "policy",
+                               netOffline: false,
+                               allowedHosts: ["geocoding-api.open-meteo.com"] })
+            compare(geocode.isAllowed(
+                        "https://geocoding-api.open-meteo.com/v1/search"), true,
+                    "an explicitly managed geocoder host remains usable")
+            compare(dlg.previewNetHub.offline, true,
+                    "passive widget previews stay offline under every policy")
+        }
+
         // ── W2 scope vocabulary ───────────────────────────────────────────────
         // The pills are the answer to "which setting changes which behavior", so
         // they must be a CLOSED vocabulary: the audit's F3 was two words for one
@@ -745,6 +1074,30 @@ Item {
             verify(empty.visible, "the empty state shows when no screens are detected")
             win.screens = [{ name: "DP-3", model: "Xeneon Edge", width: 720, height: 2560, isEdge: true }]
             verify(!empty.visible, "…and hides as soon as a screen exists")
+            win.screens = []
+        }
+
+        function test_display_target_selection_changes_only_after_save() {
+            _nav.currentIndex = 3
+            win.currentTarget = ""
+            win.screens = [
+                { name: "DP-3", model: "Xeneon Edge", width: 720,
+                  height: 2560, isEdge: true }
+            ]
+            tryVerify(function () {
+                return findButton("Set as target") !== null
+            }, 1000)
+            var setTarget = findButton("Set as target")
+
+            backend.targetSaveSucceeds = false
+            setTarget.clicked()
+            compare(win.currentTarget, "",
+                    "a rejected target save cannot create a false selected state")
+
+            backend.targetSaveSucceeds = true
+            setTarget.clicked()
+            compare(win.currentTarget, "DP-3",
+                    "a confirmed target save updates the selected display")
             win.screens = []
         }
 
@@ -960,10 +1313,18 @@ Item {
         }
 
         function test_clean_shutdown_drains_the_manager_store_debounce() {
+            verify(!win.hasPendingUiState(),
+                   "a clean Manager has no pending UI-state buffer")
             _store.setSetting("shutdown-probe", "text", "pending")
             verify(_store._savePending, "a Manager edit is waiting in the shared debounce")
+            tryCompare(backend, "lastLayoutSavePending", true, 1000, "on_SavePendingChanged reports the armed debounce")
+            verify(win.hasPendingUiState(),
+                   "the Manager reports the shared debounce before a Hub pull")
             verify(win.flushPendingUiState(), "Manager accepted the clean-shutdown flush")
             verify(!_store._savePending, "the Manager debounce was drained synchronously")
+            compare(backend.lastLayoutSavePending, false, "on_SavePendingChanged reports the drained debounce")
+            verify(!win.hasPendingUiState(),
+                   "the pending-state probe clears after the save")
         }
 
         // ── D/B: adding a curated "screen" APPENDS one new page (single-page
@@ -1037,8 +1398,11 @@ Item {
             verify(calmCard.previewPreset(),
                    "previewPreset selects a card without applying it")
             compare(dlg.selectedId, "calm-focus")
-            calmCard.forceActiveFocus()
-            verify(calmCard.activeFocus, "the preset card accepts keyboard focus")
+            win.requestActivate()
+            tryVerify(function () {
+                calmCard.forceActiveFocus(Qt.TabFocusReason)
+                return calmCard.activeFocus
+            }, 1000, "the preset card accepts keyboard focus after Qt activates the popup window")
             keyClick(Qt.Key_Return)
             compare(dlg.selectedId, "calm-focus",
                     "Return selects the focused preset for its real preview")
@@ -1063,7 +1427,8 @@ Item {
             for (var portraitIndex = 0; portraitIndex < minis.length; portraitIndex++)
                 compare(minis[portraitIndex].landscape, false,
                         "every preset thumbnail follows portrait")
-            verify(mini.height > mini.width, "portrait thumbnail is visibly portrait")
+            tryVerify(function () { return mini.height > mini.width }, 1000,
+                      "portrait thumbnail is visibly portrait after Qt polishes the layout")
             _store.setAppearance("orientation", "landscape")
             tryCompare(dlg, "landscape", true, 1000)
             compare(detail.landscape, true,
@@ -1099,6 +1464,54 @@ Item {
             compare(_store.pageCount(), before + 1, "the separate Add action commits once")
             dlg.close()
             backend.configChanged()
+        }
+
+        function test_preset_picker_stacks_without_overflow_at_narrow_manager_width() {
+            var dlg = findPred(win, function (x) {
+                return x && x.objectName === "managerPresetDialog"
+            })
+            // Size the popup itself instead of resizing the offscreen top-level
+            // window. The offscreen platform cannot propagate native size hints and
+            // warns when a Window minimum is changed, which would make the compiled
+            // warning gate fail for a harness artifact.
+            dlg.width = 640
+            dlg.open()
+            tryCompare(dlg, "compactLayout", true, 1000,
+                       "the preset picker switches to its compact breakpoint")
+            var content = findPred(win, function (x) {
+                return x && x.objectName === "managerPresetContent"
+            })
+            var layout = findPred(win, function (x) {
+                return x && x.objectName === "managerPresetLayout"
+            })
+            var scroll = findPred(win, function (x) {
+                return x && x.objectName === "managerPresetScroll"
+            })
+            var preview = findPred(win, function (x) {
+                return x && x.objectName === "managerPresetPreview"
+            })
+            verify(content && layout && scroll && preview,
+                   "the compact picker exposes both panes and its layout")
+            tryVerify(function () {
+                var listTopLeft = scroll.mapToItem(content, 0, 0)
+                var listBottomRight = scroll.mapToItem(
+                    content, scroll.width, scroll.height)
+                var previewTopLeft = preview.mapToItem(content, 0, 0)
+                var previewBottomRight = preview.mapToItem(
+                    content, preview.width, preview.height)
+                return scroll.width > 300 && scroll.height >= 120
+                    && preview.width > 300 && preview.height >= 160
+                    && previewTopLeft.y >= listBottomRight.y + 10
+                    && listTopLeft.x >= 19 && previewTopLeft.x >= 19
+                    && listBottomRight.x <= content.width - 19
+                    && previewBottomRight.x <= content.width - 19
+                    && previewBottomRight.y <= content.height - 19
+            }, 2000, "the list stacks above the preview with margins and no overflow")
+
+            dlg.close()
+            dlg.width = Qt.binding(function () {
+                return Math.min(dlg.parent ? dlg.parent.width * 0.94 : 1100, 1180)
+            })
         }
 
         // ── D: resetting to the default layout replaces pages with the starter set.

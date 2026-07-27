@@ -1,5 +1,6 @@
 import QtQuick
 import QtTest
+import "../../ui/qml/widgets" as W
 
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -13,6 +14,7 @@ import QtTest
 Item {
     id: root
     width: 1000; height: 720
+    property alias theme: h.theme
 
     WidgetHarness {
         id: h; x: 0; y: 0; width: 620; height: parent.height
@@ -21,6 +23,28 @@ Item {
     WidgetHarness {
         id: hc; x: 640; y: 0; width: 340; height: 380
         widgetFile: "BraindumpWidget.qml"; expanded: false
+    }
+    Component {
+        id: transientBraindump
+        W.BraindumpWidget {
+            width: 620
+            height: 640
+            expanded: true
+        }
+    }
+    Component {
+        id: transientBraindumpHost
+        W.WidgetHost {
+            width: 620
+            height: 640
+            widgetType: "braindump"
+            widgetComponent: transientBraindump
+            expanded: true
+            sizeClass: "full"
+            driverActive: true
+            foreground: true
+            ensureSettings: false
+        }
     }
 
     function clearSettings(harness) {
@@ -216,6 +240,185 @@ Item {
         }
     }
 
+    // ── Typed-buffer persistence ─────────────────────────────────────────
+    TestCase {
+        name: "BraindumpDraftPersistence"
+        when: windowShown
+
+        function init() {
+            tryVerify(function () { return h.ready }, 3000)
+            h.expanded = true
+            if (h.item.editingId.length)
+                h.item.cancelEdit()
+            fieldIn(h.item).text = ""
+            clearSettings(h)
+        }
+        function cleanup() {
+            if (h.item) {
+                if (h.item.editingId.length)
+                    h.item.cancelEdit()
+                fieldIn(h.item).text = ""
+            }
+        }
+
+        function test_expanded_capture_draft_is_pending_and_flushable() {
+            var w = h.item
+            var capture = fieldIn(w)
+            capture.text = "follow up after the demo"
+
+            compare(w.hasPendingChanges(), true,
+                    "typed capture text participates in the host persistence contract")
+            verify(w.flush(), "the capture draft can be synchronously flushed")
+            compare(w.hasPendingChanges(), false)
+            compare(capture.text, "", "a successful flush clears the local buffer")
+            compare(w.entries.length, 1)
+            compare(w.entries[0].text, "follow up after the demo")
+            compare(h.storeCtl.settingsFor("test-instance").entries[0].text,
+                    "follow up after the demo", "flush moved the draft into shared persisted state")
+        }
+
+        function test_compact_capture_draft_uses_the_same_flush_contract() {
+            tryVerify(function () { return hc.ready }, 3000)
+            clearSettings(hc)
+            var capture = fieldIn(hc.item)
+            capture.text = "typed directly on the tile"
+
+            compare(hc.item.hasPendingChanges(), true)
+            verify(hc.item.flush())
+            compare(hc.item.hasPendingChanges(), false)
+            compare(hc.item.entries[0].text, "typed directly on the tile")
+        }
+
+        function test_inline_edit_has_explicit_save_and_cancel_semantics() {
+            var w = h.item
+            w.add("original thought")
+            w.beginEdit(0)
+            w.editingText = "revised thought"
+
+            compare(w.hasPendingChanges(), true,
+                    "an edited entry reports its unsaved inline buffer")
+            var saveActions = root.findAll(w, function (node) {
+                return String(node.objectName).indexOf("braindumpEdit-") === 0
+            }, [])
+            var cancelActions = root.findAll(w, function (node) {
+                return String(node.objectName).indexOf("braindumpRemove-") === 0
+            }, [])
+            compare(saveActions.length, 1)
+            compare(cancelActions.length, 1)
+            compare(saveActions[0].Accessible.name, "Save thought 1",
+                    "the edit action becomes an explicit Save action")
+            compare(cancelActions[0].Accessible.name, "Cancel edit for thought 1",
+                    "the remove action becomes an explicit Cancel action")
+
+            w.cancelEdit()
+            compare(w.hasPendingChanges(), false,
+                    "explicit Cancel discards only the local edit buffer")
+            compare(w.entries[0].text, "original thought")
+
+            w.beginEdit(0)
+            w.editingText = "saved revision"
+            verify(w.flush(), "the same inline draft can be saved through host flush")
+            compare(w.hasPendingChanges(), false)
+            compare(w.entries[0].text, "saved revision")
+        }
+
+        function test_flush_commits_both_local_buffers_without_dropping_either() {
+            var w = h.item
+            w.add("existing")
+            w.beginEdit(0)
+            w.editingText = "edited existing"
+            fieldIn(w).text = "new captured thought"
+
+            compare(w.hasPendingChanges(), true)
+            verify(w.flush())
+            compare(w.hasPendingChanges(), false)
+            compare(w.entries.length, 2)
+            compare(w.entries[0].text, "new captured thought")
+            compare(w.entries[1].text, "edited existing")
+        }
+
+        function test_invalid_inline_edit_fails_closed_without_losing_valid_capture() {
+            var w = h.item
+            w.add("keep the original")
+            w.beginEdit(0)
+            w.editingText = "   "
+            fieldIn(w).text = "also keep this draft"
+
+            verify(!w.flush(), "an invalid edit cannot make the overall flush look successful")
+            compare(w.hasPendingChanges(), true)
+            compare(w.editingText, "   ", "the invalid edit remains available for correction")
+            compare(fieldIn(w).text, "",
+                    "the independent valid capture is moved out of the vulnerable local buffer")
+            compare(w.entries.length, 2)
+            compare(w.entries[0].text, "also keep this draft")
+            compare(w.entries[1].text, "keep the original")
+        }
+
+        function test_expanded_close_flushes_the_capture_before_the_view_changes() {
+            var w = h.item
+            fieldIn(w).text = "save while closing"
+            compare(w.hasPendingChanges(), true)
+
+            h.expanded = false
+            compare(w.hasPendingChanges(), false)
+            compare(w.entries.length, 1)
+            compare(w.entries[0].text, "save while closing")
+            h.expanded = true
+        }
+
+        function clearInstance(instance) {
+            if (h.storeCtl.document.settings
+                    && h.storeCtl.document.settings[instance] !== undefined)
+                delete h.storeCtl.document.settings[instance]
+            h.storeCtl._touchSettings()
+        }
+
+        function createHostedInstance(instance) {
+            var host = transientBraindumpHost.createObject(root, {
+                store: h.storeCtl,
+                widgetId: instance
+            })
+            verify(host !== null)
+            tryVerify(function () {
+                return host.status === Loader.Ready && host.item !== null
+            }, 3000)
+            return host
+        }
+
+        function test_widget_host_exposes_and_flushes_the_real_draft_contract() {
+            var instance = "hosted-braindump"
+            clearInstance(instance)
+            var host = createHostedInstance(instance)
+            var capture = fieldIn(host.item)
+            verify(capture !== null)
+            capture.text = "preflight must see this"
+
+            compare(host.hasPendingState(), true,
+                    "WidgetHost exposes the real Braindump buffer to shutdown and preflight")
+            verify(host.flushPendingState())
+            compare(host.hasPendingState(), false)
+            compare(h.storeCtl.settingsFor(instance).entries[0].text,
+                    "preflight must see this")
+            host.destroy()
+        }
+
+        function test_expanded_host_destruction_flushes_a_capture_draft() {
+            var instance = "destroyed-braindump"
+            clearInstance(instance)
+            var host = createHostedInstance(instance)
+            var capture = fieldIn(host.item)
+            verify(capture !== null)
+            capture.text = "survive overlay destruction"
+            compare(host.hasPendingState(), true)
+
+            host.destroy()
+            wait(1)
+            var saved = h.storeCtl.settingsFor(instance)
+            compare(saved.entries.length, 1)
+            compare(saved.entries[0].text, "survive overlay destruction")
+        }
+    }
+
     // ── Timestamp rendering ──────────────────────────────────────────────
     TestCase {
         name: "BraindumpStamps"
@@ -320,6 +523,102 @@ Item {
             h.item.remove(0)
             compare(notice.text, "Thought removed")
             compare(notice.Accessible.name, "Thought removed")
+        }
+    }
+
+    // Braindump-specific rendering contracts. The systemic matrix still owns
+    // exhaustive projection coverage; these assertions pin the widget behavior
+    // that previously caused its 40 matrix failures.
+    TestCase {
+        name: "BraindumpLegibility"
+        when: windowShown
+
+        function named(node, name) {
+            var matches = root.findAll(node, function(candidate) {
+                return candidate.objectName === name
+            }, [])
+            return matches.length ? matches[0] : null
+        }
+
+        function seedLongEntry(host) {
+            var words = []
+            for (var i = 0; i < 55; i++)
+                words.push("scrollable thought " + i)
+            host.storeCtl.setSetting(host.instanceId, "entries", [{
+                id: "long-entry",
+                text: words.join(" ").slice(0, 500),
+                at: Date.now() - 3 * 86400000
+            }])
+            wait(32)
+        }
+
+        function init() {
+            tryVerify(function() { return h.ready && hc.ready }, 3000)
+            clearSettings(h)
+            clearSettings(hc)
+            h.theme.textScale = 1.45
+            h.theme.fontChoice = "lexend"
+            hc.theme.textScale = 1.45
+            hc.theme.fontChoice = "lexend"
+            seedLongEntry(h)
+            seedLongEntry(hc)
+        }
+
+        function cleanup() {
+            var compactField = fieldIn(hc.item)
+            if (compactField)
+                compactField.text = ""
+            h.theme.textScale = 1.15
+            h.theme.fontChoice = "hyperlegible"
+            hc.theme.textScale = 1.15
+            hc.theme.fontChoice = "hyperlegible"
+        }
+
+        function test_timestamp_and_capture_follow_the_type_floor() {
+            var stamp = named(h.item, "braindumpStamp-0")
+            var capture = fieldIn(h.item)
+            verify(stamp !== null && capture !== null)
+            verify(stamp.font.pixelSize >= h.theme.fontMinimum,
+                   "timestamp meets the active viewing-distance type floor")
+            verify(stamp.contentWidth <= stamp.width + 1,
+                   "the complete weekday and time fit their allocated column")
+            verify(capture.font.pixelSize >= h.theme.fontMinimum,
+                   "capture editor meets the active viewing-distance type floor")
+            verify(h.item.rowFont >= h.theme.fontMinimum,
+                   "thought text meets the active viewing-distance type floor")
+        }
+
+        function test_long_saved_thought_is_scrollable_instead_of_truncated() {
+            var viewport = named(h.item, "braindumpThoughtViewport-0")
+            var thought = named(h.item, "braindumpThought-0")
+            verify(viewport !== null && thought !== null)
+            compare(thought.text.length, 500,
+                    "fixture exercises the maximum supported saved length")
+            verify(thought.wrapMode !== Text.NoWrap)
+            compare(thought.truncated, false,
+                    "saved content is not shortened with an ellipsis")
+            verify(thought.height >= thought.implicitHeight,
+                   "the full saved document remains in the scrollable surface")
+            verify(viewport.contentHeight > viewport.height)
+            compare(viewport.interactive, true,
+                    "overflowing saved content can be read by scrolling")
+        }
+
+        function test_long_capture_draft_has_a_vertical_scroll_path() {
+            var viewport = named(hc.item, "braindumpCaptureViewport")
+            var capture = fieldIn(hc.item)
+            verify(viewport !== null && capture !== null)
+            var lines = []
+            for (var i = 0; i < 18; i++)
+                lines.push("draft line " + i)
+            capture.text = lines.join("\n")
+            wait(32)
+            verify(capture.contentHeight > viewport.availableHeight,
+                   "fixture exceeds the visible editor viewport")
+            verify(capture.height > viewport.availableHeight,
+                   "the TextArea grows inside ScrollView instead of clipping the draft")
+            compare(capture.text, lines.join("\n"),
+                    "scrolling preserves the complete capture draft")
         }
     }
 

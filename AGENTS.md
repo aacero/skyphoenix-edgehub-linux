@@ -6,16 +6,17 @@
 - Default build type is **Release** (set in `CMakeLists.txt` if none specified).
 - **Quick script:** `./scripts/build.sh release` (or `debug`).
 
-## Test & Lint (Rust only)
+## Test and lint
 
 ```bash
 cd core
-cargo test                    # ~15 inline unit tests
+cargo test                    # inline unit tests across the Rust core
 cargo clippy --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 
-Rust tests live **inline** in `core/src/{config,display,metrics}.rs`.
+Rust tests live inline in the modules under `core/src/`, including configuration,
+display, distribution, FFI, licensing, logging, metrics, policy, and secrets.
 
 **QML GUI tests:** `./scripts/run_ui_tests.sh` builds and runs the repository's
 resource-aware QuickTest runner against `tests/ui/` offscreen. It loads every widget against a real
@@ -30,11 +31,14 @@ Logic classes are extracted into headers (`app/src/config_bridge.h`,
 `manager/src/manager_backend.h`, `manager/src/reconcile.*`, `app/src/display_match.*`,
 etc.) so they're unit-testable; `main.cpp` is bootstrap-only.
 
-**Everything + coverage:** `./scripts/run_all_tests.sh` (rust + qml + ctest + behavior
-matrix). `./scripts/coverage.sh` measures Rust (`cargo-llvm-cov`) + C++ (`gcovr`, build
-with `-DXENEON_COVERAGE=ON`) and gates ≥95%. QML uses a behavior matrix
-(`scripts/qml_coverage.py`, `// COVERS:` headers), not line coverage - see
-`docs/DEV_AND_TEST_PLAN.md`. **CI runs on `master`** (`.github/workflows/ci.yml`).
+**Everything:** `./scripts/run_all_tests.sh` (Rust + QML + ctest + the
+enumerated-requirements matrix). `./scripts/coverage.sh` measures Rust
+(`cargo-llvm-cov`) and C++ (`gcovr`, built with `-DXENEON_COVERAGE=ON`) and gates
+each at ≥95%. QML is not assigned a coverage percentage:
+`scripts/qml_coverage.py` requires every finitely enumerated requirement to have
+an assertion-backed `// COVERS:` claim. See `docs/DEV_AND_TEST_PLAN.md`.
+**CI runs on `master`, `release/1.0.0`, and relevant pull requests**
+(`.github/workflows/ci.yml`).
 
 ## Project layout
 
@@ -43,10 +47,10 @@ with `-DXENEON_COVERAGE=ON`) and gates ≥95%. QML uses a behavior matrix
 | `core/` | Rust | Core library (config, metrics, display, FFI) - compiles to `libxeneon_core.a` |
 | `app/src/main.cpp` | C++17 | Qt6 entry point, display matching, QML context properties |
 | `app/src/control_server.{h,cpp}` | C++17 | `QLocalServer` IPC (socket `$XDG_RUNTIME_DIR/xeneon-edge-hub-ctl`, resolved by `app/src/control_socket_path.h` - the Manager's client includes the SAME header; never name the socket literally on either side) - lets the companion Manager push a live layout to a running hub |
-| `ui/qml/` | QML | All UI: `main.qml`, `Dashboard.qml`, `FirstRunWizard.qml`, 39 widget files in `widgets/` |
+| `ui/qml/` | QML | All UI: shell, dashboard, wizard, and 56 shared/widget QML files in `widgets/` (30 catalog widgets) |
 | `ui/qml.qrc` | Qt resource | **Must be updated** when adding/removing QML files |
 | `manager/` | C++/QML | **Xeneon Edge Manager** - standalone companion app (`xeneon-edge-manager`) to manage layout/appearance/images/display. Reuses `DashboardStore.qml` + `WidgetCatalog.qml` via `manager/manager.qrc`; C++ `ManagerBackend` presents a `configBridge`-compatible surface + a live-push socket client |
-| `tests/ui/` | QML | Resource-aware QuickTest GUI + boundary suite. Harness = `WidgetHarness.qml` + `HarnessTheme.qml` + `MockMedia.qml`. Run with `./scripts/run_ui_tests.sh` (offscreen; exercises real layout + mouse/key input with compiled assets) |
+| `tests/ui/` | QML | Resource-aware QuickTest GUI + boundary suite. `WidgetHarness.qml` instantiates `App.Theme` and uses `MockMedia.qml` for media behavior. Run with `./scripts/run_ui_tests.sh` (offscreen; exercises real layout + mouse/key input with compiled assets) |
 
 ## FFI rules (C++ ↔ Rust)
 
@@ -79,6 +83,8 @@ with `-DXENEON_COVERAGE=ON`) and gates ≥95%. QML uses a behavior matrix
 
 Use **Conventional Commits**: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`, `perf:`.
 
-## Architecture doc vs reality
+## Rust and Qt bridge
 
-`docs/architecture/overview.md` references `cxx-qt` for Rust↔Qt bridging, but the **actual implementation uses hand-written C FFI** (`core/src/ffi.rs` + `core/xeneon_core.h`). The architecture doc is aspirational on that point - trust the code.
+The implementation and current architecture document both use the hand-written
+C FFI in `core/src/ffi.rs` and `core/xeneon_core.h`. The repository does not use
+`cxx-qt`.

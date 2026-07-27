@@ -90,6 +90,11 @@ Item {
             return n.text !== undefined && typeof n.text === "string" && n.text.indexOf(prefix) === 0
         })
     }
+    function findObjectName(rootNode, objectName) {
+        return findPred(rootNode, function (n) {
+            return n.objectName !== undefined && n.objectName === objectName
+        })
+    }
     function findField(sch, key) {
         for (var i = 0; i < sch.sections.length; i++) {
             var fs = sch.sections[i].fields || []
@@ -655,6 +660,67 @@ Item {
             verifyProjection(840, 344, "landscape 0.5x1")
             wideWrap.width = 696
             wideWrap.height = 416
+        }
+
+        function test_narrow_thermal_alert_and_sensor_label_fit_data() {
+            return [
+                { tag: "portrait-0.5x1", width: 348, height: 818 },
+                { tag: "landscape-1x0.5-at-125-percent", width: 338, height: 490 }
+            ]
+        }
+
+        // Regression for the two CPU rows caught by the systemic legibility
+        // matrix. Exercise their actual projected geometry, font, text scale,
+        // and saturated thermal content without relaxing the shared gate.
+        function test_narrow_thermal_alert_and_sensor_label_fit(row) {
+            tryVerify(function () { return hTall.ready }, 3000)
+            tallWrap.width = row.width
+            tallWrap.height = row.height
+            hTall.theme.textScale = 1.3
+            hTall.theme.fontChoice = "hyperlegible"
+
+            var w = hTall.item
+            w.sizeClass = "tall"
+            w.hist = [0.72, 0.91, 1.0]
+            feedTo(hTall, {
+                cpu_usage_percent: 100,
+                cpu_temp_celsius: 110,
+                cpu_core_count: 128
+            })
+            wait(50)
+
+            compare(w.status, "110°C critical",
+                    row.tag + " keeps the reading and severity in the header")
+            verify(w.accessibleSummary.indexOf("Critical temperature") >= 0,
+                   row.tag + " retains the full thermal meaning for accessibility")
+            var statusText = findText(w, "110°C critical")
+            verify(statusText !== null && statusText.visible,
+                   row.tag + " renders the compact thermal status")
+            verify(!statusText.truncated
+                   && statusText.contentWidth <= statusText.width + 1,
+                   row.tag + " thermal status is not truncated")
+
+            var gauge = findGauge(w)
+            verify(gauge !== null, row.tag + " keeps the metric gauge")
+            var sensorIndex = -1
+            for (var i = 0; i < gauge.detailItems.length; i++)
+                if (gauge.detailItems[i].label === "SENSOR") sensorIndex = i
+            verify(sensorIndex >= 0,
+                   row.tag + " exposes the temperature source with a compact label")
+            var sensorLabel = findObjectName(w, "metricDetailLabel_" + sensorIndex)
+            verify(sensorLabel !== null && sensorLabel.visible,
+                   row.tag + " renders the sensor label")
+            compare(sensorLabel.text, "SENSOR", row.tag + " uses the compact label")
+            verify(!sensorLabel.truncated
+                   && sensorLabel.contentWidth <= sensorLabel.width + 1,
+                   row.tag + " sensor label is not truncated")
+        }
+
+        function cleanup() {
+            tallWrap.width = 344
+            tallWrap.height = 840
+            hTall.theme.textScale = 1.15
+            hTall.theme.fontChoice = "hyperlegible"
         }
 
         // tall - the sparkline earns real height and the ring captions itself

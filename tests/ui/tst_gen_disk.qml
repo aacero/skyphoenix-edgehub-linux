@@ -80,6 +80,23 @@ Item {
         })
         return found
     }
+    function findObject(host, name) {
+        var found = null
+        eachItem(host.item, function (n) {
+            if (!found && n.objectName === name) found = n
+        })
+        return found
+    }
+    function saturatedMetrics() {
+        return JSON.stringify({
+            disk_metrics_available: true,
+            disk_total_bytes: 8 * tib,
+            disk_used_bytes: 8 * tib,
+            disk_available_bytes: 0,
+            disk_reserved_bytes: 0,
+            disk_usage_percent: 100
+        })
+    }
     // Feed the Rust metrics JSON. Fields default to 0 when omitted.
     function feed(percent, used, total, available, reserved, metricsAvailable) {
         var m = {}
@@ -138,7 +155,30 @@ Item {
             h.expanded = true
             h.active = true
         }
+        function cleanup() {
+            hWide.theme.textScale = 1.15
+            hWide.theme.fontChoice = "hyperlegible"
+            wideWrap.width = 696
+            wideWrap.height = 416
+            hTall.theme.textScale = 1.15
+            hTall.theme.fontChoice = "hyperlegible"
+            tallWrap.width = 344
+            tallWrap.height = 840
+        }
         function set(k, v) { h.storeCtl.setSetting("test-instance", k, v) }
+        function verifyLayoutContained(host, label) {
+            var layout = findObject(host, "diskLayout")
+            verify(layout !== null, label + ": detail layout exists")
+            verify(layout.x >= -1, label + ": layout stays inside the left edge")
+            verify(layout.y >= -1,
+                   label + ": layout stays inside the top edge (y="
+                   + layout.y + ", height=" + layout.height
+                   + ", parentHeight=" + layout.parent.height + ")")
+            verify(layout.x + layout.width <= layout.parent.width + 1,
+                   label + ": layout stays inside the right edge")
+            verify(layout.y + layout.height <= layout.parent.height + 1,
+                   label + ": layout stays inside the bottom edge")
+        }
 
         // ── warnPercent config reading ───────────────────────────────────────
         function test_warn_default_is_90() {
@@ -569,6 +609,165 @@ Item {
             compare(w.micro, false, "full is never micro")
             compare(w.showDetails, true, "the overlay shows the detail column")
             compare(w.showHeader, true, "the overlay keeps the header")
+        }
+
+        function test_constrained_wide_compacts_capacity_and_io() {
+            hWide.theme.textScale = 1.3
+            hWide.theme.fontChoice = "system"
+            wideWrap.width = 677
+            wideWrap.height = 245
+            hWide.metricsJson = saturatedMetrics()
+            var w = hWide.item
+            w.sizeClass = "wide"
+            wait(32)
+
+            compare(w.compactVerticalDetails, true)
+            compare(w.compactThreshold, true)
+            compare(w.thresholdText, "Critical · 90 / 97%")
+            compare(w.compactIoFallback, true)
+            var identity = findObject(hWide, "diskFilesystemIdentity")
+            var threshold = findObject(hWide, "diskThreshold")
+            var capacity = findObject(hWide, "diskCompactCapacity")
+            var read = findObject(hWide, "diskCompactReadActivity")
+            var write = findObject(hWide, "diskCompactWriteActivity")
+            var composition = findObject(hWide, "diskCapacityComposition")
+            verify(identity !== null && identity.visible && !identity.truncated,
+                   "short wide keeps the selected mount visible")
+            verify(threshold !== null && !threshold.truncated,
+                   "short wide uses the compact threshold without truncation")
+            verify(capacity !== null && capacity.visible,
+                   "short wide replaces three rows with token-sized capacity cells")
+            compare(read.text, "N/A")
+            compare(write.text, "N/A")
+            verify(!read.truncated && !write.truncated,
+                   "short wide keeps both I/O labels legible")
+            verify(composition !== null && composition.visible,
+                   "short wide retains the capacity composition")
+            verifyLayoutContained(hWide, "short wide")
+        }
+
+        function test_output_scaled_wide_compacts_before_clip() {
+            hWide.theme.textScale = 1.0
+            hWide.theme.fontChoice = "hyperlegible"
+            wideWrap.width = 677
+            wideWrap.height = 245
+            hWide.metricsJson = JSON.stringify({
+                disk_total_bytes: tib,
+                disk_used_bytes: tib / 2,
+                disk_usage_percent: 50
+            })
+            var w = hWide.item
+            w.sizeClass = "wide"
+            wait(32)
+
+            compare(w.bodyHeightBudget, 183)
+            compare(w.compactVerticalDetails, true,
+                    "the 125 percent output projection compacts before clipping")
+            var identity = findObject(hWide, "diskFilesystemIdentity")
+            verify(identity !== null && identity.visible && !identity.truncated,
+                   "the compact projection keeps the mount identity visible")
+            verifyLayoutContained(hWide, "output-scaled wide")
+        }
+
+        function test_constrained_tall_compacts_vertical_sections() {
+            hTall.theme.textScale = 1.3
+            hTall.theme.fontChoice = "lexend"
+            tallWrap.width = 338
+            tallWrap.height = 490
+            hTall.metricsJson = saturatedMetrics()
+            var w = hTall.item
+            w.sizeClass = "tall"
+            wait(32)
+
+            compare(w.compactVerticalDetails, true)
+            compare(w.compactThreshold, true)
+            compare(w.thresholdText, "Critical\nWarn 90% · Crit 97%")
+            var threshold = findObject(hTall, "diskThreshold")
+            var capacity = findObject(hTall, "diskCompactCapacity")
+            var read = findObject(hTall, "diskCompactReadActivity")
+            var write = findObject(hTall, "diskCompactWriteActivity")
+            var composition = findObject(hTall, "diskCapacityComposition")
+            verify(threshold !== null && !threshold.truncated,
+                   "narrow tall threshold reflows onto two complete lines")
+            verify(capacity !== null && capacity.visible,
+                   "narrow tall uses the compact capacity cells")
+            compare(read.text, "N/A")
+            compare(write.text, "N/A")
+            verify(!read.truncated && !write.truncated,
+                   "narrow tall keeps both I/O labels legible")
+            verify(composition !== null && composition.visible,
+                   "narrow tall retains the capacity composition")
+            verifyLayoutContained(hTall, "narrow tall")
+        }
+
+        function test_output_scaled_tall_compacts_before_clip() {
+            hTall.theme.textScale = 1.0
+            hTall.theme.fontChoice = "system"
+            tallWrap.width = 338
+            tallWrap.height = 490
+            hTall.metricsJson = JSON.stringify({
+                disk_total_bytes: tib,
+                disk_used_bytes: tib / 2,
+                disk_usage_percent: 50
+            })
+            var w = hTall.item
+            w.sizeClass = "tall"
+            wait(32)
+
+            compare(w.compactVerticalDetails, true,
+                    "the 125 percent output projection compacts before clipping")
+            compare(w.showCompositionHeading, false,
+                    "the redundant heading yields in the compact hierarchy")
+            var capacity = findObject(hTall, "diskCompactCapacity")
+            var heading = findObject(hTall, "diskCompositionHeading")
+            var composition = findObject(hTall, "diskCapacityComposition")
+            verify(capacity !== null && capacity.visible,
+                   "the projection retains used, available, and total values")
+            verify(heading !== null && !heading.visible)
+            verify(composition !== null && composition.visible,
+                   "the capacity visualization itself remains available")
+            verifyLayoutContained(hTall, "output-scaled tall")
+        }
+
+        function test_narrow_unavailable_threshold_reflows() {
+            hTall.theme.textScale = 1.45
+            hTall.theme.fontChoice = "system"
+            tallWrap.width = 278
+            tallWrap.height = 654
+            hTall.metricsJson = "{}"
+            var w = hTall.item
+            w.sizeClass = "tall"
+            wait(32)
+
+            compare(w.compactThreshold, true)
+            compare(w.thresholdText, "Unavailable\nWarn 90% · Crit 97%")
+            var threshold = findObject(hTall, "diskThreshold")
+            verify(threshold !== null && !threshold.truncated,
+                   "unavailable threshold remains complete in the narrow tile")
+            verifyLayoutContained(hTall, "narrow unavailable")
+        }
+
+        function test_large_wide_compacts_only_missing_io_copy() {
+            hWide.theme.textScale = 1.3
+            hWide.theme.fontChoice = "system"
+            wideWrap.width = 1014
+            wideWrap.height = 490
+            hWide.metricsJson = saturatedMetrics()
+            var w = hWide.item
+            w.sizeClass = "wide"
+            wait(32)
+
+            compare(w.compactVerticalDetails, false,
+                    "large wide keeps the full capacity hierarchy")
+            compare(w.compactIoFallback, true,
+                    "I/O fallback follows its actual half-column width")
+            var read = findObject(hWide, "diskReadActivity")
+            var write = findObject(hWide, "diskWriteActivity")
+            compare(read.text, "↓ Read  N/A")
+            compare(write.text, "↑ Write  N/A")
+            verify(!read.truncated && !write.truncated,
+                   "large wide missing-I/O labels are not truncated")
+            verifyLayoutContained(hWide, "large wide")
         }
 
         function test_catalog_exposes_rich_tall_size() {

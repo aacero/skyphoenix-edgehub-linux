@@ -176,7 +176,19 @@ WidgetChrome {
     readonly property bool showDoneTile: !micro && hasFocus
     readonly property bool showCount: !micro && finishedToday > 0
     readonly property bool showElapsed: hasFocus && startedAt > 0 && !micro
-    readonly property int heroMaxLines: micro ? 3 : (sizeClass === "tall" ? 5 : 4)
+    readonly property int heroMaxLines: micro ? 4 : (sizeClass === "tall" ? 5 : 4)
+    readonly property int microFocusCharacterBudget: 42
+    readonly property bool focusIsExcerpted:
+        w.micro && w.hasFocus && w.current.trim().length > w.microFocusCharacterBudget
+    readonly property string displayedFocus: {
+        if (!w.hasFocus)
+            return "Tap to set your one focus"
+        var full = w.current.trim()
+        if (!w.focusIsExcerpted)
+            return full
+        return full.slice(0, w.microFocusCharacterBudget - 1)
+                   .replace(/\s+$/, "") + "…"
+    }
     readonly property real heroMaxPx: {
         if (micro) return Math.max(36, Math.min(width * 0.145, height * 0.12, 52))
         if (sizeClass === "compact") return Math.max(42, Math.min(width * 0.082, height * 0.12, 58))
@@ -221,8 +233,8 @@ WidgetChrome {
                 objectName: "rightNowHero"
                 Layout.fillWidth: true
                 horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
-                wrapMode: Text.WordWrap
-                text: w.hasFocus ? w.current : "Tap to set your one focus"
+                wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+                text: w.displayedFocus
                 font.pixelSize: w.hasFocus ? w.heroPx
                                            : Math.max(theme.fontLabel,
                                                       Math.min(w.width * 0.042, 22))
@@ -232,6 +244,17 @@ WidgetChrome {
                 opacity: w.hasFocus ? 1 : 0.78
                 maximumLineCount: w.heroMaxLines
                 elide: Text.ElideRight
+                Accessible.name: w.hasFocus ? w.current : text
+            }
+            Text {
+                objectName: "rightNowContinuation"
+                visible: w.focusIsExcerpted
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                text: "Tap to read all"
+                color: theme.textPrimary
+                opacity: 0.78
+                font.pixelSize: theme.fontMinimum
             }
             Text {
                 visible: !w.hasFocus && w.heroRoomy

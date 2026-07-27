@@ -343,13 +343,16 @@
 3. User can search within settings.
 4. Diagnostics screen shows: version, build info, distribution, kernel, DE, session type, display list, touch devices, loaded widgets, integration status, recent errors, resource usage.
 5. User can export diagnostics bundle (with secrets redacted).
-6. User can enable safe mode (disables third-party widgets).
+6. User can launch `xeneon-edge-hub --safe-mode` for a recovery session. All
+   first-party and user widget QML stays unloaded, while the dashboard shell,
+   settings, diagnostics, and saved layout remain available.
 
 ### Acceptance Criteria
 - Settings are navigable by touch.
 - Search filters settings in real time.
 - Diagnostics export is a zip file with JSON logs.
-- Safe mode persists until manually disabled.
+- Safe mode is session-only. It does not remove widgets, seed widget defaults,
+  or persist a disabled layout; the next normal launch loads the saved widgets.
 
 ---
 

@@ -155,6 +155,18 @@ WidgetChrome {
     status: w.recentlyRecovered ? "Recovered" : provider.badgeLabel
     statusColor: provider.state === "loading" || provider.state === "unconfigured"
         ? w.effAccent : theme.warning
+    Accessible.role: Accessible.Pane
+    Accessible.name: {
+        var location = w.place.length ? w.place : "Location not configured"
+        if (w.errorText.length)
+            return "Weather for " + location + ". " + w.errorText + ". " + w.stateHelp
+        if (!w.loaded)
+            return "Weather for " + location + ". " + provider.badgeLabel
+        return "Weather for " + location + ". "
+               + w.weatherDescription(w.curCode) + ", "
+               + Math.round(w.curTemp) + w.degSym + ". Feels "
+               + Math.round(w.feels) + w.degSym
+    }
 
     function weatherKind(code) {
         if (code === 0) return "clear"
@@ -448,24 +460,42 @@ WidgetChrome {
                     }
                 }
             }
-            Text {
-                Layout.fillWidth: true; Layout.topMargin: 2
-                horizontalAlignment: Text.AlignHCenter
-                elide: Text.ElideRight
-                text: !w.locationConfigured ? "Set location in settings"
-                    : w.place
-                font.pixelSize: w.subPx
-                color: theme.textSecondary
+            Item {
+                Layout.fillWidth: true
+                Layout.topMargin: 2
+                Layout.preferredHeight: locationText.contentHeight
+                Layout.minimumHeight: locationText.contentHeight
+                Text {
+                    id: locationText
+                    objectName: "weatherLocation"
+                    width: parent.width
+                    height: contentHeight
+                    horizontalAlignment: Text.AlignHCenter
+                    text: !w.locationConfigured ? "Set location in settings"
+                        : w.place
+                    font.pixelSize: w.subPx
+                    color: theme.textSecondary
+                    wrapMode: Text.WordWrap
+                }
             }
-            Text {
+            Item {
+                objectName: "weatherState"
                 visible: w.errorText.length > 0 || w.stale || w.recentlyRecovered
                 Layout.fillWidth: true
-                horizontalAlignment: Text.AlignHCenter
-                elide: Text.ElideRight
-                text: w.errorText.length ? w.errorText
-                    : (w.recentlyRecovered ? "Connection restored" : "Forecast is stale")
-                font.pixelSize: w.subPx
-                color: w.recentlyRecovered ? w.effAccent : theme.warning
+                Layout.preferredHeight: stateText.contentHeight
+                Layout.minimumHeight: stateText.contentHeight
+                Text {
+                    id: stateText
+                    objectName: "weatherStateText"
+                    width: parent.width
+                    height: contentHeight
+                    horizontalAlignment: Text.AlignHCenter
+                    text: w.errorText.length ? w.errorText
+                        : (w.recentlyRecovered ? "Connection restored" : "Forecast is stale")
+                    font.pixelSize: w.subPx
+                    color: w.recentlyRecovered ? w.effAccent : theme.warning
+                    wrapMode: Text.WordWrap
+                }
             }
 
             Item { Layout.fillHeight: true; visible: !w.horiz }
@@ -534,14 +564,22 @@ WidgetChrome {
                         Layout.fillWidth: w.horiz
                     }
                     Text {
-                        text: dayCell.d ? (dayCell.d.max + w.degSym + " / " + dayCell.d.min + w.degSym) : ""
+                        objectName: "weatherForecastRange"
+                        text: !dayCell.d ? ""
+                              : w.horiz ? "↑" + dayCell.d.max + w.degSym
+                                          + "\n↓" + dayCell.d.min + w.degSym
+                                        : dayCell.d.max + w.degSym
+                                          + " / " + dayCell.d.min + w.degSym
                         font.pixelSize: Math.max(theme.fontLabel, Math.min(dayCell.px * 0.32, 21))
                         color: theme.textPrimary
                         horizontalAlignment: w.horiz ? Text.AlignHCenter : Text.AlignRight
                         verticalAlignment: Text.AlignVCenter
-                        // A 7-day °F row ("108°F / -12°F") must shrink, not clip.
-                        fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum
-                        elide: Text.ElideRight
+                        // Narrow daily columns use a conventional high/low
+                        // stack. Each value remains at the active type floor
+                        // instead of squeezing a slash-separated line below it.
+                        fontSizeMode: w.horiz ? Text.FixedSize : Text.HorizontalFit
+                        minimumPixelSize: theme.fontMinimum
+                        elide: w.horiz ? Text.ElideNone : Text.ElideRight
                         Layout.fillWidth: !w.horiz
                         Layout.preferredWidth: w.horiz ? Math.round(w.dayColW) : -1
                         Layout.fillHeight: !w.horiz
@@ -643,13 +681,15 @@ WidgetChrome {
             Layout.alignment: Qt.AlignHCenter
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
-            elide: Text.ElideRight               // S12: long place/error must not overflow the tile
             // Compact: place (or the error). Expanded: surface the error reason too
             // (otherwise the big "-" gives no hint why there's no data).
             visible: !w.expanded || w.errorText.length > 0
             text: w.errorText.length ? w.errorText : w.place
             font.pixelSize: w.expanded && w.errorText.length ? theme.fontLabel : theme.fontMinimum
             color: w.errorText.length ? theme.warning : theme.textSecondary
+            wrapMode: Text.WordWrap
+            Layout.preferredHeight: contentHeight
+            Layout.minimumHeight: contentHeight
         }
         RowLayout {
             Layout.alignment: Qt.AlignHCenter; visible: w.expanded && w.loaded; spacing: theme.spacingXl

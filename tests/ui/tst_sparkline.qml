@@ -4,8 +4,8 @@ import "../../ui/qml" as App
 import "../../ui/qml/widgets" as Wg
 
 // Sparkline (ui/qml/widgets/Sparkline.qml) - a Canvas history chart. Canvas does
-// not paint offscreen, so we assert the DRIVING PROPERTIES and the in-place
-// mutation signature (the mechanism that decides when to repaint), never pixels.
+// not paint offscreen, so we assert the driving properties, retained render
+// snapshots, temporal transition, and in-place mutation signature, never pixels.
 Item {
     id: root
     width: 300; height: 160
@@ -26,6 +26,7 @@ Item {
         when: windowShown
 
         function init() {
+            _theme.reduceMotion = true
             host.width = 240
             host.height = 80
             sl.values = []
@@ -39,6 +40,9 @@ Item {
             sl.includeZero = true
             sl.sampleIntervalSeconds = 2
             sl.valueFormatter = null
+            sl.primaryLabel = ""
+            sl.statisticsLabel = Qt.binding(function () { return sl.primaryLabel })
+            sl._commitTransition()
         }
 
         // ── Driving props ────────────────────────────────────────────────────
@@ -105,6 +109,84 @@ Item {
             compare(smooth.length, raw.length)
         }
 
+        function test_full_rolling_history_moves_between_samples_instead_of_jumping() {
+            _theme.reduceMotion = false
+            sl.values = [0.1, 0.2, 0.3, 0.4]
+            tryVerify(function () {
+                return sl._renderPrimary.length === 4
+                       && sl.transitionProgress === 1
+            }, 1000, "the initial history snapshot is ready")
+
+            sl.values = [0.2, 0.3, 0.4, 0.9]
+            tryVerify(function () { return sl.transitionRunning }, 300,
+                      "a rolling sample starts a temporal transition")
+            verify(sl._isRollingShift(sl._previousPrimary, sl._renderPrimary),
+                   "the retained samples are recognized as a one-slot rolling shift")
+            compare(sl._previousPrimary[1], sl._renderPrimary[0],
+                    "the old second point becomes the new first point")
+            verify(sl.transitionProgress < 1,
+                   "the path remains between its old and new positions while moving")
+            tryCompare(sl, "transitionProgress", 1, 1500,
+                       "the rolling transition reaches the exact current samples")
+        }
+
+        function test_bars_use_the_same_temporal_x_position_as_lines() {
+            var width = 240
+            var start = sl._pointX(0, 4, true, 0, width)
+            var middle = sl._pointX(0, 4, true, 0.5, width)
+            var end = sl._pointX(0, 4, true, 1, width)
+            verify(start > middle && middle > end,
+                   "a retained bar moves continuously from its old slot to its new slot")
+            var startCenter = sl._barCenterForPoint(start, 4, width)
+            var middleCenter = sl._barCenterForPoint(middle, 4, width)
+            var endCenter = sl._barCenterForPoint(end, 4, width)
+            verify(startCenter > middleCenter && middleCenter > endCenter,
+                   "bar centers preserve the interpolated line movement")
+            compare(endCenter, width / 8,
+                    "the first bar settles at the center of the first slot")
+        }
+
+        function test_axis_domain_and_statistics_transition_with_the_plot() {
+            sl._previousDomain = ({ min: 0, max: 100 })
+            sl._targetDomain = ({ min: 20, max: 200 })
+            sl._previousPrimary = [0, 20, 40]
+            sl._renderPrimary = [20, 40, 80]
+            sl.transitionProgress = 0.5
+            compare(sl.displayMinimum, 10)
+            compare(sl.displayMaximum, 150)
+            compare(sl.displayPrimaryStats.average, 100 / 3)
+            compare(sl.displayPrimaryStats.max, 60)
+        }
+
+        function test_bar_baseline_transitions_with_the_display_domain() {
+            sl.chartStyle = "bars"
+            sl._previousDomain = ({ min: -100, max: 100 })
+            sl._targetDomain = ({ min: 20, max: 200 })
+
+            sl.transitionProgress = 0.25
+            compare(sl.displayMinimum, -70)
+            compare(sl.barBaselineValue, 0,
+                    "bars keep zero while it remains inside the displayed domain")
+
+            sl.transitionProgress = 0.75
+            compare(sl.displayMinimum, -10)
+            compare(sl.barBaselineValue, 0,
+                    "the baseline does not jump to the final positive domain early")
+
+            sl.transitionProgress = 1
+            compare(sl.displayMinimum, 20)
+            compare(sl.barBaselineValue, 20,
+                    "once settled, an all-positive chart clamps to its visible floor")
+        }
+
+        function test_reduce_motion_updates_the_chart_without_animation() {
+            _theme.reduceMotion = true
+            sl.values = [0.3, 0.4, 0.5]
+            tryVerify(function () { return sl._renderPrimary.length === 3 }, 500)
+            compare(sl.transitionProgress, 1)
+            compare(sl.transitionRunning, false)
+        }
+
         function test_all_three_visual_styles_are_selectable() {
             var styles = ["smooth", "line", "bars"]
             for (var i = 0; i < styles.length; i++) {
@@ -127,6 +209,21 @@ Item {
             sl.valueFormatter = function (value) { return value.toFixed(0) + " req/s" }
             compare(sl._formatValue(15), "15 req/s")
             verify(sl.accessibleSummary.indexOf("peak 20 req/s") >= 0)
+        }
+
+        function test_visual_statistics_label_can_yield_without_losing_accessibility() {
+            sl.values = [10, 20]
+            sl.primaryLabel = "Production service error budget remaining"
+            compare(sl.statisticsLabel, sl.primaryLabel,
+                    "visual statistics use the primary identity by default")
+            sl.statisticsLabel = ""
+            compare(sl.statisticsLabel, "",
+                    "a constrained consumer may omit the duplicate visual identity")
+            verify(sl.accessibleSummary.indexOf(sl.primaryLabel) >= 0,
+                   "the complete identity remains in the chart's accessible summary")
+            verify(sl.accessibleSummary.indexOf("average") >= 0
+                   && sl.accessibleSummary.indexOf("peak") >= 0,
+                   "average and peak remain accessible")
         }
 
         // ── Layout / implicit size ───────────────────────────────────────────
@@ -246,8 +343,7 @@ Item {
         function _pollTimer() {
             var kids = sl.data || []
             for (var i = 0; i < kids.length; i++)
-                if (kids[i] && kids[i].interval !== undefined && kids[i].repeat !== undefined
-                    && typeof kids[i].running === "boolean")
+                if (kids[i] && kids[i].objectName === "sparklinePollTimer")
                     return kids[i]
             return null
         }

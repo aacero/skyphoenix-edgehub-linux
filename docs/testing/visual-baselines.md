@@ -2,13 +2,16 @@
 
 The composed QML suite produces more than one thousand screenshots. The
 committed review set deliberately keeps one portrait `1x1` reference for each
-of the 30 widgets and one complete screen for each of the 20 presets. This makes
-visual review finite while the normal GUI assertions continue to exercise all
-supported sizes, orientations, states, settings, accents, and backdrops.
+of the 30 widgets, one complete screen for each of the 19 catalog presets, and
+one separate landscape-orientation reference. This makes visual review finite
+while the normal GUI assertions continue to exercise all supported sizes,
+orientations, states, settings, accents, and backdrops.
 
 The source list and anti-vacuity counts live in
 `tests/visual/cases.json`. Reviewed PNGs and their commit-keyed hash manifest
-live in `tests/visual/baselines/`.
+live in `tests/visual/baselines/`. The validator derives the widget and preset
+ID sets directly from `WidgetCatalog.qml` and `PresetCatalog.qml`; counts alone
+cannot hide a missing or mislabeled catalog entry.
 
 Compare a fresh composed run:
 

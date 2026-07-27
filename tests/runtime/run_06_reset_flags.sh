@@ -7,7 +7,7 @@
 # test held that line: --reset MUST discard the config, --reset-wizard MUST show
 # the wizard while keeping every tile the user built.
 #
-# Three launches over the same seed (an httpjson tile polling a loopback sink):
+# Four launches over the same seed (an httpjson tile polling a loopback sink):
 #
 #   1. CONTROL (no flag)  - the sink IS hit and config.toml survives. Establishes
 #      the observation channel; the zeros below are meaningful only because the
@@ -18,16 +18,14 @@
 #      AND config.toml is byte-identical, first_run_complete still true. The
 #      wizard re-triggers for the SESSION without touching the user's file.
 #   3. --reset            - config.toml is gone and the user's layout with it;
-#      a relaunch comes up on defaults, not on the seeded page.
+#      a byte-exact owner-only config.toml.bak exists for recovery.
+#   4. blocked --reset    - if that prerequisite backup cannot be created, the
+#      Hub exits, does not announce success, and leaves config.toml byte-exact.
 #
 # The wizard is observed BEHAVIORALLY (the user's tile does not run), not by
 # pixels - the same technique scenario 02 uses for a forced preset, and the only
 # one available: QML console.log is filtered out of the product log.
 #
-# NOT asserted, deliberately: that --reset leaves no backup. It does not (unlike
-# the corruption path, which preserves a .corrupt-*.bak - see scenario 05), but
-# pinning that here would make a future "back up before reset" improvement fail
-# a test whose subject is the flag contract. Reported in the W4 findings instead.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -108,6 +106,7 @@ fi
 # ── 3. --reset: the config is discarded ─────────────────────────────────────
 echo "Run 3 - --reset: the user's config is discarded for fresh defaults"
 rt_mkroot reset; seed "$RT_CFG"
+cp "$RT_CFG/config.toml" "$RT_WORK/reset-seed.toml"
 before="$(rt_sink_count)"
 RT_HUB_ARGS=(--reset); rt_run_hub "$RT_ROOT" 8; RT_HUB_ARGS=()
 rt_assert_live "reset" "$RT_ROOT" || fail=1
@@ -133,7 +132,45 @@ if grep -aqs "MyHandBuiltPage" "$RT_CFG/config.toml"; then
 else
     echo "  [reset] PASS: the user's layout is not in the live config after --reset"
 fi
+if cmp -s "$RT_WORK/reset-seed.toml" "$RT_CFG/config.toml.bak"; then
+    echo "  [reset] PASS: config.toml.bak is a byte-exact recovery copy"
+else
+    echo "  [reset] FAIL: reset did not preserve a byte-exact config.toml.bak"
+    fail=1
+fi
+if [ "$(stat -c '%a' "$RT_CFG/config.toml.bak" 2>/dev/null)" = "600" ]; then
+    echo "  [reset] PASS: config.toml.bak is owner-only"
+else
+    echo "  [reset] FAIL: config.toml.bak is missing or not mode 0600"
+    fail=1
+fi
+
+# ── 4. failed backup: reset must fail closed at the C ABI and main path ──────
+echo "Run 4 - blocked --reset: backup failure preserves the only original"
+rt_mkroot blocked; seed "$RT_CFG"
+cp "$RT_CFG/config.toml" "$RT_WORK/blocked-seed.toml"
+mkdir "$RT_CFG/config.toml.bak"
+RT_HUB_ARGS=(--reset); rt_run_hub "$RT_ROOT" 8; RT_HUB_ARGS=()
+if [ "$RT_RC" -eq 1 ]; then
+    echo "  [blocked] PASS: Hub exited with failure instead of exposing defaults"
+else
+    echo "  [blocked] FAIL: Hub rc=$RT_RC, expected immediate reset failure rc=1"
+    fail=1
+fi
+if grep -aq "Reset aborted: could not back up" "$RT_ROOT/hub.log" \
+        && ! grep -aq "Configuration reset to defaults" "$RT_ROOT/hub.log"; then
+    echo "  [blocked] PASS: log reports the fail-closed reset, never success"
+else
+    echo "  [blocked] FAIL: reset failure log is missing or falsely reports success"
+    fail=1
+fi
+if cmp -s "$RT_WORK/blocked-seed.toml" "$RT_CFG/config.toml"; then
+    echo "  [blocked] PASS: config.toml remains byte-identical"
+else
+    echo "  [blocked] FAIL: failed reset changed the original config"
+    fail=1
+fi
 
 echo
 if [ "$fail" -ne 0 ]; then echo "RESULT: FAILURE"; exit 1; fi
-echo "RESULT: SUCCESS - --reset-wizard re-triggers the wizard without data loss; --reset discards the config"
+echo "RESULT: SUCCESS - wizard reset preserves state; full reset is backed up and fails closed"

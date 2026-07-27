@@ -52,6 +52,13 @@ Item {
         })
         return found
     }
+    function findNamed(rootItem, name) {
+        var found = null
+        eachChild(rootItem, function (c) {
+            if (!found && c && c.objectName === name) found = c
+        })
+        return found
+    }
     // Every visible Text descendant with non-empty text.
     function visibleTexts(rootItem) {
         var out = []
@@ -528,6 +535,8 @@ Item {
         WidgetHarness { id: hWide; anchors.fill: parent; widgetFile: "SensorsWidget.qml"; expanded: false } }
     Item { width: 344; height: 840
         WidgetHarness { id: hTall; anchors.fill: parent; widgetFile: "SensorsWidget.qml"; expanded: false } }
+    Item { width: 278; height: 654
+        WidgetHarness { id: hNarrow; anchors.fill: parent; widgetFile: "SensorsWidget.qml"; expanded: false } }
 
     TestCase {
         name: "SensorsSizes"
@@ -541,6 +550,16 @@ Item {
         function gridOf(host) {
             var cpu = findText(host.item, "CPU")
             return cpu ? cpu.parent.parent : null   // delegate RowLayout → the Grid/ColumnLayout
+        }
+        function cleanup() {
+            wideWrap.width = 696
+            wideWrap.height = 416
+            if (hWide.item)
+                hWide.item.sizeClass = "compact"
+            hWide.theme.textScale = 1.15
+            hWide.theme.fontChoice = "hyperlegible"
+            hNarrow.theme.textScale = 1.15
+            hNarrow.theme.fontChoice = "hyperlegible"
         }
 
         function test_catalog_removes_unreadable_micro_size() {
@@ -588,6 +607,55 @@ Item {
             wideWrap.width = 696
             wideWrap.height = 416
             w.sizeClass = "compact"
+        }
+
+        function test_narrow_scaled_header_keeps_the_full_title() {
+            tryVerify(function () { return hNarrow.ready }, 3000)
+            hNarrow.item.sizeClass = "tall"
+            hNarrow.theme.textScale = 1.45
+            hNarrow.theme.fontChoice = "lexend"
+            hNarrow.metricsJson = "{}"
+            wait(32)
+
+            compare(hNarrow.item.sensorStatus, "unavailable")
+            compare(hNarrow.item.status, "N/A",
+                    "the narrow badge preserves the same unavailable state")
+            var title = findText(hNarrow.item, "Sensors")
+            verify(title !== null)
+            compare(title.truncated, false,
+                    "the complete title remains visible at 145 percent text scale")
+            verify(title.contentWidth <= title.width + 1)
+        }
+
+        function test_wide_unavailable_source_wraps_inside_the_body() {
+            tryVerify(function () { return hWide.ready }, 3000)
+            wideWrap.width = 1015
+            wideWrap.height = 490
+            hWide.item.sizeClass = "wide"
+            hWide.theme.textScale = 1.0
+            hWide.theme.fontChoice = "system"
+            feedTo(hWide)
+            wait(32)
+
+            var source = findNamed(hWide.item, "sensorSource-gpu_fan")
+            verify(source !== null && source.visible)
+            compare(source.text, "GPU fan sensor unavailable")
+            compare(source.truncated, false,
+                    "the unavailable reason wraps instead of losing its ending")
+            verify(source.contentHeight <= source.height + 1)
+
+            var clippedBody = source.parent
+            while (clippedBody && clippedBody !== hWide.item
+                    && clippedBody.clip !== true)
+                clippedBody = clippedBody.parent
+            verify(clippedBody !== null && clippedBody.clip === true)
+            var topLeft = source.mapToItem(clippedBody, 0, 0)
+            var bottomRight = source.mapToItem(
+                clippedBody, source.width, source.height)
+            verify(Math.min(topLeft.x, bottomRight.x) >= -1)
+            verify(Math.max(topLeft.x, bottomRight.x)
+                   <= clippedBody.width + 1,
+                   "the right-hand source remains inside the clipped widget body")
         }
 
         // tall - single column, thicker bars + larger type than wide.

@@ -579,6 +579,17 @@ Item {
         WidgetHarness { id: bRoomyP; anchors.fill: parent; widgetFile: "HabitWidget.qml"; expanded: false } }
     Item { width: 1269; height: 612
         WidgetHarness { id: bRoomyL; anchors.fill: parent; widgetFile: "HabitWidget.qml"; expanded: false } }
+    // Exact matrix footprints for the compressed responsive paths.
+    Item { width: 278; height: 327
+        WidgetHarness { id: bMatrixMicro; anchors.fill: parent; widgetFile: "HabitWidget.qml"; expanded: false } }
+    Item { width: 278; height: 654
+        WidgetHarness { id: bMatrixNarrow; anchors.fill: parent; widgetFile: "HabitWidget.qml"; expanded: false } }
+    Item { width: 677; height: 245
+        WidgetHarness { id: bMatrixShallow; anchors.fill: parent; widgetFile: "HabitWidget.qml"; expanded: false } }
+    Item { width: 338; height: 490
+        WidgetHarness { id: bMatrixCompressed; anchors.fill: parent; widgetFile: "HabitWidget.qml"; expanded: false } }
+    Item { width: 557; height: 982
+        WidgetHarness { id: bMatrixRoomy; anchors.fill: parent; widgetFile: "HabitWidget.qml"; expanded: false } }
 
     // The OVERLAY, at the two boxes Dashboard actually gives it. `expanded: true`
     // and sizeClass "full" - the real pairing - because a mode-keyed literal can
@@ -621,6 +632,38 @@ Item {
             return findAll(host.item, function (n) {
                 return n.hasOwnProperty("label") && n.hasOwnProperty("glyph")
                        && n.hasOwnProperty("primary") }, [])[0]
+        }
+        function named(host, name) {
+            return findAll(host.item, function (n) {
+                return n.objectName === name
+            }, [])[0]
+        }
+        function seedMatrix(host, habitName, checked) {
+            var d = new Date(); d.setHours(12, 0, 0, 0)
+            var arr = []
+            for (var i = 0; i < 28; i++) {
+                var x = new Date(d); x.setDate(x.getDate() - i)
+                if (checked)
+                    arr.push(Qt.formatDate(x, "yyyy-MM-dd"))
+            }
+            host.storeCtl.patchSettings(host.instanceId, {
+                name: habitName,
+                checkins: arr,
+                streak: checked ? 9999 : 0,
+                bestStreak: checked ? 99999 : 0,
+                lastCheckinDay: checked ? Qt.formatDate(d, "yyyy-MM-dd") : ""
+            })
+        }
+        function assertInside(item, ancestor, label) {
+            var p = item.mapToItem(ancestor, 0, 0)
+            verify(p.x >= -1 && p.y >= -1
+                   && p.x + item.width <= ancestor.width + 1
+                   && p.y + item.height <= ancestor.height + 1,
+                   label + " stays inside its container: "
+                   + p.x.toFixed(1) + "," + p.y.toFixed(1) + " "
+                   + item.width.toFixed(1) + "x" + item.height.toFixed(1)
+                   + " in " + ancestor.width.toFixed(1) + "x"
+                   + ancestor.height.toFixed(1))
         }
 
         // 0.5x0.5 - the streak and the tap. 28 cells are not legible here.
@@ -705,6 +748,133 @@ Item {
             verify(cellAfter === cellBefore,
                    "the same heatmap cell survives the class flip (no rebuild)")
             b.sizeClass = "compact"
+        }
+
+        function test_matrix_micro_uses_a_complete_compact_streak_label() {
+            tryVerify(function () { return bMatrixMicro.ready }, 3000)
+            var host = bMatrixMicro
+            host.item.sizeClass = "compact"
+            host.theme.textScale = 1.15
+            host.theme.fontChoice = "hyperlegible"
+            seedMatrix(host, "Daily movement", true)
+            wait(32)
+
+            verify(host.item.micro, "the exact 278x327 projection is micro")
+            var value = named(host, "habitStreakValue")
+            verify(value && value.visible)
+            compare(value.text, "9999d", "micro uses the unambiguous compact unit")
+            compare(value.Accessible.name, "9999 days",
+                    "assistive output retains the spoken long form")
+            verify(!value.truncated, "the maximum streak is not ellipsized")
+            assertInside(value, value.parent, "micro streak")
+        }
+
+        function test_matrix_narrow_copy_wraps_and_remains_complete() {
+            tryVerify(function () { return bMatrixNarrow.ready }, 3000)
+            var host = bMatrixNarrow
+            host.item.sizeClass = "tall"
+            host.theme.textScale = 1.45
+            host.theme.fontChoice = "lexend"
+            seedMatrix(host, "Complete the daily movement practice", true)
+            wait(32)
+
+            verify(host.item.compactNameLayout)
+            var bodyName = named(host, "habitBodyName")
+            var range = named(host, "habitHeatmapRange")
+            var legend = named(host, "habitHeatmapLegend")
+            var feedback = named(host, "habitTodayFeedback")
+            verify(bodyName && range && legend && feedback)
+            verify(bodyName.visible && !bodyName.truncated,
+                   "the user habit name wraps in the body without ellipsis")
+            verify(String(range.text).indexOf("28D") === 0,
+                   "narrow range copy keeps the window and dates")
+            compare(legend.text, "✓ Done   ○ Due   − Rest",
+                    "narrow legend keeps all three states")
+            compare(feedback.text, "Today: Checked in",
+                    "narrow feedback keeps the current state")
+            verify(!range.truncated && !legend.truncated && !feedback.truncated)
+            assertInside(named(host, "habitLayout"),
+                         named(host, "habitLayout").parent,
+                         "narrow habit layout")
+        }
+
+        function test_scaled_day_marks_use_the_active_type_floor() {
+            tryVerify(function () {
+                return bMatrixNarrow.ready && bMatrixShallow.ready
+            }, 3000)
+            var cases = [
+                { host: bMatrixNarrow, cls: "tall", scale: 1.45 },
+                { host: bMatrixShallow, cls: "wide", scale: 1.3 }
+            ]
+            for (var c = 0; c < cases.length; c++) {
+                var host = cases[c].host
+                host.item.sizeClass = cases[c].cls
+                host.theme.textScale = cases[c].scale
+                host.theme.fontChoice = "lexend"
+                seedMatrix(host, "Daily movement", true)
+                wait(32)
+                var marks = findAll(host.item, function (n) {
+                    return String(n.objectName).indexOf("habitDayMark-") === 0
+                           && n.visible
+                }, [])
+                compare(marks.length, 28, "all 28 state marks render")
+                for (var i = 0; i < marks.length; i++) {
+                    verify(marks[i].font.pixelSize >= host.theme.fontMinimum,
+                           "day mark " + i + " respects the "
+                           + host.theme.fontMinimum + "px floor")
+                    assertInside(marks[i], marks[i].parent,
+                                 "day mark " + i)
+                }
+            }
+        }
+
+        function test_shallow_and_compressed_projections_fit_their_body() {
+            tryVerify(function () {
+                return bMatrixShallow.ready && bMatrixCompressed.ready
+            }, 3000)
+            var cases = [
+                { host: bMatrixShallow, cls: "wide", scale: 1.3,
+                  shallow: true, compressed: false },
+                { host: bMatrixCompressed, cls: "tall", scale: 1.45,
+                  shallow: false, compressed: true }
+            ]
+            for (var i = 0; i < cases.length; i++) {
+                var host = cases[i].host
+                host.item.sizeClass = cases[i].cls
+                host.theme.textScale = cases[i].scale
+                seedMatrix(host, "Daily movement", false)
+                wait(32)
+                compare(host.item.shallowWide, cases[i].shallow)
+                compare(host.item.compressedTall, cases[i].compressed)
+                var legend = named(host, "habitHeatmapLegend")
+                compare(legend.visible, false,
+                        "duplicate legend yields to the complete 28-day grid")
+                if (cases[i].compressed)
+                    compare(named(host, "habitTodayFeedback").visible, false,
+                            "the button carries today's action in the compressed stack")
+                assertInside(named(host, "habitLayout"),
+                             named(host, "habitLayout").parent,
+                             cases[i].cls + " habit layout")
+            }
+        }
+
+        function test_scaled_roomy_portrait_keeps_range_and_action_inside() {
+            tryVerify(function () { return bMatrixRoomy.ready }, 3000)
+            var host = bMatrixRoomy
+            host.item.sizeClass = "tall"
+            host.theme.textScale = 1.45
+            host.theme.fontChoice = "lexend"
+            seedMatrix(host, "Daily movement", false)
+            wait(32)
+
+            verify(host.item.roomy)
+            var layout = named(host, "habitLayout")
+            var range = named(host, "habitHeatmapRange")
+            var button = named(host, "habitCheckinButton")
+            verify(layout && range && button)
+            verify(!range.truncated)
+            assertInside(layout, layout.parent, "scaled roomy layout")
+            assertInside(button, button.parent, "scaled roomy check-in action")
         }
     }
 

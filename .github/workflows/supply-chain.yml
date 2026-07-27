@@ -1,43 +1,68 @@
 name: Supply Chain
 
-# The auditable half of the enterprise pack (E9): what is IN the binary (SBOM),
-# what we allow in (cargo-deny), and what the binary TALKS TO (no-egress).
+# The continuously checked supply-chain policy: Rust dependency inventory, what
+# we allow in (cargo-deny), and what the binary talks to (no-egress).
 #
 # Kept out of ci.yml on purpose: these answer a compliance question ("can a
 # customer verify our claims"), not a correctness one, and the no-egress job is
-# a slow full build + several timed runs. Splitting it keeps the 10 CI jobs fast
-# and lets the full evidence run on candidate tags. A separate published-release
-# event attaches the SBOM only after the target GitHub release actually exists.
+# a slow full build plus several timed runs. The Rust-only SBOM here is an
+# unsigned per-commit diagnostic. scripts/release.sh creates the complete
+# release SBOM locally before SHA256SUMS is signed. CI must never attach a
+# different, after-the-fact SBOM to a published release.
 
 on:
   push:
-    branches: [main, master, 'v1.0-alpha']
+    branches: [main, master, 'v1.0-alpha', 'release/1.0.0']
     tags: ['v*']
-    paths:
-      - 'core/**'
-      - 'app/**'
-      - 'manager/**'
-      - 'ui/**'
-      - 'packaging/ci/**'
-      - '.github/workflows/supply-chain.yml'
+  pull_request:
+    branches: [main, master, 'v1.0-alpha', 'release/1.0.0']
   schedule:
     - cron: '43 5 * * 1'   # weekly: new RUSTSEC advisories arrive without pushes
-  release:
-    types: [published]
   workflow_dispatch:
 
 jobs:
-  # ── What is in the binary ──────────────────────────────────────────────────
-  sbom:
-    name: SBOM (CycloneDX)
+  secrets:
+    name: Full-history secret scan
     runs-on: ubuntu-24.04
     permissions:
-      contents: write        # only used by the tag-gated release upload below
+      contents: read
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+      - name: Install pinned Gitleaks 8.30.1
+        env:
+          GITLEAKS_ARCHIVE_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --output "$RUNNER_TEMP/gitleaks.tar.gz" \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          printf '%s  %s\n' "$GITLEAKS_ARCHIVE_SHA256" \
+            "$RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" version | grep -Fx '8.30.1'
+      - name: Scan every reachable commit
+        run: |
+          "$RUNNER_TEMP/gitleaks" git \
+            --no-banner --redact=100 --log-level warn --no-color \
+            --config .gitleaks.toml .
+
+  # Rust dependency inventory. The signed release SBOM additionally scans every
+  # built/native/bundled artifact with Syft.
+  sbom:
+    name: Rust dependency inventory (CycloneDX)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # action commit pinned
+        with:
+          toolchain: '1.86.0'
       - name: Install cargo-cyclonedx
-        run: cargo install cargo-cyclonedx --locked
+        run: |
+          cargo install cargo-cyclonedx --version 0.5.9 --locked
+          cargo cyclonedx --version | grep -Fx 'cargo-cyclonedx-cyclonedx 0.5.9'
 
       - name: Generate SBOM
         working-directory: core
@@ -66,26 +91,26 @@ jobs:
           n=$(python3 -c 'import json;print(len(json.load(open("dist/xeneon-core-sbom.cdx.json")).get("components",[])))')
           [ "$n" -gt 10 ] || { echo "FAIL: SBOM has only $n components - generation is broken"; exit 1; }
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: sbom
+          name: rust-dependency-inventory
           path: dist/xeneon-core-sbom.cdx.json
-
-      - name: Attach SBOM to the release
-        if: github.event_name == 'release'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${GITHUB_REF_NAME}" dist/xeneon-core-sbom.cdx.json --clobber
 
   # ── What we allow in ───────────────────────────────────────────────────────
   deny:
     name: cargo-deny (licenses / advisories / bans / sources)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # action commit pinned
+        with:
+          # cargo-deny 0.20.2 declares Rust 1.88. Product builds remain pinned
+          # to the independently tested 1.86.0 toolchain.
+          toolchain: '1.88.0'
       - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
+        run: |
+          cargo install cargo-deny --version 0.20.2 --locked
+          cargo deny --version | grep -Fx 'cargo-deny 0.20.2'
       # NOTE: there is no longer a separate `cargo audit` job - it was removed when
       # CI cost was cut, because deny already covers advisories. Do not re-add one
       # without a reason deny cannot serve.
@@ -94,16 +119,28 @@ jobs:
       - name: cargo deny check
         working-directory: core
         run: cargo deny check
+      - name: Verify installed Rust third-party notices are current
+        run: |
+          python3 scripts/generate_rust_third_party_notices.py \
+            --check packaging/THIRD_PARTY_NOTICES-RUST.txt
+          printf '%s  %s\n' \
+            4c2f5f3e5235433bc3ee9cf53409f2b24ca8cd2b60ab8b2489f77812e07baa2c \
+            packaging/aur/THIRD_PARTY_NOTICES-RUST.txt |
+            sha256sum --check --strict
+          python3 scripts/generate_debian_copyright.py \
+            --check packaging/debian/copyright
 
   # ── What the binary talks to ───────────────────────────────────────────────
   no-egress:
     name: No-egress attestation (default = zero, weather = one host)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # action commit pinned
+        with:
+          toolchain: '1.86.0'
       - name: Install Qt 6.7
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
           version: '6.7.3'
           modules: 'qtvirtualkeyboard'
@@ -118,7 +155,7 @@ jobs:
           sudo fc-cache -f
       - name: Build the hub
         run: |
-          cargo build --release --manifest-path core/Cargo.toml
+          cargo build --release --locked --manifest-path core/Cargo.toml
           cmake -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build -j$(nproc)
           test -x build/xeneon-edge-hub

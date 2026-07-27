@@ -474,6 +474,20 @@ Item {
             compare(err, "response-too-large")
         }
 
+        function test_response_limit_has_a_native_hard_ceiling() {
+            compare(hub.maximumTransportResponseBytes, 2 * 1024 * 1024)
+            var err = null
+            hub.request({
+                url: "https://api.example.com/s",
+                maxResponseBytes: 64 * 1024 * 1024,
+                onError: function (reason) { err = reason }
+            })
+            lastFake.resolveWith(
+                200, new Array(hub.maximumTransportResponseBytes + 2).join("x"))
+            compare(err, "response-too-large",
+                    "callers cannot raise the parser limit beyond the native ceiling")
+        }
+
         function test_open_failure_is_reported() {
             var err = null
             hub.xhrFactory = function () {

@@ -15,6 +15,9 @@ before it.
 Qt6 dev packages. See `docs/installation/` for per-distro package lists
 (`cachyos.md`, `ubuntu.md`, `generic-linux.md`), and
 `.github/workflows/distro.yml` for the exact, CI-executed Fedora/Ubuntu lists.
+Release-producing and strict release-test scripts select and verify the exact
+Rust 1.86.0 toolchain used by release CI. Ordinary development may use a newer
+compatible stable Rust version.
 
 ### Distro support (workflow targets, not current-candidate proof)
 
@@ -35,6 +38,14 @@ source on either needs nothing beyond the distro's own packages. (`ci.yml` still
 installs Qt 6.7 via `jurplel/install-qt-action` because its jobs run on Ubuntu
 24.04, whose apt Qt is 6.4.2.)
 
+Release-path workflows pin GitHub Actions to full commit SHAs and pin each
+Ubuntu or Fedora container to an exact `linux/amd64` OCI manifest digest. The
+environment evidence records that digest, not a short-lived container ID.
+Pull-request jobs retain build, install, and smoke coverage, while OIDC
+attestations run only on trusted non-pull-request events. These workflows cover
+pushes to both `master` and the active `release/1.0.0` branch for their relevant
+paths.
+
 ### AppImage
 
 Built by `packaging/appimage/build-appimage.sh` on **Ubuntu 24.04 + upstream Qt
@@ -43,6 +54,32 @@ is deliberate: an AppImage's glibc floor is its build host's, so the oldest
 practical distro gives the widest reach, while the bundled Qt still has to be
 ≥ 6.5 for `QtQuick.Effects`. ~46 MB, bundles 41 Qt libraries.
 
+The builder downloads only two reviewed, immutable release assets and verifies
+their SHA-256 values before use:
+
+| Tool | Release | SHA-256 |
+|---|---|---|
+| `linuxdeploy-x86_64.AppImage` | `1-alpha-20251107-1` | `c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d` |
+| `linuxdeploy-plugin-qt-x86_64.AppImage` | `1-alpha-20250213-1` | `15106be885c1c48a021198e7e1e9a48ce9d02a86dd0a1848f00bdbf3c1c92724` |
+
+Running the AppImage with no selector, or with `--hub`, starts the Hub.
+`--manager` starts the Manager. AppImage autostart and the Manager's
+`startHub()` action relaunch the persistent original path from
+`$APPIMAGE --hub`; they do not retain the temporary `/tmp/.mount_*` path.
+
+Normal execution requires a usable FUSE interface and compatible host mount
+helper. Hosts and containers that do not expose `/dev/fuse` can use the
+AppImage runtime's supported extraction path without unpacking the artifact
+manually:
+
+```sh
+env APPIMAGE_EXTRACT_AND_RUN=1 ./xeneon-edge-hub-VERSION-x86_64.AppImage
+env APPIMAGE_EXTRACT_AND_RUN=1 ./xeneon-edge-hub-VERSION-x86_64.AppImage --manager
+```
+
+This still executes the actual AppImage and its dispatcher. It can start more
+slowly because each process extracts its payload.
+
 **What it does not bundle, by design:** `libGL`/`libGLX`/`libOpenGL`/`libEGL` and
 `libfontconfig` + fonts. `linuxdeploy` excludes the graphics stack on purpose - a
 bundled `libGL` breaks on a host with a different (e.g. NVIDIA) driver, so GL must
@@ -50,9 +87,23 @@ come from the host. Every normal desktop already has these; a bare container doe
 not, which is why `appimage-smoke` installs exactly that set (and nothing from Qt)
 before running.
 
-The AppImage workflow checks a bare `ubuntu:24.04` container with no Qt or Rust,
-an offscreen launch, and all imported QML modules. That check must be rerun for
-the exact candidate; it does not exercise a published zsync update.
+The AppImage workflow checks a bare, digest-pinned Ubuntu 24.04 container with
+no Qt or Rust. Through `APPIMAGE_EXTRACT_AND_RUN=1`, it executes the actual
+AppImage for both the default Hub and `--manager`, verifies their binary
+identities, performs a real control-socket ping/pong, and requires both the
+Hub's UI-state request marker and the Manager's accepted reply marker. It also
+checks all imported QML modules and proves that check with a missing-module
+negative control. A focused dispatcher fixture checks default Hub, explicit
+Hub, Manager, argument forwarding, and a known routing mismatch before the
+artifact smoke.
+
+The container does not expose FUSE. The workflow therefore records
+mount-backed execution as `NOT_TESTED`, unless a runner genuinely provides a
+usable `/dev/fuse` and mount helper. `XENEON_REQUIRE_FUSE_RUNTIME=1` turns that
+probe into a mandatory desktop gate. Evidence retains the exact AppImage,
+checksum, host identity, positive and negative results, and aggregate manifest
+under `artifacts/<commit>/appimage-ubuntu-24.04/`. This gate must be rerun for
+the exact candidate and does not exercise a published zsync update.
 
 The AppImage cannot install the auto-rotate udev rule (no package manager hooks) -
 users install `packaging/udev/99-xeneon-edge.rules` by hand. Everything else works.
@@ -78,7 +129,7 @@ the source tree - otherwise the lazily-imported modules are dropped and the app
 **To build and run: no.** The whole thing works from a normal user build:
 
 ```sh
-git clone <repo> && cd xeneon-edge-linux-hub
+git clone <repo> && cd skyphoenix-edgehub-linux
 ./scripts/build.sh release
 ./build/xeneon-edge-hub        # the dashboard
 ./build/xeneon-edge-manager    # the companion app
@@ -114,11 +165,59 @@ Ranked by effort-vs-reach for this app:
 |---|---|---|
 | **AppImage** | Portable candidate | Recipe exists; target-host smoke and published zsync round trip are release gates |
 | **AUR (PKGBUILD)** | Arch / CachyOS | Recipe exists; do not infer AUR publication or freshness from the file |
-| **.deb / .rpm** | Ubuntu 26.04+ & Fedora | CPack recipes exist; exact-candidate clean install/launch/uninstall jobs are required |
+| **.deb / .rpm** | Ubuntu 26.04 and Fedora 43 | CPack recipes exist; exact-candidate clean install/launch/uninstall jobs are required |
 | **Flatpak / Flathub** | Sandboxed distribution | Recipe exists; no Flathub publication or support claim |
 
 No rollout order is committed. Publish only formats whose exact artifact lifecycle
 has passed and whose maintenance/update path is documented.
+
+### Native upgrade and rollback status
+
+Clean installation and removal are not upgrade or rollback certification. The
+regular distro matrix proves those narrower package lifecycles.
+
+The separately dispatched `Native Package Upgrade and Rollback` workflow accepts
+an immutable older `baseline_ref` and newer `candidate_ref`, each expressed as
+a full 40-hex commit or exact tag ref. The baseline must be an ancestor of the
+candidate. In disposable Ubuntu
+26.04 and Fedora 43 containers it builds both committed refs, installs the
+baseline, upgrades to the candidate, downgrades to the baseline, then removes
+the package. Every transition asserts native package metadata, Hub and Manager
+binary identities, and byte-for-byte preservation of user configuration and the
+optional per-user Hub autostart entry. It also reinstalls an exact artifact,
+checks every inventoried payload file is removed, and rechecks the original
+package hashes after the lifecycle.
+
+**Current stable-candidate status: NOT RUN.** This gate can only pass after two
+ordered committed refs exist. A successful clean-install job or the presence of
+the executable workflow must never be reported as upgrade/rollback evidence.
+Run it manually with the previous supported release or RC as `baseline_ref` and
+the exact immutable final candidate as `candidate_ref`, then retain both job
+URLs in the release evidence. The workflow itself must be dispatched from that
+same candidate ref; otherwise it refuses to emit provenance under a different
+`GITHUB_SHA`.
+
+The workflow retains both exact packages, one SHA-256 sidecar per package, and an
+exact-input report under a candidate-SHA-keyed evidence directory. The tested
+candidate package receives GitHub build provenance. GitHub workflow artifacts
+expire, so download the directory, verify its sidecars, seal it with
+the rest of the exact-candidate evidence, and invoke
+`scripts/finalize_audit_artifacts.sh` once on the full commit-keyed directory
+after all evidence producers finish. Record its workflow URL and package hashes
+in the permanent release record before publication. The release helper
+accepts native extras only when their sidecar, package metadata, extracted
+binary identities, installed notices, and GitHub provenance all agree.
+
+This is a native package-transaction test. It calls both binaries with
+`--version` but does not launch the GUI against the seeded configuration, so it
+does not replace runtime schema-migration, downgrade-compatibility, or hardware
+tests. Those remain separate release gates.
+
+The candidate must implement the current CMake version contract. A historical
+baseline that predates it is built without metadata overrides; the lifecycle
+records the actual binary and package identities it emits. The lifecycle never
+overrides DEB or RPM metadata at CPack time because doing so would test the test
+harness instead of the package definition.
 
 The CMake install already places the binaries, the `.desktop` entry, and the udev
 rule (`-DUDEV_RULES_DIR=/etc/udev/rules.d` for a real system path). `cpack` on top
@@ -139,18 +238,20 @@ EdgeHub never self-replaces its own binaries in any format.
 | **AUR** | `paru`/`yay` (or `git pull && makepkg -si`). The PKGBUILD verifies the source tarball signature via `validpgpkeys`. |
 | **.deb / .rpm** | The distro's package manager (`apt`, `dnf`), like any other package. No self-update - that would fight dpkg/rpm ownership of the files. |
 | **Flatpak** *(future)* | Flathub's native mechanism: `flatpak update` / GNOME Software / Discover. This is the format's own update path - do **not** bolt zsync or an in-app downloader onto it. |
-| **AppImage** | Download the new file - or delta-update via **zsync** (below), which transfers only the blocks that changed instead of the whole ~46 MB. |
+| **AppImage** | Download the new file, or use **zsync** (below) to reuse locally verified blocks and fetch the missing target ranges. |
 
 ### AppImage + zsync
 
-> **Status: NOT YET EXERCISED. No release has ever shipped an AppImage.**
-> `v1.0.0-alpha.1` and `v1.0.0-alpha.2` published neither an `.AppImage` nor a
-> `.zsync`, so the `zsyncmake` branch of `scripts/release.sh` has never once
-> executed and no user has ever delta-updated anything. The CI `appimage` job
-> builds an AppImage but only uploads it as a workflow artifact (which expires);
-> attaching it to a release is a manual `--extra` step that has not been done.
-> Everything below describes the *designed* contract, not an observed one.
-> Exercising it end-to-end is an **RC exit criterion** - see BACKLOG.md.
+> **Status: NOT TESTED FOR THE EXACT STABLE CANDIDATE.**
+> The retained release ledger contains no commit-keyed proof of a published
+> AppImage N updating to published AppImage N+1. CI builds and smokes candidate
+> AppImages, but attaching one to a release is a separate `--extra` step.
+> Everything below describes the enforced construction contract. A published
+> zsync round trip remains an RC exit criterion.
+> The current public release history contains no AppImage. The first truthful
+> stable proof therefore needs an AppImage-bearing prior release, recommended
+> as `v1.0.0-rc.1`. A CI artifact or retrofitted beta asset is not an acceptable
+> substitute.
 
 Every release that ships an AppImage also ships `<name>.AppImage.zsync`,
 generated by `scripts/release.sh` when the AppImage is passed as an `--extra`
@@ -179,9 +280,30 @@ which only the release flow knows). Properties worth knowing:
   `gh-releases-zsync|skyphoenix-it|skyphoenix-edgehub-linux|latest|xeneon-edge-hub-*-x86_64.AppImage.zsync`
   as `X-AppImage-UpdateInformation` (via linuxdeploy-plugin-appimage's
   `LDAI_UPDATE_INFORMATION`). `AppImageUpdate` / `appimaged` can therefore
-  discover the newest matching release and its `.zsync` without a manually
-  copied URL. The `.zsync` itself still pins its versioned `-u` target: discovery
-  follows `latest`, while the block map always describes one immutable artifact.
+  discover the newest matching **stable** release and its `.zsync` without a
+  manually copied URL. GitHub's `latest` channel excludes prereleases. A beta or
+  RC must therefore publish and document its explicit versioned `.zsync` URL,
+  and prerelease users update with that URL rather than relying on automatic
+  AppImage discovery. The `.zsync` itself always pins its versioned `-u` target,
+  so every block map describes one immutable artifact.
+
+Stable publication is a two-command state machine. `release.sh
+--stage-candidate` publishes the signed asset set as a non-latest prerelease and
+stops. `run_published_appimage_zsync_audit.sh` then performs and signs the real
+prior-version round trip. Finally, `release.sh --promote` requires both the
+signed prepublication aggregate and the separately signed zsync receipt before
+changing metadata to stable/latest. Promotion never builds, reruns the suite,
+uploads, replaces, or deletes an asset. The zsync receipt remains in the owner
+audit archive because post-publication evidence cannot be included inside the
+asset set whose public URL it proves.
+
+The stable audit uses zsync 0.6.5 and retains its raw final `used N local,
+fetched M` statistics. It fails unless the prior AppImage contributes nonzero
+verified local bytes. It also requires positive measured application-payload
+savings for the exact candidate: client-reported target bytes fetched plus the
+downloaded control-file bytes must be less than the full candidate AppImage.
+This deliberately does not claim a specific saving for every release or total
+TCP/TLS wire-byte savings.
 
 ### The in-app update check (opt-in, and why it is off)
 
@@ -214,7 +336,9 @@ preference:
   (`1.0.0-alpha.2 < 1.0.0-beta.1 < 1.0.0-rc.1 < 1.0.0`, numeric identifiers
   numerically - a naive string compare calls `v1.0.0-alpha.2` *newer* than
   `v1.0.0`). Unversioned `dev` builds report the latest tag without claiming
-  an update. Pinned by `tests/ui/tst_update_checker.qml`.
+  an update. A stable SemVer tag temporarily marked as a GitHub prerelease
+  during certification is ignored on every update channel until promotion.
+  Pinned by `tests/ui/tst_update_checker.qml`.
 
 ---
 
@@ -272,13 +396,36 @@ Consequences worth stating plainly:
 
 - **Releases are cut by hand.** No tag-triggered publishing.
 - **Release provenance must be exact.** `release.sh` requires a completely clean
-  worktree, requires the requested signed tag to resolve to `HEAD`, and verifies
-  that the tag was signed by the pinned release-key fingerprint before running
-  the mandatory strict release gate. A gate failure aborts before `dist/`, the
-  shipping build, signing, or publishing can begin; there is no skip option.
-  After the gate, provenance is checked again and the shipping build uses a fresh
-  tree extracted from the verified commit archive, not the mutable checkout or a
-  reusable CMake cache.
+  worktree and separately refuses source-like inputs that are outside the Git
+  index, including files hidden by ignore rules. It pins the annotated tag
+  object and peeled commit, and verifies that the tag was signed by the pinned
+  release-key fingerprint before running the mandatory strict release gate. It
+  repeats the tag-object, signer, origin, and artifact-byte checks immediately
+  before upload and after draft upload.
+  Release notes are materialized from the signed commit, not from a later
+  working-tree edit. Before the strict gate, their heading and metadata must
+  name the exact version and their ordered publication ledger must match every
+  expected asset. A gate failure aborts before `dist/`, the shipping build,
+  signing, or publishing can begin; there is no skip option. After the gate,
+  the shipping build uses a fresh tree extracted from the verified commit
+  archive, not the mutable checkout or a reusable CMake cache.
+- **Publication is an exact ledger.** `SHA256SUMS` and the GitHub upload list
+  are produced from one validated in-memory artifact ledger. Unexpected files
+  in `dist/` fail the release. GitHub receives a draft first; the helper
+  downloads every draft asset, checks the exact filename set, size and hash,
+  compares the notes, and only then makes the release public. It then performs a
+  fresh public download and repeats the asset and metadata checks. A mismatch
+  attempts to return the release to draft and fails the command.
+- **Release evidence is bound into the signed set.** The strict gate returns a
+  mode-`0600` receipt containing the exact commit, run ID, artifact path, and
+  hashes of its manifest, signature, provenance, and run record. The signed
+  `RELEASE_GATE_EVIDENCE.json` points to that sealed run. The full commit-keyed
+  audit directory remains required in the owner archive.
+- **CI packages are untrusted until proven.** Native and AppImage extras require
+  an adjacent exact checksum plus GitHub build provenance from the pinned
+  workflow and candidate commit. Package metadata and extracted payloads are
+  validated only after that provenance check. AppImage extraction is
+  networkless and never executes the untrusted AppImage runtime.
 - **A compromised CI cannot forge a release.** It can forge an *unsigned* one, so
   users must check the signature - which is why the verification steps are in the
   README and not buried here.
@@ -288,6 +435,11 @@ Consequences worth stating plainly:
   publishable-looking output in `dist/`.
 
 ### Known gaps
+
+- **GitHub tag immutability is an owner setting.** Configure a repository
+  ruleset for `v*` tags that blocks updates and deletions, then verify it from a
+  non-admin path. The release helper detects a moved tag during its run, but
+  code in this repository cannot enforce the hosting account setting.
 
 - **The key is not on a keyserver.** `gpg --recv-keys` does not find it, so users
   (and `makepkg`, which fails with "unknown public key") must import from GitHub
@@ -337,12 +489,27 @@ Calendar note: **check the expiry at the 2028 GA planning point**, not on
   it, ship binaries, and build a business on it. So can everyone else (MIT lets
   others redistribute too), which is why the usual model here is **goodwill +
   donations + paid extras**, not locked-down sales.
-- **Qt6 is LGPLv3** (or a paid Qt commercial license). Dynamically linking it - as
-  this app does - is fine for both open-source and commercial distribution, as
-  long as users can replace/relink the Qt libraries. AppImage/Flatpak that ship Qt
-  as separate `.so` files satisfy this. You do **not** need a paid Qt license.
-- **Rust crates** are MIT/Apache-2.0; **Phosphor icons** are MIT. The whole stack
-  is commercial-friendly.
+- **Qt modules have different licensing options.** Most modules linked here are
+  available under LGPLv3 or a commercial Qt licence. Qt Virtual Keyboard is
+  listed by Qt as GPLv3 or commercial, not LGPLv3. Dynamic system linking is
+  relevant to LGPL obligations but does not settle that GPL/commercial choice,
+  and bundling Qt in AppImage/Flatpak adds distribution obligations that require
+  an artifact-level review. The Qt Virtual Keyboard disposition is an
+  **owner/legal blocker** before the stable release. No text here declares that
+  choice or legal review complete. See Qt's official
+  [licensing table](https://doc.qt.io/qt-6/licensing.html) and
+  [Virtual Keyboard licence page](https://doc.qt.io/qt-6/qtvirtualkeyboard-index.html).
+- **Rust crates** use MIT, Apache-2.0, BSD-3-Clause, Unicode-3.0 and MPL-2.0
+  terms; some also offer the Unlicense as an alternative. The exact
+  lockfile-derived package inventory, source links and upstream notice texts
+  are generated as `packaging/THIRD_PARTY_NOTICES-RUST.txt` and installed under
+  `/usr/share/licenses/xeneon-edge-hub/`. **Phosphor icons** are MIT. Their
+  exact upstream notice, including `Copyright (c) 2023 Phosphor Icons`, is
+  preserved in `assets/icons/LICENSE-MIT-PhosphorIcons.txt` and installed in
+  the same directory. It matches the official
+  `phosphor-icons/core` `LICENSE` at commit
+  `2b75f3ad12b420c9504ef05df8d2564a28f8500e` with SHA-256
+  `b5b1f1da112d18ea2147decfd48ddc1bf2b5aeb6c265381579340e95b15a2bb2`.
 - The Edge orientation protocol was **independently reverse-engineered from your
   own device's HID reports** - no third-party (e.g. GPL) code was copied, so it
   doesn't encumber the MIT license.

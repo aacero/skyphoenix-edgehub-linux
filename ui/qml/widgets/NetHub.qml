@@ -33,6 +33,10 @@ QtObject {
     // may also pass a per-request `xhrFactory` in opts (used by widgets that
     // already own the seam, e.g. Weather), which takes precedence.
     property var xhrFactory: null
+    // The native QNetworkAccessManager consumes this private request header,
+    // removes it before egress, and aborts the transport by byte count. The QML
+    // responseText check remains a second parser-boundary guard and a test seam.
+    readonly property int maximumTransportResponseBytes: 2097152
     // Qt's QML XMLHttpRequest accepts a `timeout` property but does not emit
     // `ontimeout` reliably on every supported runtime. Each production request
     // therefore gets its own QML Timer watchdog. A shared Timer would let one
@@ -209,7 +213,8 @@ QtObject {
     //                   secret: that is what keeps it out of ui_state.
     //   opts.body       request body (string)
     //   opts.timeout    ms, default 8000
-    //   opts.maxResponseBytes maximum responseText size, default 1 MiB
+    //   opts.maxResponseBytes native transport and responseText limit, default
+    //                         1 MiB and hard-clamped to 2 MiB
     //   opts.allow      per-request host allowlist (augments the global one)
     //   opts.xhrFactory per-request XHR factory (test seam; wins over hub.xhrFactory)
     //   opts.onDone(status, responseText)
@@ -294,6 +299,10 @@ QtObject {
         var mk = opts.xhrFactory ? opts.xhrFactory : (hub.xhrFactory ? hub.xhrFactory : null)
         var xhr = mk ? mk() : new XMLHttpRequest()
         var requestTimeout = opts.timeout || 8000
+        var maxResponseBytes = opts.maxResponseBytes !== undefined
+            ? Math.max(1024, Math.min(hub.maximumTransportResponseBytes,
+                                     Number(opts.maxResponseBytes)))
+            : 1048576
         var settled = false
         var watchdog = null
         function clearWatchdog() {
@@ -330,8 +339,6 @@ QtObject {
             if (settled) return
             if (xhr.readyState !== XMLHttpRequest.DONE) return
             var st = xhr.status
-            var maxResponseBytes = opts.maxResponseBytes !== undefined
-                ? Math.max(1024, Number(opts.maxResponseBytes)) : 1048576
             if (xhr.responseText && xhr.responseText.length > maxResponseBytes) {
                 fail("response-too-large", false)
                 return
@@ -349,6 +356,9 @@ QtObject {
         }
         try {
             xhr.open(opts.method || "GET", url)
+            if (!mk && !local && xhr.setRequestHeader)
+                xhr.setRequestHeader("X-Xeneon-Max-Response-Bytes",
+                                     String(maxResponseBytes))
             if (headers && xhr.setRequestHeader)
                 for (var k in headers) xhr.setRequestHeader(k, headers[k])
             xhr.send(opts.body !== undefined ? opts.body : undefined)

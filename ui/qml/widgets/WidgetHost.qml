@@ -12,6 +12,14 @@ Item {
     property url widgetSource: ""
     property Component widgetComponent: null
     property bool loadEnabled: widgetSource !== "" || widgetComponent !== null
+    // --safe-mode is a process-local gate injected by the Hub shell. Keep a
+    // public override for focused tests and non-Hub hosts. The Manager does not
+    // define either context property, so its passive previews remain enabled.
+    property bool sessionEnabled: {
+        if (typeof _widgetsEnabled !== "undefined") return _widgetsEnabled
+        if (typeof _safeMode !== "undefined") return !_safeMode
+        return true
+    }
 
     property var store: null
     property var catalog: null
@@ -37,10 +45,13 @@ Item {
     signal widgetLoaded(var item)
 
     function _ensureCurrent() {
-        if (host.ensureSettings && host.store && host.catalog && host.widgetId
+        // Seeding defaults is a persisted mutation. A safe-mode host must not
+        // touch the settings bucket even though no widget item will be loaded.
+        if (host.sessionEnabled && host.ensureSettings && host.store && host.catalog && host.widgetId
                 && host.store.ensureSettings && host.catalog.defaults)
             host.store.ensureSettings(host.widgetId, host.catalog.defaults(host.widgetType))
     }
+    onSessionEnabledChanged: _ensureCurrent()
     onWidgetIdChanged: _ensureCurrent()
     onWidgetTypeChanged: _ensureCurrent()
     onStoreChanged: _ensureCurrent()
@@ -55,11 +66,19 @@ Item {
     // shared store and need no local action. Editors such as Quick Note expose
     // flush() for their own shorter debounce; commit that buffer before the
     // DashboardStore performs its final synchronous save.
-    function flushPendingState() {
-        if (!host.item || typeof host.item.flush !== "function")
+    function hasPendingState() {
+        if (!host.item || typeof host.item.hasPendingChanges !== "function")
             return false
-        host.item.flush()
-        return true
+        return host.item.hasPendingChanges() === true
+    }
+
+    function flushPendingState() {
+        if (!host.item)
+            return true
+        if (typeof host.item.flush !== "function")
+            return !(typeof host.item.hasPendingChanges === "function"
+                     && host.item.hasPendingChanges() === true)
+        return host.item.flush() !== false
     }
 
     function configure(item) {
@@ -122,10 +141,50 @@ Item {
         id: widgetLoader
         anchors.fill: parent
         clip: host.clipContent
-        active: host.loadEnabled
-        source: host.widgetComponent === null && host.loadEnabled ? host.widgetSource : ""
+        active: host.sessionEnabled && host.loadEnabled
+        source: host.widgetComponent === null && host.sessionEnabled && host.loadEnabled
+                ? host.widgetSource : ""
         sourceComponent: host.widgetComponent
         onLoaded: host.configure(item)
+    }
+
+    // Keep the saved layout visible as a set of paused tiles. This is a
+    // framework recovery surface, not a widget instance, and it makes clear
+    // that safe mode did not delete or disable anything permanently.
+    Rectangle {
+        objectName: "safeModeWidgetPlaceholder"
+        anchors.fill: parent
+        z: 850
+        visible: !host.sessionEnabled
+        radius: 18
+        color: "#171b24"
+        border.width: 2
+        border.color: "#5f6b7a"
+        Accessible.role: Accessible.StaticText
+        Accessible.name: "Widget paused for this safe-mode session."
+
+        Column {
+            anchors.centerIn: parent
+            width: Math.max(80, parent.width - 40)
+            spacing: 8
+            Text {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: "Widget paused"
+                color: "#ffffff"
+                font.pixelSize: 20
+                font.bold: true
+                wrapMode: Text.WordWrap
+            }
+            Text {
+                width: parent.width
+                horizontalAlignment: Text.AlignHCenter
+                text: "Safe mode keeps this layout unchanged."
+                color: "#d4d8e2"
+                font.pixelSize: 16
+                wrapMode: Text.WordWrap
+            }
+        }
     }
 
     // A known catalog entry can still fail to compile or load after packaging,

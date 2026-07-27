@@ -29,7 +29,7 @@ ignore = []
 [licenses]
 version = 2
 # Exactly the licenses currently resolved in the graph - nothing speculative.
-# A new dependency under any other license (BSD, ISC, Zlib, …) is meant to FAIL
+# A new dependency under any other license (for example ISC or Zlib) is meant to FAIL
 # here: that failure is the license review, and waving it through in advance
 # would skip the one decision this file exists to force. Every entry below is
 # redistributable in a proprietary/enterprise deployment without imposing

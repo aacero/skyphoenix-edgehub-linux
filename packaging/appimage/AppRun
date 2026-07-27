@@ -1,0 +1,25 @@
+#!/usr/bin/env sh
+# AppImage entry point for both installed application binaries.
+set -eu
+
+appdir="$(CDPATH= cd -- "$(dirname -- "$(readlink -f -- "$0")")" && pwd)"
+export PATH="$appdir/usr/bin${PATH:+:$PATH}"
+export LD_LIBRARY_PATH="$appdir/usr/lib:$appdir/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export XDG_DATA_DIRS="$appdir/usr/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
+export QT_PLUGIN_PATH="$appdir/usr/plugins${QT_PLUGIN_PATH:+:$QT_PLUGIN_PATH}"
+export QML2_IMPORT_PATH="$appdir/usr/qml${QML2_IMPORT_PATH:+:$QML2_IMPORT_PATH}"
+export QML_IMPORT_PATH="$appdir/usr/qml${QML_IMPORT_PATH:+:$QML_IMPORT_PATH}"
+
+case "${1:-}" in
+    --manager)
+        shift
+        exec "$appdir/usr/bin/xeneon-edge-manager" "$@"
+        ;;
+    --hub)
+        shift
+        exec "$appdir/usr/bin/xeneon-edge-hub" "$@"
+        ;;
+    *)
+        exec "$appdir/usr/bin/xeneon-edge-hub" "$@"
+        ;;
+esac

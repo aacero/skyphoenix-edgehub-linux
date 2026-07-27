@@ -337,6 +337,17 @@ WidgetChrome {
     // not - a ring big enough to read plus a real 52px control row fills it, and
     // squeezing a stats block in would just shrink the clock.
     readonly property bool showMomentum: tallish || horiz
+    // A tall tile has vertical room for the runway to grow only when its three
+    // columns become too narrow for the active type scale. Native-width and
+    // wide layouts keep the compact strip.
+    readonly property real runwayColumnBudget:
+        Math.max(1, (width - 2 * contentMargins - 2 * theme.spacingMd
+                     - 4 * theme.spacingSm) / 3)
+    readonly property bool runwayNeedsExtraLines:
+        tallish && runwayColumnBudget < theme.fontLabel * 8
+    readonly property real runwayH:
+        runwayNeedsExtraLines
+        ? Math.max(78, Math.ceil(theme.fontLabel * 5.8)) : 78
 
     Item {
         anchors.fill: parent; visible: !w.expanded
@@ -452,7 +463,7 @@ WidgetChrome {
                     Rectangle {
                         objectName: "focusRunway"
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 78
+                        Layout.preferredHeight: w.runwayH
                         radius: theme.radiusMd
                         color: Qt.rgba(w.phaseColor().r, w.phaseColor().g,
                                        w.phaseColor().b, 0.09)
@@ -474,8 +485,17 @@ WidgetChrome {
                                 Text { text: w.phaseLabel(); color: theme.textPrimary
                                     font.pixelSize: theme.fontLabel; font.bold: true; elide: Text.ElideRight
                                     Layout.fillWidth: true }
-                                Text { text: w.finishHint(); color: theme.textPrimary; opacity: 0.78
-                                    font.pixelSize: theme.fontLabel; elide: Text.ElideRight; Layout.fillWidth: true }
+                                Text {
+                                    objectName: "focusRunwayPlan"
+                                    text: w.finishHint()
+                                    color: theme.textPrimary
+                                    opacity: 0.78
+                                    font.pixelSize: theme.fontLabel
+                                    wrapMode: Text.WordWrap
+                                    maximumLineCount: 2
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
                             }
 
                             Rectangle { Layout.preferredWidth: 1; Layout.fillHeight: true
@@ -486,11 +506,20 @@ WidgetChrome {
                                 spacing: 2
                                 Text { text: "NEXT"; color: w.phaseColor(); font.pixelSize: theme.fontLabel
                                     font.bold: true; font.letterSpacing: 1.2 }
-                                Text { text: w.nextPhaseLabel(); color: theme.textPrimary
-                                    font.pixelSize: theme.fontLabel; font.bold: true; elide: Text.ElideRight
-                                    Layout.fillWidth: true }
+                                Text {
+                                    objectName: "focusRunwayNext"
+                                    text: w.nextPhaseLabel()
+                                    color: theme.textPrimary
+                                    font.pixelSize: theme.fontLabel
+                                    font.bold: true
+                                    wrapMode: Text.WordWrap
+                                    maximumLineCount: 2
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
                                 Text { text: w.phase === "work" ? "Recovery" : "Deep work"
                                     color: theme.textPrimary; opacity: 0.78; font.pixelSize: theme.fontLabel
+                                    wrapMode: Text.WordWrap; maximumLineCount: 2
                                     elide: Text.ElideRight; Layout.fillWidth: true }
                             }
 
@@ -504,9 +533,19 @@ WidgetChrome {
                                     font.bold: true; font.letterSpacing: 1.2 }
                                 Text { text: "Session " + w.cyclePosition() + " / " + w.p.every
                                     color: theme.textPrimary; font.pixelSize: theme.fontLabel; font.bold: true
+                                    wrapMode: Text.WordWrap; maximumLineCount: 2
                                     elide: Text.ElideRight; Layout.fillWidth: true }
-                                Text { text: w.p.label + " rhythm"; color: theme.textPrimary; opacity: 0.78
-                                    font.pixelSize: theme.fontLabel; elide: Text.ElideRight; Layout.fillWidth: true }
+                                Text {
+                                    objectName: "focusRunwayRhythm"
+                                    text: w.p.label + " rhythm"
+                                    color: theme.textPrimary
+                                    opacity: 0.78
+                                    font.pixelSize: theme.fontLabel
+                                    wrapMode: Text.WordWrap
+                                    maximumLineCount: 2
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
                             }
                         }
                     }

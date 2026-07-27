@@ -115,6 +115,11 @@ WidgetChrome {
         if (b >= 1099511627776) return (b / 1099511627776).toFixed(2) + " TiB"
         return (b / 1073741824).toFixed(0) + " GiB"
     }
+    function humanCompact(b) {
+        if (b >= 1099511627776)
+            return (b / 1099511627776).toFixed(1) + " TiB"
+        return (b / 1073741824).toFixed(0) + " GiB"
+    }
     function humanRate(b) {
         if (b >= 1073741824) return (b / 1073741824).toFixed(1) + " GiB/s"
         if (b >= 1048576) return (b / 1048576).toFixed(1) + " MiB/s"
@@ -179,6 +184,43 @@ WidgetChrome {
     // used/total inside the ring: only the baseline tile and the overlay - the
     // micro ring is too small and the detail column already carries it elsewhere.
     readonly property bool showInlineSub: avail && !micro && !showDetails
+    // Derive constrained detail modes from the active type and spacing tokens.
+    // A large text scale or 125% output projection reduces both axes even though
+    // the semantic size remains "wide" or "tall".
+    readonly property real bodyHeightBudget: Math.max(
+        0, height - 2 * contentMargins
+           - (showHeader
+              ? headerHeight + (big ? theme.spacingSm : theme.spacingXs)
+              : 0))
+    readonly property real detailsWidthBudget: Math.max(
+        0, horiz ? diskLayout.width * 0.5 : diskLayout.width * 0.86)
+    readonly property bool compactVerticalDetails: showDetails
+        && (horiz
+            ? bodyHeightBudget < theme.fontLabel * 12.5
+            : detailsWidthBudget < theme.fontLabel * 18
+              && bodyHeightBudget - ringDia < theme.fontLabel * 16.5)
+    readonly property bool compactThreshold: showDetails
+        && detailsWidthBudget < theme.fontLabel * 19
+    readonly property bool compactIoFallback: compactVerticalDetails
+        || (horiz
+            && (detailsWidthBudget - theme.spacingMd) / 2
+               < theme.fontLabel * 13)
+    readonly property bool showCompositionHeading: !shortWide
+        && !compactVerticalDetails
+        && (horiz
+            || bodyHeightBudget - ringDia >= theme.fontLabel * 17)
+    readonly property string thresholdText: {
+        var warn = warnPercent.toFixed(0)
+        var crit = critPercent.toFixed(0)
+        if (compactThreshold) {
+            if (horiz)
+                return capacityState + " · " + warn + " / " + crit + "%"
+            return capacityState + "\nWarn " + warn + "% · Crit " + crit + "%"
+        }
+        return avail
+            ? capacityState + " · warn " + warn + "% · crit " + crit + "%"
+            : "Unavailable · limits " + warn + " / " + crit + "%"
+    }
     readonly property real ringDia: {
         var boxW = width - 2 * contentMargins, boxH = height - 2 * contentMargins - (showHeader ? headerHeight : 0)
         if (micro) return Math.max(0, Math.min(boxW, boxH) * 0.92)
@@ -190,6 +232,7 @@ WidgetChrome {
 
     GridLayout {
         id: diskLayout
+        objectName: "diskLayout"
         anchors.centerIn: parent
         width: parent.width
         columns: w.horiz ? 2 : 1
@@ -254,9 +297,12 @@ WidgetChrome {
             Layout.fillWidth: true
             Layout.maximumWidth: w.horiz ? Math.round(diskLayout.width * 0.5)
                                          : Math.round(diskLayout.width * 0.86)
-            spacing: theme.spacingXs
+            spacing: w.compactVerticalDetails
+                     ? Math.max(1, Math.round(theme.spacingXs / 2))
+                     : theme.spacingXs
 
             Text {
+                objectName: "diskFilesystemIdentity"
                 Layout.fillWidth: true
                 text: w.filesystemIdentity
                 elide: Text.ElideMiddle
@@ -266,17 +312,14 @@ WidgetChrome {
                 color: w.avail ? theme.textPrimary : theme.warning
             }
             Text {
+                objectName: "diskThreshold"
                 Layout.fillWidth: true
-                // The unavailable state already has a full explanation directly
-                // below this line. Keep its threshold summary concise enough for
-                // the supported 348px portrait column instead of eliding the
-                // critical limit.
-                text: w.avail
-                      ? w.capacityState + " · warn " + w.warnPercent.toFixed(0)
-                        + "% · crit " + w.critPercent.toFixed(0) + "%"
-                      : "Unavailable · limits " + w.warnPercent.toFixed(0)
-                        + " / " + w.critPercent.toFixed(0) + "%"
-                elide: Text.ElideRight
+                text: w.thresholdText
+                elide: w.compactThreshold && !w.horiz
+                       ? Text.ElideNone : Text.ElideRight
+                wrapMode: w.compactThreshold && !w.horiz
+                          ? Text.Wrap : Text.NoWrap
+                maximumLineCount: w.compactThreshold && !w.horiz ? 3 : 1
                 horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
                 font.pixelSize: theme.fontLabel
                 font.bold: w.capacityState !== "Healthy"
@@ -293,6 +336,42 @@ WidgetChrome {
                 color: theme.warning
             }
 
+            RowLayout {
+                objectName: "diskCompactCapacity"
+                visible: w.avail && w.compactVerticalDetails
+                Layout.fillWidth: true
+                spacing: theme.spacingXs
+
+                Repeater {
+                    model: [
+                        { k: "USED", val: w.humanCompact(w.usedBytes), hot: true },
+                        { k: "AVAIL.", val: w.humanCompact(w.availableBytes), hot: false },
+                        { k: "TOTAL", val: w.humanCompact(w.totalBytes), hot: false }
+                    ]
+                    delegate: ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 0
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData.k
+                            horizontalAlignment: Text.AlignHCenter
+                            font.pixelSize: theme.fontMinimum
+                            font.bold: true
+                            color: theme.textPrimary
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: modelData.val
+                            horizontalAlignment: Text.AlignHCenter
+                            font.pixelSize: theme.fontMinimum
+                            font.family: theme.fontMono
+                            font.bold: modelData.hot
+                            color: modelData.hot ? w.col(w.v) : theme.textPrimary
+                        }
+                    }
+                }
+            }
+
             Repeater {
                 model: [
                     { k: "Used",  val: w.avail ? w.human(w.usedBytes) : "-", hot: true },
@@ -302,7 +381,8 @@ WidgetChrome {
                     { k: "Total", val: w.avail ? w.human(w.totalBytes) : "-", hot: false }
                 ]
                 delegate: RowLayout {
-                    visible: (modelData.k !== "Reserved" || w.reservedBytes > 0)
+                    visible: !w.compactVerticalDetails
+                             && (modelData.k !== "Reserved" || w.reservedBytes > 0)
                              && !(w.shortWide && modelData.k === "Reserved")
                     Layout.fillWidth: true
                     spacing: theme.spacingMd
@@ -325,10 +405,11 @@ WidgetChrome {
                 objectName: "diskActivity"
                 visible: w.avail && w.showActivity
                 Layout.fillWidth: true
-                Layout.topMargin: theme.spacingSm
+                Layout.topMargin: w.compactVerticalDetails
+                                  ? theme.spacingXs : theme.spacingSm
                 spacing: theme.spacingXs
                 Text {
-                    visible: !w.shortWide
+                    visible: !w.shortWide && !w.compactVerticalDetails
                     text: "LIVE ACTIVITY"
                     color: theme.textPrimary
                     font.pixelSize: theme.fontLabel
@@ -336,14 +417,17 @@ WidgetChrome {
                     font.letterSpacing: 0.8
                 }
                 GridLayout {
+                    visible: !w.compactVerticalDetails
                     Layout.fillWidth: true
                     columns: w.horiz ? 2 : 1
                     columnSpacing: theme.spacingMd
                     rowSpacing: theme.spacingXs
                     Text {
+                        objectName: "diskReadActivity"
                         text: "↓ Read  " + (w.ioAvailable ? w.humanRate(w.readRate)
-                                                         : w.shortWide ? "N/A"
-                                                                       : "No I/O sample")
+                                                         : w.compactIoFallback
+                                                           ? "N/A"
+                                                           : "No I/O sample")
                         color: w.ioAvailable ? theme.success : theme.textSecondary
                         font.pixelSize: theme.fontLabel
                         font.family: theme.fontMono
@@ -352,16 +436,69 @@ WidgetChrome {
                         Layout.fillWidth: true
                     }
                     Text {
+                        objectName: "diskWriteActivity"
                         text: "↑ Write  " + (w.ioAvailable ? w.humanRate(w.writeRate)
-                                                           : w.shortWide ? "N/A"
-                                                                         : "No I/O sample")
+                                                           : w.compactIoFallback
+                                                             ? "N/A"
+                                                             : "No I/O sample")
                         color: w.ioAvailable ? w.effAccent : theme.textSecondary
                         font.pixelSize: theme.fontLabel
                         font.family: theme.fontMono
                         font.bold: w.ioAvailable
                         elide: Text.ElideRight
                         Layout.fillWidth: true
-                        horizontalAlignment: w.horiz ? Text.AlignRight : Text.AlignLeft
+                        horizontalAlignment: w.horiz
+                                             ? Text.AlignRight : Text.AlignLeft
+                    }
+                }
+                RowLayout {
+                    visible: w.compactVerticalDetails
+                    Layout.fillWidth: true
+                    spacing: theme.spacingMd
+
+                    Repeater {
+                        model: [
+                            {
+                                label: "↓ READ",
+                                value: w.ioAvailable
+                                       ? w.humanRate(w.readRate) : "N/A",
+                                hot: w.ioAvailable,
+                                color: w.ioAvailable
+                                       ? theme.success : theme.textSecondary,
+                                name: "diskCompactReadActivity"
+                            },
+                            {
+                                label: "↑ WRITE",
+                                value: w.ioAvailable
+                                       ? w.humanRate(w.writeRate) : "N/A",
+                                hot: w.ioAvailable,
+                                color: w.ioAvailable
+                                       ? w.effAccent : theme.textSecondary,
+                                name: "diskCompactWriteActivity"
+                            }
+                        ]
+                        delegate: ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+                            Text {
+                                Layout.fillWidth: true
+                                text: modelData.label
+                                horizontalAlignment: Text.AlignHCenter
+                                color: theme.textPrimary
+                                font.pixelSize: theme.fontMinimum
+                                font.bold: true
+                            }
+                            Text {
+                                objectName: modelData.name
+                                Layout.fillWidth: true
+                                text: modelData.value
+                                horizontalAlignment: Text.AlignHCenter
+                                color: modelData.color
+                                font.pixelSize: theme.fontMinimum
+                                font.family: theme.fontMono
+                                font.bold: modelData.hot
+                            }
+                        }
                     }
                 }
             }
@@ -370,10 +507,12 @@ WidgetChrome {
                 objectName: "diskCapacityComposition"
                 visible: w.avail
                 Layout.fillWidth: true
-                Layout.topMargin: theme.spacingSm
+                Layout.topMargin: w.compactVerticalDetails
+                                  ? theme.spacingXs : theme.spacingSm
                 spacing: theme.spacingXs
                 Text {
-                    visible: !w.shortWide
+                    visible: w.showCompositionHeading
+                    objectName: "diskCompositionHeading"
                     text: "CAPACITY COMPOSITION"
                     color: theme.textPrimary
                     font.pixelSize: theme.fontLabel
