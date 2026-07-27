@@ -148,6 +148,38 @@ print_check() {
     printf 'Evidence root: artifacts/%s/manual-touch/\n' "$source_sha"
 }
 
+wait_for_stable_file() {
+    local path="$1"
+    local attempts="${2:-80}"
+    local interval="${3:-0.25}"
+    local required_observations="${4:-3}"
+    local previous_size=-1 current_size=0 stable_observations=0 attempt
+
+    for attempt in $(seq 1 "$attempts"); do
+        if [[ -f "$path" ]]; then
+            current_size="$(stat -c %s -- "$path")"
+            if [[ "$current_size" -gt 0 ]]; then
+                if [[ "$current_size" -eq "$previous_size" ]]; then
+                    stable_observations=$((stable_observations + 1))
+                else
+                    stable_observations=1
+                fi
+                if [[ "$stable_observations" -ge "$required_observations" ]]; then
+                    return 0
+                fi
+            else
+                stable_observations=0
+            fi
+            previous_size="$current_size"
+        else
+            previous_size=-1
+            stable_observations=0
+        fi
+        sleep "$interval"
+    done
+    return 1
+}
+
 capture_panel() {
     local destination="$1"
     local full_desktop="${audit_dir}/.desktop-capture.png"
@@ -161,22 +193,8 @@ capture_panel() {
     # Spectacle 6.7 can return success before its background writer has created
     # the output file. Checking immediately therefore rejects a valid capture
     # that appears a fraction of a second later. Require a non-empty size that
-    # remains unchanged across two polls before opening the PNG.
-    local previous_size=-1 current_size=0 attempt capture_stable=0
-    for attempt in $(seq 1 80); do
-        if [[ -f "$full_desktop" ]]; then
-            current_size="$(stat -c %s -- "$full_desktop")"
-            if [[ "$current_size" -gt 0 && "$current_size" -eq "$previous_size" ]]; then
-                capture_stable=1
-                break
-            fi
-            previous_size="$current_size"
-        else
-            previous_size=-1
-        fi
-        sleep 0.25
-    done
-    if [[ "$capture_stable" -ne 1 || ! -s "$full_desktop" ]]; then
+    # remains unchanged across three polls before opening the PNG.
+    if ! wait_for_stable_file "$full_desktop"; then
         rm -f -- "$full_desktop"
         die "Spectacle did not create a stable screenshot."
     fi
@@ -459,11 +477,17 @@ run_audit() {
     printf 'Signature: %s/MANIFEST.sha256.asc\n' "$audit_dir"
 }
 
-case "${1:-check}" in
-    check) print_check ;;
-    run) run_audit ;;
-    *)
-        printf 'Usage: %s [check|run]\n' "$0" >&2
-        exit 2
-        ;;
-esac
+main() {
+    case "${1:-check}" in
+        check) print_check ;;
+        run) run_audit ;;
+        *)
+            printf 'Usage: %s [check|run]\n' "$0" >&2
+            exit 2
+            ;;
+    esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

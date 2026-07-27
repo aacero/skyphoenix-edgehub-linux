@@ -57,6 +57,23 @@ create_valid_fixture
 python3 "$validator" "$fixture_root/audit"
 echo "  ok  nine PASS rows require nine panel captures and nine physical-media files"
 
+source "$manual_runner"
+delayed_capture="$fixture_root/delayed-capture.png"
+delayed_complete="$fixture_root/delayed-capture.complete"
+(
+    sleep 0.10
+    printf 'first-part' >"$delayed_capture"
+    sleep 0.10
+    printf '%s' '-second-part' >>"$delayed_capture"
+    touch "$delayed_complete"
+) &
+writer_pid=$!
+wait_for_stable_file "$delayed_capture" 80 0.05
+[[ -f "$delayed_complete" ]]
+wait "$writer_pid"
+[[ "$(stat -c %s -- "$delayed_capture")" -eq 22 ]]
+echo "  ok  delayed background captures wait for their final stable size"
+
 sed -i 's/\tPASS\t/\tFAIL\t/' "$fixture_root/audit/ACTION_RESULTS.tsv"
 expect_rejected "a FAIL result cannot be sealed"
 
