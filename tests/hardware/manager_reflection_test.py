@@ -145,7 +145,9 @@ def main():
             print("!! exact Manager window could not be raised and verified")
             return 2
 
-        front = mw.grab_rect(rect, work, "initial-front")
+        front = mw.grab_rect(
+            rect, work, "initial-front", manager_pid=mgr.pid
+        )
         if not front:
             print("!! could not capture the Manager window"); return 2
         row = mw.active_row(front, w, hgt)

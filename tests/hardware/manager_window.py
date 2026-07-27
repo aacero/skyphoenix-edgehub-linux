@@ -99,57 +99,48 @@ def active_row(path, win_w=None, win_h=None):
     return separated[0] if len(separated) == 1 else None
 
 
-def grab_active_manager(rect, work, tag="frontcheck", output_path=None):
-    """Capture the active window and normalize it to the Manager client size.
+def grab_active_manager(rect, work, tag="frontcheck", output_path=None,
+                        manager_pid=None):
+    """Capture the exact Manager from its verified desktop rectangle.
 
     KWin may move an XWayland window after Qt logs its requested pre-map
-    position. Cropping a full-desktop grab at that stale position can therefore
-    include unrelated applications. Spectacle's active-window capture follows
-    the mapped window instead. It includes decorations and shadows, so crop the
-    known Manager client size from the centre before inspecting sidebar pixels.
+    position, so callers first activate the exact PID and verify the Manager's
+    unique selected sidebar row in this rectangle. Spectacle active-window
+    capture changes focus as it exits, which makes two consecutive proof
+    captures unreliable. A full-desktop capture does not have that race and
+    fails closed if the verified rectangle no longer contains the Manager.
     """
-    _, _, _, w, h = rect
+    _, x, y, w, h = rect
+    if manager_pid is not None and not _wmctrl_manager_window(manager_pid):
+        return None
     output_path = output_path or os.path.join(work, "_%s.png" % tag)
-    raw = os.path.join(work, "_%s-active.png" % tag)
+    full = dt._full_grab(work, "%s-manager" % tag)
+    if not full:
+        return None
     try:
-        os.unlink(raw)
-    except OSError:
-        pass
-    try:
-        subprocess.run(
-            ["spectacle", "-b", "-n", "-a", "-o", raw],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=15,
-            check=False,
-        )
-        if not dt._wait_stable(raw):
-            return None
         from PIL import Image
-        image = Image.open(raw)
-        if image.width < w or image.height < h:
+        image = Image.open(full)
+        if x < 0 or y < 0 or x + w > image.width or y + h > image.height:
             return None
-        left = (image.width - w) // 2
-        top = (image.height - h) // 2
-        image.crop((left, top, left + w, top + h)).save(output_path)
+        image.crop((x, y, x + w, y + h)).save(output_path)
         return output_path
     except Exception:
         return None
     finally:
         try:
-            os.unlink(raw)
+            os.unlink(full)
         except OSError:
             pass
 
 
-def grab_rect(rect, work, tag="frontcheck"):
+def grab_rect(rect, work, tag="frontcheck", manager_pid=None):
     """Compatibility name for callers that need normalized Manager pixels."""
-    return grab_active_manager(rect, work, tag)
+    return grab_active_manager(rect, work, tag, manager_pid=manager_pid)
 
 
-def is_in_front(rect, work):
+def is_in_front(rect, work, manager_pid=None):
     """True if the Manager is the window rendering in its own rect."""
-    p = grab_active_manager(rect, work)
+    p = grab_active_manager(rect, work, manager_pid=manager_pid)
     if not p:
         return False
     ok = active_row(p) is not None
@@ -291,7 +282,7 @@ def activate_exact_manager(manager_pid, rect, work, timeout=5.0):
                 result = None
             if result and result.returncode == 0:
                 time.sleep(0.25)
-                if is_in_front(rect, work):
+                if is_in_front(rect, work, manager_pid):
                     return True
         time.sleep(0.1)
     return False
@@ -318,7 +309,9 @@ class GuardedPointer:
             return attr
 
         def guarded(*a, **kw):
-            front = is_in_front(self._rect, self._work)
+            front = is_in_front(
+                self._rect, self._work, self._manager_pid
+            )
             if (not front and self._manager_pid is not None):
                 front = activate_exact_manager(
                     self._manager_pid, self._rect, self._work

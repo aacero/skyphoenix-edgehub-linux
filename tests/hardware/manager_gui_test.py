@@ -62,6 +62,13 @@ class ManagerGui:
         self.manager_pid = manager_pid
         self.name, self.x, self.y, self.w, self.hgt = rect
         self.n = 0
+        self.guard = None
+        self.p = None
+
+    def _ensure_pointer(self):
+        """Create desktop pointer input only if a coordinate click needs it."""
+        if self.p is not None:
+            return
         cw, ch = dt.canvas_size()
         # The kill switch is MANDATORY - UinputSink refuses to construct without
         # one, by design. require_user_idle blocks until the owner has been
@@ -105,6 +112,7 @@ class ManagerGui:
         Refuses to emit if the Manager is not the window in its own rect.
         Returns True if the click was emitted.
         """
+        self._ensure_pointer()
         if require_front and not self.in_front():
             print("  REFUSED click at (%.3f, %.3f): the Manager is not in front"
                   % (fx, fy), flush=True)
@@ -211,7 +219,8 @@ class ManagerGui:
                 self.manager_pid, self.rect, self.work):
             return None
         return mw.grab_active_manager(
-            self.rect, self.work, "s%03d" % self.n, output_path=path
+            self.rect, self.work, "s%03d" % self.n, output_path=path,
+            manager_pid=self.manager_pid
         )
 
 
