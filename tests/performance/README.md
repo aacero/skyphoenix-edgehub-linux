@@ -117,11 +117,10 @@ first-frame latency continues to include the full request and persistence
 interval. If reader backlog varies by more than 2ms, the measurement fails as
 invalid.
 
-The rotation fixture is a full 14-widget screen, but deliberately uses widgets
-whose idle state is not repainted by the two-second metrics poll. The Hub has a
-single Wayland surface, so a CPU or GPU gauge update on that surface is otherwise
-indistinguishable from a rotation frame and can falsely extend the measured
-animation past its real 560/570ms QML duration. Active metric-driven widgets are
+The rotation fixture is a full 14-widget screen made from idle Tasks widgets.
+Repeating one deterministic widget isolates the end of the 560/570ms orientation
+animation from unrelated widget-local timers and single-surface commits. Widget
+diversity remains covered by the render and compositor suites. Active widgets are
 qualified separately by the ten-widget and 30-minute resource profiles.
 
 Each output directory must be empty. This prevents a new summary from being

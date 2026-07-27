@@ -70,23 +70,27 @@ ROTATION_MAX_OBSERVER_LAG_SPREAD_MS = 2.0
 # metrics poll. That is correct for resource measurement but wrong for
 # attributing the end of one rotation animation: an unrelated gauge update can
 # keep the single Wayland surface committing after rotation has finished. Use a
-# full 14-widget screen whose idle state has no periodic metric-driven repaint,
-# so the dense frame cluster measures the 560/570ms orientation effect itself.
+# full 14-widget screen made from the same idle, deterministic widget. Repeating
+# one type is deliberate: mixing widget implementations lets an unrelated
+# widget-local timer or initial transition extend the single Wayland surface's
+# callback stream, which makes it impossible to attribute the end to rotation.
+# Widget diversity is covered by the render and compositor suites; this probe
+# isolates animation cadence while retaining the production 14-tile load.
 ROTATION_WIDGET_TYPES = (
     "tasks",
-    "notes",
-    "habit",
-    "hydration",
-    "meds",
-    "braindump",
-    "routine",
-    "httpjson",
-    "kpi",
-    "calendar",
-    "weather",
-    "quote",
-    "rightnow",
-    "notes",
+    "tasks",
+    "tasks",
+    "tasks",
+    "tasks",
+    "tasks",
+    "tasks",
+    "tasks",
+    "tasks",
+    "tasks",
+    "tasks",
+    "tasks",
+    "tasks",
+    "tasks",
 )
 
 

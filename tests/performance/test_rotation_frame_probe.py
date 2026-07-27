@@ -44,6 +44,7 @@ class RotationFrameProbeTest(unittest.TestCase):
         }
         self.assertEqual(len(ROTATION_WIDGET_TYPES), 14)
         self.assertTrue(metric_driven.isdisjoint(ROTATION_WIDGET_TYPES))
+        self.assertEqual(set(ROTATION_WIDGET_TYPES), {"tasks"})
         document = rotation_document()
         tiles = document["pages"][0]["tiles"]
         self.assertEqual(len(tiles), 14)
