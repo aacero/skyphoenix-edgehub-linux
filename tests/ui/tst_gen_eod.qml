@@ -115,6 +115,13 @@ Item {
         }
         return null
     }
+    function objectNamed(top, name) {
+        var all = collect(top, [])
+        for (var i = 0; i < all.length; i++)
+            if (all[i] !== top && all[i].objectName === name)
+                return all[i]
+        return null
+    }
     function heroText(top) {
         var all = collect(top, [])
         for (var i = 0; i < all.length; i++) {
@@ -894,9 +901,11 @@ Item {
             verify(visibleTextEq(w, "09:00") !== null, "start hour spelled out, editor-padded")
             verify(visibleTextContains(w, "% elapsed") === null, "the detail column replaces the caption")
             // Done row honours showPercent.
-            verify(visibleTextEq(w, "Done") !== null, "Done row rendered while showPercent on")
+            var doneRow = objectNamed(w, "eodDetailRow-done")
+            verify(doneRow !== null, "Done detail row exists")
+            verify(effVisible(doneRow, w), "Done row rendered while showPercent on")
             hTall.storeCtl.setSetting("test-instance", "showPercent", false)
-            verify(visibleTextEq(w, "Done") === null, "Done row honours showPercent=false")
+            verify(!effVisible(doneRow, w), "Done row honours showPercent=false")
             hTall.storeCtl.setSetting("test-instance", "showPercent", true)
             // Ring style on tall: the remaining time moves INTO the ring.
             hTall.storeCtl.setSetting("test-instance", "progressStyle", "ring")

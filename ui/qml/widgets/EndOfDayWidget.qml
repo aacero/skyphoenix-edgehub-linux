@@ -365,6 +365,7 @@ WidgetChrome {
                         { k: "Done",    val: Math.round(w.frac * 100) + "%" }
                     ]
                     delegate: RowLayout {
+                        objectName: "eodDetailRow-" + modelData.k.toLowerCase()
                         Layout.fillWidth: true
                         spacing: theme.spacingMd
                         // The Done row duplicates the caption's percent - it
