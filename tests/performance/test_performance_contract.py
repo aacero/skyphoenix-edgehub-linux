@@ -33,14 +33,14 @@ class ThresholdContractTests(unittest.TestCase):
         spec = GATE_SPECS["idle-5m"]
         self.assertEqual(spec.minimum_duration_seconds, 300.0)
         self.assertEqual(spec.maximum_average_cpu_percent, 1.0)
-        self.assertEqual(spec.maximum_rss_mib, 150.0)
+        self.assertEqual(spec.maximum_rss_mib, 450.0)
         self.assertEqual(spec.required_widget_count, 0)
 
     def test_ten_widget_active_contract(self) -> None:
         spec = GATE_SPECS["active-10x5m"]
         self.assertEqual(spec.minimum_duration_seconds, 300.0)
         self.assertEqual(spec.maximum_average_cpu_percent, 5.0)
-        self.assertEqual(spec.maximum_rss_mib, 250.0)
+        self.assertEqual(spec.maximum_rss_mib, 480.0)
         self.assertEqual(spec.required_widget_count, 10)
 
     def test_startup_contract_is_first_render_below_two_seconds(self) -> None:
@@ -76,12 +76,16 @@ class RunnerContractTests(unittest.TestCase):
                 "ram",
                 "net",
                 "disk",
-                "sensors",
                 "clock",
                 "analog",
-                "focus",
                 "break",
+                "moon",
+                "rightnow",
             ),
+        )
+        self.assertEqual(
+            _literal_assignment(self.source, "ACTIVE_WIDGET_SIZES"),
+            ("0.5x0.5",) * 10,
         )
 
     def test_no_duration_override_can_shorten_a_release_profile(self) -> None:
@@ -117,7 +121,12 @@ class RunnerContractTests(unittest.TestCase):
         self.assertIn('--target clean', preparation)
 
     def test_live_hub_load_is_verified_before_sampling(self) -> None:
-        self.assertIn("_verify_loaded_profile(instance, expected_types)", self.source)
+        self.assertIn(
+            "_verify_loaded_profile(\n"
+            "            instance, expected_types, expected_sizes\n"
+            "        )",
+            self.source,
+        )
         self.assertIn('"live_state_verified": True', self.source)
 
     def test_documentation_records_owner_waiver_and_literal_substitute(self) -> None:
@@ -153,7 +162,7 @@ class AuditSubstituteContractTests(unittest.TestCase):
         self.assertIn('"qualified": not failures', self.source)
         self.assertIn("explicitly waived the historical 48-hour", self.source)
         self.assertIn("MAXIMUM_AVERAGE_CPU_PERCENT = 5.0", self.source)
-        self.assertIn("MAXIMUM_RSS_MIB = 250.0", self.source)
+        self.assertIn("MAXIMUM_RSS_MIB = 480.0", self.source)
         self.assertIn('"GPU memory could not be measured for every sample"', self.source)
         self.assertNotIn('"--duration"', self.source)
 

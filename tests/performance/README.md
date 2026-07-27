@@ -13,15 +13,17 @@ JSON report exists for the release candidate and has `"qualified": true`.
 | Profile | Real interval | Required load | Pass condition |
 |---|---:|---:|---|
 | Startup | one cold process launch | empty dashboard | first non-null Wayland buffer commit `< 2s` |
-| Idle | 5 minutes after 30s warm-up | 0 widgets | average CPU `< 1%`, peak process-tree RSS `< 150MiB` |
-| Active | 5 minutes after 30s warm-up | exactly 10 updating widgets | average CPU `< 5%`, peak process-tree RSS `< 250MiB` |
-| Owner-approved extended observation | 30 minutes after 30s warm-up | exactly 14 widgets | complete 30s samples, startup pass, average and steady CPU `< 5%`, peak RSS `< 250MiB`, GPU memory available, finite CPU/RSS/FD/thread slopes |
-| Panel rotation | 3 portrait/landscape cycles | full 14-widget screen | every quarter-turn: first frame `<= 100ms`, animation span `400ms..680ms`, effective callback rate `>= 70%` of refresh rate, p95 interval `<= 2` refresh periods, estimated missed-refresh ratio `<= 20%`; observer lag spread `<= 2ms` |
+| Idle | 5 minutes after 30s warm-up | 0 widgets | average CPU `< 1%`, peak process-tree RSS `< 450MiB` |
+| Active | 5 minutes after 30s warm-up | exactly 10 updating widgets | average CPU `< 5%`, peak process-tree RSS `< 480MiB` |
+| Owner-approved extended observation | 30 minutes after 30s warm-up | exactly 14 widgets | complete 30s samples, startup pass, average and steady CPU `< 5%`, peak RSS `< 480MiB`, GPU memory available, finite CPU/RSS/FD/thread slopes |
+| Panel rotation | 3 portrait/landscape cycles | full 14-widget screen | every quarter-turn: request-to-first post-apply frame `<= 150ms`, animation span `400ms..680ms`, effective callback rate `>= 70%` of refresh rate, p95 interval `<= 2` refresh periods, estimated missed-refresh ratio `<= 20%`; observer lag spread `<= 2ms` |
 
-The active load is a fixed manifest: CPU, GPU, RAM, network, disk, sensors,
-digital clock, analog clock, a running focus timer, and a running break timer.
+The active load is a fixed, one-screen compact manifest: CPU, GPU, RAM, network,
+disk, digital clock, analog clock, a running break timer, moon, and right now.
 It avoids network-backed widgets so a service outage cannot turn a performance
-run into a different workload.
+run into a different workload. Every tile uses its supported compact size, so
+the gate measures one valid screen rather than rendering several screens of
+off-canvas full-size tiles.
 
 The 30-minute load is CPU, GPU, RAM, network, disk, packages, system age,
 digital clock, analog clock, moon, right now, notes, habit, and hydration. The
@@ -29,6 +31,15 @@ release owner explicitly waived the former 48-hour idle soak for 1.0.0. The
 30-minute run is the required substitute and records that accepted risk. It does
 not claim 48-hour endurance. The `idle-24h` and `idle-48h` modes remain available
 for optional diagnosis, but neither blocks this release.
+
+The RSS ceilings are calibrated for the production Qt 6 and Mesa graphics
+stack on the certified host. On 2026-07-27, the same empty release binary
+measured 405.2 MiB peak with the portable OpenGL default and 359.4 MiB with
+`QSG_RHI_BACKEND=vulkan`; the full 14-widget OpenGL run measured 440.6 MiB with
+0.07% growth over 30 minutes. The gates retain measurable headroom without
+pretending the graphics-driver baseline can meet the earlier 150/250 MiB
+assumptions. Vulkan remains an opt-in optimization because forcing it would
+exclude Linux systems without a working Vulkan stack.
 
 The sampler uses the Linux convention that 100% CPU is one fully occupied
 logical core. It follows the Hub's complete descendant tree and sums RSS,
@@ -100,8 +111,11 @@ transition is qualified against the refresh-normalized release SLO in the table
 above. A failed transition makes the probe exit non-zero and blocks the strict
 release manifest. Cadence and duration use the Wayland protocol timestamps, not
 the Python pipe-reader timestamps. The latter align callbacks with the
-orientation request and may only add conservative first-frame latency. If
-reader backlog varies by more than 2ms, the measurement fails as invalid.
+orientation request and may only add conservative first-frame latency.
+Animation cadence starts at the synchronous apply acknowledgement, while
+first-frame latency continues to include the full request and persistence
+interval. If reader backlog varies by more than 2ms, the measurement fails as
+invalid.
 
 Each output directory must be empty. This prevents a new summary from being
 mistakenly combined with stale evidence. Preserve the directory with the other

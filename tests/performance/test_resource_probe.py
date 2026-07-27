@@ -355,7 +355,7 @@ class GateTests(unittest.TestCase):
         self.assertTrue(any("exactly 10" in failure for failure in failures))
 
     def test_limits_are_strictly_below_not_less_than_or_equal(self) -> None:
-        metrics = _gate_metrics(300.0, 1.0, 150.0)
+        metrics = _gate_metrics(300.0, 1.0, 450.0)
         failures = evaluate_gate(metrics, GATE_SPECS["idle-5m"], 0)
         self.assertTrue(any("average CPU" in failure for failure in failures))
         self.assertTrue(any("peak RSS" in failure for failure in failures))

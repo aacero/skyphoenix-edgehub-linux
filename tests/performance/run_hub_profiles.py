@@ -45,11 +45,23 @@ ACTIVE_WIDGET_TYPES = (
     "ram",
     "net",
     "disk",
-    "sensors",
     "clock",
     "analog",
-    "focus",
     "break",
+    "moon",
+    "rightnow",
+)
+ACTIVE_WIDGET_SIZES = (
+    "0.5x0.5",
+    "0.5x0.5",
+    "0.5x0.5",
+    "0.5x0.5",
+    "0.5x0.5",
+    "0.5x0.5",
+    "0.5x0.5",
+    "0.5x0.5",
+    "0.5x0.5",
+    "0.5x0.5",
 )
 
 
@@ -168,19 +180,15 @@ def idle_document() -> dict:
 
 
 def active_document(today: str) -> dict:
-    tiles = [tile(f"perf-{index:02d}-{widget}", widget) for index, widget in enumerate(ACTIVE_WIDGET_TYPES)]
+    tiles = [
+        tile(f"perf-{index:02d}-{widget}", widget, size)
+        for index, (widget, size) in enumerate(
+            zip(ACTIVE_WIDGET_TYPES, ACTIVE_WIDGET_SIZES, strict=True)
+        )
+    ]
     now_ms = int(time.time() * 1000)
     settings = {
-        "perf-08-focus": {
-            "preset": "classic",
-            "phase": "work",
-            "running": True,
-            "endEpoch": now_ms + 25 * 60 * 1000,
-            "pausedRemaining": 1500,
-            "doneToday": 0,
-            "day": today,
-        },
-        "perf-09-break": {
+        "perf-07-break": {
             "intervalMin": 30,
             "running": True,
             "due": False,
@@ -229,7 +237,11 @@ def _wait_warmup(instance: E2E) -> None:
         time.sleep(min(1.0, deadline - time.monotonic()))
 
 
-def _verify_loaded_profile(instance: E2E, expected_types: tuple[str, ...]) -> dict:
+def _verify_loaded_profile(
+    instance: E2E,
+    expected_types: tuple[str, ...],
+    expected_sizes: tuple[str, ...],
+) -> dict:
     """Prove that the live Hub accepted the load the report will name.
 
     Counting the document written before launch is not evidence that the
@@ -254,13 +266,14 @@ def _verify_loaded_profile(instance: E2E, expected_types: tuple[str, ...]) -> di
         raise MeasurementError(
             f"live widget manifest differs: expected {expected_types}, observed {observed_types}"
         )
-    bad_sizes = [
-        item.get("id", "<missing>")
-        for item in tiles
-        if not isinstance(item, dict) or item.get("size") != "1x1"
-    ]
-    if bad_sizes:
-        raise MeasurementError(f"live profile has non-1x1 tiles: {bad_sizes}")
+    observed_sizes = tuple(
+        item.get("size") if isinstance(item, dict) else None for item in tiles
+    )
+    if observed_sizes != expected_sizes:
+        raise MeasurementError(
+            f"live tile sizes differ: expected {expected_sizes}, "
+            f"observed {observed_sizes}"
+        )
 
     appearance = state.get("appearance")
     required_appearance = _appearance()
@@ -281,10 +294,10 @@ def _verify_loaded_profile(instance: E2E, expected_types: tuple[str, ...]) -> di
 
     settings = state.get("settings", {})
     if expected_types:
-        for tile_id in ("perf-08-focus", "perf-09-break"):
-            value = settings.get(tile_id) if isinstance(settings, dict) else None
-            if not isinstance(value, dict) or value.get("running") is not True:
-                raise MeasurementError(f"active timer is not running in live state: {tile_id}")
+        tile_id = "perf-07-break"
+        value = settings.get(tile_id) if isinstance(settings, dict) else None
+        if not isinstance(value, dict) or value.get("running") is not True:
+            raise MeasurementError(f"active timer is not running in live state: {tile_id}")
     elif settings:
         raise MeasurementError("idle profile unexpectedly retained widget settings")
 
@@ -292,7 +305,7 @@ def _verify_loaded_profile(instance: E2E, expected_types: tuple[str, ...]) -> di
         "observed_page_count": len(pages),
         "observed_widget_count": len(tiles),
         "observed_widget_types": list(observed_types),
-        "observed_tile_sizes": [item["size"] for item in tiles],
+        "observed_tile_sizes": list(observed_sizes),
         "observed_current_page": 0,
         "live_state_verified": True,
     }
@@ -349,7 +362,10 @@ def run_resource_profile(binary: Path, profile: str, output_dir: Path, candidate
         assert instance.proc is not None
         log_handle = instance.log
         expected_types = ACTIVE_WIDGET_TYPES if mode == "active" else ()
-        observed_load = _verify_loaded_profile(instance, expected_types)
+        expected_sizes = ACTIVE_WIDGET_SIZES if mode == "active" else ()
+        observed_load = _verify_loaded_profile(
+            instance, expected_types, expected_sizes
+        )
         _wait_warmup(instance)
         log_handle.flush()
         metadata = _metadata(instance, binary, mode, candidate)

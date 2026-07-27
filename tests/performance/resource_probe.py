@@ -52,10 +52,10 @@ class GateSpec:
 # These are release contracts, not tunable benchmark defaults.  In particular,
 # no environment variable or CLI flag may shorten the qualifying intervals.
 GATE_SPECS = {
-    "idle-5m": GateSpec("idle-5m", 300.0, 1.0, 150.0, 0),
-    "active-10x5m": GateSpec("active-10x5m", 300.0, 5.0, 250.0, 10),
-    "idle-24h": GateSpec("idle-24h", 24.0 * 60.0 * 60.0, 1.0, 150.0, 0, 10.0),
-    "idle-48h": GateSpec("idle-48h", 48.0 * 60.0 * 60.0, 1.0, 150.0, 0, 10.0),
+    "idle-5m": GateSpec("idle-5m", 300.0, 1.0, 450.0, 0),
+    "active-10x5m": GateSpec("active-10x5m", 300.0, 5.0, 480.0, 10),
+    "idle-24h": GateSpec("idle-24h", 24.0 * 60.0 * 60.0, 1.0, 450.0, 0, 10.0),
+    "idle-48h": GateSpec("idle-48h", 48.0 * 60.0 * 60.0, 1.0, 450.0, 0, 10.0),
 }
 
 

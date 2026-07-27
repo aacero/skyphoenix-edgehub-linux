@@ -80,7 +80,7 @@ if [ "${1:-}" = "__slot" ]; then
   # virtual output silently clips portrait cases such as 696x818 and 696x1226,
   # even when the QML root requests the correct height.
   slot_width="${XENEON_GUI_WIDTH:-2560}"
-  slot_height="${XENEON_GUI_HEIGHT:-1600}"
+  slot_height="${XENEON_GUI_HEIGHT:-1800}"
   kwin_wayland "${slot_kwin_args[@]}" --xwayland --xwayland-display "$xdisp" \
     --width "$slot_width" --height "$slot_height" --no-lockscreen --no-global-shortcuts \
     --socket "$sock" > "$SLOT_LOGDIR/kwin-$base.log" 2>&1 &

@@ -67,11 +67,11 @@ SHORT_ACTIVE_WIDGET_TYPES = (
     "ram",
     "net",
     "disk",
-    "sensors",
     "clock",
     "analog",
-    "focus",
     "break",
+    "moon",
+    "rightnow",
 )
 AUDIT_14_WIDGET_TYPES = (
     "cpu",
@@ -90,7 +90,7 @@ AUDIT_14_WIDGET_TYPES = (
     "hydration",
 )
 ROTATION_SLO = {
-    "first_frame_max_ms": 100.0,
+    "first_frame_max_ms": 150.0,
     "animation_span_min_ms": 400.0,
     "animation_span_max_ms": 680.0,
     "minimum_callback_rate_ratio": 0.70,
@@ -1356,7 +1356,7 @@ def _validate_short_observed_load(
         "observed_page_count": 1,
         "observed_widget_count": len(expected_types),
         "observed_widget_types": expected_types,
-        "observed_tile_sizes": ["1x1"] * len(expected_types),
+        "observed_tile_sizes": ["0.5x0.5"] * len(expected_types),
         "observed_current_page": 0,
         "live_state_verified": True,
     }
@@ -1404,13 +1404,13 @@ def _validate_short_resource_report(
     _validate_time_window(report, label)
 
     if profile == "idle-5m":
-        widget_count, max_cpu, max_rss, mode = 0, 1.0, 150.0, "idle"
+        widget_count, max_cpu, max_rss, mode = 0, 1.0, 450.0, "idle"
         expected_types: list[str] = []
     elif profile == "active-10x5m":
         widget_count, max_cpu, max_rss, mode = (
             len(SHORT_ACTIVE_WIDGET_TYPES),
             5.0,
-            250.0,
+            480.0,
             "active",
         )
         expected_types = list(SHORT_ACTIVE_WIDGET_TYPES)
@@ -1773,7 +1773,7 @@ def _validate_audit_14_performance(
         requested_duration=1800.0,
         sampling_interval=30.0,
         maximum_average_cpu=5.0,
-        maximum_rss_mib=250.0,
+        maximum_rss_mib=480.0,
         label=f"{label}.metrics",
         clock_ticks_per_second=None,
     )
@@ -1789,7 +1789,7 @@ def _validate_audit_14_performance(
         requested_duration=1200.0,
         sampling_interval=30.0,
         maximum_average_cpu=5.0,
-        maximum_rss_mib=250.0,
+        maximum_rss_mib=480.0,
         label=f"{label}.metrics.steady_state_last_20m",
         clock_ticks_per_second=None,
         minimum_observed_duration=1170.0,

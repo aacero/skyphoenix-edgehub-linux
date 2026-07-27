@@ -180,6 +180,7 @@ public:
     bool layoutLiveApplied() const { return m_layoutLiveApplied; }
     int hubRotation() const { return m_hubRotation; }
     int hubCurrentPage() const { return m_hubCurrentPage; }
+    int pendingHubPageForTest() const { return m_pendingHubPage; }
     Q_INVOKABLE void setLayoutSavePending(bool pending) {
         m_layoutSavePending = pending;
     }
@@ -259,13 +260,31 @@ public:
 
     // O1 - tell the hub which screen the Manager has selected, so the panel
     // mirrors what the user is editing instead of always showing the first page.
-    // Fire-and-forget over the live socket; a no-op when the hub is offline (the
-    // Manager still works standalone). The hub clamps out-of-range indices.
+    // A no-op when the hub is offline (the Manager still works standalone).
+    // Keep the newest request pending until a live pull observes it. A periodic
+    // getUiState reply may already be in flight when the user selects a screen;
+    // accepting that stale page would immediately undo the newer selection.
     Q_INVOKABLE void setHubActivePage(int page) {
-        if (m_sock->state() != QLocalSocket::ConnectedState) return;
+        if (page < 0 || m_sock->state() != QLocalSocket::ConnectedState) return;
+        const QString requestId = nextRequestId();
+        m_pendingHubPage = page;
+        m_pendingHubPageRequestId = requestId;
+        if (page != m_hubCurrentPage) {
+            m_hubCurrentPage = page;
+            emit hubCurrentPageChanged();
+        }
         writeMsg(QJsonObject{{"type", "setActivePage"},
                              {"page", page},
-                             {"requestId", nextRequestId()}});
+                             {"requestId", requestId}});
+        // A current Hub acks immediately and the next pull confirms the page.
+        // Do not pin the Manager forever if an older or broken peer never does.
+        QTimer::singleShot(kActivePageConfirmationTimeoutMs, this,
+                           [this, requestId] {
+            if (m_pendingHubPageRequestId != requestId)
+                return;
+            clearPendingHubPage();
+            syncFromHub();
+        });
     }
 
     // Ask a running hub to quit cleanly over the control socket. Returns false if
@@ -812,7 +831,13 @@ private slots:
                 if (o.value(QStringLiteral("currentPage")).isDouble()) {
                     const int page =
                         o.value(QStringLiteral("currentPage")).toInt(-1);
-                    if (page != m_hubCurrentPage) {
+                    const bool confirmsPending =
+                        m_pendingHubPage >= 0 && page == m_pendingHubPage;
+                    const bool staleWhilePending =
+                        m_pendingHubPage >= 0 && !confirmsPending;
+                    if (confirmsPending)
+                        clearPendingHubPage();
+                    if (!staleWhilePending && page != m_hubCurrentPage) {
                         m_hubCurrentPage = page;
                         emit hubCurrentPageChanged();
                     }
@@ -956,6 +981,16 @@ private slots:
                     qWarning() << "Manager: hub rejected update:" << o.value("message").toString();
                 const QString forType = o.value("for").toString();
                 const QString requestId = o.value("requestId").toString();
+                if (forType == QStringLiteral("setActivePage")
+                    && !requestId.isEmpty()
+                    && requestId == m_pendingHubPageRequestId) {
+                    if (type == QStringLiteral("error"))
+                        clearPendingHubPage();
+                    // The ack proves the request was handled; getUiState proves
+                    // which page is live. Pull now instead of waiting for the
+                    // periodic timer, while stale replies remain ignored.
+                    syncFromHub();
+                }
                 bool matchesLatestUiState = false;
                 int inFlightBeforeAck = 0;
                 if (forType == QStringLiteral("setUiState")) {
@@ -1167,6 +1202,11 @@ private:
         m_uiStateRequestsInFlight = 0;
         m_hubUiStateReceiptLogged = false;
         m_lastHubConfigGenerationToken.clear();
+        clearPendingHubPage();
+        if (m_hubCurrentPage != -1) {
+            m_hubCurrentPage = -1;
+            emit hubCurrentPageChanged();
+        }
         if (wasConnected)
             emit hubConnectedChanged();
 
@@ -1191,6 +1231,10 @@ private:
         m_pendingPushRequestId.clear();
         m_pendingPushFailed = false;
         m_pendingPushDurablyPersisted = false;
+    }
+    void clearPendingHubPage() {
+        m_pendingHubPage = -1;
+        m_pendingHubPageRequestId.clear();
     }
     // Block (briefly, bounded) until the hub acks the per-field setter `forType`.
     // Returns false on a reject, a timeout, or a socket that dropped mid-request -
@@ -1387,6 +1431,7 @@ private:
     // local socket to a local process, but finite: a wedged hub must degrade to an
     // honest "false", not a frozen Manager window.
     static constexpr qint64 kAckTimeoutMs = 1000;
+    static constexpr int kActivePageConfirmationTimeoutMs = 2000;
 
     ConfigHandle* m_config = nullptr;
     const bool m_managerInjectedQtPlatform = false;
@@ -1410,6 +1455,8 @@ private:
     bool m_layoutLiveApplied = true;
     int m_hubRotation = -1;                  // panel's live content rotation from the hub
     int m_hubCurrentPage = -1;               // panel's live Dashboard page
+    int m_pendingHubPage = -1;               // newest Manager page not yet observed live
+    QString m_pendingHubPageRequestId;
     bool m_pendingPushAwaitingHub = false;  // reconcile buffered push on next pull
     bool m_pendingPushFailed = false;
     bool m_pendingPushDurablyPersisted = false;

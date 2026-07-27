@@ -465,6 +465,23 @@ Item {
             verify(store.structureRevision > sr, "a tile add must bump structureRevision")
         }
 
+        function test_applyExternal_rebuilds_only_when_pages_change() {
+            var base = store._clone(store.document)
+            var sr = store.structureRevision
+            base.appearance.accent = "#FF00FF"
+            base.settings["external-probe"] = { value: 42 }
+            verify(store.applyExternal(JSON.stringify(base)))
+            compare(store.structureRevision, sr,
+                    "appearance/settings-only pushes must not rebuild tile Loaders")
+            compare(store.appearance().accent, "#FF00FF")
+
+            var changedPages = store._clone(store.document)
+            changedPages.pages.push({ name: "External", tiles: [] })
+            verify(store.applyExternal(JSON.stringify(changedPages)))
+            verify(store.structureRevision > sr,
+                   "a pushed page change must rebuild the page and tile structure")
+        }
+
         // (OK) The per-page background override is structural.
         function test_page_overrides_bump_structureRevision() {
             var sr = store.structureRevision

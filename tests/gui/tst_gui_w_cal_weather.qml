@@ -28,6 +28,16 @@ Item {
     // Contains the largest declared projection in this suite without clipping.
     width: 2700; height: 1700
 
+    // Widget cards are intentionally translucent and are never rendered against
+    // an empty compositor surface in the product. Keep the production default
+    // page colour behind isolated captures so their alpha and contrast match the
+    // Hub rather than the nested desktop's neutral clear colour.
+    Rectangle {
+        anchors.fill: parent
+        z: -1
+        color: calH.theme.backgroundColor
+    }
+
     // The app-global egress gate, injected only for the offline / blocked cases
     // (a widget's local fallback hub cannot be driven offline). Everything else
     // routes through the widget's own fallback hub, which still honours the
@@ -47,9 +57,45 @@ Item {
         property var lastFake: null
 
         function snap(item, name) {
-            var img = grabImage(item)
-            img.save("gui-evidence/wcalwx_" + name + ".png")
-            return img
+            // QtTest grabImage(item) crops against the nested test window as if
+            // the item started at the window origin. Weather and Now/Next sit
+            // beside Calendar in this suite, so direct grabs returned a clipped
+            // 400px image or unrelated whole-window pixels. Move only the target
+            // to the proven origin for the capture. Move the other translucent
+            // harnesses outside the window so their pixels cannot show through
+            // the target card, then restore the complete scene.
+            var oldCalX = calH.x
+            var oldCalY = calH.y
+            var oldWxX = wxH.x
+            var oldWxY = wxH.y
+            var oldNnX = nnH.x
+            var oldNnY = nnH.y
+            var oldZ = item.z
+            calH.x = item === calH ? 0 : root.width + 100
+            wxH.x = item === wxH ? 0 : root.width + 100
+            nnH.x = item === nnH ? 0 : root.width + 100
+            item.x = 0
+            item.y = 0
+            item.z = 10000
+            wait(50)
+            try {
+                var img = grabImage(item)
+                compare(img.width, Math.round(item.width),
+                        name + " capture width matches the widget harness")
+                compare(img.height, Math.round(item.height),
+                        name + " capture height matches the widget harness")
+                img.save("gui-evidence/wcalwx_" + name + ".png")
+                return img
+            } finally {
+                calH.x = oldCalX
+                calH.y = oldCalY
+                wxH.x = oldWxX
+                wxH.y = oldWxY
+                nnH.x = oldNnX
+                nnH.y = oldNnY
+                item.z = oldZ
+                wait(0)
+            }
         }
 
         // ── shared helpers ────────────────────────────────────────────────

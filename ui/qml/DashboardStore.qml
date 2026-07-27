@@ -41,9 +41,9 @@ Item {
     readonly property int schemaVersion: 1
     property int revision: 0
     // Bumps ONLY on structural changes (pages/tiles added/removed/moved/resized,
-    // page rename/bg/cols, load/applyExternal). The dashboard's page+tile Repeater
-    // binds to THIS, not `revision`, so per-widget settings edits (which fire every
-    // keystroke/toggle) no longer tear down and rebuild every tile Loader.
+    // page rename/bg/cols, load, or an applyExternal whose pages differ). The
+    // dashboard's page+tile Repeater binds to THIS, not `revision`, so settings
+    // and appearance pushes no longer tear down and rebuild every tile Loader.
     property int structureRevision: 0
     property bool loaded: false
     // Safe mode is a process-local recovery session. It may normalise or edit
@@ -618,9 +618,13 @@ Item {
         // Cancel any pending debounced save so the externally-applied doc is
         // never echoed back to the hub 400ms later.
         saveTimer.stop()
+        var nextDocument = _normaliseDoc(parsed)
+        var pagesChanged =
+            JSON.stringify(document.pages || [])
+            !== JSON.stringify(nextDocument.pages || [])
         externalApplyInProgress = true
         try {
-            document = _normaliseDoc(parsed)
+            document = nextDocument
             loaded = true
             dirty = false
             saveFailed = false
@@ -628,7 +632,7 @@ Item {
             recoveryPath = ""
             _lastFailedPayload = ""
             revision++
-            structureRevision++
+            if (pagesChanged) structureRevision++
             changed()
         } finally {
             externalApplyInProgress = false

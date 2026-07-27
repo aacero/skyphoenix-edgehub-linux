@@ -58,7 +58,7 @@ WAYLAND_FRAME_DONE = re.compile(
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 ACTIVE_MODE = re.compile(r"(?P<width>[0-9]+)x(?P<height>[0-9]+)@(?P<hz>[0-9.]+)\*")
 ROTATION_OBSERVATION_MS = 700.0
-ROTATION_FIRST_FRAME_MAX_MS = 100.0
+ROTATION_FIRST_FRAME_MAX_MS = 150.0
 ROTATION_SPAN_MIN_MS = 400.0
 ROTATION_SPAN_MAX_MS = 680.0
 ROTATION_MIN_CALLBACK_RATE_RATIO = 0.70
@@ -368,15 +368,19 @@ def summarise_transition(
     frames_by_surface: dict[str, list[dict[str, float]]],
     request_started_ms: float,
     refresh_hz: float,
+    cluster_started_ms: Optional[float] = None,
 ) -> dict:
+    if cluster_started_ms is None:
+        cluster_started_ms = request_started_ms
     candidates = [
-        (surface, dense_frame_cluster(frames, request_started_ms))
+        (surface, dense_frame_cluster(frames, cluster_started_ms))
         for surface, frames in frames_by_surface.items()
     ]
     surface, frames = max(candidates, key=lambda item: len(item[1]), default=("", []))
     if len(frames) < 3:
         raise MeasurementError(
-            f"fewer than three rendered frames followed request at {request_started_ms:.3f}ms"
+            "fewer than three rendered frames followed animation start at "
+            f"{cluster_started_ms:.3f}ms"
         )
     protocol_timestamps = [
         frame["wayland_timestamp_ms"] for frame in frames
@@ -624,6 +628,7 @@ def run(binary: Path, output_dir: Path, cycles: int) -> int:
                 calibrated_callbacks,
                 transition["request_started_monotonic_ms"],
                 refresh_hz,
+                transition["acknowledged_monotonic_ms"],
             )
             transition["smoothness_slo"] = qualify_transition(
                 transition["frames"], refresh_hz

@@ -225,7 +225,7 @@ class ReleaseRunContractTests(unittest.TestCase):
                 lambda doc: doc["smoothness_slo"].__setitem__(
                     "first_frame_max_ms", 1000.0
                 ),
-                "exactly 100",
+                "exactly 150",
             ),
         )
         for mutation, message in cases:

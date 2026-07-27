@@ -150,9 +150,11 @@ public:
     QStringList setStates;            // states received via setUiState
     QStringList setRequestIds;        // matching request ids for those states
     QList<int> activePages;           // page payloads received via setActivePage
+    QStringList activePageRequestIds;
     bool holdGet = false;             // when true, DON'T auto-reply to getUiState…
     bool getPending = false;          // …record that one is owed, release it later
     bool holdSetAcks = false;         // allow out-of-order/stale ack regression tests
+    bool holdActivePageAcks = false;
     bool setAckLiveApplied = true;
     bool ackFieldSetters = false;
     bool setterDurabilityUncertain = false;
@@ -260,6 +262,14 @@ private slots:
                         setAckLiveApplied);
             } else if (type == "setActivePage") {
                 activePages << o.value("page").toInt(-1);
+                const QString requestId = o.value("requestId").toString();
+                activePageRequestIds << requestId;
+                if (!holdActivePageAcks)
+                    sendAck(
+                        true,
+                        QStringLiteral("setActivePage"),
+                        QString(),
+                        requestId);
             } else if (ackFieldSetters
                        && (type == QStringLiteral("setTargetDisplay")
                            || type == QStringLiteral("setAutostart"))) {
@@ -953,6 +963,66 @@ private slots:
         hub.sendUiState(hub.getReply, -1000, -1, 0);
         QTRY_COMPARE_WITH_TIMEOUT(b.hubCurrentPage(), 0, 5000);
         QCOMPARE(pages.count(), 2);
+    }
+
+    void stalePanelPullCannotUndoNewestManagerPageRequest() {
+        FakeHub hub;
+        hub.getReply = testState("page-race", 1);
+        QVERIFY(hub.start());
+        ManagerBackend b;
+        QTRY_VERIFY_WITH_TIMEOUT(b.hubConnected(), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(hub.client != nullptr, 5000);
+
+        b.setHubActivePage(3);
+        QTRY_COMPARE_WITH_TIMEOUT(hub.activePages.size(), 1, 5000);
+        QCOMPARE(b.hubCurrentPage(), 3);
+        QCOMPARE(b.pendingHubPageForTest(), 3);
+
+        // This pull began before setActivePage reached the Hub. It must not
+        // move the Manager back to the old panel page.
+        hub.sendUiState(hub.getReply, -1000, -1, 0);
+        QTest::qWait(50);
+        QCOMPARE(b.hubCurrentPage(), 3);
+        QCOMPARE(b.pendingHubPageForTest(), 3);
+
+        hub.sendUiState(hub.getReply, -1000, -1, 3);
+        QTRY_COMPARE_WITH_TIMEOUT(b.pendingHubPageForTest(), -1, 5000);
+        QCOMPARE(b.hubCurrentPage(), 3);
+    }
+
+    void rapidPageRequestsIgnoreOlderAckAndConfirmNewestPage() {
+        FakeHub hub;
+        hub.getReply = testState("rapid-page", 1);
+        hub.holdActivePageAcks = true;
+        QVERIFY(hub.start());
+        ManagerBackend b;
+        QTRY_VERIFY_WITH_TIMEOUT(b.hubConnected(), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(hub.client != nullptr, 5000);
+
+        b.setHubActivePage(1);
+        b.setHubActivePage(2);
+        QTRY_COMPARE_WITH_TIMEOUT(hub.activePageRequestIds.size(), 2, 5000);
+        QVERIFY(hub.activePageRequestIds[0] != hub.activePageRequestIds[1]);
+        QCOMPARE(b.hubCurrentPage(), 2);
+        QCOMPARE(b.pendingHubPageForTest(), 2);
+
+        hub.sendAck(
+            false,
+            QStringLiteral("setActivePage"),
+            QStringLiteral("stale failure"),
+            hub.activePageRequestIds[0]);
+        QTest::qWait(50);
+        QCOMPARE(b.pendingHubPageForTest(), 2);
+        QCOMPARE(b.hubCurrentPage(), 2);
+
+        hub.sendAck(
+            true,
+            QStringLiteral("setActivePage"),
+            QString(),
+            hub.activePageRequestIds[1]);
+        hub.sendUiState(hub.getReply, -1000, -1, 2);
+        QTRY_COMPARE_WITH_TIMEOUT(b.pendingHubPageForTest(), -1, 5000);
+        QCOMPARE(b.hubCurrentPage(), 2);
     }
 
     void queuedAndLivePanelStateRemainDistinct() {

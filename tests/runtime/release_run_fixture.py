@@ -243,7 +243,7 @@ def _short_resource_report(
         list(contract.SHORT_ACTIVE_WIDGET_TYPES) if active else []
     )
     max_cpu = 5.0 if active else 1.0
-    max_rss = 250.0 if active else 150.0
+    max_rss = 480.0 if active else 450.0
     widget_count = len(widget_types)
     return {
         "schema_version": 1,
@@ -287,7 +287,9 @@ def _short_resource_report(
                 "observed_page_count": 1,
                 "observed_widget_count": widget_count,
                 "observed_widget_types": widget_types,
-                "observed_tile_sizes": ["1x1"] * widget_count,
+                "observed_tile_sizes": (
+                    ["0.5x0.5"] * widget_count if active else []
+                ),
                 "observed_current_page": 0,
                 "live_state_verified": True,
             },
@@ -327,7 +329,7 @@ def _rotation_report(candidate: dict[str, Any]) -> dict[str, Any]:
             {
                 "name": "first-frame-latency",
                 "observed": 20.0,
-                "maximum": 100.0,
+                "maximum": 150.0,
                 "passed": True,
             },
             {

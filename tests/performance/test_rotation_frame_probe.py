@@ -93,6 +93,20 @@ class RotationFrameProbeTest(unittest.TestCase):
         self.assertEqual(summary["estimated_missed_refreshes"], 1)
         self.assertEqual(summary["interval_count_over_1_5_refreshes"], 1)
 
+    def test_summary_starts_animation_cluster_at_apply_ack(self):
+        frames = [1005.0, 1092.0] + [
+            1110.0 + 16.6 * index for index in range(35)
+        ]
+        summary = summarise_transition(
+            calibrated_callbacks(frames),
+            request_started_ms=1000.0,
+            refresh_hz=60.0,
+            cluster_started_ms=1100.0,
+        )
+        self.assertAlmostEqual(summary["first_frame_after_request_ms"], 110.0)
+        self.assertLess(summary["interval_ms"]["maximum"], 17.0)
+        self.assertEqual(summary["estimated_missed_refreshes"], 0)
+
     def test_summary_rejects_insufficient_frame_evidence(self):
         with self.assertRaisesRegex(Exception, "fewer than three"):
             summarise_transition(

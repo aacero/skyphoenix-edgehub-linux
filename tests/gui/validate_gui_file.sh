@@ -9,7 +9,13 @@ cd "$(dirname "$0")/../.." || exit 2
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 F="${1:?usage: validate_gui_file.sh <file.qml> [--visible]}"
 MD=0; [ "${2:-}" = "--visible" ] && MD=200
-QT=/usr/lib/qt6/bin/qmltestrunner; command -v qmltestrunner >/dev/null 2>&1 && QT=qmltestrunner
+TEST_BUILD_DIR="${XENEON_TEST_BUILD_DIR:-$PWD/build}"
+QT="$TEST_BUILD_DIR/xeneon-qmltestrunner"
+if [ ! -x "$QT" ]; then
+  QT=/usr/lib/qt6/bin/qmltestrunner
+  command -v qmltestrunner >/dev/null 2>&1 && QT=qmltestrunner
+  echo "!! resource-aware runner missing; qrc-backed widgets may not load" >&2
+fi
 
 # Both shipped binaries pin the Controls style (app/src/main.cpp:271 and
 # manager/src/main.cpp:116 call QQuickStyle::setStyle("Fusion")). Without this
@@ -21,7 +27,7 @@ export QT_QUICK_CONTROLS_STYLE=Fusion
 TMP="$(mktemp -d)"; EVID="$TMP/evid"; mkdir -p "$EVID"
 SOCK="wayland-val$$"; XDISP=":$(( 60 + $$ % 30 ))"
 kwin_wayland --virtual --xwayland --xwayland-display "$XDISP" \
-  --width "${XENEON_GUI_WIDTH:-2560}" --height "${XENEON_GUI_HEIGHT:-1600}" \
+  --width "${XENEON_GUI_WIDTH:-2560}" --height "${XENEON_GUI_HEIGHT:-1800}" \
   --no-lockscreen --no-global-shortcuts --socket "$SOCK" > "$TMP/kwin.log" 2>&1 &
 KWIN=$!
 trap 'kill -9 "$KWIN" 2>/dev/null; rm -rf "$TMP"' EXIT INT TERM
