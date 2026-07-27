@@ -14,6 +14,7 @@ from rotation_frame_probe import (  # noqa: E402
     parse_buffer_commits,
     qualify_transition,
     rotation_document,
+    rotation_quiet_window_delay_ms,
     ROTATION_WIDGET_TYPES,
     summarise_transition,
     WaylandCommitObserver,
@@ -37,6 +38,12 @@ def calibrated_callbacks(
 
 
 class RotationFrameProbeTest(unittest.TestCase):
+    def test_rotation_window_starts_just_after_the_global_tick(self):
+        self.assertEqual(rotation_quiet_window_delay_ms(1000.0), 50.0)
+        self.assertEqual(rotation_quiet_window_delay_ms(1025.0), 25.0)
+        self.assertEqual(rotation_quiet_window_delay_ms(1050.0), 0.0)
+        self.assertEqual(rotation_quiet_window_delay_ms(1060.0), 990.0)
+
     def test_rotation_fixture_is_full_and_free_of_metric_driven_widgets(self):
         metric_driven = {
             "cpu", "gpu", "ram", "net", "disk", "sensors", "packages",

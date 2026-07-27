@@ -113,6 +113,19 @@ def iso_now() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+def rotation_quiet_window_delay_ms(wall_clock_ms: float) -> float:
+    """Delay until 50ms after the Hub's wall-clock-aligned one-second tick."""
+
+    phase_ms = wall_clock_ms % 1000.0
+    return (50.0 - phase_ms) % 1000.0
+
+
+def wait_for_rotation_quiet_window() -> None:
+    delay_ms = rotation_quiet_window_delay_ms(time.time() * 1000.0)
+    if delay_ms > 0:
+        time.sleep(delay_ms / 1000.0)
+
+
 def parse_buffer_commits(lines: Iterable[str]) -> dict[str, list[float]]:
     """Return non-null-buffer commit timestamps grouped by surface."""
 
@@ -655,6 +668,11 @@ def run(binary: Path, output_dir: Path, cycles: int) -> int:
         with request_log.open("x", encoding="utf-8", buffering=1) as requests:
             for _ in range(cycles):
                 for mode in ("landscape", "portrait"):
+                    # Dashboard intentionally emits one wall-clock-aligned tick
+                    # per second. It drives clocks and other time widgets but is
+                    # not part of orientation. Start just after that tick so it
+                    # cannot join the sub-700ms rotation callback cluster.
+                    wait_for_rotation_quiet_window()
                     transition = set_orientation(instance, state, mode)
                     transitions.append(transition)
                     requests.write(json.dumps(transition, sort_keys=True) + "\n")

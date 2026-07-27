@@ -117,6 +117,11 @@ first-frame latency continues to include the full request and persistence
 interval. If reader backlog varies by more than 2ms, the measurement fails as
 invalid.
 
+Each request is aligned just after the Hub's wall-clock one-second tick. That
+known periodic update drives time widgets and is not part of orientation; the
+alignment keeps it outside the sub-700ms observation without suppressing it or
+changing any smoothness threshold.
+
 The rotation fixture is a full 14-widget screen made from idle Tasks widgets.
 Repeating one deterministic widget isolates the end of the 500ms orientation
 animation from unrelated widget-local timers and single-surface commits. Widget
