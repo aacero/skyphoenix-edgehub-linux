@@ -717,6 +717,24 @@ mod tests {
         assert_eq!(st.tier(), Tier::Free);
     }
 
+    #[test]
+    fn licensed_and_expired_json_keep_holder_data_but_no_failure_reason() {
+        let key = mint(TEST_SEED, &pro_payload(Some(NOW + 60)));
+        let licensed = verify_with(&key, &issuer(TEST_SEED), NOW);
+        let licensed_json: serde_json::Value = serde_json::from_str(&licensed.to_json()).unwrap();
+        assert_eq!(licensed_json["state"], "licensed");
+        assert_eq!(licensed_json["tier"], "pro");
+        assert_eq!(licensed_json["issuedTo"], "Ada Lovelace");
+        assert!(licensed_json["reason"].is_null());
+
+        let expired = verify_with(&key, &issuer(TEST_SEED), NOW + 60);
+        let expired_json: serde_json::Value = serde_json::from_str(&expired.to_json()).unwrap();
+        assert_eq!(expired_json["state"], "expired");
+        assert_eq!(expired_json["tier"], "free");
+        assert_eq!(expired_json["issuedTo"], "Ada Lovelace");
+        assert!(expired_json["reason"].is_null());
+    }
+
     // ── The production issuer is ARMED ───────────────────────────────────────
     // (Was the "still a placeholder" release guard. The real issuer public key
     //  was embedded 2026-07-17; these now assert the armed state instead.)

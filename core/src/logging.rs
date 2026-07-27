@@ -57,7 +57,10 @@ mod tests {
     fn init_logging_is_idempotent_across_all_levels() {
         // Drive init_logging for each level plus an unknown one. The first call
         // installs the global subscriber; the rest must be harmless no-ops.
-        for level in ["error", "warn", "info", "debug", "trace", "nonsense", ""] {
+        // Install the most permissive subscriber first. try_init deliberately
+        // makes later calls no-ops, so starting at ERROR would globally suppress
+        // INFO/WARN events that other parallel tests must observe and assert.
+        for level in ["trace", "debug", "info", "warn", "error", "nonsense", ""] {
             init_logging(level);
         }
         // Calling again must not panic (idempotency).

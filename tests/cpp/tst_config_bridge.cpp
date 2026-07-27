@@ -142,6 +142,17 @@ private slots:
         QVERIFY(b.exportUiStateRecovery(QString()).isEmpty());
         const QString oversized(16 * 1024 * 1024 + 1, QLatin1Char('x'));
         QVERIFY(b.exportUiStateRecovery(oversized).isEmpty());
+
+        QTemporaryDir fixture;
+        QVERIFY(fixture.isValid());
+        const QString blockerPath = fixture.filePath(QStringLiteral("blocker"));
+        QFile blocker(blockerPath);
+        QVERIFY(blocker.open(QIODevice::WriteOnly));
+        blocker.write("file blocks recovery directory");
+        blocker.close();
+        QVERIFY(xeneon::exportUiStateRecovery(
+                    blockerPath, QStringLiteral("{\"version\":1}"))
+                    .isEmpty());
     }
 
     void failedLicensePersistenceLeavesEffectiveStatusUnchanged() {
@@ -167,6 +178,60 @@ private slots:
         QCOMPARE(bridge.state(), beforeState);
         QVERIFY(file.open(QIODevice::ReadOnly));
         QCOMPARE(file.readAll(), external);
+    }
+
+    void licenseBridgeExposesCandidateStoredAndClearedStates() {
+        LicenseBridge bridge(cfg_);
+        QSignalSpy changed(&bridge, &LicenseBridge::changed);
+
+        QVERIFY(!bridge.isPro());
+        QCOMPARE(bridge.tier(), QStringLiteral("free"));
+        QCOMPARE(bridge.state(), QStringLiteral("unlicensed"));
+        QCOMPARE(bridge.issuedTo(), QString());
+        QCOMPARE(bridge.expires(), 0.0);
+        QVERIFY(!bridge.hasKey());
+
+        const QJsonObject candidate =
+            QJsonDocument::fromJson(
+                bridge.verifyCandidate(
+                          QStringLiteral("XE1.invalid.signature"))
+                    .toUtf8())
+                .object();
+        QCOMPARE(candidate.value(QStringLiteral("tier")).toString(),
+                 QStringLiteral("free"));
+        QVERIFY(candidate.value(QStringLiteral("state")).toString()
+                != QStringLiteral("licensed"));
+
+        QVERIFY(bridge.applyExternalKey(
+            QStringLiteral("XE1.invalid.signature")));
+        QVERIFY(bridge.hasKey());
+        QVERIFY(!bridge.isPro());
+        QVERIFY(changed.count() >= 1);
+
+        QVERIFY(bridge.clear());
+        QVERIFY(!bridge.hasKey());
+        QCOMPARE(bridge.tier(), QStringLiteral("free"));
+        QCOMPARE(bridge.state(), QStringLiteral("unlicensed"));
+    }
+
+    void nullLicenseBridgeFailsClosed() {
+        LicenseBridge bridge(nullptr);
+        QVERIFY(!bridge.isPro());
+        QCOMPARE(bridge.tier(), QStringLiteral("free"));
+        QCOMPARE(bridge.state(), QStringLiteral("unlicensed"));
+        QCOMPARE(bridge.issuedTo(), QString());
+        QCOMPARE(bridge.expires(), 0.0);
+        QVERIFY(!bridge.hasKey());
+        QVERIFY(!bridge.setKey(QStringLiteral("XE1.invalid.signature")));
+        QVERIFY(!bridge.clear());
+    }
+
+    void nullConfigTransactionCannotCommit() {
+        ConfigTransaction transaction(nullptr);
+        QVERIFY(!transaction);
+        QCOMPARE(transaction.candidate(), nullptr);
+        QVERIFY(!transaction.commit());
+        QVERIFY(!transaction.durabilityUncertain());
     }
 
     void imageUrl_data() {

@@ -530,6 +530,29 @@ private slots:
         QVERIFY(c.state() != QLocalSocket::ConnectedState);
     }
 
+    void oversizedCompleteFrameDropsConnectionBeforeDispatch() {
+        QLocalSocket client;
+        client.connectToServer(sockPath());
+        QElapsedTimer timer;
+        timer.start();
+        while (client.state() != QLocalSocket::ConnectedState
+               && timer.elapsed() < 3000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        }
+        QCOMPARE(client.state(), QLocalSocket::ConnectedState);
+
+        QByteArray frame(xeneon::kMaxControlFrameBytes + 1, 'x');
+        frame.append('\n');
+        client.write(frame);
+        client.flush();
+        timer.restart();
+        while (client.state() == QLocalSocket::ConnectedState
+               && timer.elapsed() < 5000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        }
+        QVERIFY(client.state() != QLocalSocket::ConnectedState);
+    }
+
     // Two complete requests in a single write must both be processed, in order.
     void multipleLinesInOneWrite() {
         const auto r = exchange("{\"type\":\"ping\"}\n{\"type\":\"ping\"}", /*nLines*/ 2);

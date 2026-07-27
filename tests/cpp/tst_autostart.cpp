@@ -30,7 +30,7 @@ private slots:
         // gives this test a sandboxed XDG_CONFIG_HOME, which is the point.
         path_ = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
                 + "/autostart/xeneon-edge-hub.desktop";
-        QFile::remove(path_);
+        QDir(QFileInfo(path_).absolutePath()).removeRecursively();
     }
 
     // The regression itself: with HOME and XDG_CONFIG_HOME pointing at DIFFERENT
@@ -190,6 +190,7 @@ private slots:
     // .desktop Exec line (else it parses as multiple arguments); a plain path is left
     // untouched. This is the seam applyAutostart() uses for its Exec= value.
     void execQuotingHandlesSpaces() {
+        QCOMPARE(quoteExecForDesktop(QString()), QStringLiteral("\"\""));
         QCOMPARE(quoteExecForDesktop(QStringLiteral("/usr/bin/xeneon-edge-hub")),
                  QStringLiteral("/usr/bin/xeneon-edge-hub"));
         QCOMPARE(quoteExecForDesktop(QStringLiteral("/opt/My Apps/xeneon-edge-hub")),
@@ -203,6 +204,49 @@ private slots:
                  QStringLiteral("/opt/100%%/Hub"));
         QCOMPARE(quoteExecForDesktop(QStringLiteral("/opt/a\"b/Hub")),
                  QStringLiteral("\"/opt/a\\\"b/Hub\""));
+    }
+
+    void invalidAppImageFallsBackToTheNativeHub() {
+        const bool hadAppImage = qEnvironmentVariableIsSet("APPIMAGE");
+        const QByteArray previousAppImage = qgetenv("APPIMAGE");
+        qputenv("APPIMAGE", QByteArrayLiteral("relative/missing.AppImage"));
+        const HubLaunchCommand command =
+            hubLaunchCommand(QStringLiteral("/usr/bin/xeneon-edge-hub"));
+        if (hadAppImage)
+            qputenv("APPIMAGE", previousAppImage);
+        else
+            qunsetenv("APPIMAGE");
+
+        QCOMPARE(command.program, QStringLiteral("/usr/bin/xeneon-edge-hub"));
+        QVERIFY(command.arguments.isEmpty());
+    }
+
+    void unsafeAutostartDirectoryIsRejected() {
+        const QString configRoot =
+            QStandardPaths::writableLocation(QStandardPaths::ConfigLocation);
+        QDir(configRoot).removeRecursively();
+        QFile blocker(configRoot);
+        QVERIFY(blocker.open(QIODevice::WriteOnly));
+        blocker.write("blocks creation below config root");
+        blocker.close();
+
+        QVERIFY(!applyAutostart(true));
+        QVERIFY(blocker.remove());
+        QVERIFY(QDir().mkpath(configRoot));
+    }
+
+    void unsafeAutostartEntrySymlinkIsRejected() {
+        const QString directory = QFileInfo(path_).absolutePath();
+        QVERIFY(QDir().mkpath(directory));
+        QTemporaryFile target;
+        QVERIFY(target.open());
+        QFile::remove(path_);
+        QVERIFY(QFile::link(target.fileName(), path_));
+        QVERIFY(QFileInfo(path_).isSymLink());
+
+        QVERIFY(!applyAutostart(true));
+        QVERIFY(QFileInfo(path_).isSymLink());
+        QVERIFY(QFile::remove(path_));
     }
 
     void appImageUsesPersistentOriginalForAutostart() {

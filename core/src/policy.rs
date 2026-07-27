@@ -276,6 +276,20 @@ mod tests {
     }
 
     #[test]
+    fn uninspectable_policy_path_fails_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("p".repeat(300));
+        let status = load_policy_from(&path);
+        assert_fail_closed(&status);
+        match status {
+            PolicyStatus::FailClosed(reason) => {
+                assert!(reason.contains("cannot determine whether a policy exists"));
+            }
+            other => panic!("expected FailClosed, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn absent_json_is_inactive_with_default_fields() {
         let s = to_json(&PolicyStatus::Absent);
         let v: serde_json::Value = serde_json::from_str(&s).unwrap();

@@ -49,6 +49,31 @@ private slots:
             << QStringLiteral(R"({"pages":[{"id":"second"},{"id":"first"}]})")
             << QStringLiteral(R"({"pages":[{"id":"first"},{"id":"second"}]})")
             << false << ReconcileAction::RequireConflict;
+        QTest::newRow("json-types-differ")
+            << true << true
+            << QStringLiteral(R"({"value":[]})")
+            << QStringLiteral(R"({"value":{}})")
+            << false << ReconcileAction::RequireConflict;
+        QTest::newRow("json-array-length-differs")
+            << true << true
+            << QStringLiteral(R"({"values":[1,2]})")
+            << QStringLiteral(R"({"values":[1]})")
+            << false << ReconcileAction::RequireConflict;
+        QTest::newRow("json-object-size-differs")
+            << true << true
+            << QStringLiteral(R"({"value":{"a":1,"b":2}})")
+            << QStringLiteral(R"({"value":{"a":1}})")
+            << false << ReconcileAction::RequireConflict;
+        QTest::newRow("root-arrays-equal")
+            << true << true
+            << QStringLiteral(R"([{"a":1},2])")
+            << QStringLiteral("[ { \"a\" : 1 }, 2 ]")
+            << false << ReconcileAction::KeepAndPushEdit;
+        QTest::newRow("different-json-root-kinds")
+            << true << true
+            << QStringLiteral(R"([{"a":1}])")
+            << QStringLiteral(R"({"a":1})")
+            << false << ReconcileAction::RequireConflict;
 
         // ── Reconnect reconcile: hub UNCHANGED → (re)push our buffered edit ──
         QTest::newRow("hub-same-keep")

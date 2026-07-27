@@ -6,6 +6,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QPointer>
 #include <QQmlNetworkAccessManagerFactory>
 
 // QML XMLHttpRequest stores its response internally, so checking responseText
@@ -27,7 +28,6 @@ public:
         setUrl(upstream_->url());
         open(QIODevice::ReadOnly);
         upstream_->setReadBufferSize(limit_ + 1);
-        upstream_->setParent(this);
         syncMetadata();
 
         connect(upstream_, &QNetworkReply::metaDataChanged, this, [this]() {
@@ -135,7 +135,12 @@ private:
         emit finished();
     }
 
-    QNetworkReply* upstream_ = nullptr;
+    // QNetworkAccessManager owns its transport reply and tracks it internally.
+    // Reparenting that reply to this wrapper makes manager teardown depend on
+    // QObject child order and can leave Qt's manager with a dangling pointer.
+    // Keep only a guarded observer; the manager and wrapper normally share the
+    // same parent, and QPointer safely becomes null during teardown.
+    QPointer<QNetworkReply> upstream_;
     QByteArray buffer_;
     qint64 limit_ = 0;
     qint64 received_ = 0;

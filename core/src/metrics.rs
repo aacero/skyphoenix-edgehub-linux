@@ -1845,6 +1845,26 @@ mod tests {
         assert!(block_device_name("overlay").is_empty());
     }
 
+    #[test]
+    fn disk_and_device_readers_fail_soft_on_unusable_inputs() {
+        let invalid = read_disk_info_at("bad\0path");
+        assert!(!invalid.available);
+        assert_eq!(invalid.total, 0);
+
+        let absent = read_disk_info_at("/definitely/missing/xeneon-mount");
+        assert!(!absent.available);
+        assert_eq!(absent.used, 0);
+
+        assert_eq!(
+            block_device_name("/dev/xeneon-definitely-not-a-real-device"),
+            "xeneon-definitely-not-a-real-device"
+        );
+        assert_eq!(read_block_io(""), None);
+        assert!(glob_simple("/definitely/missing/xeneon-file")
+            .unwrap()
+            .is_empty());
+    }
+
     // --- RAM parsing (synthetic /proc/meminfo) ---
 
     #[test]
@@ -2075,6 +2095,41 @@ full avg10=0.01 avg60=0.00 avg300=0.00 total=1\n";
             .unwrap();
         assert!(!hotplugged.rate_available);
         assert_eq!(hotplugged.rx_bytes_per_sec, 0.0);
+    }
+
+    #[test]
+    fn network_catalog_explains_virtual_only_input_and_classifies_mobile_links() {
+        let sys = tempfile::tempdir().unwrap();
+        assert_eq!(interface_category("wlan0", sys.path()), "physical");
+        assert_eq!(interface_category("wwan0", sys.path()), "physical");
+        assert_eq!(interface_category("dummy0", sys.path()), "virtual");
+
+        let malformed = parse_net_dev_interfaces("missing colon\neth0: 1 2 3\n");
+        assert!(malformed.is_empty());
+
+        let virtual_only = parse_net_dev_interfaces(&net_line("wg0", 10, 20));
+        let snapshot = network_snapshot_from(&virtual_only, None, 0.0, sys.path());
+        assert!(snapshot.available);
+        assert_eq!(snapshot.interfaces.len(), 1);
+        assert_eq!(
+            snapshot.unavailable_reason,
+            "No physical network interface was detected"
+        );
+    }
+
+    #[test]
+    fn top_process_and_process_parser_reject_non_measurements() {
+        assert!(read_top_process(0, 1).is_none());
+        assert!(parse_process_stat("42 broken process stat").is_none());
+        assert!(parse_process_stat("42 )bad( R 1 2 3").is_none());
+
+        PREV_PROCESS_SAMPLE.with(|previous| {
+            *previous.borrow_mut() = Some(ProcessSample {
+                total_ticks: 123,
+                processes: HashMap::new(),
+            });
+        });
+        assert!(read_top_process(123, 1).is_none());
     }
 
     // --- CPU delta math (synthetic /proc/stat samples) ---
@@ -2365,6 +2420,59 @@ cpu MHz : unavailable
         assert_eq!(devices[0].vendor, "NVIDIA");
         assert!(devices[0].usage_percent.is_none());
         assert!(devices[0].unavailable_reason.contains("NVIDIA driver"));
+    }
+
+    #[test]
+    fn gpu_catalog_explains_invalid_missing_and_unknown_telemetry() {
+        let missing = tempfile::tempdir().unwrap();
+        assert!(read_gpu_devices_from(&missing.path().join("absent"), None).is_empty());
+
+        let root = tempfile::tempdir().unwrap();
+        let invalid = synthetic_gpu(
+            root.path(),
+            "card0",
+            "8086:1234",
+            "i915",
+            Some("not-a-number"),
+        );
+        let invalid_gpu = sample_gpu_device(0, &root.path().join("card0"), None);
+        assert!(invalid_gpu.usage_percent.is_none());
+        assert_eq!(
+            invalid_gpu.unavailable_reason,
+            "The utilization sensor could not be read"
+        );
+
+        fs::remove_file(invalid.join("gpu_busy_percent")).unwrap();
+        let intel_gpu = sample_gpu_device(0, &root.path().join("card0"), None);
+        assert!(intel_gpu.unavailable_reason.contains("Intel driver"));
+
+        let unknown_card = root.path().join("card1");
+        let unknown_device = unknown_card.join("device");
+        fs::create_dir_all(&unknown_device).unwrap();
+        fs::write(unknown_device.join("uevent"), "PCI_ID=\n").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("/drivers/mystery", unknown_device.join("driver")).unwrap();
+        let unknown_gpu = sample_gpu_device(1, &unknown_card, None);
+        assert_eq!(unknown_gpu.vendor, "Unknown");
+        assert_eq!(unknown_gpu.driver, "mystery");
+        assert_eq!(unknown_gpu.name, "Unknown GPU 2");
+        assert!(unknown_gpu
+            .unavailable_reason
+            .contains("does not expose utilization"));
+    }
+
+    #[test]
+    fn gpu_clock_uses_positive_sysfs_fallback_and_rejects_zero() {
+        let root = tempfile::tempdir().unwrap();
+        let device = root.path().join("device");
+        let card = root.path().join("card0");
+        let frequency = device.join("tile0/gt0/freq0");
+        fs::create_dir_all(&frequency).unwrap();
+        fs::write(frequency.join("act_freq"), "1350\n").unwrap();
+        assert_eq!(read_gpu_clock_mhz(&device, &card, None), Some(1350.0));
+
+        fs::write(frequency.join("act_freq"), "0\n").unwrap();
+        assert_eq!(read_gpu_clock_mhz(&device, &card, None), None);
     }
 
     #[test]

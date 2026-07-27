@@ -1,4 +1,5 @@
 #include <QtTest>
+#include <QTemporaryFile>
 
 #include "hermetic.h"
 #include "network_access_policy.h"
@@ -7,8 +8,9 @@ XENEON_REQUIRE_HERMETIC_ENV();
 
 class FakeNetworkReply final : public QNetworkReply {
 public:
-    explicit FakeNetworkReply(const QNetworkRequest& request)
-        : QNetworkReply(nullptr) {
+    explicit FakeNetworkReply(
+        const QNetworkRequest& request, QObject* parent = nullptr)
+        : QNetworkReply(parent) {
         setOperation(QNetworkAccessManager::GetOperation);
         setRequest(request);
         setUrl(request.url());
@@ -26,7 +28,17 @@ public:
         emit readyRead();
     }
 
+    void reportProgress(qint64 received, qint64 total) {
+        emit downloadProgress(received, total);
+    }
+
     void succeed() {
+        setFinished(true);
+        emit finished();
+    }
+
+    void finishWithError(NetworkError code, const QString& reason) {
+        setError(code, reason);
         setFinished(true);
         emit finished();
     }
@@ -40,6 +52,8 @@ public:
 
     void abort() override {
         aborted = true;
+        if (quietAbort)
+            return;
         if (!isFinished()) {
             setError(OperationCanceledError, QStringLiteral("fake aborted"));
             emit errorOccurred(OperationCanceledError);
@@ -49,6 +63,7 @@ public:
     }
 
     bool aborted = false;
+    bool quietAbort = false;
 
 protected:
     qint64 readData(char* data, qint64 maxSize) override {
@@ -145,10 +160,11 @@ private slots:
 
     void boundedReplyStreamsNormalMetadataAndBody() {
         QNetworkRequest request(QUrl(QStringLiteral("https://example.test/value")));
-        auto* upstream = new FakeNetworkReply(request);
+        auto* upstream = new FakeNetworkReply(request, this);
         XeneonBoundedNetworkReply reply(upstream, 16);
         QSignalSpy metadata(&reply, &QNetworkReply::metaDataChanged);
         QSignalSpy ready(&reply, &QIODevice::readyRead);
+        QSignalSpy progress(&reply, &QNetworkReply::downloadProgress);
         QSignalSpy finished(&reply, &QNetworkReply::finished);
 
         upstream->publishMetadata(203);
@@ -160,6 +176,11 @@ private slots:
 
         upstream->push("abcd");
         QCOMPARE(ready.count(), 1);
+        QCOMPARE(reply.bytesAvailable(), qint64(4));
+        upstream->reportProgress(999, 12);
+        QCOMPARE(progress.count(), 1);
+        QCOMPARE(progress.at(0).at(0).toLongLong(), qint64(4));
+        QCOMPARE(progress.at(0).at(1).toLongLong(), qint64(12));
         QCOMPARE(reply.readAll(), QByteArray("abcd"));
         upstream->succeed();
         QCOMPARE(finished.count(), 1);
@@ -169,7 +190,7 @@ private slots:
 
     void boundedReplyExposesOneSentinelByteThenAbortsUpstream() {
         QNetworkRequest request(QUrl(QStringLiteral("https://example.test/value")));
-        auto* upstream = new FakeNetworkReply(request);
+        auto* upstream = new FakeNetworkReply(request, this);
         XeneonBoundedNetworkReply reply(upstream, 4);
         QSignalSpy errors(&reply, &QNetworkReply::errorOccurred);
         QSignalSpy finished(&reply, &QNetworkReply::finished);
@@ -187,7 +208,7 @@ private slots:
 
     void boundedReplyPropagatesUpstreamFailure() {
         QNetworkRequest request(QUrl(QStringLiteral("https://example.test/value")));
-        auto* upstream = new FakeNetworkReply(request);
+        auto* upstream = new FakeNetworkReply(request, this);
         XeneonBoundedNetworkReply reply(upstream, 16);
         QSignalSpy errors(&reply, &QNetworkReply::errorOccurred);
 
@@ -200,9 +221,42 @@ private slots:
         QCOMPARE(reply.errorString(), QStringLiteral("host missing"));
     }
 
+    void boundedReplyFindsAnErrorThatArrivesOnlyWithFinished() {
+        QNetworkRequest request(QUrl(QStringLiteral("https://example.test/value")));
+        auto* upstream = new FakeNetworkReply(request, this);
+        XeneonBoundedNetworkReply reply(upstream, 16);
+        QSignalSpy errors(&reply, &QNetworkReply::errorOccurred);
+
+        upstream->finishWithError(
+            QNetworkReply::TimeoutError, QStringLiteral("deadline reached"));
+
+        QVERIFY(reply.isFinished());
+        QCOMPARE(reply.error(), QNetworkReply::TimeoutError);
+        QCOMPARE(reply.errorString(), QStringLiteral("deadline reached"));
+        QCOMPARE(errors.count(), 1);
+    }
+
+    void callerAbortSuppliesAnErrorWhenTransportIsSilent() {
+        QNetworkRequest request(QUrl(QStringLiteral("https://example.test/value")));
+        auto* upstream = new FakeNetworkReply(request, this);
+        upstream->quietAbort = true;
+        XeneonBoundedNetworkReply reply(upstream, 16);
+        QSignalSpy errors(&reply, &QNetworkReply::errorOccurred);
+        QSignalSpy finished(&reply, &QNetworkReply::finished);
+
+        reply.abort();
+
+        QVERIFY(upstream->aborted);
+        QVERIFY(reply.isFinished());
+        QCOMPARE(reply.error(), QNetworkReply::OperationCanceledError);
+        QCOMPARE(reply.errorString(), QStringLiteral("request aborted"));
+        QCOMPARE(errors.count(), 1);
+        QCOMPARE(finished.count(), 1);
+    }
+
     void callerAbortPropagatesOnce() {
         QNetworkRequest request(QUrl(QStringLiteral("https://example.test/value")));
-        auto* upstream = new FakeNetworkReply(request);
+        auto* upstream = new FakeNetworkReply(request, this);
         XeneonBoundedNetworkReply reply(upstream, 16);
         QSignalSpy finished(&reply, &QNetworkReply::finished);
 
@@ -213,6 +267,27 @@ private slots:
         QVERIFY(reply.isFinished());
         QCOMPARE(reply.error(), QNetworkReply::OperationCanceledError);
         QCOMPARE(finished.count(), 1);
+    }
+
+    void realManagerRequestIsWrappedAndBounded() {
+        QTemporaryFile source;
+        QVERIFY(source.open());
+        QCOMPARE(source.write("local response"), qint64(14));
+        QVERIFY(source.flush());
+
+        XeneonNetworkAccessManager manager;
+        QNetworkRequest request(QUrl::fromLocalFile(source.fileName()));
+        request.setRawHeader(
+            XeneonNetworkAccessManager::kResponseLimitHeader, "1024");
+        QNetworkReply* reply = manager.get(request);
+        QVERIFY(reply != nullptr);
+        QVERIFY(dynamic_cast<XeneonBoundedNetworkReply*>(reply) != nullptr);
+        QSignalSpy finished(reply, &QNetworkReply::finished);
+        if (!reply->isFinished())
+            QVERIFY(finished.wait(1000));
+        QCOMPARE(reply->error(), QNetworkReply::NoError);
+        QCOMPARE(reply->readAll(), QByteArray("local response"));
+        delete reply;
     }
 };
 

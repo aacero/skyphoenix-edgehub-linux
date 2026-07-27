@@ -75,8 +75,16 @@ if command -v cargo-llvm-cov >/dev/null 2>&1; then
     rust_rc=0
     (
         cd "$PROJECT_DIR/core"
-        cargo llvm-cov --locked --lib --lcov --output-path "$COVERAGE_DIR/rust-lcov.info" &&
-        cargo llvm-cov --locked --lib --json --summary-only --output-path "$COVERAGE_DIR/rust-summary.json"
+        # Inline tests intentionally exercise process-global logging and XDG
+        # environment state. Run coverage serially so callsite registration and
+        # environment fixtures are deterministic; this changes scheduling, not
+        # which assertions or product branches are counted.
+        cargo llvm-cov --locked --lib --lcov \
+            --output-path "$COVERAGE_DIR/rust-lcov.info" \
+            -- --test-threads=1 &&
+        cargo llvm-cov --locked --lib --json --summary-only \
+            --output-path "$COVERAGE_DIR/rust-summary.json" \
+            -- --test-threads=1
     ) || rust_rc=$?
     if [ "$rust_rc" -eq 0 ] && [ -f "$COVERAGE_DIR/rust-lcov.info" ] && \
        [ -f "$COVERAGE_DIR/rust-summary.json" ]; then

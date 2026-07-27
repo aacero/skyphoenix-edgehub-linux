@@ -728,6 +728,7 @@ PRETTY_NAME="Red Hat Enterprise Linux 9.4 (Plow)"
         assert_eq!(parse_os_release("NAME=\"A\\\\\"").name, "A\\");
         // Shell rules: inside single quotes a backslash is literal.
         assert_eq!(parse_os_release(r#"NAME='A\B'"#).name, r"A\B");
+        assert_eq!(unquote("\"trailing\\\""), "trailing\\");
     }
 
     #[test]
@@ -897,10 +898,13 @@ PRETTY_NAME="Red Hat Enterprise Linux 9.4 (Plow)"
             "2024-01-15",
             "20240115T102345",
             "2024/01/15 10:23:45",
-            "2024-13-15 10:23:45", // month 13
-            "2024-01-32 10:23:45", // day 32
-            "2024-01-15 25:23:45", // hour 25
-            "2024-01-15 10:99:45", // minute 99
+            "2024-13-15 10:23:45",      // month 13
+            "2024-01-32 10:23:45",      // day 32
+            "2024-01-15 25:23:45",      // hour 25
+            "2024-01-15 10:99:45",      // minute 99
+            "2024-01-15X10:23:45",      // invalid date/time separator
+            "2024-01-15 10:23:61",      // invalid leap-second range
+            "2024-01-15T10:23:45+2460", // invalid offset
             "abcd-ef-gh ij:kl:mn",
         ] {
             assert!(
@@ -1060,6 +1064,47 @@ Description: a shell
     fn pacman_install_epoch_is_none_when_there_is_no_log() {
         let d = fake_arch_root(1);
         assert_eq!(pacman_install_evidence(d.path()), None);
+    }
+
+    #[test]
+    fn malformed_package_logs_are_skipped_without_inventing_an_install_date() {
+        let arch = fake_arch_root(1);
+        fs::create_dir_all(arch.path().join("var/log")).unwrap();
+        fs::write(
+            arch.path().join("var/log/pacman.log"),
+            "no bracket\n[missing close\n[2024-01-01 00:00] [ALPM] upgraded pkg\n",
+        )
+        .unwrap();
+        assert_eq!(
+            first_pacman_install(&arch.path().join("var/log/pacman.log")),
+            None
+        );
+        assert_eq!(pacman_install_evidence(arch.path()), None);
+
+        let debian = TempDir::new().unwrap();
+        fs::create_dir_all(debian.path().join("var/log")).unwrap();
+        fs::write(debian.path().join("var/log/dpkg.log"), "").unwrap();
+        fs::write(
+            debian.path().join("var/log/dpkg.log.1"),
+            "not-a-valid-timestamp install pkg\n",
+        )
+        .unwrap();
+        assert_eq!(dpkg_install_evidence(debian.path()), None);
+    }
+
+    #[test]
+    fn debian_probe_explains_missing_install_history() {
+        let root = TempDir::new().unwrap();
+        fs::create_dir_all(root.path().join("etc")).unwrap();
+        fs::write(root.path().join("etc/os-release"), DEBIAN).unwrap();
+
+        let info = probe(root.path());
+        assert_eq!(info.family, Family::Debian);
+        assert!(info.install_epoch.is_none());
+        assert_eq!(
+            info.install_reason.as_deref(),
+            Some("No installer record or readable dpkg installation history was found.")
+        );
     }
 
     #[test]

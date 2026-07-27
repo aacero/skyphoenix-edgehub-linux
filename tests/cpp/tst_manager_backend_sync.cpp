@@ -211,6 +211,17 @@ public:
         client->write("\n");
         client->flush();
     }
+    void sendObject(const QJsonObject& object) {
+        if (!client) return;
+        client->write(
+            QJsonDocument(object).toJson(QJsonDocument::Compact) + '\n');
+        client->flush();
+    }
+    void sendBytes(const QByteArray& bytes) {
+        if (!client) return;
+        client->write(bytes);
+        client->flush();
+    }
     // Release a getUiState reply that was withheld while holdGet was set.
     void releaseGet() {
         if (getPending) {
@@ -498,6 +509,11 @@ private slots:
         QVERIFY(!b.configJson().isEmpty());
         QVERIFY(!b.appVersion().isEmpty());
         QCOMPARE(b.hubRotation(), -1);
+        QVERIFY(b.preparePendingLayoutRetry());
+        QVERIFY(b.exportPendingUiStateRecovery().isEmpty());
+        QSignalSpy layoutErrors(&b, &ManagerBackend::layoutSaveError);
+        QVERIFY(!b.saveUiState(QStringLiteral("not-json")));
+        QCOMPARE(layoutErrors.count(), 1);
         b.saveUiState(testState("k", 1));            // offline persist
         QCOMPARE(b.uiState(), testState("k", 1));
         const QString starter = b.starterLayout();
@@ -528,6 +544,128 @@ private slots:
         b.listImages();                 // returns without crashing (possibly empty)
         b.setHubActivePage(7);          // offline is a safe no-op
         QVERIFY(!b.stopHub());          // no hub connected → honest false
+    }
+
+    void malformedHubLayoutsFailClosedAndTheNextValidReplyRecovers() {
+        FakeHub hub;
+        hub.holdGet = true;
+        QVERIFY(hub.start());
+        ManagerBackend backend;
+        QTRY_VERIFY_WITH_TIMEOUT(backend.hubConnected(), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(hub.client != nullptr, 5000);
+        QSignalSpy errors(&backend, &ManagerBackend::saveError);
+
+        hub.sendObject(QJsonObject{{"type", "uiState"}, {"stateLive", true}});
+        QTRY_COMPARE_WITH_TIMEOUT(errors.count(), 1, 5000);
+
+        hub.sendUiState(QStringLiteral(
+            "{\"version\":99,\"pages\":[],\"settings\":{}}"));
+        QTRY_COMPARE_WITH_TIMEOUT(errors.count(), 2, 5000);
+
+        const QString valid = testState("recovered", 1);
+        hub.sendUiState(valid);
+        QTRY_COMPARE_WITH_TIMEOUT(backend.uiState(), valid, 5000);
+    }
+
+    void liveAppliedAckUpdatesTheManagerWithoutWaitingForAPull() {
+        FakeHub hub;
+        hub.holdSetAcks = true;
+        QVERIFY(hub.start());
+        ManagerBackend backend;
+        QTRY_VERIFY_WITH_TIMEOUT(backend.hubConnected(), 5000);
+        QVERIFY(backend.layoutLiveApplied());
+        QSignalSpy liveChanges(
+            &backend, &ManagerBackend::layoutLiveAppliedChanged);
+
+        const QString state = testState("queued-ack", 1);
+        QVERIFY(backend.saveUiState(state));
+        QTRY_COMPARE_WITH_TIMEOUT(hub.setRequestIds.size(), 1, 5000);
+        hub.sendAck(
+            true, QStringLiteral("setUiState"), QString(),
+            hub.setRequestIds.first(), 0);
+        QTRY_VERIFY_WITH_TIMEOUT(!backend.layoutLiveApplied(), 5000);
+        QCOMPARE(liveChanges.count(), 1);
+    }
+
+    void completeOversizedHubFrameClosesTheConnection() {
+        FakeHub hub;
+        hub.holdGet = true;
+        QVERIFY(hub.start());
+        ManagerBackend backend;
+        QTRY_VERIFY_WITH_TIMEOUT(backend.hubConnected(), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(hub.client != nullptr, 5000);
+
+        QByteArray frame(xeneon::kMaxControlFrameBytes + 1, 'x');
+        frame.append('\n');
+        hub.sendBytes(frame);
+        QTRY_VERIFY_WITH_TIMEOUT(!backend.hubConnected(), 5000);
+        QCOMPARE(backend.rxBufferSizeForTest(), 0);
+    }
+
+    void uninspectableConnectedConfigGenerationReportsOnce() {
+        FakeHub hub;
+        hub.holdGet = true;
+        QVERIFY(hub.start());
+        ManagerBackend backend;
+        QTRY_VERIFY_WITH_TIMEOUT(backend.hubConnected(), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(hub.client != nullptr, 5000);
+        QSignalSpy errors(&backend, &ManagerBackend::saveError);
+
+        XeneonString directory(xeneon_config_dir());
+        const QString configPath =
+            directory.qstring() + QStringLiteral("/config.toml");
+        QFile::remove(configPath);
+        QVERIFY(QDir().mkpath(configPath));
+
+        const QString state = testState("generation-error", 1);
+        hub.sendUiState(state);
+        QTRY_COMPARE_WITH_TIMEOUT(errors.count(), 1, 5000);
+        hub.sendUiState(state);
+        QTest::qWait(100);
+        QCOMPARE(errors.count(), 1);
+        QVERIFY(errors.first().at(0).toString().contains(
+            QStringLiteral("could not be checked")));
+
+        QVERIFY(QDir(configPath).removeRecursively());
+    }
+
+    void postSaveGenerationProbeReportsAnUninspectableFile() {
+        ManagerBackend backend;
+        QSignalSpy errors(&backend, &ManagerBackend::saveError);
+        QVERIFY(backend.saveUiState(testState("post-save-probe", 1)));
+
+        XeneonString directory(xeneon_config_dir());
+        const QString configPath =
+            directory.qstring() + QStringLiteral("/config.toml");
+        QVERIFY(QFile::remove(configPath));
+        QVERIFY(QDir().mkpath(configPath));
+
+        QTRY_VERIFY_WITH_TIMEOUT(errors.count() >= 1, 2500);
+        bool foundProbeError = false;
+        for (const QList<QVariant>& emission : errors) {
+            if (emission.at(0).toString().contains(
+                    QStringLiteral("could not be checked after saving"))) {
+                foundProbeError = true;
+                break;
+            }
+        }
+        QVERIFY(foundProbeError);
+        QVERIFY(QDir(configPath).removeRecursively());
+    }
+
+    void offlineSettersRefuseToRaceAnUnconnectedHubOwner() {
+        auto hubOwner = xeneon::acquireSingleInstance(
+            QStringLiteral("hub"), false);
+        QVERIFY(hubOwner);
+        ManagerBackend backend;
+        QVERIFY(!backend.hubConnected());
+        QSignalSpy errors(&backend, &ManagerBackend::saveError);
+
+        QVERIFY(!backend.setTargetDisplay(
+            QStringLiteral("DP-3"), QStringLiteral("Panel")));
+        QVERIFY(!backend.setAutostart(true));
+        QVERIFY(!backend.setLicenseKey(QStringLiteral("XE1.invalid.signature")));
+        QCOMPARE(errors.count(), 3);
     }
 
     void diagnosticsConfigIsStructuredAndRedacted() {

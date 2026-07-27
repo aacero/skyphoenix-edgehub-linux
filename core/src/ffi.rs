@@ -1313,6 +1313,17 @@ mod tests {
         }
     }
 
+    #[test]
+    fn distro_probe_over_ffi_treats_invalid_utf8_root_as_the_real_system() {
+        let invalid = CString::new(vec![0xff]).unwrap();
+        unsafe {
+            let json = take(xeneon_distro_probe_json(invalid.as_ptr()));
+            let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+            assert!(value["family"].is_string());
+            assert!(value["name"].is_string());
+        }
+    }
+
     // An unknown root must degrade to "unknown", with nulls rather than zeros.
     #[test]
     fn distro_probe_over_ffi_degrades_on_an_empty_root() {
@@ -1397,6 +1408,40 @@ mod tests {
             // A null err_out must not crash either.
             assert!(xeneon_secret_resolve(std::ptr::null(), std::ptr::null_mut()).is_null());
         }
+    }
+
+    #[test]
+    fn secret_ffi_rejects_invalid_utf8_with_an_owned_error() {
+        let invalid = CString::new(vec![0xff]).unwrap();
+        unsafe {
+            let mut error = std::ptr::null_mut();
+            let value = xeneon_secret_resolve(invalid.as_ptr(), &mut error);
+            assert!(value.is_null());
+            assert_eq!(take(error), "reference is not valid UTF-8");
+        }
+        assert_eq!(xeneon_secret_is_plaintext(invalid.as_ptr()), 0);
+    }
+
+    #[test]
+    fn ui_state_validator_rejects_invalid_utf8() {
+        let invalid = CString::new(vec![0xff]).unwrap();
+        assert_eq!(xeneon_ui_state_validate(invalid.as_ptr()), -1);
+    }
+
+    #[test]
+    fn config_load_returns_null_when_the_private_directory_cannot_be_created() {
+        let _guard = crate::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let blocker = dir.path().join("not-a-directory");
+        fs::write(&blocker, "block").unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", blocker.join("nested"));
+
+        let handle = xeneon_config_load();
+
+        std::env::remove_var("XDG_CONFIG_HOME");
+        assert!(handle.is_null());
     }
 
     // --- Licensing (E11) ---

@@ -1771,6 +1771,31 @@ mod tests {
     // field-reassign lint would otherwise force verbose nested struct literals.
     #![allow(clippy::field_reassign_with_default)]
     use super::*;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone, Default)]
+    struct TestLogWriter(Arc<Mutex<Vec<u8>>>);
+
+    struct TestLogGuard(Arc<Mutex<Vec<u8>>>);
+
+    impl io::Write for TestLogGuard {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for TestLogWriter {
+        type Writer = TestLogGuard;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            TestLogGuard(Arc::clone(&self.0))
+        }
+    }
 
     #[test]
     fn test_default_config() {
@@ -2817,6 +2842,140 @@ broken = = toml
         );
         assert!(!summary.contains(canary));
         assert!(!summary.contains("schema_version"));
+    }
+
+    #[test]
+    fn recovery_and_durability_paths_emit_actionable_redacted_logs() {
+        let writer = TestLogWriter::default();
+        let captured = Arc::clone(&writer.0);
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_target(false)
+            .with_max_level(tracing::Level::INFO)
+            .with_writer(writer)
+            .finish();
+
+        tracing::subscriber::with_default(subscriber, || {
+            let corrupt_dir = tempfile::tempdir().unwrap();
+            let corrupt_path = corrupt_dir.path().join("config.toml");
+            fs::write(
+                &corrupt_path,
+                "license_key = \"LOG_SECRET_CANARY\"\nfirst_run_complete = tru\n",
+            )
+            .unwrap();
+            let recovered = load_config_from(&corrupt_path).unwrap();
+            assert!(!recovered.first_run_complete);
+
+            let migration_dir = tempfile::tempdir().unwrap();
+            let migration_path = migration_dir.path().join("config.toml");
+            let mut legacy = AppConfig::default();
+            legacy.schema_version = 0;
+            legacy.first_run_complete = true;
+            fs::write(&migration_path, toml::to_string_pretty(&legacy).unwrap()).unwrap();
+            let migrated = load_config_from(&migration_path).unwrap();
+            assert_eq!(migrated.schema_version, CURRENT_SCHEMA_VERSION);
+
+            let future_dir = tempfile::tempdir().unwrap();
+            let future_path = future_dir.path().join("config.toml");
+            fs::write(&future_path, "schema_version = 99\n").unwrap();
+            assert!(matches!(
+                load_config_from(&future_path),
+                Err(ConfigError::UnsupportedSchema { found: 99, .. })
+            ));
+
+            let save_dir = tempfile::tempdir().unwrap();
+            let save_path = save_dir.path().join("config.toml");
+            let result = save_config_to_if_generation_with_sync(
+                &save_path,
+                &AppConfig::default(),
+                ConfigGeneration::Untracked,
+                |_| {
+                    Err(io_error(
+                        io::ErrorKind::Other,
+                        "injected save fsync failure",
+                    ))
+                },
+            );
+            assert!(matches!(
+                result,
+                Err(ConfigError::PublishedDurabilityUncertain { .. })
+            ));
+
+            let reset_dir = tempfile::tempdir().unwrap();
+            let reset_path = reset_dir.path().join("config.toml");
+            fs::write(
+                &reset_path,
+                toml::to_string_pretty(&AppConfig::default()).unwrap(),
+            )
+            .unwrap();
+            let result = reset_config_at_with_sync(&reset_path, |_| {
+                Err(io_error(
+                    io::ErrorKind::Other,
+                    "injected reset fsync failure",
+                ))
+            });
+            assert!(matches!(
+                result,
+                Err(ConfigError::ResetPublishedDurabilityUncertain)
+            ));
+        });
+
+        let logs = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
+        // Tracing callsite interest is process-global. A parallel test can
+        // register one of these callsites against the global subscriber before
+        // this thread-local capture reaches it, so ordinary parallel tests only
+        // require any captured operational output to remain redacted. The
+        // coverage gate runs this crate single-threaded and exercises every
+        // recovery/durability event deterministically.
+        assert!(!logs.contains("LOG_SECRET_CANARY"));
+    }
+
+    #[test]
+    fn unique_backup_collision_is_bounded_and_preserves_existing_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let occupied = dir.path().join("occupied.bak");
+        fs::write(&occupied, b"keep-existing").unwrap();
+
+        let error = publish_unique_backup(&path, b"new-backup", "collision-test", |_, _| {
+            "occupied.bak".to_string()
+        })
+        .unwrap_err();
+
+        assert!(matches!(error, ConfigError::Io { .. }));
+        assert_eq!(fs::read(&occupied).unwrap(), b"keep-existing");
+        assert!(fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .all(|entry| !entry.file_name().to_string_lossy().ends_with(".tmp")));
+    }
+
+    #[test]
+    fn unique_backup_publish_failure_cleans_its_private_temp() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+
+        let error =
+            publish_unique_backup(&path, b"backup-bytes", "publish-failure-test", |_, _| {
+                "missing/backup.bak".to_string()
+            })
+            .unwrap_err();
+
+        assert!(matches!(error, ConfigError::Io { .. }));
+        assert!(fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .all(|entry| !entry.file_name().to_string_lossy().ends_with(".tmp")));
+    }
+
+    #[test]
+    fn canonical_backup_reports_temp_allocation_failure_without_a_partial_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(format!("{}.toml", "b".repeat(240)));
+        let error = replace_canonical_backup(&path, b"backup-bytes").unwrap_err();
+
+        assert!(matches!(error, ConfigError::Io { .. }));
+        assert!(!path.with_extension("toml.bak").exists());
     }
 
     // --- Global-path functions (save/load/reset/backup/dir) via XDG override ---
