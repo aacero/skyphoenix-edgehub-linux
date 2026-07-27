@@ -209,7 +209,7 @@ def _wmctrl_manager_window(manager_pid):
     """
     try:
         result = subprocess.run(
-            ["wmctrl", "-lpGx"],
+            ["wmctrl", "-lp"],
             capture_output=True,
             text=True,
             timeout=5,
@@ -222,10 +222,10 @@ def _wmctrl_manager_window(manager_pid):
 
     matches = []
     for line in result.stdout.splitlines():
-        fields = line.split(None, 9)
-        if len(fields) < 10:
+        fields = line.split(None, 4)
+        if len(fields) < 5:
             continue
-        window_id, _, raw_pid, _, _, _, _, _, _, title = fields
+        window_id, _, raw_pid, _, title = fields
         try:
             pid = int(raw_pid)
         except ValueError:

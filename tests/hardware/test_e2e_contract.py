@@ -403,8 +403,8 @@ class TestManagerInputLifecycle(unittest.TestCase):
 class TestManagerWindowProof(unittest.TestCase):
     def test_wmctrl_window_requires_one_exact_pid_and_title_match(self):
         listing = (
-            "0x012  0 222 1840 1510 1440 1300 manager.host host EdgeHub Manager\n"
-            "0x013  0 333 0 0 800 600 browser.host host EdgeHub Manager\n"
+            "0x012  0 222 host EdgeHub Manager\n"
+            "0x013  0 333 host EdgeHub Manager\n"
         )
         result = SimpleNamespace(returncode=0, stdout=listing)
         with mock.patch.object(
@@ -415,8 +415,8 @@ class TestManagerWindowProof(unittest.TestCase):
 
     def test_wmctrl_window_rejects_ambiguous_pid_matches(self):
         listing = (
-            "0x012  0 222 1840 1510 1440 1300 manager.host host EdgeHub Manager\n"
-            "0x014  0 222 1900 1550 400 300 manager.host host EdgeHub Manager\n"
+            "0x012  0 222 host EdgeHub Manager\n"
+            "0x014  0 222 host EdgeHub Manager\n"
         )
         result = SimpleNamespace(returncode=0, stdout=listing)
         with mock.patch.object(
@@ -425,7 +425,7 @@ class TestManagerWindowProof(unittest.TestCase):
 
     def test_wmctrl_window_rejects_title_only_match(self):
         listing = (
-            "0x012  0 999 1840 1510 1440 1300 manager.host host EdgeHub Manager\n"
+            "0x012  0 999 host EdgeHub Manager\n"
         )
         result = SimpleNamespace(returncode=0, stdout=listing)
         with mock.patch.object(
