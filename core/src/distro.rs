@@ -704,6 +704,14 @@ PRETTY_NAME="Red Hat Enterprise Linux 9.4 (Plow)"
     }
 
     #[test]
+    fn family_machine_tokens_are_stable() {
+        assert_eq!(Family::Arch.as_str(), "arch");
+        assert_eq!(Family::Debian.as_str(), "debian");
+        assert_eq!(Family::Rpm.as_str(), "rpm");
+        assert_eq!(Family::Unknown.as_str(), "unknown");
+    }
+
+    #[test]
     fn quoted_and_unquoted_values_both_parse() {
         // ID="arch" and ID=arch must yield the same id.
         assert_eq!(parse_os_release("ID=\"arch\"").id, "arch");
@@ -717,6 +725,7 @@ PRETTY_NAME="Red Hat Enterprise Linux 9.4 (Plow)"
     fn double_quoted_escapes_unescape_but_single_quoted_stay_literal() {
         assert_eq!(parse_os_release(r#"NAME="A \"B\" C""#).name, r#"A "B" C"#);
         assert_eq!(parse_os_release(r#"NAME="Pop\!_OS""#).name, "Pop!_OS");
+        assert_eq!(parse_os_release("NAME=\"A\\\\\"").name, "A\\");
         // Shell rules: inside single quotes a backslash is literal.
         assert_eq!(parse_os_release(r#"NAME='A\B'"#).name, r"A\B");
     }

@@ -298,6 +298,23 @@ mod tests {
     }
 
     #[test]
+    fn unclosed_env_ref_is_never_treated_as_a_plaintext_token() {
+        let _g = crate::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var("XENEON_TEST_UNCLOSED");
+
+        assert_eq!(
+            classify("${env:XENEON_TEST_UNCLOSED"),
+            SecretRef::Env("XENEON_TEST_UNCLOSED")
+        );
+        assert_eq!(
+            resolve("${env:XENEON_TEST_UNCLOSED").unwrap_err(),
+            SecretError::EnvMissing("XENEON_TEST_UNCLOSED".into())
+        );
+    }
+
+    #[test]
     fn resolves_file_ref_and_trims_the_trailing_newline() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("tok");

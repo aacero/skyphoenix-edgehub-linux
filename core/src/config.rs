@@ -2128,6 +2128,54 @@ broken = = toml
     }
 
     #[test]
+    fn preflight_malformed_single_line_strings_cannot_hide_a_future_schema() {
+        for source in [
+            "message = \"unterminated\nschema_version = 99\n",
+            "message = 'unterminated\nschema_version = 99\n",
+        ] {
+            assert_eq!(
+                preflight_schema_version(source).unwrap(),
+                Some(99),
+                "a malformed string must not swallow a later schema declaration"
+            );
+        }
+    }
+
+    #[test]
+    fn preflight_skips_escaped_multiline_content_and_nested_values() {
+        let multiline_basic = concat!(
+            "message = \"\"\"continued\\\n",
+            "schema_version = 99\n",
+            "\"\"\"\n",
+            "schema_version = 1\n"
+        );
+        assert_eq!(preflight_schema_version(multiline_basic).unwrap(), Some(1));
+
+        let multiline_literal = concat!(
+            "message = '''\n",
+            "schema_version = 99\n",
+            "'''\n",
+            "schema_version = 1\n"
+        );
+        assert_eq!(
+            preflight_schema_version(multiline_literal).unwrap(),
+            Some(1)
+        );
+
+        let nested = concat!(
+            "metadata = [{ text = \"schema_version = 99\" }, [1, 2]]\n",
+            "schema_version = 1\n"
+        );
+        assert_eq!(preflight_schema_version(nested).unwrap(), Some(1));
+    }
+
+    #[test]
+    fn preflight_finishes_a_value_before_a_trailing_comment() {
+        let source = "schema_version = 1 # current schema\n[broken\n";
+        assert_eq!(preflight_schema_version(source).unwrap(), Some(1));
+    }
+
+    #[test]
     fn preflight_recognises_current_and_legacy_schema_before_malformed_remainder() {
         assert_eq!(
             preflight_schema_version("schema_version = 1\n[broken\n").unwrap(),
@@ -2155,6 +2203,65 @@ broken = = toml
         ));
         assert_eq!(fs::read_to_string(&path).unwrap(), original);
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn diagnostics_report_invalid_ui_state_without_exposing_it() {
+        let mut config = AppConfig::default();
+        config.display.fallback_behavior = FallbackBehavior::Ask;
+        config.ui_state = Some("PRIVATE-BROKEN-UI-STATE".to_string());
+
+        let summary = diagnostics_summary(&config);
+        assert_eq!(summary["display"]["fallback_behavior"], "ask");
+        assert_eq!(summary["ui_state"]["present"], true);
+        assert_eq!(summary["ui_state"]["valid_json"], false);
+        assert_eq!(summary["ui_state"]["page_count"], 0);
+        assert_eq!(summary["ui_state"]["tile_count"], 0);
+        assert!(
+            !summary.to_string().contains("PRIVATE-BROKEN-UI-STATE"),
+            "diagnostics must not expose malformed private UI state"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_config_directory_rejects_a_file_without_changing_it() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("xeneon-edge-hub");
+        fs::write(&path, "preserve these bytes").unwrap();
+
+        let error = ensure_private_config_dir(&path).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(
+            error.to_string(),
+            "configuration directory is not a real directory"
+        );
+        assert_eq!(fs::read_to_string(path).unwrap(), "preserve these bytes");
+    }
+
+    #[test]
+    fn invalid_utf8_snapshot_is_rejected_with_a_bounded_path_only_error() {
+        let path = std::path::Path::new("/private/config.toml");
+        let snapshot = ConfigSnapshot {
+            bytes: vec![0xff, 0xfe],
+            #[cfg(unix)]
+            device: 0,
+            #[cfg(unix)]
+            inode: 0,
+        };
+
+        let error = snapshot_text(&snapshot, path).unwrap_err();
+        match error {
+            ConfigError::Io {
+                path: error_path,
+                source,
+            } => {
+                assert_eq!(error_path, path);
+                assert_eq!(source.kind(), io::ErrorKind::InvalidData);
+                assert_eq!(source.to_string(), "configuration file is not valid UTF-8");
+            }
+            other => panic!("expected a safe I/O error, got {other}"),
+        }
     }
 
     #[test]
