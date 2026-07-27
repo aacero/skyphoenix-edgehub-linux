@@ -398,8 +398,12 @@ Item {
         // Coerce each page into a well-formed { name:String, tiles:[objects with a
         // non-empty string id] }. Non-object pages are dropped entirely; a page's
         // tiles array is reset to [] when it isn't an array; each tile survives only
-        // if it's a plain object carrying a non-empty string id (a bare string,
+        // if it is a plain object carrying a non-empty string id (a bare string,
         // number, or id-less object is dropped rather than crashing addTile/binds).
+        // A missing or non-string type is retained as "". The tile still owns a
+        // stable position and settings bucket, and Dashboard renders its explicit
+        // Unavailable card. Silently dropping it would make a damaged or newer
+        // configuration look like the user had deleted a widget.
         var cleanPages = []
         var migrationLog = []
         var seenTileIds = Object.create(null)
@@ -421,11 +425,11 @@ Item {
             for (var j = 0; j < srcTiles.length; j++) {
                 var t = srcTiles[j]
                 if (_isPlainObject(t)
-                        && typeof t.id === "string" && t.id !== ""
-                        && typeof t.type === "string" && t.type !== "") {
+                        && typeof t.id === "string" && t.id !== "") {
+                    if (typeof t.type !== "string") t.type = ""
                     if (seenTileIds[t.id] === true) {
                         var previousId = t.id
-                        t.id = _newId(t.type, doc)
+                        t.id = _newId(t.type || "widget", doc)
                         if (_isPlainObject(doc.settings[previousId])
                                 && doc.settings[t.id] === undefined)
                             doc.settings[t.id] = _clone(doc.settings[previousId])

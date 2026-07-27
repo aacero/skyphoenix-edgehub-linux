@@ -62,7 +62,8 @@ released, frozen, supported on every desktop, or within its performance targets.
 | Active CPU <5% and RAM <250 MiB | **Current development candidate fails:** CPU 2.053%, peak RSS 472.820 MiB with the exact 10-widget load |
 | Startup <2 s and bounded growth during the accepted observation | Historical development startup passed at 0.223 s; exact-candidate measurement is pending |
 | Stability observation | The owner waived the historical 48-hour soak. A literal 30-minute, 14-widget instrumented substitute is required; it does not support a long-duration stability claim |
-| Qt Virtual Keyboard distribution choice and legal review of Inspired premium themes | **Open** |
+| Qt Virtual Keyboard distribution choice | **Resolved by removal; clean-candidate package evidence pending** |
+| Legal review of Inspired premium themes | **Open** |
 | Store, pricing, refunds, support and key delivery | **Open; no live-store claim permitted** |
 
 ## MVP success gate

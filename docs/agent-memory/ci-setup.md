@@ -30,8 +30,8 @@ GOTCHAS (each cost a red CI run the first time CI ever executed - the dev box is
    (`CMakeLists.txt` `find_package(Qt6 6.5 …)`; uses `QtQuick.Effects`/MultiEffect), and
    the minimal `qt6-declarative-dev` also lacks bundled QML modules the widgets pull in
    (`QtQml.WorkerScript` - "module … is not installed"). FIX: install Qt via
-   `jurplel/install-qt-action@v4` `version: '6.7.3'` `modules: 'qtvirtualkeyboard'`
-   `cache: true` in the build/qml-test/cpp-test jobs (NOT apt qt6-*-dev). It ships a full
+   `jurplel/install-qt-action@v4` `version: '6.7.3'` `cache: true` in the
+   build/qml-test/cpp-test jobs (NOT apt qt6-*-dev). It ships a full
    Qt with all QML modules + `qmltestrunner` (added to PATH, so `run_ui_tests.sh` finds
    it). Running the OLDER 6.7.3 (not the dev 6.11) is deliberate - it catches #3/#4 below.
 

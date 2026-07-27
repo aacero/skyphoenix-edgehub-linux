@@ -193,6 +193,30 @@ Item {
             while (d.dismissPriorityAlert()) {}
         }
 
+        function childInsideSurface(child, surface) {
+            var p = child.mapToItem(surface, 0, 0)
+            return p.x >= 0 && p.y >= 0
+                    && p.x + child.width <= surface.width + 1
+                    && p.y + child.height <= surface.height + 1
+        }
+
+        function waitForChildInsideSurface(child, surface, timeoutMs) {
+            var deadline = Date.now() + timeoutMs
+            while (Date.now() < deadline) {
+                if (childInsideSurface(child, surface))
+                    return true
+                wait(20)
+            }
+            return childInsideSurface(child, surface)
+        }
+
+        function containmentDiagnostic(label, child, surface) {
+            var p = child.mapToItem(surface, 0, 0)
+            return label + " mapped=(" + p.x + "," + p.y + ")"
+                    + " size=(" + child.width + "x" + child.height + ")"
+                    + " surface=(" + surface.width + "x" + surface.height + ")"
+        }
+
         function test_save_failure_banner_is_visible_and_touch_safe() {
             var banner = findPred(ld.item, function (x) {
                 return x && x.objectName === "saveFailureBanner"
@@ -203,9 +227,17 @@ Item {
             var discard = findPred(ld.item, function (x) {
                 return x && x.objectName === "discardFailedSaveButton"
             })
+            var messageScroll = findPred(ld.item, function (x) {
+                return x && x.objectName === "saveFailureMessageScroll"
+            })
+            var message = findPred(ld.item, function (x) {
+                return x && x.objectName === "saveFailureMessage"
+            })
             verify(banner, "the Hub save-failure banner exists")
             verify(retry, "the Hub save-failure banner exposes Retry")
             verify(discard, "the Hub save-failure banner exposes Discard")
+            verify(messageScroll, "the Hub save-failure message is scrollable")
+            verify(message, "the Hub save-failure message exists")
 
             var orientations = [
                 { portrait: false, width: 2560, height: 720 },
@@ -224,18 +256,42 @@ Item {
                            && banner.x + banner.width <= ld.item.width + 1
                            && banner.y + banner.height <= ld.item.height + 1
                 }, 1000)
-                var retryPoint = retry.mapToItem(banner, 0, 0)
-                var discardPoint = discard.mapToItem(banner, 0, 0)
-                verify(retryPoint.x >= 0 && retryPoint.y >= 0
-                       && retryPoint.x + retry.width <= banner.width + 1
-                       && retryPoint.y + retry.height <= banner.height + 1,
-                       "Retry stays fully inside the warning surface")
-                verify(discardPoint.x >= 0 && discardPoint.y >= 0
-                       && discardPoint.x + discard.width <= banner.width + 1
-                       && discardPoint.y + discard.height <= banner.height + 1,
-                       "Discard stays fully inside the warning surface")
+                verify(waitForChildInsideSurface(retry, banner, 1000),
+                       containmentDiagnostic(
+                           "Retry must stay fully inside the warning surface.",
+                           retry, banner))
+                verify(waitForChildInsideSurface(discard, banner, 1000),
+                       containmentDiagnostic(
+                           "Discard must stay fully inside the warning surface.",
+                           discard, banner))
                 verify(retry.visible && discard.visible,
                         "both recovery actions remain visible in either orientation")
+                root.store().saveFailed = false
+            }
+
+            var longFailure = Array(121).join(
+                "The save destination rejected this dashboard change. ")
+            for (var longIndex = 0; longIndex < orientations.length; longIndex++) {
+                root.width = orientations[longIndex].width
+                root.height = orientations[longIndex].height
+                root.store().markSaveFailed(longFailure)
+                tryVerify(function () {
+                    return banner.visible
+                           && message.implicitHeight > messageScroll.height
+                           && banner.y + banner.height <= ld.item.height + 1
+                }, 1000)
+                verify(waitForChildInsideSurface(messageScroll, banner, 1000),
+                       containmentDiagnostic(
+                           "Long save details stay inside a scrollable viewport.",
+                           messageScroll, banner))
+                verify(waitForChildInsideSurface(retry, banner, 1000),
+                       containmentDiagnostic(
+                           "Retry stays reachable with long save details.",
+                           retry, banner))
+                verify(waitForChildInsideSurface(discard, banner, 1000),
+                       containmentDiagnostic(
+                           "Discard stays reachable with long save details.",
+                           discard, banner))
                 root.store().saveFailed = false
             }
 

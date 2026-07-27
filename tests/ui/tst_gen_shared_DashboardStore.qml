@@ -258,6 +258,24 @@ Item {
                 "applyExternal() should normalise pages so a later addTile does not throw")
         }
 
+        function test_applyExternal_retains_typeless_tiles_for_explicit_fallback() {
+            verify(store.applyExternal(docStr({ version: 1,
+                pages: [ { name: "P", tiles: [
+                    { id: "damaged-1", type: "", size: "1x1" },
+                    { id: "damaged-1", size: "1x1" }
+                ] } ],
+                settings: { "damaged-1": { keep: true } } })))
+            var tiles = store.pages()[0].tiles
+            compare(tiles.length, 2,
+                    "id-bearing damaged tiles remain visible through the Unavailable fallback")
+            compare(tiles[0].type, "")
+            compare(tiles[1].type, "")
+            verify(tiles[1].id.indexOf("widget-") === 0,
+                   "a duplicate typeless id is reminted with a stable nonempty prefix")
+            verify(tiles[0].id !== tiles[1].id,
+                   "normalisation never leaves duplicate widget identities")
+        }
+
         // (BUG) applyExternal() keeps settings for tile ids no longer present.
         function test_applyExternal_prunes_orphan_settings() {
             store.applyExternal(docStr({ version: 1,
@@ -862,7 +880,7 @@ Item {
             }
             var fixedLength = JSON.stringify(store._persistableData()).length
             verify(fixedLength < cap + 1, "the fixed JSON envelope fits below the cap")
-            store.document.settings.capProbe.text = repeatedX(cap + 1 - fixedLength)
+            store.setSetting("capProbe", "text", repeatedX(cap + 1 - fixedLength))
             compare(JSON.stringify(store._persistableData()).length, cap + 1,
                     "the fixture is exactly one ASCII byte over the UI-state cap")
 

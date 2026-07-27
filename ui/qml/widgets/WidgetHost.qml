@@ -47,7 +47,8 @@ Item {
     function _ensureCurrent() {
         // Seeding defaults is a persisted mutation. A safe-mode host must not
         // touch the settings bucket even though no widget item will be loaded.
-        if (host.sessionEnabled && host.ensureSettings && host.store && host.catalog && host.widgetId
+        if (host.sessionEnabled && host.ensureSettings && host.store && host.catalog
+                && host.widgetId && host.widgetType
                 && host.store.ensureSettings && host.catalog.defaults)
             host.store.ensureSettings(host.widgetId, host.catalog.defaults(host.widgetType))
     }

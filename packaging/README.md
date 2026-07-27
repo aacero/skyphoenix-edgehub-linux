@@ -33,8 +33,9 @@ byte-preserved user state. It has **not yet run for the stable candidate**.
 The lifecycle also reinstalls the exact baseline artifact, inventories every
 installed payload file before removal, retains the exact baseline and candidate
 package bytes with SHA-256 sidecars, and issues GitHub build-provenance
-attestations for the tested candidate packages. It accepts only full 40-hex
-commits or exact tag refs, and the baseline must be an ancestor of the
+attestations for the tested candidate package, exact PASS report, and resolved
+container-environment record. It accepts only lowercase full 40-hex commits or
+exact SemVer release tags, and the baseline must be an ancestor of the
 candidate. Dispatch the workflow from that same candidate ref so GitHub
 provenance names the tested source SHA. The candidate must contain the current
 CMake-derived version contract. Older baselines are built without metadata
@@ -43,11 +44,14 @@ historical observations.
 
 Evidence is written under
 `artifacts/<candidate-full-sha>/native-upgrade-rollback-<format>/` and uploaded
-for 90 days. Download it before expiry, verify every sidecar, seal it with the
-rest of the candidate evidence, then run the audit finalizer once over the full
-`artifacts/<candidate-full-sha>/` directory after every producer has closed.
-Record the workflow URL plus package hashes in the release record. A workflow
-status without those retained bytes is not durable evidence.
+for 90 days. Download it before expiry, then use
+`scripts/import_native_lifecycle_evidence.py` with the exact candidate SHA,
+baseline ref, and workflow URL. The importer verifies the successful run and
+three GitHub attestations, retains both packages and every sidecar, and creates
+one unsigned typed draft with an exact source inventory. Review and finalize
+that individual draft before including it in the release-certification
+aggregate. A workflow status without those retained bytes is not durable
+evidence.
 
 The distro and native lifecycle jobs use exact `linux/amd64` OCI manifest
 digests, not mutable image tags or ephemeral container IDs. Their retained
@@ -92,7 +96,7 @@ the Hub and Manager in an isolated XDG environment, waits for the real local
 control socket, performs a ping/pong exchange, and requires the Hub request plus
 the Manager's accepted UI-state reply. It also checks that every module imported
 by the sources is present, because launching alone is not enough: `main.qml`
-only imports QtQuick/Controls/Layouts/Window/VirtualKeyboard, so
+only imports QtQuick/Controls/Layouts/Window, so
 `QtQuick.Effects`/`Shapes`/`Dialogs` reached via lazily loaded widgets can be
 missing while a shallow launch still looks healthy.
 
@@ -140,7 +144,7 @@ embedded app version, package metadata and filename cannot diverge:
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX=/usr \
-  -DXENEON_VERSION_OVERRIDE=1.0.0-beta.1
+  -DXENEON_VERSION_OVERRIDE=1.0.0
 cmake --build build -j"$(nproc)"
 ```
 
@@ -181,13 +185,12 @@ its filename retain the human-facing SemVer spelling.
 # Fedora 43
 dnf -y install cmake gcc-c++ make rpm-build cargo rust mesa-libGL-devel \
   qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
-  qt6-qtvirtualkeyboard-devel qt6-qtwayland-devel
+  qt6-qtwayland-devel
 
 # Ubuntu 26.04 LTS (ca-certificates is required or cargo's crates.io fetch
 # fails with "[77] Problem with the SSL CA cert" on a bare image)
 apt-get install -y ca-certificates cmake g++ make file dpkg-dev rustc cargo \
-  libgl1-mesa-dev qt6-base-dev qt6-declarative-dev qt6-svg-dev \
-  qt6-virtualkeyboard-dev
+  libgl1-mesa-dev qt6-base-dev qt6-declarative-dev qt6-svg-dev
 ```
 
 ## AppImage
@@ -288,8 +291,8 @@ submission still needs cargo vendoring and the sandbox-access items resolved.
 No package format can enable the Edge's orientation sensor by itself - it lives on
 a root-only hidraw node. The udev rule (`packaging/udev/99-xeneon-edge.rules`) is
 installed by the AUR/deb/rpm packages under `/usr/lib/udev/rules.d`; AppImage/Flatpak
-users install it manually. Everything else works without it (manual orientation
-modes still apply).
+users install it manually. Manual orientation and features unrelated to the HID
+sensor remain available, but automatic physical rotation does not.
 
 For an already-connected panel, activate a newly installed native rule by
 replugging the USB connection or rebooting. An administrator can instead reload

@@ -211,17 +211,17 @@ Item {
         function test_cd_2_config_data() {
             return [
                 { tag: "label-set",   label: "Vacation", date: futureDate(30), rep: false,
-                  want: "Vacation", nowant: "" },
+                  event: "Vacation", status: "days remaining", forbidden: "" },
                 { tag: "label-clear", label: "",         date: futureDate(30), rep: false,
-                  want: "the day",  nowant: "" },
+                  event: "Upcoming event", status: "days remaining", forbidden: "" },
                 { tag: "date-valid",  label: "",         date: futureDate(12), rep: false,
-                  want: "days until", nowant: "" },
+                  event: "Upcoming event", status: "days remaining", forbidden: "" },
                 { tag: "date-invalid",label: "",         date: "2026-13-45",   rep: false,
-                  want: "Set a date", nowant: "" },
+                  event: "", status: "Set a date in settings", forbidden: "" },
                 { tag: "repeat-on",   label: "",         date: "2000-06-15",   rep: true,
-                  want: "until",    nowant: "passed" },
+                  event: "Yearly event", status: "days remaining", forbidden: "Passed" },
                 { tag: "repeat-off",  label: "",         date: "2000-06-15",   rep: false,
-                  want: "passed",   nowant: "" }
+                  event: "Upcoming event", status: "Passed", forbidden: "" }
             ]
         }
         function test_cd_2_config(d) {
@@ -230,9 +230,21 @@ Item {
             compare(wh.storeCtl.settingsFor(wh.instanceId).date, d.date, "date persisted " + d.tag)
             compare(wh.storeCtl.settingsFor(wh.instanceId).repeatYearly, d.rep, "repeat persisted " + d.tag)
             snap(wh, "cd_cfg_" + d.tag)
-            verify(txtHas(d.want) !== null, "caption shows '" + d.want + "' @ " + d.tag)
-            if (d.nowant.length)
-                verify(txtHas(d.nowant) === null, "caption must NOT show '" + d.nowant + "' @ " + d.tag)
+            var event = G.byObjName(wh.item, "countdownEvent")
+            var status = G.byObjName(wh.item, "countdownContext")
+            verify(status !== null && effVis(status), "status caption is visible @ " + d.tag)
+            compare("" + status.text, d.status, "status caption @ " + d.tag)
+            if (d.event.length) {
+                verify(event !== null && effVis(event), "event identity is visible @ " + d.tag)
+                compare("" + event.text, d.event, "event identity @ " + d.tag)
+            } else {
+                verify(event === null || !effVis(event), "invalid event has no misleading identity")
+            }
+            verify(("" + wh.item.Accessible.name).indexOf(wh.item.countdownContext) >= 0,
+                   "accessible summary retains the full countdown relationship @ " + d.tag)
+            if (d.forbidden.length)
+                verify(txtHas(d.forbidden) === null,
+                       "caption must NOT show '" + d.forbidden + "' @ " + d.tag)
         }
 
         function test_cd_3_state_data() {
@@ -260,18 +272,28 @@ Item {
                 verify(txtHas("Set a date") !== null, "unset prompt visible")
             } else if (d.tag === "ST2-future") {
                 verify(txtExact("" + wh.item.days) !== null, "day number visible")
-                verify(txtHas("days until") !== null, "future caption")
+                verify(txtExact("Upcoming event") !== null, "future event identity")
+                verify(txtExact("days remaining") !== null, "future status caption")
+                verify(wh.item.countdownContext.indexOf("days until") >= 0,
+                       "accessible context explains what the remaining days count toward")
             } else if (d.tag === "ST3-today") {
                 verify(txtExact("NOW") !== null, "today has a deterministic hero state")
-                verify(txtHas("Today") !== null, "today caption")
+                verify(txtExact("Happening now") !== null, "today status caption")
+                verify(wh.item.countdownContext.indexOf("Today") >= 0,
+                       "accessible context identifies today's event")
             } else if (d.tag === "ST4-passed") {
-                verify(txtHas("passed") !== null, "passed caption")
+                verify(txtExact("Passed") !== null, "passed status caption")
+                verify(wh.item.countdownContext.indexOf("passed") >= 0,
+                       "accessible context explains the elapsed event")
                 verify(txtExact("" + Math.abs(wh.item.days)) !== null, "abs day count visible")
             } else if (d.tag === "ST5-progress") {
                 verify(trackNode() !== null, "progress track visible on tall")
             } else if (d.tag === "ST6-anniv") {
-                verify(txtHas("until") !== null, "anniversary counts down (until)")
-                verify(txtHas("passed") === null, "anniversary never shows passed")
+                verify(txtExact("Yearly event") !== null, "anniversary identity is explicit")
+                verify(txtExact("days remaining") !== null, "anniversary has a future status")
+                verify(txtHas("Passed") === null, "anniversary never shows passed")
+                verify(wh.item.countdownContext.indexOf("until") >= 0,
+                       "accessible context explains the next yearly occurrence")
                 verify(wh.item.days >= 0, "anniversary day count non-negative")
             } else if (d.tag === "ST7-micro") {
                 verify(wh.item.micro === true, "micro derivation active")

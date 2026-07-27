@@ -4,7 +4,7 @@
 
 **Original decision date:** 2026-07-11
 
-**Last verified:** 2026-07-26
+**Last verified:** 2026-07-27
 
 ## Context
 
@@ -52,11 +52,10 @@ The implementation does not use `cxx-qt`, `qmetaobject-rs`, or Corrosion.
 - Network
 - Svg
 - QuickControls2
-- VirtualKeyboard
 
-The Hub links all of those modules. The Manager links the same set except
-VirtualKeyboard. The Hub imports `QtQuick.VirtualKeyboard` and renders an
-`InputPanel`.
+The Hub and Manager link the modules they use from this list. The project does
+not import or link Qt Virtual Keyboard. Text entry relies on a physical keyboard
+or an input method supplied independently by the desktop environment.
 
 ## Widget execution decision
 
@@ -102,19 +101,13 @@ The repository's own code is offered under MIT or Apache-2.0. That statement
 does not determine the terms for a combined binary or bundled third-party
 components.
 
-The original ADR treated Qt as uniformly manageable under LGPLv3. That is not
-accurate for the implemented module set. The Hub imports and links Qt Virtual
-Keyboard. Qt's official documentation describes that module as available under
-a commercial Qt licence or GPLv3 and lists it among the Qt modules not available
-under LGPLv3 for open-source use.
-
-The release owner's disposition is unresolved. The choices and obligations
-require owner and, where appropriate, qualified legal review. Until the
-disposition is recorded and the release notices and source-delivery process
-match it, this ADR does not claim licensing completeness.
+The original implementation used Qt Virtual Keyboard, whose open-source option
+would have changed the release licensing analysis. The release owner selected
+removal instead. Current build definitions, package inventories, CI installers,
+and QML sources exclude that module. Artifact-level third-party notice and
+licensing review remains required for every shipped format.
 
 - [Qt licensing](https://doc.qt.io/qt-6/licensing.html)
-- [Qt Virtual Keyboard licensing](https://doc.qt.io/qt-6/qtvirtualkeyboard-index.html)
 
 ## Alternatives considered
 

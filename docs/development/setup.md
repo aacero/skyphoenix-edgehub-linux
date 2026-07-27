@@ -11,7 +11,7 @@ EdgeHub requires:
 - A C++17 compiler
 - CMake 3.22 or newer
 - Qt 6.5 or newer with Core, GUI, Quick, QML, Quick Controls, DBus,
-  Network, SVG and Virtual Keyboard development components
+  Network and SVG development components
 - A Qt Wayland platform plugin for normal Wayland execution
 
 The Rust minimum is declared in each workspace manifest. Builds use the
@@ -21,8 +21,8 @@ graph.
 ### Arch and CachyOS
 
 ```sh
-sudo pacman -S rust cmake gcc qt6-base qt6-declarative qt6-svg \
-  qt6-virtualkeyboard qt6-wayland
+sudo pacman -S --needed base-devel git rust cmake qt6-base qt6-declarative \
+  qt6-svg qt6-wayland
 ```
 
 ### Ubuntu
@@ -30,9 +30,8 @@ sudo pacman -S rust cmake gcc qt6-base qt6-declarative qt6-svg \
 The exact native Ubuntu workflow target is Ubuntu 26.04 LTS:
 
 ```sh
-sudo apt install rustc cargo cmake g++ make libgl1-mesa-dev \
-  qt6-base-dev qt6-declarative-dev qt6-svg-dev \
-  qt6-virtualkeyboard-dev
+sudo apt install git rustc cargo cmake g++ make libgl1-mesa-dev \
+  qt6-base-dev qt6-declarative-dev qt6-svg-dev
 ```
 
 Ubuntu 24.04's apt Qt 6.4.2 is below the required 6.5 floor. Use an upstream
@@ -47,7 +46,7 @@ The exact native Fedora workflow target is Fedora 43:
 ```sh
 sudo dnf install rust cargo cmake gcc-c++ make mesa-libGL-devel \
   qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
-  qt6-qtvirtualkeyboard-devel qt6-qtwayland-devel
+  qt6-qtwayland-devel
 ```
 
 ## Build

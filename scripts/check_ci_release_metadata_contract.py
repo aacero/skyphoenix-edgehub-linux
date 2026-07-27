@@ -511,16 +511,41 @@ def validate_static_contract(*, root: pathlib.Path) -> None:
     require(
         "CMakeLists.txt",
         "find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml DBus "
-        "VirtualKeyboard Network Svg QuickControls2)",
+        "Network Svg QuickControls2)",
         root=root,
     )
     for needle in (
         "libqt6svg6",
-        "qml6-module-qtquick-virtualkeyboard",
         "qt6-qtsvg",
-        "qt6-qtvirtualkeyboard",
+        "qt6-qtwayland",
     ):
         require("CMakeLists.txt", needle, root=root)
+    virtual_keyboard_tokens = (
+        "QtQuick.VirtualKeyboard",
+        "Qt6::VirtualKeyboard",
+        "qtvirtualkeyboard",
+        "qt6-virtualkeyboard",
+        "qt6-qtvirtualkeyboard",
+        "virtualkeyboard",
+    )
+    virtual_keyboard_surfaces = (
+        "CMakeLists.txt",
+        "ui/qml/main.qml",
+        "packaging/aur/PKGBUILD",
+        "packaging/local/PKGBUILD",
+        "packaging/appimage/build-appimage.sh",
+        ".github/workflows/ci.yml",
+        ".github/workflows/distro.yml",
+        ".github/workflows/native-upgrade-rollback.yml",
+        ".github/workflows/supply-chain.yml",
+    )
+    for path in virtual_keyboard_surfaces:
+        contents = text(path, root=root)
+        for token in virtual_keyboard_tokens:
+            if token.lower() in contents.lower():
+                raise AssertionError(
+                    f"{path} still contains removed Qt Virtual Keyboard token: {token}"
+                )
     require(
         ".github/workflows/distro.yml",
         "container: ubuntu:26.04@sha256:",

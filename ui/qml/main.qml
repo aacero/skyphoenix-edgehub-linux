@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Window
-import QtQuick.VirtualKeyboard
 
 ApplicationWindow {
     id: root
@@ -374,8 +373,8 @@ ApplicationWindow {
         Connections {
             target: root
             function onContentRotationChanged() {
-                // Dismiss the on-screen keyboard before re-orienting so it can't
-                // flash while the container height swaps underneath it.
+                // Ask any compositor-provided input method to close before the
+                // container changes orientation.
                 Qt.inputMethod.hide()
                 if (!theme.effectiveReduceMotion) reorientFx.restart()
             }
@@ -410,44 +409,6 @@ ApplicationWindow {
             // passed in - inject the live bindings once it exists. Without this,
             // starting with --diagnostics shows an empty Diagnostics page.
             Component.onCompleted: root.bindStackItem(currentItem)
-
-            // Keep the focused input above the on-screen keyboard: lift the whole
-            // stack by exactly the overlap between the text cursor and the keyboard
-            // top (0 when the cursor is already clear). Without this, inputs in the
-            // bottom half of a 2560px panel are fully hidden behind the VK.
-            transform: Translate {
-                y: {
-                    if (!inputPanel.active) return 0
-                    // The keyboard top and the StackView we translate both live
-                    // inside the rotated contentRoot, but Qt.inputMethod.cursorRectangle
-                    // is in scene/window coordinates. Map the cursor rect into
-                    // contentRoot's (rotated) frame first, otherwise in landscape
-                    // (90°/270°) the overlap is measured on the wrong axis and the
-                    // lift is wildly wrong.
-                    var kbTop = contentRoot.height - inputPanel.height
-                    var cur = Qt.inputMethod.cursorRectangle
-                    var local = contentRoot.mapFromItem(null, cur.x, cur.y, cur.width, cur.height)
-                    var need = (local.y + local.height + theme.spacingLg) - kbTop
-                    return need > 0 ? -need : 0
-                }
-                Behavior on y { NumberAnimation { duration: theme.motionEdit; easing.type: Easing.OutCubic } }
-            }
-        }
-
-        // On-screen keyboard: this is a touchscreen device with no attached
-        // physical keyboard, so any focused TextField needs a way to type.
-        InputPanel {
-            id: inputPanel
-            z: 1000
-            anchors.left: parent.left
-            anchors.right: parent.right
-            // Only render when the keyboard is actually active, so it can never
-            // flash during a rotation (when contentRoot's height changes under it).
-            visible: inputPanel.active
-            y: active ? contentRoot.height - height : contentRoot.height
-            // Slide only for genuine show/hide - not when the container resizes
-            // on rotation (which would otherwise re-animate the hidden panel).
-            Behavior on y { enabled: inputPanel.active; NumberAnimation { duration: theme.motionEdit; easing.type: Easing.OutCubic } }
         }
     }
 

@@ -9,6 +9,7 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "autostart.h"
@@ -72,20 +73,19 @@ private slots:
             content,
             hubAutostartDesktopEntry(QCoreApplication::applicationFilePath()));
 
-        const QFileDevice::Permissions filePermissions =
-            QFileInfo(path_).permissions();
-        QCOMPARE(
-            filePermissions,
-            QFileDevice::Permissions(
-                QFileDevice::ReadOwner | QFileDevice::WriteOwner));
+        // QFileInfo reports both Qt's Owner and User aliases when the current
+        // process owns a Unix file. Assert the actual POSIX mode instead, so a
+        // secure 0600 file is not mistaken for group-readable 0660.
+        struct stat fileStat {};
+        QVERIFY(::stat(QFile::encodeName(path_).constData(), &fileStat) == 0);
+        QCOMPARE(static_cast<uint>(fileStat.st_mode & 07777), uint(0600));
 
-        const QFileDevice::Permissions directoryPermissions =
-            QFileInfo(directory).permissions();
+        struct stat directoryStat {};
+        QVERIFY(
+            ::stat(QFile::encodeName(directory).constData(), &directoryStat)
+            == 0);
         QCOMPARE(
-            directoryPermissions,
-            QFileDevice::Permissions(
-                QFileDevice::ReadOwner | QFileDevice::WriteOwner
-                | QFileDevice::ExeOwner));
+            static_cast<uint>(directoryStat.st_mode & 07777), uint(0700));
         QCOMPARE(QFileInfo(path_).ownerId(), static_cast<uint>(::geteuid()));
     }
 

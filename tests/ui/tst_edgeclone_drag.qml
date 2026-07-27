@@ -108,6 +108,13 @@ Item {
         var ts = store.pages()[0].tiles
         return ts.map(function (t) { return t.id })
     }
+    // A semantic move along `l` is physical y in portrait and physical x in
+    // landscape. AUTO deliberately falls back to landscape while the Hub is
+    // offline, so asserting y unconditionally made the motion checks inspect
+    // the axis that correctly did not move.
+    function longAxisPixel(tile) {
+        return ld.item.landscape ? tile.x : tile.y
+    }
 
     function seed3() {
         store.load("blank")
@@ -295,7 +302,7 @@ Item {
             _laidOut3()
             var ids = tileIds()
             var b = tileById(ids[1])
-            var startY = b.y
+            var startLong = longAxisPixel(b)
             compare(b.animL, 2, "precondition: b's eased mirror sits at its real slot")
 
             store.moveTile(0, 1, 0)
@@ -304,11 +311,13 @@ Item {
             // and therefore the pixels - have not jumped.
             compare(b.pl, 0, "b's target slot updated immediately")
             verify(b.animL > 0, "but it has NOT teleported: the eased mirror is still en route")
-            fuzzyCompare(b.y, startY, 1.0, "and its pixels are still at the old slot on frame 0")
+            fuzzyCompare(longAxisPixel(b), startLong, 1.0,
+                         "and its pixels are still at the old long-axis slot on frame 0")
 
             // …and it does arrive.
             tryVerify(function () { return b.animL === 0 }, 4000, "the eased mirror lands on the new slot")
-            verify(b.y < startY - 1, "b ended up further up the page than it started")
+            verify(longAxisPixel(b) < startLong - 1,
+                   "b ended up earlier on the page's long axis than it started")
         }
 
         // REDUCE MOTION: smooth is not more motion. The move must be INSTANT - not a
@@ -319,7 +328,7 @@ Item {
             _laidOut3()
             var ids = tileIds()
             var b = tileById(ids[1])
-            var startY = b.y
+            var startLong = longAxisPixel(b)
 
             store.moveTile(0, 1, 0)
 
@@ -327,7 +336,8 @@ Item {
             // slot is already in the pixels on this very line.
             compare(b.pl, 0, "b's target slot updated")
             compare(b.animL, 0, "and the mirror is ALREADY there - no animation ran")
-            verify(b.y < startY - 1, "b's pixels moved instantly, in the same event")
+            verify(longAxisPixel(b) < startLong - 1,
+                   "b's pixels moved instantly along the long axis, in the same event")
             verify(tileById(ids[1]) === b, "instant, but still the same delegate - not a rebuild")
             theme.reduceMotionPreference = "auto"
         }

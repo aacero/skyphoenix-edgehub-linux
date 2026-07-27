@@ -220,14 +220,11 @@ bit-for-bit reproducible builds.
 - The repository's own code is offered under MIT or Apache-2.0. Distributed
   artifacts also contain or depend on third-party components under their own
   terms.
-- The Hub imports and links Qt Virtual Keyboard. Qt's official documentation
-  describes that module as available under a commercial Qt licence or GPLv3,
-  and lists it among the Qt modules not available under LGPLv3 for open-source
-  use. The release owner's licensing disposition is unresolved. This document
-  does not provide legal advice or claim that release licensing is complete.
+- The Hub does not import, link, package, or require Qt Virtual Keyboard. The
+  release process still audits every linked and bundled third-party component
+  for each artifact format. This document does not provide legal advice.
 
-See [Qt licensing](https://doc.qt.io/qt-6/licensing.html) and
-[Qt Virtual Keyboard licensing](https://doc.qt.io/qt-6/qtvirtualkeyboard-index.html).
+See [Qt licensing](https://doc.qt.io/qt-6/licensing.html).
 
 ## Security Contact
 

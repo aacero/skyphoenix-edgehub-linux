@@ -179,13 +179,11 @@ permission service or arbitrary-command launcher. See the
 - Rust 1.86 or newer
 - A C++17 compiler
 - CMake 3.22 or newer
-- Qt 6.5 or newer: Core, GUI, Quick, QML, Quick Controls, DBus, Network, SVG
-  and Virtual Keyboard
+- Qt 6.5 or newer: Core, GUI, Quick, QML, Quick Controls, DBus, Network and SVG
 - A Qt Wayland plugin for Wayland execution
 
-Qt Virtual Keyboard has a different open-source licensing choice from most
-other linked Qt modules. Its GPLv3-or-commercial distribution disposition is
-an owner/legal stable-release blocker.
+The product does not import, link, package, or require Qt Virtual Keyboard.
+Text entry relies on a physical keyboard or a desktop-provided input method.
 
 ## Repository map
 

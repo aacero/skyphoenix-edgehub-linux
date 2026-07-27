@@ -10,6 +10,7 @@ The pre-release entry point is:
 ```sh
 XENEON_TEST_LICENSE_KEY_FILE=/absolute/path/to/owner-issued-pro-key \
 XENEON_HW_INPUT=1 XENEON_HW_INPUT_DESKTOP=1 \
+XENEON_HW_DISPLAY_LIFECYCLE=1 \
   ./scripts/run_release_tests.sh
 ```
 
@@ -55,12 +56,18 @@ exact ten-widget load. The release owner explicitly waived soak testing. Its
 accepted substitute waits a literal 30 minutes with an exact 14-widget load,
 30-second samples, and no duration or widget-subset override.
 
-The two input variables are intentionally not enabled by the script. They are
+The two input variables and disruptive display-lifecycle variable are
+intentionally not enabled by the script. The input variables are
 the explicit authorization for synthetic input on the Edge and inside the
-render-verified Manager window. The preflight also requires a connected Edge,
-a live KWin Wayland session, writable `/dev/uinput`, a non-Edge Manager target
-screen, screenshot support, coverage tools, and network namespace containment.
-Local `strace` is not required. The dedicated
+render-verified Manager window. `XENEON_HW_DISPLAY_LIFECYCLE=1` separately
+authorizes temporary KScreen rotation, scale, priority, and enablement changes;
+the lifecycle harness restores and verifies the exact baseline on every exit
+path. The preflight also requires a connected Edge, a live KWin Wayland
+session, writable `/dev/uinput`, a non-Edge Manager target screen, screenshot
+support, coverage tools, network namespace containment, and no already-running
+Hub or Manager process. The last condition prevents an installed window from
+covering the exact candidate or a live Manager from changing state during
+capture. Local `strace` is not required. The dedicated
 supply-chain CI job still uses `strace` and a DNS/TCP sink to observe attempted
 connections, including failed and raw-IP attempts. Geometry trust overrides are
 rejected for a release run.
@@ -75,6 +82,14 @@ The gate covers:
 - real Manager-to-hub tests and the nested-KWin compositor suite;
 - the comprehensive Edge functional E2E, incremental build-up, and widget render
   matrix on the real panel;
+- the separately authorized real KScreen lifecycle matrix with retained,
+  commit-keyed baseline, screenshots, logs, results, and verified restoration;
+- real-panel orientation transitions with retained Wayland frame-callback
+  timing and an enforced smoothness SLO: first frame within 100ms, a 400ms to
+  680ms animation span, callback rate at least 70% of panel refresh, p95 frame
+  interval no more than two refresh periods, and estimated missed-refresh ratio
+  no more than 20%; callback cadence uses Wayland protocol time and a pipe
+  observer whose measured lag spread must stay within 2ms;
 - startup-to-first-Wayland-frame plus five-minute Hub CPU/RSS gates;
 - a literal 30-minute, 14-widget observation that gates complete CPU, RSS, file
   descriptor, thread, and GPU-memory sampling plus finite trend slopes;
@@ -91,8 +106,8 @@ Coverage changes code generation, so its instrumented executable is never used
 for performance claims. After coverage is recorded, the gate creates a second
 fresh, fixed CMake tree with `Release`, coverage off, and QA hooks off. The
 performance runner verifies those cache values, the binary version, and its
-SHA-256 before measuring it. The strict runner writes retained logs, screenshots,
-and performance JSON directly below
+SHA-256 before measuring it. The strict runner writes retained logs,
+screenshots, display-lifecycle records, and performance JSON directly below
 `artifacts/<full-40-character-commit>/release-gate-<UTC-time>-<pid>/`. After
 every producer closes, it writes the exact `PREFLIGHT.tsv` and `SUMMARY.tsv`
 records plus `RUN.json`. The run record binds the source commit, run ID, result
@@ -111,6 +126,16 @@ the commit and commit-keyed artifact path disagree. On success the strict runner
 returns a mode-`0600` machine receipt to `release.sh`. The receipt binds the
 commit, run ID, artifact path, and hashes of the manifest, detached signature,
 provenance, and run record.
+The semantic check also requires the retained display lifecycle result,
+rotation-frame report, short performance summary and its three profile reports,
+and the 14-widget report, startup report, and sample trace. Every one must be a
+qualified `PASS` for the exact source commit and the same non-instrumented
+candidate SHA-256 and build metadata. Display restoration and every lifecycle
+check must pass. Rotation intervals and all per-transition SLO decisions are
+recomputed from the retained callback timestamps. The performance records must
+contain the literal fixed loads and durations. Additional screenshots, logs,
+protocol traces, and other raw diagnostics remain allowed and are included in
+the signed manifest.
 Before creating the audit directory, the strict runner also derives its ordered
 preflight and suite rows from its own source and compares them with the signed
 audit contract. This fast check prevents a newly added gate from running for
@@ -148,6 +173,15 @@ release. Before signing, the exact portable tarball copied into
 `dist/` is extracted, both shipped binaries must report the tagged version, and
 the QA-off payload must pass the packaging smoke test; extra artifacts remain
 array-safe literal paths.
+
+Every AppImage extra is also bound to its exact GitHub workflow run.
+`release.sh` extracts the canonical run URL from the artifact's exact-commit
+SLSA attestation, queries that run, and requires the single
+`AppImage smoke (bare container, no Qt)` job to be completed successfully.
+The run URL, artifact name, kind, and SHA-256 are retained in
+`PROVENANCE.json`. Build provenance without that runtime job cannot publish an
+AppImage. The supported 1.0 portable path is `APPIMAGE_EXTRACT_AND_RUN=1`;
+mount-backed FUSE execution remains best effort until separately certified.
 
 The release CycloneDX document is generated only after the payload set is
 complete. It combines the Cargo graph, exact artifact hashes, and Syft scans,
@@ -187,8 +221,8 @@ commit-keyed manual touch capture, desktop notification and MPRIS actions,
 published AppImage zsync round trip, and native two-version package lifecycle
 remain manual exact-candidate gates. They are not reported as passed merely
 because per-commit CI passed. The 48-hour soak is an explicitly waived,
-documented owner risk and is not a hidden stable-release blocker. The physical touch audit seals
-only when all six named actions are recorded as `PASS`, each has a non-empty
+documented owner risk and is not a hidden stable-release blocker. The physical
+panel audit seals only when all nine named actions are recorded as `PASS`, each has a non-empty
 automatic panel screenshot and a distinct external camera photo or video, and
 the auditor signs the result. A failed, missing, duplicated, `NOT TESTED`,
 empty, invalid, or symlinked capture leaves the audit unsealed.
@@ -199,15 +233,78 @@ will stage `vMAJOR.MINOR.PATCH`, the maintainer must pass
 directory is a signed aggregate of five separately finalized and signed typed
 audit directories. It must say `PASS` for:
 
-- all six physical-touch actions, the exact commit and running binary, PASS
-  report, named auditor, six panel screenshots, and six external camera
-  captures;
+- six physical-touch actions plus panel power-cycle, display/USB reconnect, and
+  system suspend/resume, the exact commit and running binary, PASS report,
+  named auditor, nine panel screenshots, and nine external camera captures;
 - one structured real-desktop notification record with screenshot and transport
   log;
 - one structured real MPRIS PlayPause action with before, intermediate, and
   restored state plus process and D-Bus transport logs;
 - one exact-candidate DEB lifecycle with verified GitHub provenance;
 - one exact-candidate RPM lifecycle with verified GitHub provenance.
+
+Download each completed native lifecycle artifact into a private local
+directory, then convert it into the typed audit form:
+
+```bash
+gh run download RUN_ID \
+  --repo skyphoenix-it/skyphoenix-edgehub-linux \
+  --name native-upgrade-rollback-deb \
+  --dir /protected/path/native-upgrade-rollback-deb
+chmod -R go-rwx /protected/path/native-upgrade-rollback-deb
+python3 scripts/import_native_lifecycle_evidence.py \
+  --kind deb \
+  --commit FULL_CANDIDATE_SHA \
+  --baseline-ref PREVIOUS_SUPPORTED_RELEASE_TAG \
+  --workflow-url \
+  https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/actions/runs/RUN_ID \
+  /protected/path/native-upgrade-rollback-deb
+```
+
+Repeat with `rpm`. The importer checks the report sidecar, both package
+sidecars and bytes, the successful workflow-dispatch run at the exact commit,
+and three separate `gh attestation verify` results for the candidate package,
+exact PASS report, and pinned container-environment record. Every verification
+is constrained to the canonical repository, lifecycle workflow, source digest,
+and GitHub-hosted runner. This prevents a locally fabricated PASS report with a
+fresh sidecar from being paired with an independently genuine package
+attestation. The importer retains the report, packages, sidecars, environment,
+workflow result, and all verification outputs. The resulting typed directory
+is deliberately unsigned. Its machine attestation explicitly states that no
+human observation is asserted. Both evidence builders require the named
+candidate to be clean, exact `HEAD`. `--baseline-ref` is mandatory and must
+exactly match the owner-selected prior supported release or RC passed to the
+workflow; its locally resolved commit must equal the attested report's
+`baseline_sha`. Every SLSA invocation ID must also identify the supplied
+workflow run, so evidence from separate runs cannot be mixed.
+
+The native lifecycle v2 receipt contains a hash for every retained file below
+`source/`. Its semantic contract requires the exact source tree and independently
+cross-checks both package bytes and sidecars, the report sidecar, the pinned
+container environment, the successful workflow identity, and the package,
+report, and environment attestation subjects against the same workflow run.
+Deleting, adding, or changing any retained provenance file blocks finalization.
+
+After the five typed gates have each been reviewed, finalized, and signed,
+create the aggregate draft:
+
+```bash
+python3 scripts/create_release_certification_draft.py \
+  --commit FULL_CANDIDATE_SHA \
+  --version v1.0.0 \
+  --attested-by "RELEASE OWNER NAME" \
+  --physical-touch artifacts/FULL_CANDIDATE_SHA/manual-touch/UTC \
+  --desktop-notification artifacts/FULL_CANDIDATE_SHA/desktop-notification-UTC-PID \
+  --mpris-transport artifacts/FULL_CANDIDATE_SHA/mpris-transport-UTC-PID \
+  --native-deb-lifecycle artifacts/FULL_CANDIDATE_SHA/native-package-lifecycle-deb-UTC-PID \
+  --native-rpm-lifecycle artifacts/FULL_CANDIDATE_SHA/native-package-lifecycle-rpm-UTC-PID
+```
+
+The builder verifies every nested semantic contract, manifest, provenance
+record, and pinned-key signature twice around hashing. It requires an explicit
+one-line attester name, creates only `RELEASE_CERTIFICATION.json`, and never
+signs or finalizes the aggregate. Inspect the draft and all five references
+before separately invoking `scripts/finalize_audit_artifacts.sh`.
 
 The receipt schema is
 `skyphoenix-edgehub-release-certification/v2`. The ordered gate IDs are

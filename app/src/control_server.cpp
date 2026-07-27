@@ -5,6 +5,7 @@
 #include <QJsonObject>
 #include <QLocalServer>
 #include <QLocalSocket>
+#include <QVariant>
 
 #include "control_protocol.h"
 #include "control_socket_path.h"
@@ -119,6 +120,15 @@ void ControlServer::handleLine(QLocalSocket* sock, const QByteArray& line) {
     const QString requestId = obj.value("requestId").toString();
 
     if (type == "getUiState") {
+        // The packaging smoke needs an observable proof that the companion
+        // completed its first state pull. Keep the receipt per connection so
+        // the Manager's 500 ms refresh loop does not flood normal logs.
+        constexpr auto syncReceiptProperty =
+            "_xeneonManagerUiStateSyncReceiptLogged";
+        if (!sock->property(syncReceiptProperty).toBool()) {
+            qInfo() << "ControlServer: Manager UI-state sync request received";
+            sock->setProperty(syncReceiptProperty, true);
+        }
         const QString state = m_provider ? m_provider() : QString();
         QJsonObject reply{{"type", "uiState"}, {"state", state}};
         // Carry the live content rotation so a connected Manager can mirror the

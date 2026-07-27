@@ -41,7 +41,9 @@ The Corsair Xeneon Edge is a 2560×720 secondary touchscreen that works in eithe
 - **Native, without Chromium.** A Rust core handles metrics and configuration;
   Qt 6/QML draws the UI. Resource limits are evidence-gated; no passing stable
   CPU, memory or long-duration number is claimed before the exact candidate run.
-- **Designed for touch.** Large targets, swipe between pages, in-widget controls, on-device settings. You never need a keyboard to use it.
+- **Designed for touch.** Large targets, page swipes, in-widget controls, and
+  on-device settings cover normal dashboard use. Text entry uses a physical
+  keyboard or a desktop-provided input method.
 - **It finds the right screen.** Display detection puts EdgeHub on your Edge (or a display you choose), and a real HID orientation sensor follows the panel when you flip it.
 - **Design it from your desk.** The companion **EdgeHub Manager** is a live clone of your Edge - drag, reorder, resize, and restyle from your main monitor.
 
@@ -253,9 +255,12 @@ The `v1.0.0-beta.1` release provides `SHA256SUMS` alongside a detached
 `SHA256SUMS.asc`, made with the EdgeHub release key. (`v1.0.0-alpha.1` predates
 the key and is checksum-only - it has no `.asc`.)
 
-**1. Import the key.** It is not on a keyserver yet, so `gpg --recv-keys` will not find it. Use either route:
+**1. Import the key.** Retrieve it from a public keyserver, GitHub, or the
+repository:
 
 ```sh
+gpg --keyserver hkps://keys.openpgp.org \
+  --recv-keys 2F0CAD36DC1D46F3347B7EF293CDC77EACF98990
 curl -sL https://github.com/SimonKreitmayer.gpg | gpg --import   # from GitHub
 gpg --import packaging/edgehub-signing.pub                        # from a clone
 ```
@@ -287,6 +292,9 @@ in this repository, but no format is a verified stable artifact until its exact
 release SHA and exact bytes pass the gates in
 [`packaging/README.md`](packaging/README.md). Do not infer current-candidate
 status from the presence of a recipe or an older green workflow.
+The exact 1.0 desktop, display, architecture, input, and package support boundary
+is documented in the
+[EdgeHub 1.0 support contract](docs/DISTRIBUTION.md#edgehub-10-support-contract).
 
 ---
 
@@ -297,21 +305,21 @@ status from the presence of a recipe or an older green workflow.
 - **Rust** 1.86+ (the minimum declared by the locked Rust graph)
 - **C++17 compiler** (GCC 12+ or Clang 16+)
 - **CMake** 3.22+
-- **Qt 6.5+** with Qt Quick, Quick Controls, DBus, Network, SVG, Virtual
-  Keyboard and Wayland support
+- **Qt 6.5+** with Qt Quick, Quick Controls, DBus, Network, SVG and Wayland
+  support
 
 **Arch / CachyOS**
 
 ```sh
-sudo pacman -S rust cmake gcc qt6-base qt6-declarative qt6-svg \
-  qt6-virtualkeyboard qt6-wayland
+sudo pacman -S --needed base-devel git rust cmake qt6-base qt6-declarative \
+  qt6-svg qt6-wayland
 ```
 
 **Ubuntu 26.04 LTS**, the exact native Ubuntu target:
 
 ```sh
-sudo apt install cargo cmake g++ qt6-base-dev qt6-declarative-dev \
-  qt6-svg-dev qt6-virtualkeyboard-dev libgl1-mesa-dev
+sudo apt install git cargo cmake make g++ qt6-base-dev qt6-declarative-dev \
+  qt6-svg-dev libgl1-mesa-dev
 ```
 
 Ubuntu 24.04's apt Qt 6.4.2 is below the project floor. Use a release
@@ -443,7 +451,12 @@ Dual-licensed under either of:
 
 at your option.
 
-**Qt licensing note:** Qt modules do not all use the same open-source licence. Most modules linked by EdgeHub are available under LGPLv3, while Qt Virtual Keyboard is offered under GPLv3 or a commercial Qt licence. Dynamic linking is relevant to LGPL compliance but does not resolve the Virtual Keyboard choice. Its distribution disposition remains an owner/legal blocker for the stable release; this repository does not claim that decision is complete. See the official [Qt licensing table](https://doc.qt.io/qt-6/licensing.html) and [Qt Virtual Keyboard licensing](https://doc.qt.io/qt-6/qtvirtualkeyboard-index.html).
+**Qt licensing note:** Qt modules do not all use the same open-source licence.
+EdgeHub does not import, link, package, or require Qt Virtual Keyboard. Text
+entry uses a physical keyboard or an input method supplied independently by the
+desktop environment. Review the exact dynamically linked and bundled Qt
+inventory for each release artifact against the official
+[Qt licensing table](https://doc.qt.io/qt-6/licensing.html).
 
 **Bundled fonts:** the selectable typeface options include [Atkinson Hyperlegible](https://github.com/googlefonts/atkinson-hyperlegible) (© Braille Institute of America) and [Lexend](https://github.com/googlefonts/lexend) (© The Lexend Project Authors); the brand wordmark uses [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) (© The Chakra Petch Project Authors). All three are bundled unmodified under the SIL Open Font License 1.1. Their OFL texts ship in both [`assets/fonts/`](assets/fonts/) and installed packages (`LICENSE-OFL-AtkinsonHyperlegible.txt`, `LICENSE-OFL-ChakraPetch.txt`, `LICENSE-OFL-Lexend.txt`).
 

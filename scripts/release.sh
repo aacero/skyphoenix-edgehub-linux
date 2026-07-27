@@ -16,20 +16,24 @@
 #   may leave local unsigned build outputs for diagnosis, but it cannot publish
 #   them or present them as a signed release set.
 #
-# Usage (the three release-test inputs must be provided in the environment):
+# Usage (the four release-test inputs must be provided in the environment):
 #   scripts/release.sh --version v1.0.0-beta.1            # test + build + sign + print
 #   scripts/release.sh --version v1.0.0-beta.1 --publish  # ... and run gh
 #   scripts/release.sh --version v1.0.0-beta.1 --extra path/to/foo.pkg.tar.zst
 #   scripts/release.sh --version v1.0.0 \
 #     --stage-candidate \
 #     --certification artifacts/<full-sha>/release-certification-<UTC>-<pid> \
-#     --zsync-baseline-tag v1.0.0-rc.1
+#     --zsync-baseline-tag v1.0.0-rc.1 \
+#     --extra path/to/xeneon-edge-hub-1.0.0-x86_64.AppImage \
+#     --extra path/to/xeneon-edge-hub_1.0.0_amd64.deb \
+#     --extra path/to/xeneon-edge-hub-1.0.0-1.x86_64.rpm
 #   scripts/release.sh --version v1.0.0 --promote \
 #     --certification artifacts/<full-sha>/release-certification-<UTC>-<pid> \
 #     --zsync-certification artifacts/<full-sha>/appimage-zsync-<UTC>-<pid>
 #
 # Required by the mandatory strict test gate:
 #   XENEON_HW_INPUT=1, XENEON_HW_INPUT_DESKTOP=1,
+#   XENEON_HW_DISPLAY_LIFECYCLE=1,
 #   XENEON_TEST_LICENSE_KEY_FILE=/absolute/path/to/owner-issued-key
 #
 # AppImage + zsync (E10): pass the AppImage from packaging/appimage/
@@ -176,7 +180,8 @@ assert_dist_exact() {
 }
 
 verify_extra_attestation() {
-    local artifact="$1" signer_workflow="$2" attestation_output
+    local artifact="$1" signer_workflow="$2" artifact_kind="$3"
+    local attestation_output run_output run_url
     attestation_output="$(mktemp -t xeneon-extra-attestation-XXXXXX.json)"
     if ! timeout 120 gh attestation verify "$artifact" \
         --repo "$RELEASE_REPO" \
@@ -187,26 +192,99 @@ verify_extra_attestation() {
         rm -f -- "$attestation_output"
         die "no exact-commit GitHub build provenance from $signer_workflow for $(basename -- "$artifact")"
     fi
-    if ! python3 - "$attestation_output" <<'PY'
+    if ! run_url="$(python3 - "$attestation_output" \
+        "$RELEASE_REPO" "$(basename -- "$artifact")" \
+        "$(sha256sum -- "$artifact" | cut -d' ' -f1)" <<'PY'
 import json
+import re
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as handle:
     result = json.load(handle)
+repository = sys.argv[2]
+subject_name = sys.argv[3]
+subject_digest = sys.argv[4]
 if not isinstance(result, list) or not result:
     raise SystemExit(1)
+run_urls = set()
 for item in result:
     statement = item.get("verificationResult", {}).get("statement", {})
     if statement.get("predicateType") != "https://slsa.dev/provenance/v1":
         raise SystemExit(1)
-    if not statement.get("subject"):
+    subjects = statement.get("subject")
+    if not isinstance(subjects, list) or not any(
+        subject.get("name") == subject_name
+        and isinstance(subject.get("digest"), dict)
+        and subject["digest"].get("sha256") == subject_digest
+        for subject in subjects
+        if isinstance(subject, dict)
+    ):
         raise SystemExit(1)
+    invocation = (
+        statement.get("predicate", {})
+        .get("runDetails", {})
+        .get("metadata", {})
+        .get("invocationId")
+    )
+    match = re.fullmatch(
+        rf"https://github\.com/{re.escape(repository)}/actions/runs/"
+        r"([1-9][0-9]*)(?:/attempts/[1-9][0-9]*)?",
+        invocation or "",
+    )
+    if match is None:
+        raise SystemExit(1)
+    run_urls.add(
+        f"https://github.com/{repository}/actions/runs/{match.group(1)}"
+    )
+if len(run_urls) != 1:
+    raise SystemExit(1)
+print(run_urls.pop())
 PY
-    then
+    )"; then
         rm -f -- "$attestation_output"
-        die "GitHub returned a vacuous build-provenance result"
+        die "GitHub returned vacuous, mismatched, or ambiguous build provenance"
+    fi
+    if [ "$artifact_kind" = "appimage" ]; then
+        run_output="$(mktemp -t xeneon-appimage-runtime-run-XXXXXX.json)"
+        if ! timeout 120 gh run view "${run_url##*/}" \
+            --repo "$RELEASE_REPO" \
+            --json headSha,status,conclusion,url,jobs >"$run_output"; then
+            rm -f -- "$attestation_output" "$run_output"
+            die "could not verify the AppImage runtime-smoke workflow run"
+        fi
+        if ! python3 - "$run_output" "$head_commit" "$run_url" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    run = json.load(handle)
+if (
+    run.get("headSha") != sys.argv[2]
+    or run.get("status") != "completed"
+    or run.get("url") != sys.argv[3]
+):
+    raise SystemExit(1)
+jobs = run.get("jobs")
+matching = [
+    job
+    for job in jobs
+    if isinstance(job, dict)
+    and job.get("name") == "AppImage smoke (bare container, no Qt)"
+]
+if len(matching) != 1:
+    raise SystemExit(1)
+job = matching[0]
+if job.get("status") != "completed" or job.get("conclusion") != "success":
+    raise SystemExit(1)
+PY
+        then
+            rm -f -- "$attestation_output" "$run_output"
+            die "exact-commit AppImage runtime-smoke job did not pass"
+        fi
+        rm -f -- "$run_output"
     fi
     rm -f -- "$attestation_output"
+    printf '%s\n' "$run_url"
 }
 
 verify_release_tag_identity() {
@@ -229,7 +307,7 @@ verify_release_tag_identity() {
 }
 
 usage() {
-    sed -n '3,24p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
+    sed -n '19,46p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
     exit "${1:-0}"
 }
 
@@ -304,14 +382,6 @@ if [ "$PROMOTE" -eq 1 ]; then
 fi
 [ -z "$ZSYNC_CERTIFICATION_DIR" ] \
     || die "--zsync-certification is valid only with --promote"
-[ -n "$RELEASE_OWNER_TEST_LICENSE_FILE" ] \
-    || die "set XENEON_TEST_LICENSE_KEY_FILE to the absolute path of the owner-issued Pro licence"
-xeneon_release_rust_toolchain_verify \
-    || die "release Rust toolchain verification failed"
-command -v python3 >/dev/null 2>&1 \
-    || die "python3 is required to read the protected owner licence file"
-[ -f "$OWNER_LICENSE_FILE_READER" ] \
-    || die "owner licence file reader is unavailable: $OWNER_LICENSE_FILE_READER"
 if [ "$STABLE_RELEASE" -eq 1 ]; then
     if [ "$PUBLISH" -eq 1 ] && [ "$STAGE_CANDIDATE" -ne 1 ]; then
         die "direct stable publication is forbidden; use --stage-candidate, certify the public AppImage, then use --promote"
@@ -331,6 +401,14 @@ elif [ -n "$ZSYNC_BASELINE_TAG" ]; then
 fi
 [ "$STABLE_RELEASE" -eq 1 ] || [ "$STAGE_CANDIDATE" -eq 0 ] \
     || die "--stage-candidate is reserved for a stable release"
+[ -n "$RELEASE_OWNER_TEST_LICENSE_FILE" ] \
+    || die "set XENEON_TEST_LICENSE_KEY_FILE to the absolute path of the owner-issued Pro licence"
+xeneon_release_rust_toolchain_verify \
+    || die "release Rust toolchain verification failed"
+command -v python3 >/dev/null 2>&1 \
+    || die "python3 is required to read the protected owner licence file"
+[ -f "$OWNER_LICENSE_FILE_READER" ] \
+    || die "owner licence file reader is unavailable: $OWNER_LICENSE_FILE_READER"
 readonly STABLE_RELEASE
 readonly ZSYNC_BASELINE_TAG
 
@@ -681,6 +759,7 @@ EXTRA_SIDECARS=()
 EXTRA_SIDECAR_HASHES=()
 EXTRA_SIDECAR_SIZES=()
 EXTRA_KINDS=()
+EXTRA_WORKFLOW_RUN_URLS=()
 for extra_index in "${!EXTRA_ARTIFACTS[@]}"; do
     extra="${EXTRA_ARTIFACTS[$extra_index]}"
     extra="$(python3 "$RELEASE_PATH_TOOL" check-extra "$extra" \
@@ -772,7 +851,10 @@ PY
     # Before any executable or package parser sees an extra, GitHub verifies its
     # exact source commit and pinned workflow identity. Only hashing and the
     # adjacent plain-text digest check occur earlier.
-    verify_extra_attestation "$extra" "$extra_signer"
+    extra_workflow_run_url="$(
+        verify_extra_attestation "$extra" "$extra_signer" "$extra_kind"
+    )"
+    EXTRA_WORKFLOW_RUN_URLS+=("$extra_workflow_run_url")
 done
 if [ "$STABLE_RELEASE" -eq 1 ]; then
     native_binding_args=(
@@ -1317,6 +1399,15 @@ for artifact_index in "${!FINAL_ARTIFACT_PATHS[@]}"; do
         "${FINAL_ARTIFACT_SIZES[$artifact_index]}"
     )
 done
+extra_provenance_args=()
+for extra_index in "${!EXTRA_ARTIFACTS[@]}"; do
+    extra_provenance_args+=(
+        "${EXTRA_KINDS[$extra_index]}"
+        "${EXTRA_BASENAMES[$extra_index]}"
+        "${EXTRA_SOURCE_HASHES[$extra_index]}"
+        "${EXTRA_WORKFLOW_RUN_URLS[$extra_index]}"
+    )
+done
 python3 - "$provenance_path" "$VERSION" "$head_commit" "$tag_object" \
     "$RELEASE_KEY" "$release_notes_blob" "$SBOM_SCAN_MODE" \
     "$cargo_cyclonedx_actual" "${syft_actual:-not-installed}" "$source_date_epoch" \
@@ -1329,6 +1420,8 @@ python3 - "$provenance_path" "$VERSION" "$head_commit" "$tag_object" \
     "$RELEASE_CERTIFICATION_MANIFEST_SHA256" \
     "$RELEASE_CERTIFICATION_SIGNATURE_SHA256" \
     "$RELEASE_CERTIFICATION_PROVENANCE_SHA256" \
+    "${#EXTRA_ARTIFACTS[@]}" \
+    "${extra_provenance_args[@]}" \
     "${provenance_args[@]}" <<'PY' \
     || die "could not write release provenance"
 import datetime
@@ -1362,10 +1455,39 @@ import sys
     release_certification_manifest_sha256,
     release_certification_signature_sha256,
     release_certification_provenance_sha256,
-    *artifact_fields,
+    extra_count_text,
+    *remaining_fields,
 ) = sys.argv[1:]
+extra_count = int(extra_count_text)
+extra_field_count = extra_count * 4
+if len(remaining_fields) < extra_field_count:
+    raise SystemExit("attested extra provenance fields are incomplete")
+extra_fields = remaining_fields[:extra_field_count]
+artifact_fields = remaining_fields[extra_field_count:]
 if len(artifact_fields) % 3:
     raise SystemExit("artifact provenance triples are incomplete")
+attested_extras = []
+for index in range(0, len(extra_fields), 4):
+    kind, name, digest, workflow_run = extra_fields[index:index + 4]
+    if kind not in {"appimage", "deb", "rpm"}:
+        raise SystemExit("attested extra kind is invalid")
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise SystemExit("attested extra digest is invalid")
+    if not re.fullmatch(
+        r"https://github\.com/skyphoenix-it/skyphoenix-edgehub-linux/"
+        r"actions/runs/[1-9][0-9]*",
+        workflow_run,
+    ):
+        raise SystemExit("attested extra workflow run is invalid")
+    attested_extras.append(
+        {
+            "kind": kind,
+            "name": name,
+            "sha256": digest,
+            "workflow_run": workflow_run,
+            "appimage_runtime_smoke_required": kind == "appimage",
+        }
+    )
 artifacts = []
 for index in range(0, len(artifact_fields), 3):
     name, digest, size = artifact_fields[index:index + 3]
@@ -1396,7 +1518,7 @@ elif stable_release == "0":
 else:
     raise SystemExit("stable-release provenance selector is invalid")
 document = {
-    "schema": "skyphoenix-edgehub-release-provenance/v4",
+    "schema": "skyphoenix-edgehub-release-provenance/v5",
     "source_repository": "https://github.com/skyphoenix-it/skyphoenix-edgehub-linux",
     "source_commit": commit,
     "release_tag": tag,
@@ -1448,6 +1570,7 @@ document = {
         if stable_release == "1"
         else None
     ),
+    "attested_extras": attested_extras,
     "pre_document_payloads": artifacts,
 }
 path = pathlib.Path(output)

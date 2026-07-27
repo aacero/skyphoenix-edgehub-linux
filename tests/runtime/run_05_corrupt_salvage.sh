@@ -57,7 +57,7 @@ else
     fail=1
 fi
 
-if grep -aq "Config parse failed; backing up and salvaging" "$RT_ROOT/hub.log"; then
+if grep -aq "Config parse failed; preserving source before salvage" "$RT_ROOT/hub.log"; then
     echo "  [salvage] PASS: hub hit the salvage path (log)"
 else
     echo "  [salvage] FAIL: salvage path never engaged - did the corruption parse?"

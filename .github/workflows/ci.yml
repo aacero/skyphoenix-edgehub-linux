@@ -94,7 +94,6 @@ jobs:
         uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
           version: '6.7.3'
-          modules: 'qtvirtualkeyboard'
           cache: true
       - name: Install build tools
         run: |
@@ -124,7 +123,6 @@ jobs:
         uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
           version: '6.7.3'
-          modules: 'qtvirtualkeyboard'
           cache: true
       - name: Install build tools, runtime libs + fonts
         # A real scalable font is required: several tests assert text metrics
@@ -198,7 +196,6 @@ jobs:
         uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
           version: '6.7.3'
-          modules: 'qtvirtualkeyboard'
           cache: true
       - name: Install build + coverage tools
         run: |
@@ -355,7 +352,6 @@ jobs:
         uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
           version: '6.7.3'
-          modules: 'qtvirtualkeyboard'
           cache: true
       - name: Install compositor + runtime libs
         run: |

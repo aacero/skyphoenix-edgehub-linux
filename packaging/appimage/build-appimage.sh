@@ -169,10 +169,10 @@ export LD_LIBRARY_PATH="$QT_LIBS:${LD_LIBRARY_PATH:-}"
 # The QML is compiled into the binaries via qrc, so there are no external .qml for
 # qmlimportscanner to read - point QML_SOURCES_PATHS at the source tree so the Qt
 # plugin still bundles the right QML runtime modules (QtQuick, Controls, Effects,
-# Shapes, Dialogs, VirtualKeyboard, …). Without this the lazily-imported modules
+# Shapes and Dialogs). Without this the lazily-imported modules
 # are missing and the app STILL starts cleanly, then fails when a widget loads.
 export QML_SOURCES_PATHS="$REPO/ui/qml:$REPO/manager/qml"
-export EXTRA_QT_MODULES="waylandcompositor svg virtualkeyboard"
+export EXTRA_QT_MODULES="waylandcompositor svg"
 # linuxdeploy-plugin-qt only deploys the xcb platform plugin by default. The hub
 # targets Wayland on the device, and CI/headless runs need offscreen.
 export EXTRA_PLATFORM_PLUGINS="libqoffscreen.so;libqwayland-generic.so;libqwayland-egl.so"

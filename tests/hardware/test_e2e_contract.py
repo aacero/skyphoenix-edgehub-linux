@@ -23,6 +23,7 @@ sys.path.insert(0, HERE)
 from e2e_harness import assert_binaries_current, tile  # noqa: E402
 import e2e_widgets  # noqa: E402
 import edge_e2e  # noqa: E402
+import display_lifecycle_test as display_lifecycle  # noqa: E402
 import input_guard  # noqa: E402
 import manager_window  # noqa: E402
 
@@ -79,6 +80,238 @@ class TestCatalogContract(unittest.TestCase):
         used = {size for spec in e2e_widgets.WIDGET_SPECS.values()
                 for size in spec["sizes"]}
         self.assertEqual(set(), used - legal)
+
+
+class TestDisplayLifecycleEvidence(unittest.TestCase):
+    SHA = "a" * 40
+
+    def make_repo(self, temporary):
+        repository = os.path.join(temporary, "repo")
+        os.makedirs(os.path.join(repository, "artifacts", self.SHA))
+        return repository
+
+    def test_new_commit_keyed_evidence_leaf_is_private_and_empty(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = self.make_repo(temporary)
+            target = os.path.join(
+                repository, "artifacts", self.SHA, "display-lifecycle-run"
+            )
+            created = display_lifecycle.prepare_evidence_directory(
+                target, self.SHA, repo=repository
+            )
+            self.assertEqual(os.path.abspath(target), os.fspath(created))
+            self.assertEqual(0o700, os.stat(created).st_mode & 0o777)
+            self.assertEqual([], os.listdir(created))
+
+    def test_unsafe_or_ambiguous_evidence_targets_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = self.make_repo(temporary)
+            artifacts = os.path.join(repository, "artifacts")
+
+            with self.subTest(case="relative"):
+                with self.assertRaisesRegex(RuntimeError, "absolute"):
+                    display_lifecycle.prepare_evidence_directory(
+                        "artifacts/run", self.SHA, repo=repository
+                    )
+            with self.subTest(case="outside-artifacts"):
+                with self.assertRaisesRegex(RuntimeError, "below"):
+                    display_lifecycle.prepare_evidence_directory(
+                        os.path.join(repository, "outside", "run"),
+                        self.SHA,
+                        repo=repository,
+                    )
+            with self.subTest(case="wrong-commit-key"):
+                wrong_parent = os.path.join(artifacts, "b" * 40)
+                os.mkdir(wrong_parent)
+                with self.assertRaisesRegex(RuntimeError, "exact-full-commit"):
+                    display_lifecycle.prepare_evidence_directory(
+                        os.path.join(wrong_parent, "run"),
+                        self.SHA,
+                        repo=repository,
+                    )
+            with self.subTest(case="existing-empty-target"):
+                existing = os.path.join(artifacts, self.SHA, "existing")
+                os.mkdir(existing)
+                with self.assertRaisesRegex(RuntimeError, "must not already exist"):
+                    display_lifecycle.prepare_evidence_directory(
+                        existing, self.SHA, repo=repository
+                    )
+            with self.subTest(case="existing-nonempty-target"):
+                nonempty = os.path.join(artifacts, self.SHA, "nonempty")
+                os.mkdir(nonempty)
+                with open(os.path.join(nonempty, "old.log"), "w", encoding="utf-8"):
+                    pass
+                with self.assertRaisesRegex(RuntimeError, "must not already exist"):
+                    display_lifecycle.prepare_evidence_directory(
+                        nonempty, self.SHA, repo=repository
+                    )
+
+    def test_symlink_target_and_parent_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = self.make_repo(temporary)
+            commit_root = os.path.join(repository, "artifacts", self.SHA)
+            outside = os.path.join(temporary, "outside")
+            os.mkdir(outside)
+
+            target_link = os.path.join(commit_root, "target-link")
+            os.symlink(outside, target_link)
+            with self.assertRaisesRegex(RuntimeError, "must not already exist"):
+                display_lifecycle.prepare_evidence_directory(
+                    target_link, self.SHA, repo=repository
+                )
+
+            parent_link = os.path.join(commit_root, "parent-link")
+            os.symlink(outside, parent_link)
+            with self.assertRaisesRegex(RuntimeError, "real directories"):
+                display_lifecycle.prepare_evidence_directory(
+                    os.path.join(parent_link, "run"),
+                    self.SHA,
+                    repo=repository,
+                )
+
+    def test_symlink_artifacts_root_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repository = os.path.join(temporary, "repo")
+            outside = os.path.join(temporary, "outside")
+            os.mkdir(repository)
+            os.makedirs(os.path.join(outside, self.SHA))
+            os.symlink(outside, os.path.join(repository, "artifacts"))
+            with self.assertRaisesRegex(RuntimeError, "real directory"):
+                display_lifecycle.prepare_evidence_directory(
+                    os.path.join(
+                        repository,
+                        "artifacts",
+                        self.SHA,
+                        "display-lifecycle-run",
+                    ),
+                    self.SHA,
+                    repo=repository,
+                )
+
+    def test_restore_guard_runs_and_verifies_after_test_failure(self):
+        baseline = {
+            "outputs": [{
+                "name": "DP-3",
+                "enabled": True,
+                "currentModeId": "1",
+                "pos": {"x": 10, "y": 20},
+                "rotation": 8,
+                "scale": 1.25,
+                "priority": 2,
+            }]
+        }
+        applied = []
+        guard = display_lifecycle.DisplayRestoreGuard(
+            baseline,
+            apply=lambda *settings: applied.extend(settings),
+            read=lambda: baseline,
+        )
+        with self.assertRaisesRegex(ValueError, "injected body failure"):
+            with guard:
+                raise ValueError("injected body failure")
+        self.assertEqual(
+            display_lifecycle.restore_settings(baseline),
+            applied,
+        )
+        self.assertTrue(guard.verified)
+
+    def test_any_not_tested_check_blocks_a_lifecycle_pass(self):
+        complete = SimpleNamespace(
+            results=[("render", True, "visible")],
+            skips=[],
+        )
+        incomplete = SimpleNamespace(
+            results=[("missing-target", True, "hidden")],
+            skips=[("reconnect", "not exercised")],
+        )
+        self.assertTrue(display_lifecycle.all_checks_passed(complete))
+        self.assertFalse(
+            display_lifecycle.all_checks_passed(complete, incomplete)
+        )
+
+    def test_baseline_geometry_accepts_landscape_without_hardcoded_portrait(self):
+        landscape = ("DP-3", 5120, 0, 2560, 720)
+        self.assertTrue(
+            display_lifecycle.baseline_rect_restored(landscape, landscape)
+        )
+        self.assertFalse(
+            display_lifecycle.baseline_rect_restored(
+                ("DP-3", 5120, 0, 720, 2560),
+                landscape,
+            )
+        )
+
+
+class TestDisplayLifecycleReleaseWiring(unittest.TestCase):
+    def test_strict_runner_uses_the_exact_candidate_and_audit_root(self):
+        runner_path = os.path.join(REPO, "scripts", "run_release_tests.sh")
+        with open(runner_path, "r", encoding="utf-8") as source:
+            runner = source.read()
+        lifecycle_path = os.path.join(
+            REPO, "tests", "hardware", "display_lifecycle_test.py"
+        )
+        with open(lifecycle_path, "r", encoding="utf-8") as source:
+            display_lifecycle_source = source.read()
+        self.assertIn(
+            'preflight_ok "XENEON_HW_DISPLAY_LIFECYCLE=1 '
+            '(temporary output changes explicitly authorised)"',
+            runner,
+        )
+        self.assertIn(
+            'preflight_ok "no Hub or Manager process is running"',
+            runner,
+        )
+        self.assertIn(
+            'for process_executable in /proc/[0-9]*/exe',
+            runner,
+        )
+        self.assertIn(
+            'run_release_suite "Real Edge disruptive display lifecycle" 1200',
+            runner,
+        )
+        self.assertIn('XENEON_HUB="$PERFORMANCE_HUB"', runner)
+        self.assertIn(
+            '--evidence-dir "$AUDIT_ROOT/display-lifecycle"',
+            runner,
+        )
+        self.assertIn(
+            'run_release_suite "Real Edge rotation smoothness SLO" 300',
+            runner,
+        )
+        self.assertIn(
+            '--output-dir "$performance_evidence_root/rotation-frame"',
+            runner,
+        )
+        prepared = runner.index(
+            'run_release_suite "Fresh non-instrumented performance candidate"'
+        )
+        process_guard = runner.index(
+            'preflight_ok "no Hub or Manager process is running"'
+        )
+        first_suite = runner.index(
+            'run_release_suite "Repository full-history secret scan"'
+        )
+        lifecycle = runner.index(
+            'run_release_suite "Real Edge disruptive display lifecycle"'
+        )
+        rotation = runner.index(
+            'run_release_suite "Real Edge rotation smoothness SLO"'
+        )
+        lifecycle_block = runner[lifecycle:rotation]
+        self.assertIn('--hub "$PERFORMANCE_HUB"', lifecycle_block)
+        self.assertIn(
+            "candidate_build = validate_candidate_build(binary)",
+            display_lifecycle_source,
+        )
+        self.assertIn(
+            '"candidate_build": candidate_build',
+            display_lifecycle_source,
+        )
+        rotation_block = runner[rotation:]
+        self.assertIn('--hub "$PERFORMANCE_HUB"', rotation_block)
+        self.assertLess(process_guard, first_suite)
+        self.assertLess(prepared, lifecycle)
+        self.assertLess(lifecycle, rotation)
 
 
 class TestManagerInputLifecycle(unittest.TestCase):

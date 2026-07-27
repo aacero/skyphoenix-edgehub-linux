@@ -172,16 +172,35 @@ done
 echo "  ok  distro and documentation workflows self-trigger on every build input"
 
 grep -Fq \
-  'find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml DBus VirtualKeyboard Network Svg QuickControls2)' \
+  'find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml DBus Network Svg QuickControls2)' \
   "$REPO/CMakeLists.txt"
 grep -Fq 'libqt6svg6, qt6-wayland' "$REPO/CMakeLists.txt"
-grep -Fq 'qml6-module-qtquick-virtualkeyboard | qt6-virtualkeyboard' \
+grep -Fq 'qt6-qtsvg, qt6-qtwayland' \
   "$REPO/CMakeLists.txt"
-grep -Fq 'qt6-qtsvg, qt6-qtvirtualkeyboard, qt6-qtwayland' \
-  "$REPO/CMakeLists.txt"
+for forbidden in \
+  'QtQuick.VirtualKeyboard' \
+  'Qt6::VirtualKeyboard' \
+  'qtvirtualkeyboard' \
+  'qt6-virtualkeyboard' \
+  'qt6-qtvirtualkeyboard' \
+  'virtualkeyboard'; do
+  if grep -RFiq -- "$forbidden" \
+      "$REPO/CMakeLists.txt" \
+      "$REPO/ui/qml/main.qml" \
+      "$REPO/packaging/aur/PKGBUILD" \
+      "$REPO/packaging/local/PKGBUILD" \
+      "$REPO/packaging/appimage/build-appimage.sh" \
+      "$REPO/.github/workflows/ci.yml" \
+      "$REPO/.github/workflows/distro.yml" \
+      "$REPO/.github/workflows/native-upgrade-rollback.yml" \
+      "$REPO/.github/workflows/supply-chain.yml"; then
+    echo "FAIL: removed Qt Virtual Keyboard token remains: $forbidden" >&2
+    exit 1
+  fi
+done
 grep -Fq 'container: ubuntu:26.04@sha256:' \
   "$REPO/.github/workflows/distro.yml"
-echo "  ok  linked Qt SVG/Virtual Keyboard modules are in exact native inventories"
+echo "  ok  linked Qt modules are in native inventories and Virtual Keyboard is absent"
 
 for workflow in \
   "$REPO/.github/workflows/ci.yml" \
@@ -596,9 +615,18 @@ grep -Fq 'assert_installed "$baseline_app" "$baseline_native" "reinstall"' "$PAI
 grep -Fq 'assert_user_state "upgrade"' "$PAIR_RUNNER"
 grep -Fq 'assert_user_state "rollback"' "$PAIR_RUNNER"
 grep -Fq 'candidate_package_sha256=' "$PAIR_RUNNER"
+grep -Fq 'echo "report=$report_path"' "$PAIR_RUNNER"
 grep -Fq 'payload_inventory=' "$PAIR_RUNNER"
 grep -Fq 'assert_retired_paths_absent' "$PAIR_RUNNER"
 grep -Fq 'merge-base --is-ancestor' "$PAIR_RUNNER"
+grep -Fq \
+  'ref must be a lowercase full commit or exact SemVer release tag' \
+  "$PAIR_RUNNER"
+if grep -Fq '[0-9A-Fa-f]{40}' "$PAIR_RUNNER" ||
+   grep -Fq 'refs/tags/*)' "$PAIR_RUNNER"; then
+  echo "FAIL: native lifecycle runner still accepts non-canonical refs" >&2
+  exit 1
+fi
 grep -Fq 'candidate_sha" = "$GITHUB_SHA' "$PAIR_RUNNER"
 grep -Fq 'evidence_dir="$repo/artifacts/$candidate_sha/native-upgrade-rollback-$kind"' \
   "$PAIR_RUNNER"
@@ -611,11 +639,25 @@ grep -Fq "workflow_dispatch:" "$PAIR_WORKFLOW"
 grep -Fq "baseline_ref:" "$PAIR_WORKFLOW"
 grep -Fq "candidate_ref:" "$PAIR_WORKFLOW"
 grep -Fq \
+  'Ref must be a lowercase full commit or exact SemVer release tag' \
+  "$PAIR_WORKFLOW"
+if grep -Fq '[0-9A-Fa-f]{40}' "$PAIR_WORKFLOW" ||
+   grep -Fq 'refs/tags/[A-Za-z0-9]' "$PAIR_WORKFLOW"; then
+  echo "FAIL: native lifecycle workflow still accepts non-canonical refs" >&2
+  exit 1
+fi
+grep -Fq \
   "actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f" \
+  "$PAIR_WORKFLOW"
+grep -Fq 'subject-path: ${{ steps.lifecycle.outputs.candidate_package }}' \
+  "$PAIR_WORKFLOW"
+grep -Fq 'subject-path: ${{ steps.lifecycle.outputs.report }}' \
+  "$PAIR_WORKFLOW"
+grep -Fq 'subject-path: ${{ steps.environment.outputs.environment }}' \
   "$PAIR_WORKFLOW"
 echo "  ok  manual two-version DEB/RPM contract is exact-ref and fail-closed"
 echo "  ok  lifecycle retains hashes, tests reinstall, and inventories full removal"
-echo "  ok  candidate package receives GitHub build provenance"
+echo "  ok  candidate package, PASS report, and environment receive GitHub provenance"
 echo "       status remains NOT RUN until its two distro jobs pass for exact refs"
 
 echo "RESULT: SUCCESS"

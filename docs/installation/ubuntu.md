@@ -32,8 +32,7 @@ because CPack would otherwise emit an invalid package while reporting success.
 ```sh
 sudo apt update
 sudo apt install ca-certificates git cmake g++ make file dpkg-dev rustc cargo \
-  libgl1-mesa-dev qt6-base-dev qt6-declarative-dev qt6-svg-dev \
-  qt6-virtualkeyboard-dev
+  libgl1-mesa-dev qt6-base-dev qt6-declarative-dev qt6-svg-dev
 
 git clone https://github.com/skyphoenix-it/skyphoenix-edgehub-linux.git
 cd skyphoenix-edgehub-linux

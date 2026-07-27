@@ -208,8 +208,16 @@ if grep -Fq -- '--custom-apprun "$REPO/packaging/appimage/AppRun"' \
         && grep -Fq 'Manager UI-state sync request received' "$PACKAGE_SMOKE" \
         && grep -Fq 'Manager UI-state sync request received' \
             "$REPO/app/src/control_server.cpp" \
+        && grep -Fq 'if (!sock->property(syncReceiptProperty).toBool())' \
+            "$REPO/app/src/control_server.cpp" \
+        && grep -Fq 'sock->setProperty(syncReceiptProperty, true);' \
+            "$REPO/app/src/control_server.cpp" \
         && grep -Fq 'Manager: Hub UI-state reply accepted' "$PACKAGE_SMOKE" \
         && grep -Fq 'Manager: Hub UI-state reply accepted' \
+            "$REPO/manager/src/manager_backend.h" \
+        && grep -Fq 'if (!m_hubUiStateReceiptLogged)' \
+            "$REPO/manager/src/manager_backend.h" \
+        && grep -Fq 'm_hubUiStateReceiptLogged = true;' \
             "$REPO/manager/src/manager_backend.h"; then
     pass "AppImage and native smoke paths cover Manager launch and Hub socket integration"
 else
@@ -438,6 +446,7 @@ if [ -n "$first_release_action_line" ]; then
         pre_barrier_source="$(sed -n "1,$((mutation_barrier_line - 1))p" "$RELEASE_SH" \
             | sed '/^[[:space:]]*#/d' \
             | grep -Fv 'rm -f -- "$attestation_output"' \
+            | grep -Fv 'rm -f -- "$run_output"' \
             | grep -Fv 'rm -f -- "$gate_result_file"' || true)"
         pre_barrier_mutators="$(printf '%s\n' "$pre_barrier_source" | grep -En \
             '^[[:space:]]*(rm|mkdir|cp|mv|install|touch|truncate|dd|tee|cpack)([[:space:]]|$)|^[[:space:]]*cmake([[:space:]]|$)|^[[:space:]]*gpg[[:space:]].*--(detach-)?sign|^[[:space:]]*gh[[:space:]]+release' || true)"

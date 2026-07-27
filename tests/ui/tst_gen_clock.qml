@@ -520,6 +520,35 @@ Item {
             hTallSz.theme.textScale = 1.15
         }
 
+        function test_wide_preview_budget_is_continuous_at_previous_boundary() {
+            tryVerify(function () { return hShortWide.ready }, 3000)
+            reset(hShortWide)
+            var box = hShortWide.parent
+            var originalHeight = box.height
+            var w = hShortWide.item
+            try {
+                w.sizeClass = "wide"
+                box.height = 269
+                wait(32)
+                var below = w.clockTimePixelSize
+                box.height = 270
+                wait(32)
+                var above = w.clockTimePixelSize
+                verify(Math.abs(above - below) <= 2,
+                       "a one-pixel preview resize must not jump the clock hero type: "
+                       + below.toFixed(2) + " -> " + above.toFixed(2))
+
+                box.height = 300
+                wait(32)
+                verify(w.clockTimePixelSize >= 100,
+                       "the continuous curve still reaches glance-readable physical-tile type")
+                verify(w.clockTimePixelSize > above,
+                       "the hero grows monotonically toward the physical tile height")
+            } finally {
+                box.height = originalHeight
+            }
+        }
+
         function test_short_wide_time_stack_stays_inside_the_content_body() {
             tryVerify(function () { return hShortWide.ready }, 3000)
             reset(hShortWide)

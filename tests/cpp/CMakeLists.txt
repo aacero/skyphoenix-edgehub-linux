@@ -80,6 +80,11 @@ function(add_qt_test name)
     set(_tmp "${CMAKE_CURRENT_BINARY_DIR}/tmp/${name}")
     set(_run "${SOCK_ROOT}/${name}")
     file(MAKE_DIRECTORY "${_tmp}/config" "${_run}")
+    # QStandardPaths requires XDG_RUNTIME_DIR to be private. CMake otherwise
+    # creates it through the caller's umask (commonly 0755), which both violates
+    # the runtime-dir contract and floods the test log with permission warnings.
+    file(CHMOD "${_run}"
+         PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE)
 
     # TIMEOUT: without it these inherit CTest's 1500 s default, so a test that
     # wedges an event loop (config_bridge, control_server) hangs a run for 25

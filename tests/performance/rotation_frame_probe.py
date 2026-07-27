@@ -58,6 +58,13 @@ WAYLAND_FRAME_DONE = re.compile(
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 ACTIVE_MODE = re.compile(r"(?P<width>[0-9]+)x(?P<height>[0-9]+)@(?P<hz>[0-9.]+)\*")
 ROTATION_OBSERVATION_MS = 700.0
+ROTATION_FIRST_FRAME_MAX_MS = 100.0
+ROTATION_SPAN_MIN_MS = 400.0
+ROTATION_SPAN_MAX_MS = 680.0
+ROTATION_MIN_CALLBACK_RATE_RATIO = 0.70
+ROTATION_P95_MAX_REFRESH_MULTIPLIER = 2.0
+ROTATION_MAX_MISSED_REFRESH_RATIO = 0.20
+ROTATION_MAX_OBSERVER_LAG_SPREAD_MS = 2.0
 
 
 def iso_now() -> str:
@@ -95,7 +102,7 @@ class WaylandCommitObserver:
         self._buffered: set[str] = set()
         self._commits: dict[str, list[float]] = {}
         self._pending_callbacks: dict[str, str] = {}
-        self._frames: dict[str, list[float]] = {}
+        self._frames: dict[str, list[dict[str, float]]] = {}
         self._error: Optional[BaseException] = None
         self._thread: Optional[threading.Thread] = None
 
@@ -139,7 +146,12 @@ class WaylandCommitObserver:
                     callback = frame_done.group("callback")
                     surface = self._pending_callbacks.pop(callback, None)
                     if surface is not None:
-                        self._frames.setdefault(surface, []).append(observed_ms)
+                        self._frames.setdefault(surface, []).append({
+                            "observer_monotonic_ms": observed_ms,
+                            "wayland_timestamp_ms": float(
+                                frame_done.group("timestamp")
+                            ),
+                        })
                         self._write_event(
                             observed_ms,
                             float(frame_done.group("timestamp")),
@@ -188,7 +200,7 @@ class WaylandCommitObserver:
         self._events.write(json.dumps(record, sort_keys=True) + "\n")
         self._events.flush()
 
-    def finish(self, stream) -> dict[str, dict[str, list[float]]]:
+    def finish(self, stream) -> dict[str, dict[str, list]]:
         if self._thread is not None:
             self._thread.join(timeout=5.0)
             if self._thread.is_alive():
@@ -206,7 +218,8 @@ class WaylandCommitObserver:
                 surface: list(values) for surface, values in self._commits.items()
             },
             "frame_callbacks": {
-                surface: list(values) for surface, values in self._frames.items()
+                surface: [dict(value) for value in values]
+                for surface, values in self._frames.items()
             },
         }
 
@@ -251,22 +264,133 @@ def percentile(values: list[float], fraction: float) -> float:
     return ordered[rank]
 
 
+def calibrate_frame_callbacks(
+    frames_by_surface: dict[str, list[dict[str, float]]],
+) -> tuple[dict[str, list[dict[str, float]]], dict[str, float]]:
+    """Align Wayland timestamps to monotonic time and reject reader backlog.
+
+    Wayland's protocol timestamp preserves the real callback cadence. The
+    observer timestamp shares a clock with the orientation request but includes
+    pipe-drain delay. Their minimum offset aligns the clocks conservatively;
+    variation above the small bound means the reader was backlogged and the
+    measurement is invalid instead of optimistically compressing frame gaps.
+    """
+
+    samples = [
+        sample
+        for frames in frames_by_surface.values()
+        for sample in frames
+    ]
+    if len(samples) < 3:
+        raise MeasurementError("fewer than three frame callbacks were observed")
+    offsets = []
+    for sample in samples:
+        observer_ms = sample.get("observer_monotonic_ms")
+        wayland_ms = sample.get("wayland_timestamp_ms")
+        if (
+            not isinstance(observer_ms, (int, float))
+            or not isinstance(wayland_ms, (int, float))
+            or not math.isfinite(float(observer_ms))
+            or not math.isfinite(float(wayland_ms))
+        ):
+            raise MeasurementError("frame callback timestamps are incomplete")
+        offsets.append(float(observer_ms) - float(wayland_ms))
+    clock_offset_ms = min(offsets)
+    lag_spread_ms = max(offsets) - clock_offset_ms
+    if lag_spread_ms > ROTATION_MAX_OBSERVER_LAG_SPREAD_MS:
+        raise MeasurementError(
+            "Wayland observer backlog is too large for frame qualification: "
+            f"{lag_spread_ms:.3f}ms > "
+            f"{ROTATION_MAX_OBSERVER_LAG_SPREAD_MS:.3f}ms"
+        )
+
+    aligned: dict[str, list[dict[str, float]]] = {}
+    for surface, frames in frames_by_surface.items():
+        aligned[surface] = [
+            {
+                **sample,
+                "aligned_monotonic_ms": (
+                    float(sample["wayland_timestamp_ms"]) + clock_offset_ms
+                ),
+                "observer_lag_above_minimum_ms": (
+                    float(sample["observer_monotonic_ms"])
+                    - float(sample["wayland_timestamp_ms"])
+                    - clock_offset_ms
+                ),
+            }
+            for sample in frames
+        ]
+    return aligned, {
+        "wayland_to_monotonic_offset_ms": clock_offset_ms,
+        "observer_lag_spread_ms": lag_spread_ms,
+        "maximum_observer_lag_spread_ms":
+            ROTATION_MAX_OBSERVER_LAG_SPREAD_MS,
+    }
+
+
+def dense_frame_cluster(
+    frames: Iterable[dict[str, float]],
+    request_started_ms: float,
+    observation_ms: float = ROTATION_OBSERVATION_MS,
+    maximum_gap_ms: float = 100.0,
+) -> list[dict[str, float]]:
+    """Return the first dense post-request cluster using protocol cadence."""
+
+    window = sorted(
+        (
+            frame
+            for frame in frames
+            if request_started_ms
+            <= frame["aligned_monotonic_ms"]
+            <= request_started_ms + observation_ms
+        ),
+        key=lambda frame: frame["wayland_timestamp_ms"],
+    )
+    best: list[dict[str, float]] = []
+    current: list[dict[str, float]] = []
+    for frame in window:
+        if (
+            current
+            and frame["wayland_timestamp_ms"]
+            - current[-1]["wayland_timestamp_ms"]
+            > maximum_gap_ms
+        ):
+            if len(current) > len(best):
+                best = current
+            current = []
+        current.append(frame)
+    if len(current) > len(best):
+        best = current
+    return best
+
+
 def summarise_transition(
-    frames_by_surface: dict[str, list[float]],
+    frames_by_surface: dict[str, list[dict[str, float]]],
     request_started_ms: float,
     refresh_hz: float,
 ) -> dict:
     candidates = [
-        (surface, dense_commit_cluster(timestamps, request_started_ms))
-        for surface, timestamps in frames_by_surface.items()
+        (surface, dense_frame_cluster(frames, request_started_ms))
+        for surface, frames in frames_by_surface.items()
     ]
     surface, frames = max(candidates, key=lambda item: len(item[1]), default=("", []))
     if len(frames) < 3:
         raise MeasurementError(
             f"fewer than three rendered frames followed request at {request_started_ms:.3f}ms"
         )
-    intervals = [later - earlier for earlier, later in zip(frames, frames[1:])]
-    duration = frames[-1] - frames[0]
+    protocol_timestamps = [
+        frame["wayland_timestamp_ms"] for frame in frames
+    ]
+    observer_timestamps = [
+        frame["observer_monotonic_ms"] for frame in frames
+    ]
+    intervals = [
+        later - earlier
+        for earlier, later in zip(
+            protocol_timestamps, protocol_timestamps[1:]
+        )
+    ]
+    duration = protocol_timestamps[-1] - protocol_timestamps[0]
     nominal_interval = 1000.0 / refresh_hz
     missed_refreshes = sum(
         max(0, round(interval / nominal_interval) - 1) for interval in intervals
@@ -274,7 +398,12 @@ def summarise_transition(
     return {
         "surface": surface,
         "frame_callback_count": len(frames),
-        "first_frame_after_request_ms": frames[0] - request_started_ms,
+        # The reader timestamp can only make this latency more conservative.
+        # Cadence and duration below use protocol timestamps, so reader backlog
+        # cannot compress a janky transition into a pass.
+        "first_frame_after_request_ms": (
+            observer_timestamps[0] - request_started_ms
+        ),
         "observation_span_ms": duration,
         "effective_callback_rate_hz": (
             (len(frames) - 1) * 1000.0 / duration if duration > 0 else None
@@ -289,7 +418,77 @@ def summarise_transition(
             interval > nominal_interval * 1.5 for interval in intervals
         ),
         "estimated_missed_refreshes": missed_refreshes,
-        "frame_callback_timestamps_ms": frames,
+        "frame_callback_timestamps_ms": protocol_timestamps,
+        "frame_callback_observer_timestamps_ms": observer_timestamps,
+    }
+
+
+def qualify_transition(summary: dict, refresh_hz: float) -> dict:
+    """Apply the release smoothness SLO to one observed quarter-turn."""
+
+    nominal_interval = 1000.0 / refresh_hz
+    interval_count = max(0, summary["frame_callback_count"] - 1)
+    missed_refreshes = summary["estimated_missed_refreshes"]
+    refresh_opportunities = interval_count + missed_refreshes
+    missed_ratio = (
+        missed_refreshes / refresh_opportunities
+        if refresh_opportunities > 0
+        else 1.0
+    )
+    minimum_callback_rate = refresh_hz * ROTATION_MIN_CALLBACK_RATE_RATIO
+    maximum_p95_interval = (
+        nominal_interval * ROTATION_P95_MAX_REFRESH_MULTIPLIER
+    )
+    checks = [
+        {
+            "name": "first-frame-latency",
+            "observed": summary["first_frame_after_request_ms"],
+            "maximum": ROTATION_FIRST_FRAME_MAX_MS,
+            "passed": (
+                summary["first_frame_after_request_ms"]
+                <= ROTATION_FIRST_FRAME_MAX_MS
+            ),
+        },
+        {
+            "name": "animation-span-minimum",
+            "observed": summary["observation_span_ms"],
+            "minimum": ROTATION_SPAN_MIN_MS,
+            "passed": summary["observation_span_ms"] >= ROTATION_SPAN_MIN_MS,
+        },
+        {
+            "name": "animation-span-maximum",
+            "observed": summary["observation_span_ms"],
+            "maximum": ROTATION_SPAN_MAX_MS,
+            "passed": summary["observation_span_ms"] <= ROTATION_SPAN_MAX_MS,
+        },
+        {
+            "name": "effective-callback-rate",
+            "observed": summary["effective_callback_rate_hz"],
+            "minimum": minimum_callback_rate,
+            "passed": (
+                summary["effective_callback_rate_hz"] is not None
+                and summary["effective_callback_rate_hz"]
+                >= minimum_callback_rate
+            ),
+        },
+        {
+            "name": "p95-frame-interval",
+            "observed": summary["interval_ms"]["p95"],
+            "maximum": maximum_p95_interval,
+            "passed": (
+                summary["interval_ms"]["p95"] <= maximum_p95_interval
+            ),
+        },
+        {
+            "name": "missed-refresh-ratio",
+            "observed": missed_ratio,
+            "maximum": ROTATION_MAX_MISSED_REFRESH_RATIO,
+            "passed": missed_ratio <= ROTATION_MAX_MISSED_REFRESH_RATIO,
+        },
+    ]
+    return {
+        "passed": all(check["passed"] for check in checks),
+        "checks": checks,
     }
 
 
@@ -417,11 +616,17 @@ def run(binary: Path, output_dir: Path, cycles: int) -> int:
         instance.stop_hub()
         protocol = observer.finish(stream)
         stream = None
+        calibrated_callbacks, observer_calibration = calibrate_frame_callbacks(
+            protocol["frame_callbacks"]
+        )
         for transition in transitions:
             transition["frames"] = summarise_transition(
-                protocol["frame_callbacks"],
+                calibrated_callbacks,
                 transition["request_started_monotonic_ms"],
                 refresh_hz,
+            )
+            transition["smoothness_slo"] = qualify_transition(
+                transition["frames"], refresh_hz
             )
 
         all_intervals = [
@@ -435,14 +640,19 @@ def run(binary: Path, output_dir: Path, cycles: int) -> int:
                 )
             )
         ]
+        qualified = all(
+            transition["smoothness_slo"]["passed"]
+            for transition in transitions
+        )
         report = {
-            "schema_version": 1,
+            "schema_version": 2,
             "evidence_type": "wayland-rotation-frame-callback-timing",
-            "status": "MEASURED",
-            "qualified": None,
+            "status": "PASS" if qualified else "FAIL",
+            "qualified": qualified,
             "qualification_note": (
-                "No release threshold is defined; state reflection is asserted and "
-                "frame timing is reported without inventing a pass criterion."
+                "Every observed quarter-turn must meet the recorded "
+                "refresh-normalized response, duration, cadence, and missed-frame "
+                "limits."
             ),
             "started_utc": started_utc,
             "completed_utc": iso_now(),
@@ -459,6 +669,20 @@ def run(binary: Path, output_dir: Path, cycles: int) -> int:
                 "nominal_refresh_interval_ms": 1000.0 / refresh_hz,
             },
             "rotation_observation_window_ms": ROTATION_OBSERVATION_MS,
+            "observer_clock_calibration": observer_calibration,
+            "smoothness_slo": {
+                "first_frame_max_ms": ROTATION_FIRST_FRAME_MAX_MS,
+                "animation_span_min_ms": ROTATION_SPAN_MIN_MS,
+                "animation_span_max_ms": ROTATION_SPAN_MAX_MS,
+                "minimum_callback_rate_ratio":
+                    ROTATION_MIN_CALLBACK_RATE_RATIO,
+                "p95_interval_max_refresh_multiplier":
+                    ROTATION_P95_MAX_REFRESH_MULTIPLIER,
+                "maximum_missed_refresh_ratio":
+                    ROTATION_MAX_MISSED_REFRESH_RATIO,
+                "maximum_observer_lag_spread_ms":
+                    ROTATION_MAX_OBSERVER_LAG_SPREAD_MS,
+            },
             "load": {
                 **observed_load,
             },
@@ -482,8 +706,11 @@ def run(binary: Path, output_dir: Path, cycles: int) -> int:
             },
         }
         write_json_atomic(output_dir / "report.json", report)
-        print(json.dumps(report["aggregate"], indent=2, sort_keys=True))
-        return 0
+        print(json.dumps({
+            "aggregate": report["aggregate"],
+            "qualified": qualified,
+        }, indent=2, sort_keys=True))
+        return 0 if qualified else 1
     finally:
         instance.cleanup()
         if stream is not None:

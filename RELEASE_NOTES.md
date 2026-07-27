@@ -73,12 +73,27 @@ required instead. No long-duration stability claim is made for this candidate.
 
 ## Artifacts
 
-The release is planned to publish:
+The exact planned publication ledger is:
 
-- the signed source tarball;
-- the portable x86-64 tarball;
-- `SHA256SUMS` and its detached signature;
-- the detached source-tarball signature.
+<!-- release-assets:start -->
+- `RELEASE_NOTES.md`
+- `RELEASE_GATE_EVIDENCE.json`
+- `RELEASE_CERTIFICATION_EVIDENCE.json`
+- `xeneon-edge-hub-1.0.0.tar.gz`
+- `xeneon-edge-hub_1.0.0_x86_64.tar.gz`
+- `xeneon-edge-hub-1.0.0-x86_64.AppImage`
+- `xeneon-edge-hub-1.0.0-x86_64.AppImage.sha256`
+- `xeneon-edge-hub_1.0.0_amd64.deb`
+- `xeneon-edge-hub_1.0.0_amd64.deb.sha256`
+- `xeneon-edge-hub-1.0.0-1.x86_64.rpm`
+- `xeneon-edge-hub-1.0.0-1.x86_64.rpm.sha256`
+- `xeneon-edge-hub-1.0.0-x86_64.AppImage.zsync`
+- `PROVENANCE.json`
+- `xeneon-edge-hub-1.0.0.cdx.json`
+- `SHA256SUMS`
+- `SHA256SUMS.asc`
+- `xeneon-edge-hub-1.0.0.tar.gz.sig`
+<!-- release-assets:end -->
 
 Only files attached to the GitHub release are release availability claims.
 Package recipes and CI jobs alone do not imply a supported download channel.
@@ -86,12 +101,14 @@ Package recipes and CI jobs alone do not imply a supported download channel.
 ## Known limitations
 
 - Auto-rotate needs the included udev rule; manual orientation works without it.
+- The release does not embed an on-screen keyboard. Text entry requires a
+  physical keyboard or an input method provided by the desktop environment.
 - Network widgets require explicit configuration and remain subject to the
   central egress gate.
-- AppImage delta updating has not completed a published release-to-release
-  round trip.
-- This is beta software. Keep a copy of `~/.config/xeneon-edge-hub/config.toml`
-  before upgrading.
+- Stable publication follows an AppImage-bearing RC so the required published
+  release-to-release zsync round trip can be certified first.
+- Keep a copy of `~/.config/xeneon-edge-hub/config.toml` before upgrading. The
+  supported installers also create a timestamped backup automatically.
 
 ## Independence notice
 

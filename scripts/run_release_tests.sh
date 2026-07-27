@@ -77,6 +77,8 @@ tests/hardware/e2e_buildup.py
 tests/hardware/widget_render_matrix.py
 scripts/coverage.sh
 tests/performance/prepare_release_candidate.sh
+tests/hardware/display_lifecycle_test.py (explicit disruptive-output opt-in)
+tests/performance/rotation_frame_probe.py (real-panel rotation smoothness SLO)
 tests/performance/run_hub_profiles.py --mode short (literal 5m idle + 5m active + first render)
 tests/performance/run_audit_14_widget_30m.py (literal 30m; owner-approved 14-widget substitute)
 EOF
@@ -88,7 +90,7 @@ case "${1:-}" in
         exit 0
         ;;
     -h|--help)
-        echo "Usage: XENEON_HW_INPUT=1 XENEON_HW_INPUT_DESKTOP=1 XENEON_TEST_LICENSE_KEY_FILE=/absolute/path $0 [--list]"
+        echo "Usage: XENEON_HW_INPUT=1 XENEON_HW_INPUT_DESKTOP=1 XENEON_HW_DISPLAY_LIFECYCLE=1 XENEON_TEST_LICENSE_KEY_FILE=/absolute/path $0 [--list]"
         echo "Runs the complete strict pre-release suite; no omissions are accepted."
         exit 0
         ;;
@@ -232,6 +234,11 @@ if [ "${XENEON_HW_INPUT_DESKTOP:-0}" = "1" ]; then
 else
     preflight_bad "set XENEON_HW_INPUT_DESKTOP=1 to authorise Manager-window input"
 fi
+if [ "${XENEON_HW_DISPLAY_LIFECYCLE:-0}" = "1" ]; then
+    preflight_ok "XENEON_HW_DISPLAY_LIFECYCLE=1 (temporary output changes explicitly authorised)"
+else
+    preflight_bad "set XENEON_HW_DISPLAY_LIFECYCLE=1 to authorise temporary output changes"
+fi
 if [ "${XENEON_GEOM_TRUST:-0}" = "1" ]; then
     preflight_bad "XENEON_GEOM_TRUST=1 disables live geometry verification"
 else
@@ -251,13 +258,39 @@ esac
 
 for command_name in \
     bash cargo cargo-llvm-cov git gitleaks ip kscreen-doctor \
-    kwin_wayland python3 sha256sum spectacle stat tee timeout unshare busctl \
+    kwin_wayland python3 readlink sha256sum spectacle stat tee timeout unshare busctl \
     gpg; do
     require_command "$command_name"
 done
 require_command_or_executable cmake "$HOME/.local/bin/cmake"
 require_command_or_executable ctest "$HOME/.local/bin/ctest"
 require_command_or_executable gcovr "$HOME/.local/bin/gcovr"
+
+# A second Hub can cover the candidate window or answer a different control
+# socket while screenshots and render deltas are captured. A live Manager can
+# also push state into the user's installed Hub during the audit. Refuse that
+# ambiguity before building or touching the panel.
+live_product_processes=()
+if command -v readlink >/dev/null 2>&1; then
+    for process_executable in /proc/[0-9]*/exe; do
+        executable_target="$(readlink -- "$process_executable" 2>/dev/null || true)"
+        executable_name="${executable_target##*/}"
+        case "$executable_name" in
+            xeneon-edge-hub|xeneon-edge-manager|\
+            "xeneon-edge-hub (deleted)"|"xeneon-edge-manager (deleted)")
+                process_id="${process_executable#/proc/}"
+                process_id="${process_id%/exe}"
+                live_product_processes+=("$process_id:$executable_name")
+                ;;
+        esac
+    done
+fi
+if [ "${#live_product_processes[@]}" -eq 0 ]; then
+    preflight_ok "no Hub or Manager process is running"
+else
+    preflight_bad \
+        "stop every Hub and Manager process before release evidence (${live_product_processes[*]})"
+fi
 
 missing_finalizer_tools=()
 for command_name in \
@@ -522,6 +555,18 @@ performance_evidence_root="$AUDIT_ROOT/performance"
 mkdir -m 0700 "$performance_evidence_root" \
     || release_die "could not create the performance evidence directory"
 echo "Performance evidence root: $performance_evidence_root"
+run_release_suite "Real Edge disruptive display lifecycle" 1200 \
+    env PYTHONDONTWRITEBYTECODE=1 XENEON_HUB="$PERFORMANCE_HUB" \
+        python3 "$PROJECT_DIR/scripts/run_hardware_python.py" \
+        "$PROJECT_DIR/tests/hardware/display_lifecycle_test.py" \
+        --hub "$PERFORMANCE_HUB" \
+        --evidence-dir "$AUDIT_ROOT/display-lifecycle"
+run_release_suite "Real Edge rotation smoothness SLO" 300 \
+    env PYTHONDONTWRITEBYTECODE=1 python3 \
+        "$PROJECT_DIR/tests/performance/rotation_frame_probe.py" \
+        --hub "$PERFORMANCE_HUB" \
+        --output-dir "$performance_evidence_root/rotation-frame" \
+        --cycles 3
 run_release_suite "Hub startup + literal 5m idle/10-widget performance" 1200 \
     env PYTHONDONTWRITEBYTECODE=1 python3 \
         "$PROJECT_DIR/tests/performance/run_hub_profiles.py" \

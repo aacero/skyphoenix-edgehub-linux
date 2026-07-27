@@ -411,55 +411,19 @@ expect_failure_containing "release evidence without mandatory records cannot sea
         bash "$fixture_repo/scripts/finalize_audit_artifacts.sh" "$release_artifact"
 
 create_release_records() {
-    python3 - \
-        "$fixture_repo/scripts/lib/audit_artifact_contract.py" \
-        "$release_artifact" "$full_head" "$release_run_id" <<'PY'
-import datetime
-import hashlib
-import importlib.util
-import json
-import pathlib
-import sys
-
-module_path, output_dir, commit, run_id = sys.argv[1:]
-spec = importlib.util.spec_from_file_location("audit_contract", module_path)
-contract = importlib.util.module_from_spec(spec)
-assert spec.loader is not None
-spec.loader.exec_module(contract)
-root = pathlib.Path(output_dir)
-preflight = [
-    check if check is not None
-    else "live Wayland socket (/run/user/1000/wayland-0)"
-    for check in contract.EXPECTED_PREFLIGHT_CHECKS
-]
-preflight_payload = (
-    "result\tcheck\n"
-    + "".join(f"PASS\t{check}\n" for check in preflight)
-).encode()
-summary_payload = (
-    "result\tsuite\n"
-    + "".join(f"PASS\t{suite}\n" for suite in contract.EXPECTED_RELEASE_SUITES)
-).encode()
-(root / "PREFLIGHT.tsv").write_bytes(preflight_payload)
-(root / "SUMMARY.tsv").write_bytes(summary_payload)
-run = {
-    "schema": contract.RUN_SCHEMA,
-    "source_commit": commit,
-    "run_id": run_id,
-    "completed_at": "2026-07-26T00:00:00Z",
-    "result": "PASS",
-    "preflight_rows": len(preflight),
-    "preflight_sha256": hashlib.sha256(preflight_payload).hexdigest(),
-    "summary_rows": len(contract.EXPECTED_RELEASE_SUITES),
-    "summary_sha256": hashlib.sha256(summary_payload).hexdigest(),
-}
-(root / "RUN.json").write_text(
-    json.dumps(run, indent=2, sort_keys=True) + "\n",
-    encoding="utf-8",
-)
-PY
+    PYTHONDONTWRITEBYTECODE=1 python3 \
+        "$project_dir/tests/runtime/release_run_fixture.py" \
+        --artifact-dir "$release_artifact" \
+        --commit "$full_head" \
+        --run-id "$release_run_id"
 }
 
+create_release_records
+rm -f -- "$release_artifact/performance/rotation-frame/report.json"
+expect_failure_containing "release evidence without rotation timing cannot seal" \
+    "required retained release evidence is unavailable" \
+    env GNUPGHOME="$fixture_gnupg" \
+        bash "$fixture_repo/scripts/finalize_audit_artifacts.sh" "$release_artifact"
 create_release_records
 python3 - "$release_artifact/RUN.json" <<'PY'
 import json

@@ -721,11 +721,30 @@ private slots:
         const QJsonObject reply = readable
             ? QJsonDocument::fromJson(probe.readLine()).object()
             : QJsonObject{};
+        bool shutdownWritten = false;
+        bool shutdownReadable = false;
+        QJsonObject shutdownReply;
         if (connected) {
-            probe.write("{\"type\":\"shutdown\"}\n");
+            const QByteArray request = QByteArrayLiteral(
+                "{\"type\":\"shutdown\"}\n");
+            const qint64 queued = probe.write(request);
             probe.flush();
-            probe.waitForBytesWritten(1000);
-            probe.disconnectFromServer();
+            shutdownWritten =
+                queued == request.size()
+                && (probe.bytesToWrite() == 0
+                    || probe.waitForBytesWritten(1000));
+            shutdownReadable =
+                probe.canReadLine()
+                || probe.waitForReadyRead(3000)
+                || probe.canReadLine();
+            if (shutdownReadable)
+                shutdownReply =
+                    QJsonDocument::fromJson(probe.readLine()).object();
+            if (probe.state() != QLocalSocket::UnconnectedState) {
+                probe.disconnectFromServer();
+                if (probe.state() != QLocalSocket::UnconnectedState)
+                    probe.waitForDisconnected(3000);
+            }
         }
         if (hadAppImage)
             qputenv("APPIMAGE", previousAppImage);
@@ -736,6 +755,22 @@ private slots:
         QVERIFY2(connected, "detached AppImage Hub disappeared with ManagerBackend");
         QVERIFY(readable);
         QCOMPARE(reply.value("type").toString(), QStringLiteral("pong"));
+        QVERIFY2(
+            shutdownWritten,
+            "detached AppImage Hub shutdown request was not fully written");
+        QVERIFY2(
+            shutdownReadable,
+            "detached AppImage Hub did not acknowledge clean shutdown");
+        QCOMPARE(
+            shutdownReply.value(QStringLiteral("type")).toString(),
+            QStringLiteral("ok"));
+        QCOMPARE(
+            shutdownReply.value(QStringLiteral("for")).toString(),
+            QStringLiteral("shutdown"));
+        // Do not let the next test rebind this path until the detached helper's
+        // QLocalServer has finished teardown. Otherwise the exiting helper can
+        // unlink the next FakeHub's newly created socket.
+        QTRY_VERIFY_WITH_TIMEOUT(!QFileInfo::exists(kSock()), 5000);
     }
 
     // ── Adopt the hub's pushed state once outside the suppression window ──

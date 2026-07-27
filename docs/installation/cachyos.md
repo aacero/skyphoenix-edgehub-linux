@@ -1,19 +1,28 @@
 # CachyOS / Arch Linux installation
 
-## Install from the AUR
+## AUR channel status
 
-The `xeneon-edge-hub` AUR package builds the signed release source and includes
-both the Hub and Manager:
+As checked on 2026-07-27, the public `xeneon-edge-hub` AUR package is still
+`1.0.0alpha.2-1`. It is not the current beta, RC, or stable candidate. Inspect
+the advertised version before using the AUR:
+
+```sh
+yay -Si xeneon-edge-hub
+```
+
+Use the following only after that output matches the signed release you intend
+to install:
 
 ```sh
 yay -S xeneon-edge-hub
 ```
 
-The release signing key is not currently published to a keyserver. If makepkg
-reports an unknown public key, import the pinned maintainer key first and verify
-its full fingerprint:
+The package contains both the Hub and Manager. If makepkg reports an unknown
+public key, retrieve the pinned maintainer key and verify its full fingerprint:
 
 ```sh
+gpg --keyserver hkps://keys.openpgp.org \
+  --recv-keys 2F0CAD36DC1D46F3347B7EF293CDC77EACF98990
 curl -sL https://github.com/SimonKreitmayer.gpg | gpg --import
 gpg --fingerprint 2F0CAD36DC1D46F3347B7EF293CDC77EACF98990
 ```
@@ -24,15 +33,15 @@ Expected fingerprint:
 2F0C AD36 DC1D 46F3 347B  7EF2 93CD C77E ACF9 8990
 ```
 
-The package depends on `qt6-base`, `qt6-declarative`, `qt6-svg`,
-`qt6-virtualkeyboard`, `qt6-wayland` and `hicolor-icon-theme`; makepkg pulls the
-build dependencies `cmake` and `rust`.
+The package depends on `qt6-base`, `qt6-declarative`, `qt6-svg`, `qt6-wayland`
+and `hicolor-icon-theme`; makepkg pulls the build dependencies `cmake` and
+`rust`.
 
 ## Build the current source
 
 ```sh
 sudo pacman -S --needed base-devel git cmake rust \
-  qt6-base qt6-declarative qt6-svg qt6-virtualkeyboard qt6-wayland \
+  qt6-base qt6-declarative qt6-svg qt6-wayland \
   hicolor-icon-theme
 git clone https://github.com/skyphoenix-it/skyphoenix-edgehub-linux.git
 cd skyphoenix-edgehub-linux

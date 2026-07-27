@@ -519,11 +519,10 @@ Item {
                    caretBottom + " contentY=" + flick.contentY + " h=" + flick.height + ")")
         }
 
-        // A headless runner cannot activate a platform virtual keyboard, but it
-        // can exercise the real shell's safety branch: an inactive input method
-        // must leave the StackView untranslated. This protects a real fallback
-        // instead of pretending the offscreen platform can activate an InputPanel.
-        function test_inactive_onscreen_keyboard_does_not_shift_shell() {
+        // The release deliberately has no embedded keyboard. A desktop input
+        // method may still be used, but the shell must not retain the removed
+        // panel's content translation.
+        function test_shell_has_no_embedded_keyboard_lift() {
             var component = Qt.createComponent("../../ui/qml/main.qml")
             tryVerify(function () { return component.status !== Component.Loading }, 5000)
             compare(component.status, Component.Ready, "main.qml compiles: " + component.errorString())
@@ -535,9 +534,8 @@ Item {
             })
             verify(stack !== null, "found the real main.qml StackView")
             compare(Qt.inputMethod.visible, false, "offscreen input method starts inactive")
-            verify(stack.transform.length > 0, "the keyboard-lift Translate is attached")
-            compare(stack.transform[0].y, 0,
-                    "an inactive keyboard never moves dashboard content")
+            compare(stack.transform.length, 0,
+                    "the removed embedded keyboard leaves no content lift behind")
             win.destroy()
         }
     }

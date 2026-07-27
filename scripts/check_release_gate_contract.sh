@@ -221,8 +221,11 @@ fi
 printf '%s\n' \
     'QWARN  : suite::case() qt.qml.propertyCache.append: Member contentWidth of the object PopupList_QMLTYPE_26 overrides a member of the base object. Consider renaming it or adding final or override specifier' \
     > "$diagnostic_log"
-check "exact Qt Virtual Keyboard dependency warning is separately dispositioned" \
-    "$QML_DIAGNOSTIC_CHECKER" "$diagnostic_log" --tier compiled
+if "$QML_DIAGNOSTIC_CHECKER" "$diagnostic_log" --tier compiled >/dev/null 2>&1; then
+    echo "  FAIL removed dependency warning was still allowlisted"; fail=$((fail + 1))
+else
+    echo "  ok   removed dependency warning is rejected"
+fi
 printf '%s\n' \
     'QWARN  : suite::case() QUnifiedTimer::stopAnimationDriver: driver is not running' \
     > "$diagnostic_log"
@@ -536,7 +539,7 @@ rm -rf -- "$release_io_repo"
 if grep -Fq 'skyphoenix-edgehub-release-gate-result/v1' "$STRICT_RUNNER" \
         && grep -Fq 'XENEON_RELEASE_GATE_RESULT_FILE' "$STRICT_RUNNER" \
         && grep -Fq 'RELEASE_GATE_EVIDENCE.json' "$RELEASE_SCRIPT" \
-        && grep -Fq 'skyphoenix-edgehub-release-provenance/v4' "$RELEASE_SCRIPT" \
+        && grep -Fq 'skyphoenix-edgehub-release-provenance/v5' "$RELEASE_SCRIPT" \
         && grep -Fq -- '--verify --commit "$head_commit" "$RELEASE_GATE_ARTIFACT_DIR"' \
             "$RELEASE_SCRIPT"; then
     echo "  ok   release binds a machine-reported signed gate run into public provenance"

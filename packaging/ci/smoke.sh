@@ -159,7 +159,7 @@ HUB_PID=""
 
 # ── Phase 2: every imported QML module is actually installed ────────────────
 # Launching only proves the STARTUP path resolves. main.qml imports just
-# QtQuick/Controls/Layouts/Window/VirtualKeyboard; QtQuick.Effects, QtQuick.Shapes
+# QtQuick/Controls/Layouts/Window; QtQuick.Effects, QtQuick.Shapes
 # (backgrounds) and QtQuick.Dialogs (manager) are reached through lazily-loaded
 # widgets, so deleting them still yields a clean 10s launch - verified. Those are
 # exactly the modules distros split into separate packages, so check them

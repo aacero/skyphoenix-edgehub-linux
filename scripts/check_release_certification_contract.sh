@@ -95,7 +95,7 @@ import zlib
 root = pathlib.Path(sys.argv[1])
 commit = sys.argv[2]
 stamp = "20260726T110000Z"
-completed = "2026-07-26T11:05:00Z"
+completed = "2026-07-26T11:10:00Z"
 def png_chunk(kind, data):
     return (
         struct.pack(">I", len(data))
@@ -129,6 +129,9 @@ ids = [
     "04-page-swipe",
     "05-widget-settings",
     "06-edit-gestures",
+    "07-panel-power",
+    "08-panel-reconnect",
+    "09-suspend-resume",
 ]
 with (touch / "ACTION_RESULTS.tsv").open("w", encoding="utf-8", newline="\n") as handle:
     handle.write(
@@ -438,24 +441,138 @@ for number, kind in enumerate(("deb", "rpm"), start=13):
     run_id = f"native-package-lifecycle-{kind}-{stamp}-{number}"
     run = root / run_id
     (run / "evidence").mkdir(parents=True)
-    package_hash = (("d" if kind == "deb" else "e") * 64)
+    source = run / "source"
+    source.mkdir()
+    workflow_url = (
+        "https://github.com/skyphoenix-it/"
+        "skyphoenix-edgehub-linux/actions/runs/123456"
+    )
+    baseline_name = f"xeneon-edge-hub-0.9.0-Linux.{kind}"
+    candidate_name = f"xeneon-edge-hub-1.0.0-Linux.{kind}"
+    baseline_package = source / baseline_name
+    candidate_package = source / candidate_name
+    baseline_package.write_bytes(f"baseline-{kind}-package\n".encode())
+    candidate_package.write_bytes(f"candidate-{kind}-package\n".encode())
+    baseline_hash = hashlib.sha256(baseline_package.read_bytes()).hexdigest()
+    package_hash = hashlib.sha256(candidate_package.read_bytes()).hexdigest()
+    (source / f"{baseline_name}.sha256").write_text(
+        f"{baseline_hash}  {baseline_name}\n", encoding="ascii"
+    )
+    (source / f"{candidate_name}.sha256").write_text(
+        f"{package_hash}  {candidate_name}\n", encoding="ascii"
+    )
     report = run / "evidence" / f"native-upgrade-rollback-{kind}.txt"
     fields = {
         "result": "PASS",
         "package_kind": kind,
+        "baseline_ref": "b" * 40,
         "baseline_sha": "b" * 40,
+        "baseline_app_version": "0.9.0",
+        "baseline_native_version": "0.9.0",
+        "baseline_version_source": "cmake-contract",
+        "baseline_package": baseline_name,
+        "baseline_package_sha256": baseline_hash,
+        "candidate_ref": commit,
         "candidate_sha": commit,
+        "candidate_app_version": "1.0.0",
+        "candidate_native_version": "1.0.0",
+        "candidate_package": candidate_name,
         "candidate_package_sha256": package_hash,
     }
     fields.update({field: "PASS" for field in pass_fields})
+    fields["config_sha256"] = "a" * 64
+    fields["autostart_sha256"] = "c" * 64
     report.write_text(
         "".join(f"{key}={value}\n" for key, value in fields.items()),
         encoding="utf-8",
     )
+    report_hash = hashlib.sha256(report.read_bytes()).hexdigest()
+    (source / f"{report.name}.sha256").write_text(
+        f"{report_hash}  {report.name}\n", encoding="ascii"
+    )
+    environment_name = "container-lifecycle-environment.txt"
+    environment_prefix = {
+        "deb": (
+            "requested_image=ubuntu:26.04\n"
+            "resolved_image=ubuntu:26.04@sha256:"
+            "7c2884fd32770fc6c173b78e0dc2278a2851d89f5447919edbc45475ac55dd6a\n"
+            "platform=linux/amd64\n"
+            'NAME="Ubuntu"\n'
+            "ID=ubuntu\n"
+        ),
+        "rpm": (
+            "requested_image=fedora:43\n"
+            "resolved_image=fedora:43@sha256:"
+            "52cfb35e60823b691af7541b576c0fa49195628044b2c1a15b0ae775ec01048e\n"
+            "platform=linux/amd64\n"
+            'NAME="Fedora Linux"\n'
+            "ID=fedora\n"
+        ),
+    }[kind]
+    environment = source / environment_name
+    environment.write_text(environment_prefix, encoding="utf-8")
+    environment_hash = hashlib.sha256(environment.read_bytes()).hexdigest()
+    (source / f"{environment_name}.sha256").write_text(
+        f"{environment_hash}  {environment_name}\n", encoding="ascii"
+    )
+    write_json(
+        source / "GITHUB_WORKFLOW_RUN.json",
+        {
+            "url": workflow_url,
+            "headSha": commit,
+            "event": "workflow_dispatch",
+            "status": "completed",
+            "conclusion": "success",
+            "workflowName": "Native Package Upgrade and Rollback",
+        },
+    )
+
+    def attestation(subject_name, subject_hash):
+        return [
+            {
+                "verificationResult": {
+                    "statement": {
+                        "subject": [
+                            {
+                                "name": subject_name,
+                                "digest": {"sha256": subject_hash},
+                            }
+                        ],
+                        "predicate": {
+                            "runDetails": {
+                                "metadata": {
+                                    "invocationId": workflow_url + "/attempts/1"
+                                }
+                            }
+                        },
+                    }
+                }
+            }
+        ]
+
+    write_json(
+        source / "GITHUB_PACKAGE_ATTESTATION_VERIFICATION.json",
+        attestation(candidate_name, package_hash),
+    )
+    write_json(
+        source / "GITHUB_REPORT_ATTESTATION_VERIFICATION.json",
+        attestation(report.name, report_hash),
+    )
+    write_json(
+        source / "GITHUB_ENVIRONMENT_ATTESTATION_VERIFICATION.json",
+        attestation(environment_name, environment_hash),
+    )
+    source_files = [
+        {
+            "path": f"source/{path.name}",
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+        for path in sorted(source.iterdir(), key=lambda path: path.name)
+    ]
     write_json(
         run / "NATIVE_PACKAGE_LIFECYCLE.json",
         {
-            "schema": "skyphoenix-edgehub-native-package-lifecycle/v1",
+            "schema": "skyphoenix-edgehub-native-package-lifecycle/v2",
             "source_commit": commit,
             "run_id": run_id,
             "result": "PASS",
@@ -464,15 +581,18 @@ for number, kind in enumerate(("deb", "rpm"), start=13):
             "baseline_sha": "b" * 40,
             "candidate_sha": commit,
             "candidate_package_sha256": package_hash,
-            "workflow_url": (
-                "https://github.com/skyphoenix-it/"
-                "skyphoenix-edgehub-linux/actions/runs/123456"
-            ),
+            "workflow_url": workflow_url,
             "github_provenance_verified": True,
             "report_path": f"evidence/native-upgrade-rollback-{kind}.txt",
-            "report_sha256": hashlib.sha256(report.read_bytes()).hexdigest(),
-            "attested_by": "Contract Auditor",
-            "attestation": "I verified the exact GitHub lifecycle artifact and provenance.",
+            "report_sha256": report_hash,
+            "source_files": source_files,
+            "attested_by": "EdgeHub native lifecycle evidence importer",
+            "attestation": (
+                "Automated import verified both package byte hashes, the exact "
+                "PASS report, the exact lifecycle environment, the successful "
+                "canonical workflow run, and separate GitHub build provenance "
+                "for every retained subject; no human observation is asserted."
+            ),
         },
     )
 
@@ -710,7 +830,10 @@ native_hashes="$(env GNUPGHOME="$fixture_gnupg" \
         --commit "$candidate_sha" --version v1.0.0 \
         --print-native-package-hashes "$valid_dir")"
 expected_native_hashes="$(printf 'deb\t%s\nrpm\t%s' \
-    "$(printf 'd%.0s' {1..64})" "$(printf 'e%.0s' {1..64})")"
+    "$(sha256sum \
+        "$deb_dir/source/xeneon-edge-hub-1.0.0-Linux.deb" | cut -d' ' -f1)" \
+    "$(sha256sum \
+        "$rpm_dir/source/xeneon-edge-hub-1.0.0-Linux.rpm" | cut -d' ' -f1)")"
 [ "$native_hashes" = "$expected_native_hashes" ] \
     || fail "verified certification did not expose the exact native package hashes"
 printf '  ok  verified certification exposes exact DEB and RPM package hashes\n'

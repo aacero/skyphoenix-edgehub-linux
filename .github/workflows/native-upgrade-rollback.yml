@@ -6,11 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       baseline_ref:
-        description: Older signed tag or committed ref to install first
+        description: >-
+          Older release tag or lowercase full commit to install first
         required: true
         type: string
       candidate_ref:
-        description: Newer tag or commit, also selected as the workflow run ref
+        description: >-
+          Newer release tag or lowercase full commit selected as the run ref
         required: true
         type: string
 
@@ -66,17 +68,13 @@ jobs:
         run: |
           set -euo pipefail
           for ref in "$BASELINE_REF" "$CANDIDATE_REF"; do
-            if [[ "$ref" =~ ^[0-9A-Fa-f]{40}$ ]] ||
-               [[ "$ref" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]] ||
-               [[ "$ref" =~ ^refs/tags/[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
-              if [[ "$ref" == -* || "$ref" == *".."* ||
-                    "$ref" == *"@{"* || "$ref" == *"//"* ||
-                    "$ref" == *"/." || "$ref" == */ ]]; then
-                exit 2
-              fi
+            if [[ "$ref" =~ ^[0-9a-f]{40}$ ]] ||
+               [[ "$ref" =~ ^(refs/tags/)?v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(alpha|beta|rc)\.(0|[1-9][0-9]*))?$ ]]; then
               continue
             fi
-            echo "Ref must be a full commit or exact release tag: $ref" >&2
+            echo \
+              "Ref must be a lowercase full commit or exact SemVer release tag: $ref" \
+              >&2
             exit 2
           done
 
@@ -92,14 +90,13 @@ jobs:
             deb)
               apt-get install -y --no-install-recommends \
                 cmake g++ make file dpkg-dev rustc cargo \
-                qt6-base-dev qt6-declarative-dev qt6-svg-dev \
-                qt6-virtualkeyboard-dev libgl1-mesa-dev
+                qt6-base-dev qt6-declarative-dev qt6-svg-dev libgl1-mesa-dev
               ;;
             rpm)
               dnf -y install \
                 cmake gcc-c++ make rpm-build cargo rust \
                 qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
-                qt6-qtvirtualkeyboard-devel qt6-qtwayland-devel \
+                qt6-qtwayland-devel \
                 mesa-libGL-devel
               ;;
           esac
@@ -118,6 +115,7 @@ jobs:
             "$CANDIDATE_REF"
 
       - name: Record resolved lifecycle container
+        id: environment
         shell: bash
         env:
           EVIDENCE_DIR: ${{ steps.lifecycle.outputs.evidence_dir }}
@@ -135,11 +133,24 @@ jobs:
             sha256sum container-lifecycle-environment.txt \
               > container-lifecycle-environment.txt.sha256
           )
+          echo \
+            "environment=$EVIDENCE_DIR/container-lifecycle-environment.txt" \
+            >> "$GITHUB_OUTPUT"
 
       - name: Attest exact lifecycle-tested candidate package
         uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
         with:
           subject-path: ${{ steps.lifecycle.outputs.candidate_package }}
+
+      - name: Attest exact passing lifecycle report
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: ${{ steps.lifecycle.outputs.report }}
+
+      - name: Attest exact lifecycle environment
+        uses: actions/attest-build-provenance@96278af6caaf10aea03fd8d33a09a777ca52d62f # v3.2.0
+        with:
+          subject-path: ${{ steps.environment.outputs.environment }}
 
       - name: Archive lifecycle report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

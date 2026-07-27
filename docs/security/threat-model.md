@@ -307,15 +307,13 @@ The following are not implemented and must not be cited as mitigations:
 
 ## Licensing release risk
 
-The Hub imports `QtQuick.VirtualKeyboard` and links `Qt6::VirtualKeyboard`.
-Qt's official documentation describes Qt Virtual Keyboard as commercial or
-GPLv3 and lists it among modules that are not available under LGPLv3 for
-open-source use. The release owner has not yet recorded the licensing
-disposition. This is a release-readiness issue, not a runtime security control.
-No statement here is legal advice or a claim of licensing completeness.
+The Hub does not import, link, package, or require Qt Virtual Keyboard. Text
+entry relies on a physical keyboard or a desktop-provided input method. The
+release process still audits the exact linked and bundled third-party inventory
+for each artifact format. This is a release-readiness concern, not a runtime
+security control. No statement here is legal advice.
 
 - [Qt licensing](https://doc.qt.io/qt-6/licensing.html)
-- [Qt Virtual Keyboard licensing](https://doc.qt.io/qt-6/qtvirtualkeyboard-index.html)
 
 ## Verification references
 

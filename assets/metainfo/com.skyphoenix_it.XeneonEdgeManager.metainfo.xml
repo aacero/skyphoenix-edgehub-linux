@@ -51,6 +51,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="1.0.0" date="2026-07-27" type="stable">
+      <description>
+        <p>Stable release with true Hub layout and appearance previews, live orientation reflection, touch-friendly editing, preset guidance, and hardened local synchronization.</p>
+      </description>
+    </release>
     <release version="1.0.0-beta.1" date="2026-07-21" type="development">
       <description>
         <p>Published beta with live Hub screen selection, orientation reflection, responsive previews, animated background fidelity, and exact version reporting.</p>

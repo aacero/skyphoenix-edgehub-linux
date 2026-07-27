@@ -602,57 +602,116 @@ Item {
         objectName: "saveFailureBanner"
         z: 10000
         visible: store.saveFailed
+        readonly property bool stackActions: width < 760
+        readonly property real maximumHeight:
+            Math.max(theme.touchTertiary + theme.spacingMd * 2,
+                     parent.height - anchors.topMargin * 2)
+        readonly property real desiredMessageHeight:
+            saveFailureTitle.implicitHeight + 4
+            + saveFailureMessage.implicitHeight
+        readonly property real requiredContentHeight:
+            stackActions
+            ? desiredMessageHeight + theme.spacingMd
+              + theme.touchTertiary
+            : Math.max(desiredMessageHeight,
+                       theme.touchTertiary)
         anchors.top: parent.top
         anchors.topMargin: theme.spacingSm
         anchors.horizontalCenter: parent.horizontalCenter
         width: Math.min(parent.width - theme.spacingLg * 2, 1120)
-        height: saveFailureContent.implicitHeight + theme.spacingMd * 2
+        height: Math.min(maximumHeight,
+                         Math.ceil(requiredContentHeight + theme.spacingMd * 2))
         radius: theme.radiusMd
         color: "#2B1717"
         border.width: 2
         border.color: "#F85149"
 
-        RowLayout {
+        GridLayout {
             id: saveFailureContent
             anchors.fill: parent
             anchors.margins: theme.spacingMd
-            spacing: theme.spacingMd
+            columns: saveFailureBanner.stackActions ? 1 : 2
+            columnSpacing: theme.spacingMd
+            rowSpacing: theme.spacingMd
 
             ColumnLayout {
+                id: saveFailureMessageColumn
+                Layout.row: 0
+                Layout.column: 0
                 Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.minimumWidth: 0
                 spacing: 4
                 Text {
+                    id: saveFailureTitle
                     Layout.fillWidth: true
+                    Layout.minimumWidth: 0
                     text: "Changes are not saved"
                     color: "#FFFFFF"
                     font.pixelSize: 20
                     font.bold: true
                 }
-                Text {
+                ScrollView {
+                    id: saveFailureMessageScroll
+                    objectName: "saveFailureMessageScroll"
                     Layout.fillWidth: true
-                    text: store.saveFailureMessage
-                          + (store.recoveryPath !== ""
-                             ? "\nRecovery copy: " + store.recoveryPath : "")
-                    color: "#F4D7D7"
-                    font.pixelSize: 17
-                    wrapMode: Text.Wrap
+                    Layout.fillHeight: true
+                    Layout.minimumWidth: 0
+                    Layout.minimumHeight: 24
+                    clip: true
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                    Text {
+                        id: saveFailureMessage
+                        objectName: "saveFailureMessage"
+                        width: saveFailureMessageScroll.availableWidth
+                        text: store.saveFailureMessage
+                              + (store.recoveryPath !== ""
+                                 ? "\nRecovery copy: " + store.recoveryPath : "")
+                        color: "#F4D7D7"
+                        font.pixelSize: 17
+                        wrapMode: Text.Wrap
+                    }
                 }
             }
-            Button {
-                objectName: "retryFailedSaveButton"
-                text: "Retry"
-                Layout.minimumWidth: 104
-                Layout.minimumHeight: 52
-                onClicked: store.retrySave()
-            }
-            Button {
-                objectName: "discardFailedSaveButton"
-                text: "Discard"
-                Layout.minimumWidth: 112
-                Layout.minimumHeight: 52
-                onClicked: store.discardUnsaved(
-                    typeof configBridge !== "undefined" && configBridge
-                        ? configBridge.starterLayout() : "")
+            RowLayout {
+                id: saveFailureActions
+                Layout.row: saveFailureBanner.stackActions ? 1 : 0
+                Layout.column: saveFailureBanner.stackActions ? 0 : 1
+                Layout.fillWidth: saveFailureBanner.stackActions
+                Layout.preferredHeight: theme.touchTertiary
+                Layout.minimumHeight: theme.touchTertiary
+                Layout.maximumHeight: theme.touchTertiary
+                Layout.alignment: Qt.AlignRight | Qt.AlignVCenter
+                spacing: theme.spacingMd
+
+                Item {
+                    visible: saveFailureBanner.stackActions
+                    Layout.fillWidth: saveFailureBanner.stackActions
+                }
+                Button {
+                    objectName: "retryFailedSaveButton"
+                    text: "Retry"
+                    Layout.preferredWidth: 104
+                    Layout.minimumWidth: 104
+                    Layout.preferredHeight: theme.touchTertiary
+                    Layout.minimumHeight: theme.touchTertiary
+                    Layout.maximumHeight: theme.touchTertiary
+                    Layout.alignment: Qt.AlignVCenter
+                    onClicked: store.retrySave()
+                }
+                Button {
+                    objectName: "discardFailedSaveButton"
+                    text: "Discard"
+                    Layout.preferredWidth: 112
+                    Layout.minimumWidth: 112
+                    Layout.preferredHeight: theme.touchTertiary
+                    Layout.minimumHeight: theme.touchTertiary
+                    Layout.maximumHeight: theme.touchTertiary
+                    Layout.alignment: Qt.AlignVCenter
+                    onClicked: store.discardUnsaved(
+                        typeof configBridge !== "undefined" && configBridge
+                            ? configBridge.starterLayout() : "")
+                }
             }
         }
     }
@@ -2291,7 +2350,14 @@ Item {
         Behavior on opacity { NumberAnimation { duration: theme.motionFast; easing.type: Easing.OutCubic } }
         Behavior on scale { NumberAnimation { duration: theme.motionPage; easing.type: Easing.OutCubic } }
         // The fade is over → NOW drop the retained content (see shownType above).
-        onVisibleChanged: if (!visible) { dashboard.shownType = ""; dashboard.shownId = "" }
+        onVisibleChanged: if (!visible) {
+            // Clear the owner id first. WidgetHost reacts to each property
+            // independently; clearing the type while the removed tile's id was
+            // still live briefly asked it to seed defaults for an empty type,
+            // resurrecting the retired id as an orphan `{}` settings bucket.
+            dashboard.shownId = ""
+            dashboard.shownType = ""
+        }
 
         // Backdrop
         Rectangle {

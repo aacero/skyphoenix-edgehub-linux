@@ -200,6 +200,12 @@ run_suite "Signed audit-artifact finalizer contract" \
     bash "$PROJECT_DIR/scripts/check_audit_artifact_finalizer.sh"
 run_suite "Signed stable-publication certification contract" \
     bash "$PROJECT_DIR/scripts/check_release_certification_contract.sh"
+run_suite "Unsigned release evidence builder contracts" \
+    env PYTHONDONTWRITEBYTECODE=1 python3 \
+        "$PROJECT_DIR/tests/runtime/test_release_evidence_builders.py"
+run_suite "Signed release-run semantic evidence contract" \
+    env PYTHONDONTWRITEBYTECODE=1 python3 \
+        "$PROJECT_DIR/tests/runtime/test_release_run_contract.py"
 run_suite "Desktop notification + MPRIS evidence contract" \
     env PYTHONDONTWRITEBYTECODE=1 python3 \
         "$PROJECT_DIR/tests/runtime/test_desktop_bridge_evidence.py"

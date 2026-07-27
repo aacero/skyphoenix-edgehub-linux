@@ -320,6 +320,41 @@ Item {
             verify(findByText(panel, "Approximate times in this device's local time") !== null,
                    "time basis is disclosed instead of implying the remote timezone")
         }
+
+        function test_cycle_and_local_events_share_the_density_slot_intentionally() {
+            var w = hMoon.item
+            var cycle = findByObjectName(w, "moonCyclePosition")
+            var events = findByObjectName(w, "moonLocalEvents")
+            verify(cycle !== null && events !== null)
+            w.sizeClass = "tall"
+
+            root.width = 480
+            hMoon.storeCtl.setSetting("test-instance", "showLocalEvents", false)
+            wait(16)
+            verify(!w.compactDetail)
+            verify(cycle.visible, "roomy tall cards show the lunar-cycle context")
+            verify(!events.visible, "local events remain opt-in")
+
+            hMoon.storeCtl.setSetting("test-instance", "showLocalEvents", true)
+            wait(16)
+            verify(cycle.visible,
+                   "roomy tall cards can show cycle context and local events together")
+            verify(events.visible)
+
+            root.width = 420
+            wait(16)
+            verify(w.compactDetail)
+            verify(!cycle.visible,
+                   "compact tall cards give the shared density slot to local events")
+            verify(events.visible)
+
+            hMoon.storeCtl.setSetting("test-instance", "showLocalEvents", false)
+            wait(16)
+            verify(cycle.visible,
+                   "compact tall cards restore cycle context when events are disabled")
+            verify(!events.visible)
+            root.width = 480
+        }
     }
 
     TestCase {

@@ -447,6 +447,19 @@ else
     fail "extra artifact parser boundary is missing exact native provenance"
 fi
 
+if grep -Fq 'gh run view "${run_url##*/}"' "$RELEASE_SCRIPT" \
+        && grep -Fq '"AppImage smoke (bare container, no Qt)"' "$RELEASE_SCRIPT" \
+        && grep -Fq '"appimage_runtime_smoke_required": kind == "appimage"' \
+            "$RELEASE_SCRIPT" \
+        && grep -Fq 'skyphoenix-edgehub-release-provenance/v5' \
+            "$RELEASE_SCRIPT" \
+        && grep -Fq 'appimage_attestation.get("sha256") != candidate_hash' \
+            "$PROJECT_DIR/scripts/promote_stable_release.sh"; then
+    pass "AppImage publication is bound to a successful exact-commit runtime-smoke job"
+else
+    fail "AppImage provenance does not bind the exact runtime-smoke job"
+fi
+
 if grep -Fq 'cyclonedx-json@1.5=' "$GENERATOR" \
         && grep -Fq 'EXPECTED_CARGO_CYCLONEDX_VERSION="0.5.9"' "$GENERATOR" \
         && grep -Fq 'EXPECTED_SYFT_VERSION="1.46.0"' "$GENERATOR" \

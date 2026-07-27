@@ -6,8 +6,8 @@ How to let other people install this, and your options for making money.
 
 ## 1. What users need to build & run
 
-**Runtime:** a Linux desktop with **Qt6 ≥ 6.5** (Quick, QuickControls2, Svg, DBus,
-Network, VirtualKeyboard) and a working GPU/compositor. No web browser, no server.
+**Runtime:** a Linux desktop with **Qt6 ≥ 6.5** (Quick, QuickControls2, Svg, DBus
+and Network) and a working GPU/compositor. No web browser, no server.
 The ≥ 6.5 floor is real - the widgets use `QtQuick.Effects`, which does not exist
 before it.
 
@@ -18,6 +18,30 @@ Qt6 dev packages. See `docs/installation/` for per-distro package lists
 Release-producing and strict release-test scripts select and verify the exact
 Rust 1.86.0 toolchain used by release CI. Ordinary development may use a newer
 compatible stable Rust version.
+
+### EdgeHub 1.0 support contract
+
+The following boundary is the public support target for 1.0. A row becomes a
+release claim only when its exact-candidate gate passes. A recipe, development
+test, or older release result is not enough.
+
+| Area | Supported target for 1.0 | Best effort or excluded |
+|---|---|---|
+| CPU architecture | `x86_64` | ARM and other architectures are not release-certified |
+| Desktop session | KDE Plasma with KWin on Wayland | GNOME, other Wayland compositors, and X11 are best effort |
+| Hardware display | One Corsair Xeneon Edge used as a secondary display | Other ultrawide, portrait, primary-only, and multiple-Edge arrangements are best effort |
+| Display modes | Native 2560x720 landscape and 720x2560 portrait at 100% scale | Fractional scaling is covered by UI layout tests but is not a physical-display support claim until the exact candidate passes it |
+| Input | Panel touch through libinput plus ordinary keyboard and mouse input | Text entry requires a physical keyboard or a desktop-provided input method |
+| Hub and Manager | Same logged-in user and same graphical session | Cross-user, remote-session, and system-service control are unsupported |
+| Native package | Ubuntu 26.04 LTS DEB and Fedora 43 RPM after exact-candidate lifecycle evidence | Other native distributions and versions are not implied by package compatibility |
+| Portable package | `x86_64` AppImage through `APPIMAGE_EXTRACT_AND_RUN=1` after exact-candidate smoke evidence | Mount-backed FUSE execution is best effort until separately certified on the exact artifact |
+| Arch and CachyOS | Source build and local package workflow | The public AUR package is not a stable channel until its recipe and published source match 1.0 |
+| Sandboxed package | None | Flatpak and Flathub are not release channels for 1.0 |
+
+KDE Plasma, KWin Wayland, the physical panel, and each advertised artifact
+remain gated independently. If any exact-candidate row is `NOT_TESTED` or fails,
+the corresponding public claim is removed rather than inferred from another
+row.
 
 ### Distro support (workflow targets, not current-candidate proof)
 
@@ -52,7 +76,8 @@ Built by `packaging/appimage/build-appimage.sh` on **Ubuntu 24.04 + upstream Qt
 6.7.3** (aqtinstall / `install-qt-action`), not 24.04's own Qt 6.4.2. That pairing
 is deliberate: an AppImage's glibc floor is its build host's, so the oldest
 practical distro gives the widest reach, while the bundled Qt still has to be
-≥ 6.5 for `QtQuick.Effects`. ~46 MB, bundles 41 Qt libraries.
+≥ 6.5 for `QtQuick.Effects`. The exact size and bundled library inventory are
+recorded from each candidate artifact rather than copied from an older build.
 
 The builder downloads only two reviewed, immutable release assets and verifies
 their SHA-256 values before use:
@@ -105,8 +130,10 @@ checksum, host identity, positive and negative results, and aggregate manifest
 under `artifacts/<commit>/appimage-ubuntu-24.04/`. This gate must be rerun for
 the exact candidate and does not exercise a published zsync update.
 
-The AppImage cannot install the auto-rotate udev rule (no package manager hooks) -
-users install `packaging/udev/99-xeneon-edge.rules` by hand. Everything else works.
+The AppImage cannot install the auto-rotate udev rule because it has no package
+manager hooks. Users install `packaging/udev/99-xeneon-edge.rules` by hand.
+Features that do not need that HID permission remain available, while manual
+orientation is the supported fallback.
 
 #### The two traps this recipe encodes
 
@@ -149,11 +176,13 @@ Config lives in `~/.config/xeneon-edge-hub/`. Metrics come from world-readable
    sudo cp packaging/udev/99-xeneon-edge.rules /etc/udev/rules.d/
    sudo udevadm control --reload && sudo udevadm trigger --action=change --subsystem-match=hidraw
    ```
-   Without it, everything works except auto-rotate (manual orientation modes still
-   do). This is a genuine hardware-permission requirement, not app design.
+   Without it, manual orientation and features unrelated to the HID sensor
+   remain available, but auto-rotate does not. This is a genuine
+   hardware-permission requirement, not app design.
 
-So: **"clone, build, run" is clean and sudo-free.** Auto-rotate is the only thing
-that asks for a one-line root command, and it degrades gracefully without it.
+So: **"clone, build, run" is clean and sudo-free.** System installation and
+automatic HID orientation are the documented operations that require
+administrator access; manual orientation is the fallback.
 
 ---
 
@@ -197,16 +226,18 @@ URLs in the release evidence. The workflow itself must be dispatched from that
 same candidate ref; otherwise it refuses to emit provenance under a different
 `GITHUB_SHA`.
 
-The workflow retains both exact packages, one SHA-256 sidecar per package, and an
-exact-input report under a candidate-SHA-keyed evidence directory. The tested
-candidate package receives GitHub build provenance. GitHub workflow artifacts
-expire, so download the directory, verify its sidecars, seal it with
-the rest of the exact-candidate evidence, and invoke
-`scripts/finalize_audit_artifacts.sh` once on the full commit-keyed directory
-after all evidence producers finish. Record its workflow URL and package hashes
-in the permanent release record before publication. The release helper
-accepts native extras only when their sidecar, package metadata, extracted
-binary identities, installed notices, and GitHub provenance all agree.
+The workflow retains both exact packages, their SHA-256 sidecars, the exact PASS
+report, and the pinned container-environment record. GitHub separately attests
+the tested candidate package, report, and environment. GitHub workflow
+artifacts expire, so download each completed distro artifact and import it with
+`scripts/import_native_lifecycle_evidence.py`. The importer verifies the exact
+successful run and all three attestations, then creates an unsigned typed draft
+whose receipt inventories every retained source file. Review and finalize each
+native draft individually, then reference both signed drafts from the release
+certification. Record the workflow URLs and package hashes in the permanent
+release record before publication. The release helper accepts native extras
+only when their sidecar, package metadata, extracted binary identities,
+installed notices, and GitHub provenance all agree.
 
 This is a native package-transaction test. It calls both binaries with
 `--version` but does not launch the GUI against the seeded configuration, so it
@@ -352,7 +383,7 @@ preference:
 | **Short id** | `93CDC77EACF98990` (display only - **never** use a short id to decide trust; they are forgeable by construction) |
 | **UID** | SKYPhoenix IT `<simon.kreitmayer@skyphoenix-it.com>` |
 | **Type** | ed25519, created 2026-07-15, **expires 2028-07-14** |
-| **Public half** | [`packaging/edgehub-signing.pub`](../packaging/edgehub-signing.pub) in this repo, and <https://github.com/SimonKreitmayer.gpg> |
+| **Public half** | [`packaging/edgehub-signing.pub`](../packaging/edgehub-signing.pub), <https://github.com/SimonKreitmayer.gpg>, `keys.openpgp.org`, and `keyserver.ubuntu.com` |
 | **Secret half** | The maintainer's machine. Nowhere else. |
 
 ### What is signed, and what isn't
@@ -441,18 +472,20 @@ Consequences worth stating plainly:
   non-admin path. The release helper detects a moved tag during its run, but
   code in this repository cannot enforce the hosting account setting.
 
-- **The key is not on a keyserver.** `gpg --recv-keys` does not find it, so users
-  (and `makepkg`, which fails with "unknown public key") must import from GitHub
-  or this repo. Publishing to <https://keys.openpgp.org> is a maintainer action:
+- **Keyserver availability is not the trust decision.** The key is currently
+  discoverable from both `keys.openpgp.org` and `keyserver.ubuntu.com`, and can
+  be imported with:
   ```sh
-  gpg --send-keys --keyserver keys.openpgp.org 2F0CAD36DC1D46F3347B7EF293CDC77EACF98990
+  gpg --keyserver hkps://keys.openpgp.org \
+    --recv-keys 2F0CAD36DC1D46F3347B7EF293CDC77EACF98990
   ```
+  Users must still compare the complete fingerprint against the signed release
+  documentation. GitHub and the committed public-key file remain fallbacks.
 - **AUR status is not release evidence.** The recipe must be checked against the
   exact published tag and assets, and the package's public availability/freshness
   must be verified separately.
-- **No revocation certificate is published.** If the key is lost, there is no way
-  to tell users to stop trusting it. Generate one (`gpg --gen-revoke`) and store
-  it offline, separately from the key.
+- **The revocation certificate remains offline by design.** The owner stores it
+  separately from the signing key and must verify access before each release.
 
 ### Expiry and rotation
 
@@ -489,16 +522,12 @@ Calendar note: **check the expiry at the 2028 GA planning point**, not on
   it, ship binaries, and build a business on it. So can everyone else (MIT lets
   others redistribute too), which is why the usual model here is **goodwill +
   donations + paid extras**, not locked-down sales.
-- **Qt modules have different licensing options.** Most modules linked here are
-  available under LGPLv3 or a commercial Qt licence. Qt Virtual Keyboard is
-  listed by Qt as GPLv3 or commercial, not LGPLv3. Dynamic system linking is
-  relevant to LGPL obligations but does not settle that GPL/commercial choice,
-  and bundling Qt in AppImage/Flatpak adds distribution obligations that require
-  an artifact-level review. The Qt Virtual Keyboard disposition is an
-  **owner/legal blocker** before the stable release. No text here declares that
-  choice or legal review complete. See Qt's official
-  [licensing table](https://doc.qt.io/qt-6/licensing.html) and
-  [Virtual Keyboard licence page](https://doc.qt.io/qt-6/qtvirtualkeyboard-index.html).
+- **Qt modules have different licensing options.** The release does not import,
+  link, package, or require Qt Virtual Keyboard. Text entry therefore relies on
+  a physical keyboard or a desktop-provided input method. Dynamic linking is
+  relevant to LGPL obligations, while bundling Qt in an AppImage adds
+  distribution obligations that still require artifact-level review. See Qt's
+  official [licensing table](https://doc.qt.io/qt-6/licensing.html).
 - **Rust crates** use MIT, Apache-2.0, BSD-3-Clause, Unicode-3.0 and MPL-2.0
   terms; some also offer the Unlicense as an alternative. The exact
   lockfile-derived package inventory, source links and upstream notice texts

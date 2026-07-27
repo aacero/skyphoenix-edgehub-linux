@@ -457,7 +457,11 @@ WidgetChrome {
             }
             ColumnLayout {
                 objectName: "moonCyclePosition"
-                visible: w.roomy && !w.compactDetail
+                // Every tall tile has enough vertical room for this compact
+                // visualization, including the narrow half-screen projections.
+                // The opt-in local-events panel owns the same density slot on a
+                // narrow projection; roomy cards can show both without clipping.
+                visible: w.roomy && (!w.compactDetail || !w.showLocalEvents)
                 Layout.alignment: Qt.AlignHCenter
                 Layout.preferredWidth: Math.min(moonLay.width * 0.76, 420)
                 spacing: theme.spacingXs

@@ -33,7 +33,7 @@ cache var overrides it (absolute for a system install to /etc).
 
 Build-tested HERE (Arch/CachyOS): **AUR PKGBUILD** via `makepkg` → valid
 `xeneon-edge-hub-0.1.0-1-x86_64.pkg.tar.zst`, correct Qt6 deps
-(qt6-base/declarative/svg/virtualkeyboard/wayland + hicolor). **CPack TGZ** via
+(qt6-base/declarative/svg/wayland + hicolor). **CPack TGZ** via
 `cpack -G TGZ`. NOT testable here (tooling absent): CPack DEB/RPM (no dpkg/rpmbuild),
 AppImage (no appimagetool/linuxdeploy), Flatpak (no flatpak-builder). To test the
 PKGBUILD without a published release, `tar` the working tree as

@@ -16,6 +16,7 @@ JSON report exists for the release candidate and has `"qualified": true`.
 | Idle | 5 minutes after 30s warm-up | 0 widgets | average CPU `< 1%`, peak process-tree RSS `< 150MiB` |
 | Active | 5 minutes after 30s warm-up | exactly 10 updating widgets | average CPU `< 5%`, peak process-tree RSS `< 250MiB` |
 | Owner-approved extended observation | 30 minutes after 30s warm-up | exactly 14 widgets | complete 30s samples, startup pass, average and steady CPU `< 5%`, peak RSS `< 250MiB`, GPU memory available, finite CPU/RSS/FD/thread slopes |
+| Panel rotation | 3 portrait/landscape cycles | full 14-widget screen | every quarter-turn: first frame `<= 100ms`, animation span `400ms..680ms`, effective callback rate `>= 70%` of refresh rate, p95 interval `<= 2` refresh periods, estimated missed-refresh ratio `<= 20%`; observer lag spread `<= 2ms` |
 
 The active load is a fixed manifest: CPU, GPU, RAM, network, disk, sensors,
 digital clock, analog clock, a running focus timer, and a running break timer.
@@ -81,6 +82,26 @@ profile; either non-zero result blocks release. For optional longer diagnosis,
 `--mode idle-48h`. The 48-hour report evaluates its first real 24-hour prefix as
 an independent checkpoint, but those optional modes are not part of the 1.0.0
 release verdict.
+
+The strict manifest also runs the real-panel orientation frame probe against
+the same fresh, non-instrumented candidate:
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 tests/performance/rotation_frame_probe.py \
+  --hub cmake-build-performance-local/xeneon-edge-hub \
+  --output-dir /absolute/path/to/artifacts/<full-sha>/<run>/performance/rotation-frame \
+  --cycles 3
+```
+
+The probe requires every requested orientation to be reflected by the Hub and
+at least three observable Wayland frame callbacks per transition. It retains
+raw protocol, normalized event, request, and JSON report evidence. Every
+transition is qualified against the refresh-normalized release SLO in the table
+above. A failed transition makes the probe exit non-zero and blocks the strict
+release manifest. Cadence and duration use the Wayland protocol timestamps, not
+the Python pipe-reader timestamps. The latter align callbacks with the
+orientation request and may only add conservative first-frame latency. If
+reader backlog varies by more than 2ms, the measurement fails as invalid.
 
 Each output directory must be empty. This prevents a new summary from being
 mistakenly combined with stale evidence. Preserve the directory with the other

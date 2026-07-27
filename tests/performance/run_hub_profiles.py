@@ -13,6 +13,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -68,6 +69,23 @@ def _git_revision() -> str:
     return result.stdout.strip() or "unavailable"
 
 
+def _source_commit() -> str:
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", "HEAD^{commit}"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    commit = result.stdout.strip()
+    if result.returncode != 0 or re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+        raise MeasurementError(
+            "performance evidence requires one exact lowercase source commit"
+        )
+    return commit
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
@@ -118,6 +136,7 @@ def validate_candidate_build(binary: Path) -> dict:
             f"candidate --version failed with code {version.returncode}: {version.stderr.strip()}"
         )
     return {
+        "source_commit": _source_commit(),
         "cmake_cache": str(cache_path),
         "cmake_build_type": cache["CMAKE_BUILD_TYPE"],
         "cmake_install_prefix": cache["CMAKE_INSTALL_PREFIX"],

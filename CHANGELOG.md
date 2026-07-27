@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-07-27
+
 ### Added
 
 - Break, Focus, and medication reminders can now raise a persistent,
@@ -41,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and active-screen state as the Hub.
 - Text, secondary labels, controls, and backdrop treatments use shared
   readability and density rules across themes and accents.
+- Qt Virtual Keyboard was removed from QML, linking, packaging, AppImage
+  bundling, CI, and runtime dependencies. Text entry now uses a physical
+  keyboard or a desktop-provided input method.
 
 ### Fixed
 

@@ -108,8 +108,9 @@ buf[0]==0x01 && buf[1]==0x11, reads buf[7]), pushes the mapped rotation to QML r
 `sensorRotation`; main.qml "auto" mode = `sensorRotation`. Needs the udev rule
 `packaging/udev/99-xeneon-edge.rules` (GROUP="users", the login user's group here) - installed
 it grants read access; without it auto-rotate stays off and manual modes are used. The rotation
-transition is a shortest-path RotationAnimation + fade/scale dip; `Qt.inputMethod.hide()` +
-`InputPanel.visible: active` on rotation stop the on-screen keyboard flashing mid-turn.
+transition is a shortest-path RotationAnimation + fade/scale dip;
+`Qt.inputMethod.hide()` asks any desktop-provided input method to close before
+the orientation changes.
 
 Widget-authoring FRAMEWORK (commit 4827784): `docs/widgets/authoring.md` is the guide;
 `scripts/new-widget.sh <type> "<Title>" [Category]` scaffolds the QML + placeholder icon and

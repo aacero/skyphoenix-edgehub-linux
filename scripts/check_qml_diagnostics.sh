@@ -37,16 +37,12 @@ RESOURCE='Cannot open: qrc:|No such file or directory'
 # lack QWARN. Treat those as warnings too.
 WARNING='^QWARN[[:space:]]*:|^(file|qrc):.*QML (Connections|Binding|Loader|Image|Settings)'
 
-# Qt 6.11.1's installed Virtual Keyboard PopupList declares contentWidth over a
-# base member. This is in /usr/lib64/qt6/qml, outside this repository. Keep the
-# disposition exact and visible while still rejecting every other warning.
-KNOWN_VIRTUAL_KEYBOARD='^QWARN[[:space:]]*:.*qt\.qml\.propertyCache\.append: Member contentWidth of the object PopupList_QMLTYPE_[0-9]+ overrides a member of the base object\. Consider renaming it or adding final or override specifier$'
 # Qt's queued QUnifiedTimer stop path can reach stopAnimationDriver after the
 # installed driver has already stopped. Qt itself emits this exact line. Keep
 # the disposition full-line exact and counted so no application warning is
 # hidden with it.
 KNOWN_QT_ANIMATION_DRIVER='^QWARN[[:space:]]*:.*QUnifiedTimer::stopAnimationDriver: driver is not running$'
-KNOWN_EXTERNAL="$KNOWN_VIRTUAL_KEYBOARD|$KNOWN_QT_ANIMATION_DRIVER"
+KNOWN_EXTERNAL="$KNOWN_QT_ANIMATION_DRIVER"
 
 diag_tmp="$(mktemp "${TMPDIR:-/tmp}/xeneon-qml-diag.XXXXXX")"
 trap 'rm -f "$diag_tmp"' EXIT
@@ -56,7 +52,6 @@ fatal_hits=$(grep -cE "$FATAL" "$LOG")
 res_hits=$(grep -cE "$RESOURCE" "$LOG")
 warn_hits=$(wc -l < "$diag_tmp")
 known_external_hits=$(grep -cE "$KNOWN_EXTERNAL" "$diag_tmp")
-virtual_keyboard_hits=$(grep -cE "$KNOWN_VIRTUAL_KEYBOARD" "$diag_tmp")
 animation_driver_hits=$(grep -cE "$KNOWN_QT_ANIMATION_DRIVER" "$diag_tmp")
 unexpected_hits=$(grep -Ev "$KNOWN_EXTERNAL" "$diag_tmp" | wc -l)
 
@@ -84,8 +79,6 @@ elif [ "$res_hits" -gt 0 ]; then
 fi
 
 if [ "$known_external_hits" -gt 0 ]; then
-  [ "$virtual_keyboard_hits" -gt 0 ] \
-    && echo "     known external Qt 6.11.1 Virtual Keyboard warning: $virtual_keyboard_hits"
   [ "$animation_driver_hits" -gt 0 ] \
     && echo "     known external Qt animation-driver warning: $animation_driver_hits"
 fi

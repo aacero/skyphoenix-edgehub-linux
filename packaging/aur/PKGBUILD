@@ -10,7 +10,7 @@ pkgdesc="Native Linux widget dashboard for the Corsair Xeneon Edge and other sec
 arch=('x86_64')
 url="https://github.com/skyphoenix-it/skyphoenix-edgehub-linux"
 license=('MIT' 'Apache-2.0' 'OFL-1.1' 'BSD-3-Clause' 'MPL-2.0' 'Unicode-3.0')
-depends=('qt6-base' 'qt6-declarative' 'qt6-svg' 'qt6-virtualkeyboard' 'qt6-wayland' 'hicolor-icon-theme')
+depends=('qt6-base' 'qt6-declarative' 'qt6-svg' 'qt6-wayland' 'hicolor-icon-theme')
 makedepends=('cmake' 'rust')
 install="$pkgname.install"
 
@@ -42,9 +42,10 @@ source=("$pkgname-$_srcver.tar.gz::$url/releases/download/$_tag/$pkgname-$_srcve
 # anything that decides trust must pin all 40 hex digits. Public key is committed
 # at packaging/edgehub-signing.pub; expiry/rotation is in docs/DISTRIBUTION.md.
 #
-# The key is NOT on a keyserver yet, so the usual `gpg --recv-keys` does not work
-# and makepkg will fail with "unknown public key". Until it is published to
-# keys.openpgp.org, users must import it directly:
+# The key is published to keys.openpgp.org and keyserver.ubuntu.com. Users must
+# still compare the complete fingerprint. GitHub remains a fallback:
+#   gpg --keyserver hkps://keys.openpgp.org --recv-keys \
+#     2F0CAD36DC1D46F3347B7EF293CDC77EACF98990
 #   curl -sL https://github.com/SimonKreitmayer.gpg | gpg --import
 validpgpkeys=('2F0CAD36DC1D46F3347B7EF293CDC77EACF98990')
 

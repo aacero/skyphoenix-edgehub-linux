@@ -37,8 +37,8 @@ has passed.
 - [ ] Complete the owner-approved literal 30-minute, 14-widget instrumented
       substitute. The historical 48-hour soak was waived, so no long-duration
       stability claim may be made from this release evidence.
-- [ ] Close the Qt Virtual Keyboard distribution choice and the remaining
-      legal/trademark and payment/delivery decisions.
+- [x] Remove Qt Virtual Keyboard from the product, packages and build pipeline.
+- [ ] Close the remaining legal/trademark and payment/delivery decisions.
 - [ ] Limit the release branch to release blockers, evidence work and
       owner-approved corrections.
 - [ ] Fix release-blocking defects and re-run the affected gates.

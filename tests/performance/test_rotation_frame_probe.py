@@ -9,11 +9,29 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from rotation_frame_probe import (  # noqa: E402
+    calibrate_frame_callbacks,
     dense_commit_cluster,
     parse_buffer_commits,
+    qualify_transition,
     summarise_transition,
     WaylandCommitObserver,
 )
+
+
+def calibrated_callbacks(
+    timestamps, observer_lags=None, surface="wl_surface#7"
+):
+    lags = observer_lags or [0.0] * len(timestamps)
+    raw = {
+        surface: [
+            {
+                "wayland_timestamp_ms": timestamp,
+                "observer_monotonic_ms": timestamp + lag,
+            }
+            for timestamp, lag in zip(timestamps, lags)
+        ]
+    }
+    return calibrate_frame_callbacks(raw)[0]
 
 
 class RotationFrameProbeTest(unittest.TestCase):
@@ -58,7 +76,12 @@ class RotationFrameProbeTest(unittest.TestCase):
     def test_summary_reports_observable_frame_timing(self):
         frames = [1005.0, 1021.6, 1038.2, 1054.8, 1088.0]
         summary = summarise_transition(
-            {"wl_surface#7": frames, "wl_surface#8": [1006.0]},
+            {
+                **calibrated_callbacks(frames),
+                **calibrated_callbacks(
+                    [1006.0, 1007.0, 1008.0], surface="wl_surface#8"
+                ),
+            },
             request_started_ms=1000.0,
             refresh_hz=60.0,
         )
@@ -73,10 +96,82 @@ class RotationFrameProbeTest(unittest.TestCase):
     def test_summary_rejects_insufficient_frame_evidence(self):
         with self.assertRaisesRegex(Exception, "fewer than three"):
             summarise_transition(
-                {"wl_surface#7": [1005.0, 1021.6]},
+                calibrated_callbacks([1005.0, 1021.6]),
                 request_started_ms=1000.0,
                 refresh_hz=60.0,
             )
+
+    def test_protocol_cadence_is_not_compressed_by_reader_timing(self):
+        protocol = [1005.0, 1021.6, 1038.2, 1054.8, 1071.4]
+        callbacks = calibrated_callbacks(
+            protocol, [0.0, 0.8, 0.2, 0.9, 0.4]
+        )
+        summary = summarise_transition(callbacks, 1000.0, 60.0)
+        self.assertAlmostEqual(summary["interval_ms"]["median"], 16.6)
+        self.assertEqual(
+            summary["frame_callback_timestamps_ms"], protocol
+        )
+
+    def test_reader_backlog_invalidates_the_measurement(self):
+        raw = {
+            "wl_surface#7": [
+                {
+                    "wayland_timestamp_ms": 1000.0 + 16.6 * index,
+                    "observer_monotonic_ms":
+                        1000.0 + 16.6 * index + index * 1.1,
+                }
+                for index in range(5)
+            ]
+        }
+        with self.assertRaisesRegex(Exception, "observer backlog"):
+            calibrate_frame_callbacks(raw)
+
+    def test_smooth_full_duration_transition_meets_release_slo(self):
+        frames = [1005.0 + 16.67 * index for index in range(34)]
+        summary = summarise_transition(
+            calibrated_callbacks(frames),
+            request_started_ms=1000.0,
+            refresh_hz=60.0,
+        )
+        qualification = qualify_transition(summary, 60.0)
+        self.assertTrue(qualification["passed"])
+        self.assertTrue(
+            all(check["passed"] for check in qualification["checks"])
+        )
+
+    def test_short_immediate_transition_fails_release_slo(self):
+        frames = [1005.0, 1021.6, 1038.2, 1054.8]
+        summary = summarise_transition(
+            calibrated_callbacks(frames),
+            request_started_ms=1000.0,
+            refresh_hz=60.0,
+        )
+        qualification = qualify_transition(summary, 60.0)
+        self.assertFalse(qualification["passed"])
+        failed = {
+            check["name"]
+            for check in qualification["checks"]
+            if not check["passed"]
+        }
+        self.assertIn("animation-span-minimum", failed)
+
+    def test_janky_transition_fails_refresh_normalized_slo(self):
+        frames = [1005.0 + 50.0 * index for index in range(12)]
+        summary = summarise_transition(
+            calibrated_callbacks(frames),
+            request_started_ms=1000.0,
+            refresh_hz=60.0,
+        )
+        qualification = qualify_transition(summary, 60.0)
+        self.assertFalse(qualification["passed"])
+        failed = {
+            check["name"]
+            for check in qualification["checks"]
+            if not check["passed"]
+        }
+        self.assertIn("effective-callback-rate", failed)
+        self.assertIn("p95-frame-interval", failed)
+        self.assertIn("missed-refresh-ratio", failed)
 
 
 if __name__ == "__main__":

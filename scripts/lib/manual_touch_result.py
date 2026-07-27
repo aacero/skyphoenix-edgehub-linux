@@ -18,6 +18,9 @@ EXPECTED_IDS = [
     "04-page-swipe",
     "05-widget-settings",
     "06-edit-gestures",
+    "07-panel-power",
+    "08-panel-reconnect",
+    "09-suspend-resume",
 ]
 EXPECTED_HEADER = [
     "id",
@@ -57,7 +60,7 @@ def validate(audit_dir: pathlib.Path, expected_commit: str | None = None) -> Non
     if not rows or rows[0] != EXPECTED_HEADER:
         fail("ACTION_RESULTS.tsv header differs from the eight-column contract")
     if len(rows) != len(EXPECTED_IDS) + 1:
-        fail("ACTION_RESULTS.tsv must contain exactly six action rows")
+        fail("ACTION_RESULTS.tsv must contain exactly nine action rows")
 
     actual_ids: list[str] = []
     expected_captures: set[str] = set()
@@ -144,21 +147,21 @@ def validate(audit_dir: pathlib.Path, expected_commit: str | None = None) -> Non
         physical_hashes.add(physical_digest)
 
     if actual_ids != EXPECTED_IDS:
-        fail("touch actions are missing, duplicated, or out of canonical order")
+        fail("physical panel actions are missing, duplicated, or out of canonical order")
     actual_captures = {
         path.name
         for path in audit_dir.glob("*.png")
         if not path.name.endswith("-physical.png")
     }
     if actual_captures != expected_captures:
-        fail("audit directory must contain exactly the six action PNG captures")
+        fail("audit directory must contain exactly the nine action PNG captures")
     actual_physical_evidence = {
         path.name
         for path in audit_dir.iterdir()
         if "-physical." in path.name
     }
     if actual_physical_evidence != expected_physical_evidence:
-        fail("audit directory must contain exactly six named physical evidence files")
+        fail("audit directory must contain exactly nine named physical evidence files")
 
     if expected_commit is None:
         return

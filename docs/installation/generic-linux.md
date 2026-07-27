@@ -10,7 +10,7 @@ distribution-specific guides.
 - a C++17 compiler
 - CMake 3.22 or newer
 - Qt 6.5 or newer with Core, Gui, Quick, QML, Quick Controls 2, DBus, Network,
-  SVG, Virtual Keyboard and Wayland support
+  SVG and Wayland support
 - OpenGL and a working Linux compositor
 
 The Qt 6.5 floor is required by `QtQuick.Effects`; a distribution with Qt 6.4

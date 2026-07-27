@@ -70,6 +70,7 @@ public:
         m_sock = new QLocalSocket(this);
         connect(m_sock, &QLocalSocket::connected, this, [this] {
             m_hubConnected = true;
+            m_hubUiStateReceiptLogged = false;
             m_connectedSessionNeedsReload = true;
             // Generation tokens are process-local. A restarted Hub can begin a
             // new token namespace, so the first reply on every connection must
@@ -835,6 +836,13 @@ private slots:
                     emit saveError(QStringLiteral("The Hub layout is newer than this Manager"));
                     continue;
                 }
+                // This one-shot receipt is consumed by packaging smoke as proof
+                // of a complete Manager-to-Hub request/reply round trip. Keep it
+                // once per connection so the 500 ms live pull cannot flood logs.
+                if (!m_hubUiStateReceiptLogged) {
+                    qInfo() << "Manager: Hub UI-state reply accepted";
+                    m_hubUiStateReceiptLogged = true;
+                }
                 QString currentConfigState;
                 if (m_config) {
                     XeneonString currentState(
@@ -1157,6 +1165,7 @@ private:
         m_hubConnected = false;
         m_connectedSessionNeedsReload = false;
         m_uiStateRequestsInFlight = 0;
+        m_hubUiStateReceiptLogged = false;
         m_lastHubConfigGenerationToken.clear();
         if (wasConnected)
             emit hubConnectedChanged();
@@ -1405,6 +1414,7 @@ private:
     bool m_pendingPushFailed = false;
     bool m_pendingPushDurablyPersisted = false;
     bool m_connectedSessionNeedsReload = false;
+    bool m_hubUiStateReceiptLogged = false;
     bool m_layoutSavePending = false;
     bool m_discardAwaitingHubState = false;
     bool m_externalConfigConflictPending = false;

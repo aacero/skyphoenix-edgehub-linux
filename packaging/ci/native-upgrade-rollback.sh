@@ -61,23 +61,21 @@ normalize_immutable_ref() {
       fail "ref contains an option prefix, whitespace, or control character"
       ;;
   esac
-  if [[ "$ref" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+  if [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
     printf '%s' "$ref"
     return
   fi
-  if [[ "$ref" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+  if [[ "$ref" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(alpha|beta|rc)\.(0|[1-9][0-9]*))?$ ]]; then
     ref="refs/tags/$ref"
+  elif [[ "$ref" =~ ^refs/tags/v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(alpha|beta|rc)\.(0|[1-9][0-9]*))?$ ]]; then
+    :
+  else
+    fail \
+      "ref must be a lowercase full commit or exact SemVer release tag: $1"
   fi
-  case "$ref" in
-    refs/tags/*)
-      git check-ref-format "$ref" >/dev/null 2>&1 ||
-        fail "invalid tag ref: $1"
-      printf '%s' "$ref"
-      ;;
-    *)
-      fail "ref must be a full 40-hex commit or exact refs/tags/... name: $1"
-      ;;
-  esac
+  git check-ref-format "$ref" >/dev/null 2>&1 ||
+    fail "invalid tag ref: $1"
+  printf '%s' "$ref"
 }
 
 resolve_ref() {
@@ -549,6 +547,7 @@ if [ -n "${GITHUB_OUTPUT:-}" ]; then
   {
     echo "candidate_package=$candidate_package"
     echo "candidate_sidecar=$candidate_package.sha256"
+    echo "report=$report_path"
     echo "evidence_dir=$evidence_dir"
   } >> "$GITHUB_OUTPUT"
 fi

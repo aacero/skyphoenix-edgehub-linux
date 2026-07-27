@@ -7,7 +7,7 @@ post_install() {
    udev rule + your user in the 'users' group:
      groups | grep -qw users || sudo gpasswd -a "$USER" users
      sudo udevadm control --reload && sudo udevadm trigger --subsystem-match=hidraw
-   Everything else works without it (manual orientation modes still apply).
+   Manual orientation remains available without HID permission.
 EOF
 }
 

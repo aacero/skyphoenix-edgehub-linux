@@ -78,15 +78,14 @@ Documentation contributions are always welcome:
 
 #### CachyOS / Arch Linux
 ```bash
-sudo pacman -S rust cmake gcc qt6-base qt6-declarative qt6-svg \
-  qt6-virtualkeyboard qt6-wayland qt6-tools
+sudo pacman -S --needed base-devel git rust cmake qt6-base qt6-declarative \
+  qt6-svg qt6-wayland qt6-tools
 ```
 
 #### Ubuntu 26.04 LTS
 ```bash
-sudo apt install cargo cmake g++ qt6-base-dev qt6-declarative-dev \
-  qt6-svg-dev qt6-virtualkeyboard-dev qt6-wayland-dev qt6-tools-dev \
-  libglib2.0-dev
+sudo apt install git cargo cmake make g++ qt6-base-dev qt6-declarative-dev \
+  qt6-svg-dev qt6-wayland-dev qt6-tools-dev libglib2.0-dev
 ```
 
 Ubuntu 24.04's native Qt 6.4 is below the project's Qt 6.5 minimum. Use the

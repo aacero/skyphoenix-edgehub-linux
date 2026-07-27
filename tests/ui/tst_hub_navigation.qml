@@ -259,8 +259,8 @@ Item {
             wait(900)
             compare(root.saveCalls, savesAfterManagerPersist,
                     "destroying the old note cannot echo stale text after the push")
-            compare(Object.keys(s.settingsFor("hub-note")).length, 0,
-                    "the removed note is not resurrected as orphan settings")
+            verify(s.document.settings["hub-note"] === undefined,
+                   "the removed note has no settings key at all, not an orphan {} bucket")
             compare(JSON.stringify(s._persistableData()), managerDoc,
                     "the live Hub document exactly matches the Manager retry")
             compare(root.savedUiState, managerDoc,

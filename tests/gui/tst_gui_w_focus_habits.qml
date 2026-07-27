@@ -437,7 +437,11 @@ Item {
             setSize("compact", 348, 306)
             verify(wh.item.micro === true, "micro at 0.5x0.5")
             compare(heatCells().length, 0, "no heatmap cells on micro")
-            verify(vtext("3 days") !== null, "micro still shows streak")
+            var streak = G.byObjName(wh.item, "habitStreakValue")
+            verify(streak !== null && G.isLive(streak), "micro streak readout is visible")
+            compare("" + streak.text, "3d", "micro uses the intentional compact streak label")
+            compare("" + streak.Accessible.name, "3 days",
+                    "compact visual label retains the full accessible meaning")
             snap(wh, "habit_st_micro")
         }
         function test_habit_state_done_label() {

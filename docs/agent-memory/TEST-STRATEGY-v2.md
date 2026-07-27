@@ -297,7 +297,7 @@ Read from source registries, not docs. This is what "EVERYTHING" means.
 | Effect knobs | 4 (glass, glow, animatedBg, reduceMotion) |
 | Motion tokens collapsing under reduce-motion | 7 |
 | Manager tabs / dialogs | 5 / 9 |
-| Hub panels+overlays | 8 (+ virtual keyboard) |
+| Hub panels+overlays | 8 |
 | SettingsPanel tap targets | ~65 across 8 sections |
 | Wizard steps | 4 |
 | Diagnostics tabs | 5 |

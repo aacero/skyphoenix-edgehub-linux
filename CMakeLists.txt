@@ -105,7 +105,7 @@ option(XENEON_COVERAGE "Instrument tested C++ for gcov/gcovr coverage" OFF)
 option(XENEON_QA_HOOKS "Compile in the XENEON_GRAB/EXPAND QA automation hooks" OFF)
 
 # Find Qt6
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml DBus VirtualKeyboard Network Svg QuickControls2)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml DBus Network Svg QuickControls2)
 
 # --- Build Rust Core Library ---
 
@@ -187,7 +187,6 @@ target_link_libraries(xeneon-edge-hub PRIVATE
     Qt6::Network
     Qt6::Svg
     Qt6::QuickControls2
-    Qt6::VirtualKeyboard
     ${RUST_LIB}
     pthread
     dl
@@ -406,7 +405,7 @@ if(PROJECT_IS_TOP_LEVEL)
     endif()
 
     set(CPACK_PACKAGE_NAME "xeneon-edge-hub")
-    set(CPACK_PACKAGE_VENDOR "SkyPhoenix IT")
+    set(CPACK_PACKAGE_VENDOR "SKYPhoenix IT")
     set(CPACK_PACKAGE_CONTACT "Simon Kreitmayer <simon.kreitmayer@skyphoenix-it.com>")
     set(CPACK_PACKAGE_VERSION "${XENEON_CPACK_VERSION}")
     if(XENEON_CPACK_VERSION MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)")
@@ -452,8 +451,7 @@ qml6-module-qtquick-effects, \
 qml6-module-qtquick-layouts, \
 qml6-module-qtquick-shapes, \
 qml6-module-qtquick-window, \
-qml6-module-qtqml-workerscript, \
-qml6-module-qtquick-virtualkeyboard | qt6-virtualkeyboard")
+qml6-module-qtqml-workerscript")
     set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
 
     # Fedora/openSUSE
@@ -462,7 +460,7 @@ qml6-module-qtquick-virtualkeyboard | qt6-virtualkeyboard")
     set(CPACK_RPM_PACKAGE_VERSION "${XENEON_NATIVE_PACKAGE_VERSION}")
     set(CPACK_RPM_PACKAGE_GROUP "Applications/System")
     set(CPACK_RPM_PACKAGE_REQUIRES
-        "qt6-qtbase >= 6.5, qt6-qtdeclarative, qt6-qtsvg, qt6-qtvirtualkeyboard, qt6-qtwayland")
+        "qt6-qtbase >= 6.5, qt6-qtdeclarative, qt6-qtsvg, qt6-qtwayland")
     set(CPACK_RPM_FILE_NAME "RPM-DEFAULT")
 
     # Per-generator tooling checks run at *cpack* time, after -G has selected

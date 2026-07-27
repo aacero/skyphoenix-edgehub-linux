@@ -302,13 +302,13 @@ write_report() {
             && physical_evidence_count=$((physical_evidence_count + 1))
     done <"$results_file"
 
-    if [[ "$pass_count" -ne 6 || "$screenshot_count" -ne 6 \
-            || "$physical_evidence_count" -ne 6 ]]; then
+    if [[ "$pass_count" -ne 9 || "$screenshot_count" -ne 9 \
+            || "$physical_evidence_count" -ne 9 ]]; then
         [[ "$overall" == "PASS" ]] && overall="INCOMPLETE"
     fi
 
     {
-        printf '# Manual physical-touch audit\n\n'
+        printf '# Manual physical-panel audit\n\n'
         printf -- '- Overall result: **%s**\n' "$overall"
         printf -- '- Source SHA: `%s`\n' "$source_sha"
         printf -- '- Running Hub identity: `%s`\n' "$running_hub_identity"
@@ -382,7 +382,7 @@ run_audit() {
         printf 'started=%s\n' "$audit_started"
     } >"${audit_dir}/ENVIRONMENT.txt"
 
-    printf '\nKeep the Hub on %s for all six checks.\n' "$panel_name"
+    printf '\nKeep the Hub on %s for all nine checks.\n' "$panel_name"
     printf 'The script captures only that panel after each tested action.\n'
     printf 'Each action also requires a phone/camera photo or video showing the physical interaction.\n'
 
@@ -398,6 +398,12 @@ run_audit() {
         "The corner control opens the settings for the touched widget and closes without side effects."
     record_action "06-edit-gestures" "Edit-mode gestures" \
         "Enter edit mode, move or resize one widget, save, and confirm the resulting layout remains usable."
+    record_action "07-panel-power" "Physical panel power cycle" \
+        "Power the panel off and on, then confirm the Hub returns to the same panel, orientation, page, and usable touch state."
+    record_action "08-panel-reconnect" "Physical panel disconnect and reconnect" \
+        "Disconnect and reconnect the panel's display and USB paths, then confirm the Hub safely returns to the same panel and Manager live control still works."
+    record_action "09-suspend-resume" "System suspend and resume" \
+        "Suspend and resume the PC, then confirm the Hub returns to the panel, orientation and touch work, Manager reconnects, and no duplicate Hub or Manager starts."
 
     audit_ended="$(date --iso-8601=seconds)"
     attested="no"
@@ -425,7 +431,7 @@ run_audit() {
         return 4
     fi
     if [[ "$results_complete" != "yes" ]]; then
-        printf 'Result is retained unsealed because all six actions did not pass with six captures.\n'
+        printf 'Result is retained unsealed because all nine actions did not pass with nine captures.\n'
         return 5
     fi
     printf 'Manifest: %s/MANIFEST.sha256\n' "$audit_dir"

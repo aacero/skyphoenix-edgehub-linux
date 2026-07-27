@@ -221,12 +221,33 @@ WidgetChrome {
         var mm = m > 0 ? ":" + (m < 10 ? "0" : "") + m : ""
         return "UTC" + sign + h + mm
     }
+    // Wide clocks share the short axis with a date and three calendar facts.
+    // Blend continuously from the shallow-preview budget into the physical
+    // tile budget. A hard branch here made a one-pixel resize at 270 px jump
+    // the hero type by roughly 40 percent in the Manager preview.
+    readonly property real wideBudgetBlend:
+        Math.max(0, Math.min(1, (w.height - 240) / 60))
+    readonly property real wideBudgetEase:
+        w.wideBudgetBlend * w.wideBudgetBlend
+        * (3 - 2 * w.wideBudgetBlend)
+    readonly property real wideCompactTimeBudget:
+        Math.max(30, (w.height - 182) * 0.75)
+    readonly property real widePhysicalTimeBudget: w.height * 0.34
+    readonly property real wideTimeHeightBudget:
+        w.wideCompactTimeBudget
+        + (w.widePhysicalTimeBudget - w.wideCompactTimeBudget)
+          * w.wideBudgetEase
+    readonly property real wideContextCardHeight:
+        Math.max(50, Math.min(58, 58 - (w.height - 240) * 8 / 60))
     readonly property real clockTimePixelSize: w.expanded ? 168
         : Math.max(30, Math.min(w.width * 0.24,
-                                w.height * (w.sizeClass === "wide" ? 0.18 : 0.42),
+                                w.sizeClass === "wide"
+                                    ? w.wideTimeHeightBudget : w.height * 0.42,
                                 w.sizeClass === "wide" ? 132
                               : w.tallish ? 120
                               : w.micro ? 88 : 104))
+    readonly property int clockTimeBoxHeight: Math.ceil(
+        w.clockTimePixelSize * (w.sizeClass === "wide" ? 1.32 : 1.4))
 
     ColumnLayout {
         id: col
@@ -313,10 +334,10 @@ WidgetChrome {
             // pre-fit font (141 px for a 60 px painted line). Constrain the
             // layout through a neutral wrapper so the short-wide column is not
             // centered as though it were much taller.
-            implicitHeight: Math.ceil(w.clockTimePixelSize * 1.4)
-            Layout.minimumHeight: Math.ceil(w.clockTimePixelSize * 1.4)
-            Layout.preferredHeight: Math.ceil(w.clockTimePixelSize * 1.4)
-            Layout.maximumHeight: Math.ceil(w.clockTimePixelSize * 1.4)
+            implicitHeight: w.clockTimeBoxHeight
+            Layout.minimumHeight: w.clockTimeBoxHeight
+            Layout.preferredHeight: w.clockTimeBoxHeight
+            Layout.maximumHeight: w.clockTimeBoxHeight
             Text {
                 anchors.fill: parent
                 horizontalAlignment: Text.AlignHCenter
@@ -376,7 +397,10 @@ WidgetChrome {
                 delegate: Rectangle {
                     required property var modelData
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 58
+                    // Let the supporting cards yield space continuously as a
+                    // short-wide preview approaches its physical tile height.
+                    Layout.preferredHeight: w.sizeClass === "wide"
+                                            ? w.wideContextCardHeight : 58
                     radius: theme.radiusSm
                     color: Qt.rgba(theme.cardBackgroundAlt.r, theme.cardBackgroundAlt.g,
                                    theme.cardBackgroundAlt.b, 0.72)

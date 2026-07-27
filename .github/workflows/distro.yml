@@ -84,7 +84,7 @@ jobs:
           dnf -y install \
             cmake gcc-c++ make rpm-build cargo rust \
             qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtsvg-devel \
-            qt6-qtvirtualkeyboard-devel qt6-qtwayland-devel \
+            qt6-qtwayland-devel \
             mesa-libGL-devel
 
       - name: Record + gate Qt version (>= 6.5)
@@ -240,7 +240,6 @@ jobs:
         uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
           version: '6.7.3'
-          modules: 'qtvirtualkeyboard'
           cache: true
 
       - name: Install build + deploy dependencies
@@ -499,7 +498,7 @@ jobs:
           apt-get update -qq
           apt-get install -y --no-install-recommends \
             cmake g++ make file dpkg-dev rustc cargo \
-            qt6-base-dev qt6-declarative-dev qt6-svg-dev qt6-virtualkeyboard-dev \
+            qt6-base-dev qt6-declarative-dev qt6-svg-dev \
             libgl1-mesa-dev
 
       - name: Record + gate Qt version (>= 6.5)

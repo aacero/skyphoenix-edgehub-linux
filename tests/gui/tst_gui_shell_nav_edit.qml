@@ -125,6 +125,13 @@ Item {
         function resetShell(orient) {
             var d = dash(), s = store(), sw = swipe()
             if (d.hasExpanded) d.closeExpanded()
+            // Every test owns a complete interaction, including closing any
+            // destructive-action confirmation it opens. Still close a leftover
+            // dialog defensively here so one failed assertion cannot block all
+            // later pointer input and turn a single failure into a cascade.
+            if (d.pageDeleteDialog.visible) d.pageDeleteDialog.close()
+            if (d.widgetRemoveDialog.visible) d.widgetRemoveDialog.close()
+            if (d.widgetDataDialog.visible) d.widgetDataDialog.close()
             var pk = picker(); if (pk) pk.shown = false
             d.editMode = false
             win.animatedBackground = false
@@ -806,7 +813,7 @@ Item {
             compare(s.pages()[0].tiles[0].size, "1x1", "resize refused (would overflow the full page)")
         }
 
-        // EDIT-39 - trash removes the tile.
+        // EDIT-39 - trash asks for confirmation, then removes the tile.
         function test_edit_trash_removes_tile() {
             resetShell("portrait")
             var s = store(), db = dash()
@@ -814,11 +821,18 @@ Item {
             db.editMode = true; wait(150)
             var cell = cellFor(id)
             verify(clickIcon(cell, "ui-trash"), "clicked trash")
+            tryVerify(function () { return db.widgetRemoveDialog.visible }, 2000,
+                      "widget removal confirmation is shown")
+            compare(db.pendingWidgetRemovalId, id,
+                    "confirmation is bound to the requested widget")
+            clickItem(db.widgetRemoveConfirmButton)
+            tryVerify(function () { return !db.widgetRemoveDialog.visible }, 2000,
+                      "widget removal confirmation closed")
             tryVerify(function () { return s.pages()[0].tiles.length === 1 }, 4000, "tile removed from store")
             tryVerify(function () { return cellFor(id) === null }, 4000, "cell gone after removal")
         }
 
-        // EDIT-43 - removed tile's settings are pruned.
+        // EDIT-43 - confirming removal also prunes the tile's settings.
         function test_edit_removed_tile_settings_pruned() {
             resetShell("portrait")
             var s = store(), db = dash()
@@ -826,6 +840,11 @@ Item {
             db.editMode = true; wait(150)
             var cell = cellFor(id)
             verify(clickIcon(cell, "ui-trash"), "clicked trash")
+            tryVerify(function () { return db.widgetRemoveDialog.visible }, 2000,
+                      "widget removal confirmation is shown")
+            clickItem(db.widgetRemoveConfirmButton)
+            tryVerify(function () { return !db.widgetRemoveDialog.visible }, 2000,
+                      "widget removal confirmation closed")
             tryVerify(function () { return s.settingsFor(id).goal === undefined }, 4000, "settings pruned on tile remove")
         }
 

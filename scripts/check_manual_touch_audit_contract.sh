@@ -20,6 +20,9 @@ expected_ids=(
     04-page-swipe
     05-widget-settings
     06-edit-gestures
+    07-panel-power
+    08-panel-reconnect
+    09-suspend-resume
 )
 
 create_valid_fixture() {
@@ -52,7 +55,7 @@ expect_rejected() {
 echo "==> Manual physical-touch sealing contract"
 create_valid_fixture
 python3 "$validator" "$fixture_root/audit"
-echo "  ok  six PASS rows require six panel captures and six physical-media files"
+echo "  ok  nine PASS rows require nine panel captures and nine physical-media files"
 
 sed -i 's/\tPASS\t/\tFAIL\t/' "$fixture_root/audit/ACTION_RESULTS.tsv"
 expect_rejected "a FAIL result cannot be sealed"
@@ -96,7 +99,7 @@ printf 'not a jpeg despite its suffix and enough padding 1234567890\n' \
 expect_rejected "physical evidence type requires a matching file signature"
 
 create_valid_fixture
-sed -i 's/^06-edit-gestures\t/05-widget-settings\t/' \
+sed -i 's/^09-suspend-resume\t/08-panel-reconnect\t/' \
     "$fixture_root/audit/ACTION_RESULTS.tsv"
 expect_rejected "duplicate and missing action identifiers cannot be sealed"
 

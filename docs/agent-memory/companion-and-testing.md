@@ -142,7 +142,7 @@ Orientation-aware layout (P0-3): C++ `main.cpp` connects `QScreen::orientationCh
 `sensorOrientation` (portrait/landscape/inverted-*); pushes initial only if
 `orientation()!=PrimaryOrientation`. main.qml: `orientationMode` (appearance
 `orientation`, "auto" follows sensor else fixed) → `effectiveOrientation` →
-`contentRotation` (0/90/180/270). A `contentRoot` Item wraps StackView+InputPanel,
+`contentRotation` (0/90/180/270). A `contentRoot` Item wraps the StackView,
 `rotation: contentRotation`, and SWAPS width/height when 90/270 so the dashboard
 inside lays out for the effective aspect. Dashboard `cols`: landscape (width>height)
 → `min(floor(w/300),4)` to fill; portrait → user's gridCols. Controls in on-device

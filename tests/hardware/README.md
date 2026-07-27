@@ -84,8 +84,14 @@ python3 tests/hardware/test_input_safety.py
 XENEON_HW_INPUT=1 python3 tests/hardware/edge_e2e.py        # the current suite
 
 # disruptive KDE/Wayland display lifecycle; no input, separate explicit gate:
+commit="$(git rev-parse HEAD)"
+mkdir -p "artifacts/$commit"
+XENEON_RELEASE_GATE=1 \
+    bash tests/performance/prepare_release_candidate.sh
 XENEON_HW_DISPLAY_LIFECYCLE=1 \
-    python3 tests/hardware/display_lifecycle_test.py
+    python3 tests/hardware/display_lifecycle_test.py \
+      --hub "$PWD/cmake-build-release-performance/xeneon-edge-hub" \
+      --evidence-dir "$PWD/artifacts/$commit/display-lifecycle-$(date -u +%Y%m%dT%H%M%SZ)"
 
 # legacy, DEPRECATED (real config + runtime dir; double opt-in required):
 XENEON_HW_INPUT=1 XENEON_HW_LEGACY=1 python3 tests/hardware/edge_hw_test.py
@@ -123,9 +129,16 @@ Without both env vars it prints a deprecation banner and exits 2.
   restart, portrait/landscape, 125% scale, primary swap, disable/re-enable, and
   missing-target startup. It captures the full KScreen baseline before changing
   anything and restores enabled state, mode, position, rotation, scale, and
-  priority for every output in `finally`. It creates no synthetic input and uses
-  an isolated Hub config/runtime directory. The display will visibly rotate,
-  resize, and blank while it runs; use only on an attended session.
+  priority for every output on every exit path, then verifies the restored state.
+  It refuses a dirty source tree and requires a new, absolute, non-symlink
+  `artifacts/<exact-full-sha>/<run>` evidence directory. Baseline/final KScreen
+  state, Hub logs, screenshots, per-check results, and any error are retained
+  there. `--hub` must identify the exact executable regular non-symlink
+  candidate being certified and its adjacent CMake cache must prove a Release
+  build with coverage, tests, and QA hooks disabled. It creates no synthetic
+  input and uses an isolated Hub config/runtime directory. The display will
+  visibly rotate, resize, and blank while it runs; use only on an attended
+  session.
 
 ## Not covered (needs a human)
 

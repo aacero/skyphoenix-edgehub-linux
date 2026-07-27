@@ -8,6 +8,7 @@
 #include <QLocalSocket>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMessageLogContext>
 #include <QSignalSpy>
 #include <QElapsedTimer>
 #include <QFileInfo>
@@ -35,6 +36,27 @@ static QString sockPath() { return xeneon::controlSocketPath(); }
 static QString legacyTmpPath() {
     return QDir::tempPath() + QStringLiteral("/xeneon-edge-hub-ctl");
 }
+
+static QStringList capturedMessages;
+
+static void captureMessage(
+    QtMsgType, const QMessageLogContext&, const QString& message) {
+    capturedMessages.append(message);
+}
+
+class MessageCapture {
+public:
+    MessageCapture()
+        : previous_(qInstallMessageHandler(captureMessage)) {
+        capturedMessages.clear();
+    }
+    ~MessageCapture() {
+        qInstallMessageHandler(previous_);
+    }
+    Q_DISABLE_COPY_MOVE(MessageCapture)
+private:
+    QtMessageHandler previous_;
+};
 
 // Simulates a session with no XDG_RUNTIME_DIR, with TMPDIR aimed at `tmpRoot` so
 // the fallback stays inside the test's sandbox. Restores both on scope exit -
@@ -190,6 +212,36 @@ private slots:
         QCOMPARE(
             r[0].value("configGenerationToken").toString(),
             QStringLiteral("opaque-generation-7"));
+    }
+
+    void getUiStateReceiptIsOncePerConnection() {
+        QLocalSocket client;
+        client.connectToServer(sockPath());
+        QElapsedTimer timer;
+        timer.start();
+        while (client.state() != QLocalSocket::ConnectedState
+               && timer.elapsed() < 3000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        }
+        QCOMPARE(client.state(), QLocalSocket::ConnectedState);
+
+        MessageCapture capture;
+        client.write(
+            "{\"type\":\"getUiState\"}\n"
+            "{\"type\":\"getUiState\"}\n");
+        client.flush();
+        QByteArray replies;
+        timer.restart();
+        while (replies.count('\n') < 2 && timer.elapsed() < 3000) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+            replies += client.readAll();
+        }
+        QCOMPARE(replies.count('\n'), 2);
+        QCOMPARE(
+            capturedMessages.count(
+                QStringLiteral(
+                    "ControlServer: Manager UI-state sync request received")),
+            1);
     }
 
     void setActivePageInvokesHandlerAndAcks() {

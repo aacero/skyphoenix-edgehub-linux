@@ -163,6 +163,7 @@ python3 - "$remote_json" "$zsync_dir/APPIMAGE_ZSYNC.json" \
 import hashlib
 import json
 import pathlib
+import re
 import sys
 
 remote = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
@@ -318,7 +319,7 @@ certification_hashes = {
     "provenance_sha256": certification_provenance_hash,
 }
 if (
-    provenance.get("schema") != "skyphoenix-edgehub-release-provenance/v4"
+    provenance.get("schema") != "skyphoenix-edgehub-release-provenance/v5"
     or provenance.get("source_commit") != commit
     or provenance.get("release_tag") != version
     or provenance.get("annotated_tag_object") != tag_object
@@ -342,6 +343,26 @@ if len(appimages) != 1:
     raise SystemExit(1)
 candidate_hash = hashlib.sha256(appimages[0].read_bytes()).hexdigest()
 if candidate_hash != zsync.get("candidate_sha256"):
+    raise SystemExit(1)
+appimage_attestations = [
+    entry
+    for entry in provenance.get("attested_extras", [])
+    if isinstance(entry, dict) and entry.get("kind") == "appimage"
+]
+if len(appimage_attestations) != 1:
+    raise SystemExit(1)
+appimage_attestation = appimage_attestations[0]
+if (
+    appimage_attestation.get("name") != appimages[0].name
+    or appimage_attestation.get("sha256") != candidate_hash
+    or appimage_attestation.get("appimage_runtime_smoke_required") is not True
+    or re.fullmatch(
+        r"https://github\.com/skyphoenix-it/skyphoenix-edgehub-linux/"
+        r"actions/runs/[1-9][0-9]*",
+        str(appimage_attestation.get("workflow_run", "")),
+    )
+    is None
+):
     raise SystemExit(1)
 PY
 
