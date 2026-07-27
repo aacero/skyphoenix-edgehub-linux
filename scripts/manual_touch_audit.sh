@@ -158,7 +158,28 @@ capture_panel() {
         rm -f -- "$full_desktop"
         die "Spectacle could not capture the desktop."
     fi
-    [[ -s "$full_desktop" ]] || die "Spectacle did not create a screenshot."
+    # Spectacle 6.7 can return success before its background writer has created
+    # the output file. Checking immediately therefore rejects a valid capture
+    # that appears a fraction of a second later. Require a non-empty size that
+    # remains unchanged across two polls before opening the PNG.
+    local previous_size=-1 current_size=0 attempt capture_stable=0
+    for attempt in $(seq 1 80); do
+        if [[ -f "$full_desktop" ]]; then
+            current_size="$(stat -c %s -- "$full_desktop")"
+            if [[ "$current_size" -gt 0 && "$current_size" -eq "$previous_size" ]]; then
+                capture_stable=1
+                break
+            fi
+            previous_size="$current_size"
+        else
+            previous_size=-1
+        fi
+        sleep 0.25
+    done
+    if [[ "$capture_stable" -ne 1 || ! -s "$full_desktop" ]]; then
+        rm -f -- "$full_desktop"
+        die "Spectacle did not create a stable screenshot."
+    fi
 
     if ! python3 - "$full_desktop" "$destination" \
         "$panel_x" "$panel_y" "$panel_width" "$panel_height" <<'PY'
