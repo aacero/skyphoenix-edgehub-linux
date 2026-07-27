@@ -11,6 +11,7 @@ MANAGER_RUNNER="$PROJECT_DIR/scripts/run_manager_tests.sh"
 HARDWARE_PYTHON_RUNNER="$PROJECT_DIR/scripts/run_hardware_python.py"
 QML_DIAGNOSTIC_CHECKER="$PROJECT_DIR/scripts/check_qml_diagnostics.sh"
 GUI_RUNNER="$PROJECT_DIR/tests/gui/run_gui_tests.sh"
+BUILDUP_RUNNER="$PROJECT_DIR/tests/hardware/e2e_buildup.py"
 PERFORMANCE_RUNNER="$PROJECT_DIR/tests/performance/run_hub_profiles.py"
 PERFORMANCE_AUDIT="$PROJECT_DIR/tests/performance/run_audit_14_widget_30m.py"
 PERFORMANCE_PREPARE="$PROJECT_DIR/tests/performance/prepare_release_candidate.sh"
@@ -401,6 +402,31 @@ if grep -Fq \
     echo "  ok   strict transient sandboxes use a private short socket-safe path"
 else
     echo "  FAIL strict transient sandboxes can exceed the Unix socket path limit"
+    fail=$((fail + 1))
+fi
+if [ "$(grep -Fc 'ffmpeg -nostdin' "$GUI_RUNNER")" -eq 2 ]; then
+    echo "  ok   GUI evidence encoding never reads the release terminal"
+else
+    echo "  FAIL a GUI evidence ffmpeg process can stop on background terminal input"
+    fail=$((fail + 1))
+fi
+if printf '%s\n' "$release_preflight" \
+        | grep -Fq 'rustup component list --toolchain "$RUSTUP_TOOLCHAIN"' \
+        && printf '%s\n' "$release_preflight" \
+        | grep -Fq 'llvm-tools-preview is missing for pinned Rust'; then
+    echo "  ok   release preflight rejects missing pinned llvm-tools before long suites"
+else
+    echo "  FAIL release can reach coverage before discovering missing llvm-tools"
+    fail=$((fail + 1))
+fi
+if grep -Fq 'RENDER_GRID = 32' "$BUILDUP_RUNNER" \
+        && grep -Fq 'MIN_RENDER_DELTA = 25.0' "$BUILDUP_RUNNER" \
+        && grep -Fq '"bgStyle": "none"' "$BUILDUP_RUNNER" \
+        && grep -Fq '"animatedBg": False' "$BUILDUP_RUNNER" \
+        && grep -Fq 'return max(' "$BUILDUP_RUNNER"; then
+    echo "  ok   incremental widget rendering uses a static localized pixel proof"
+else
+    echo "  FAIL incremental widget rendering can be diluted or satisfied by background motion"
     fail=$((fail + 1))
 fi
 

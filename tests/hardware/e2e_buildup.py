@@ -70,8 +70,28 @@ BG_WALK = ["orbs", "mesh", "aurora", "waves", "stars", "bokeh", "grid", "none"]
 # conservative. 0.25 keeps grabs clean while cutting ~40% off the run.
 SETTLE = float(os.environ.get("XENEON_BUILDUP_SETTLE", "0.25"))
 
+# Keep the render assertion attributable to the widget instead of motion in the
+# default background. The later appearance walk still exercises every animated
+# background explicitly.
+RENDER_APPEARANCE = {
+    "themeMode": "nord",
+    "accent": "#58A6FF",
+    "bgStyle": "none",
+    "animatedBg": False,
+    "glass": 0.55,
+    "glow": False,
+    "gridCols": 1,
+    "orientation": "portrait",
+}
+RENDER_GRID = 32
+MIN_RENDER_DELTA = 25.0
 
-def grid_sig(path, n=8):
+
+def render_doc(pages):
+    return doc(pages, appearance=RENDER_APPEARANCE)
+
+
+def grid_sig(path, n=RENDER_GRID):
     """An n x n grid of average colours - a cheap render fingerprint that is
     sensitive to WHERE things are, not just the overall tint. Two frames with
     the same average but different layout (a widget present vs an empty page)
@@ -84,8 +104,14 @@ def grid_sig(path, n=8):
 
 
 def sig_distance(a, b):
-    return sum(sum((p - q) ** 2 for p, q in zip(pa, pb)) ** 0.5
-               for pa, pb in zip(a, b)) / max(len(a), 1)
+    """Maximum per-cell color distance for a localized render change.
+
+    Averaging the entire tall panel diluted a visibly rendered 1x1 Clock below
+    the old threshold. This matches the independently passing all-widget render
+    matrix: a 32x32 signature and the strongest changed cell.
+    """
+    return max(sum((p - q) ** 2 for p, q in zip(pa, pb)) ** 0.5
+               for pa, pb in zip(a, b))
 
 
 class BuildUp:
@@ -172,7 +198,7 @@ def main():
         # boots into the First-Run Wizard, the Dashboard never loads, and every
         # probe/grab shows the same wizard - which reads as "distance 0, the hub
         # is not on the Edge" when in fact it is, just showing another screen.
-        h.write_config(doc([page("Blank", [])]))
+        h.write_config(render_doc([page("Blank", [])]))
         h.launch_hub()
         if not h.verify_target_window():
             print("!! could not verify the hub is the window on the Edge - aborting")
@@ -188,7 +214,7 @@ def main():
 
         # ── 0. STRIP: one empty screen, and capture it as the render baseline ─
         b.step("strip-to-one-empty-screen",
-               lambda: h.set_state(doc([page("Home", [])])),
+               lambda: h.set_state(render_doc([page("Home", [])])),
                lambda st: (len(pages_of(st)) == 1 and not pages_of(st)[0].get("tiles"),
                            "pages=%d tiles=%s" % (len(pages_of(st)),
                                                   pages_of(st)[0].get("tiles") if pages_of(st) else "?")))
@@ -201,8 +227,9 @@ def main():
             want = i + 1  # Home + i added
 
             def mut(upto=i):
-                h.set_state(doc([page("Home", [])] +
-                                [page(extra[k], []) for k in range(upto)]))
+                h.set_state(render_doc(
+                    [page("Home", [])]
+                    + [page(extra[k], []) for k in range(upto)]))
 
             def ver(st, want=want):
                 got = len(pages_of(st))
@@ -217,7 +244,8 @@ def main():
             placed.append(tile("bu-%s" % wtype, wtype, "1x1"))
 
             def mut(tiles=list(placed)):
-                h.set_state(doc([page("Home", tiles)] + [page(n, []) for n in extra]))
+                h.set_state(render_doc(
+                    [page("Home", tiles)] + [page(n, []) for n in extra]))
 
             def ver(st, want=i, wtype=wtype):
                 pg = [p for p in pages_of(st) if p.get("name") == "Home"]
@@ -228,7 +256,8 @@ def main():
                 return (len(tiles) == want and wtype in types,
                         "want %d tiles incl %s, hub has %d: %s" % (want, wtype, len(tiles), types))
             # min_render_delta: the frame MUST differ from the empty page now.
-            b.step("widget-add-%d-%s" % (i, wtype), mut, ver, min_render_delta=12)
+            b.step("widget-add-%d-%s" % (i, wtype), mut, ver,
+                   min_render_delta=MIN_RENDER_DELTA)
 
         # ── 2a-i. RENAME each screen ─────────────────────────────────────────
         for i, nm in enumerate(names):
@@ -238,7 +267,7 @@ def main():
                 pgs = [page(names[k] if k != idx else nn,
                             list(placed) if names[k] == "Home" else [])
                        for k in range(len(names))]
-                h.set_state(doc(pgs))
+                h.set_state(render_doc(pgs))
 
             def ver(st, nn=newname):
                 got = [p.get("name") for p in pages_of(st)]
@@ -257,7 +286,8 @@ def main():
                 tiles = [{"id": "bu-clock", "type": "clock", "size": size}] + \
                         [{"id": "bu-%s" % t, "type": t, "size": "1x1"}
                          for (t, _) in WIDGET_WALK[1:]]
-                h.set_state(doc([page("Home", tiles)] + [page(n, []) for n in extra]))
+                h.set_state(render_doc(
+                    [page("Home", tiles)] + [page(n, []) for n in extra]))
 
             def ver(st, size=sz):
                 pg = [p for p in pages_of(st) if p.get("name") == "Home"]
@@ -276,7 +306,8 @@ def main():
             remaining = remaining[:i]
 
             def mut(tiles=list(remaining)):
-                h.set_state(doc([page("Home", tiles)] + [page(n, []) for n in extra]))
+                h.set_state(render_doc(
+                    [page("Home", tiles)] + [page(n, []) for n in extra]))
 
             def ver(st, want=i):
                 pg = [p for p in pages_of(st) if p.get("name") == "Home"]
@@ -285,7 +316,8 @@ def main():
             b.step("widget-remove-down-to-%d" % i, mut, ver)
 
         # Put the widgets back for the removal walk below.
-        h.set_state(doc([page("Home", list(placed))] + [page(n, []) for n in extra]))
+        h.set_state(render_doc(
+            [page("Home", list(placed))] + [page(n, []) for n in extra]))
         time.sleep(0.4)
 
         # ── 2b. SCREENS: remove them again, one at a time ────────────────────
@@ -297,8 +329,9 @@ def main():
             want = i  # Blank + (i-1) remaining
 
             def mut(keep=i - 1):
-                h.set_state(doc([page("Home", list(placed))] +
-                                [page(extra[k], []) for k in range(keep)]))
+                h.set_state(render_doc(
+                    [page("Home", list(placed))]
+                    + [page(extra[k], []) for k in range(keep)]))
 
             def ver(st, want=want):
                 got = len(pages_of(st))
@@ -306,7 +339,7 @@ def main():
             b.step("screen-remove-down-to-%d" % want, mut, ver)
 
         b.step("screens-fully-stripped",
-               lambda: h.set_state(doc([page("Home", list(placed))])),
+               lambda: h.set_state(render_doc([page("Home", list(placed))])),
                lambda st: (len(pages_of(st)) == 1,
                            "back to one screen (Home, with its widgets): pages=%d" % len(pages_of(st))))
 

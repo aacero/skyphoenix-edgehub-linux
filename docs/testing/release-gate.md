@@ -64,8 +64,9 @@ authorizes temporary KScreen rotation, scale, priority, and enablement changes;
 the lifecycle harness restores and verifies the exact baseline on every exit
 path. The preflight also requires a connected Edge, a live KWin Wayland
 session, writable `/dev/uinput`, a non-Edge Manager target screen, screenshot
-support, coverage tools, network namespace containment, and no already-running
-Hub or Manager process. The last condition prevents an installed window from
+support, `cargo-llvm-cov` plus `llvm-tools-preview` for the pinned Rust 1.86.0
+toolchain, network namespace containment, and no already-running Hub or Manager
+process. The last condition prevents an installed window from
 covering the exact candidate or a live Manager from changing state during
 capture. Local `strace` is not required. The dedicated
 supply-chain CI job still uses `strace` and a DNS/TCP sink to observe attempted

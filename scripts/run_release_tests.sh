@@ -284,11 +284,17 @@ case "${QT_QPA_PLATFORM:-}" in
 esac
 
 for command_name in \
-    bash cargo cargo-llvm-cov git gitleaks ip kscreen-doctor \
+    bash cargo cargo-llvm-cov git gitleaks ip kscreen-doctor rustup \
     kwin_wayland python3 readlink sha256sum spectacle stat tee timeout unshare busctl \
     gpg; do
     require_command "$command_name"
 done
+if rustup component list --toolchain "$RUSTUP_TOOLCHAIN" 2>/dev/null \
+        | grep -Eq '^llvm-tools[^[:space:]]*[[:space:]]+\\(installed\\)$'; then
+    preflight_ok "llvm-tools-preview for pinned Rust 1.86.0"
+else
+    preflight_bad "llvm-tools-preview is missing for pinned Rust 1.86.0"
+fi
 require_command_or_executable cmake "$HOME/.local/bin/cmake"
 require_command_or_executable ctest "$HOME/.local/bin/ctest"
 require_command_or_executable gcovr "$HOME/.local/bin/gcovr"

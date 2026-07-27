@@ -104,7 +104,7 @@ if [ "${1:-}" = "__slot" ]; then
   sleep 1
   if [ "${SLOT_RECORD:-0}" = "1" ]; then
     mkdir -p "$SLOT_EVID"
-    DISPLAY="$xdisp" ffmpeg -hide_banner -loglevel error -y -f x11grab \
+    DISPLAY="$xdisp" ffmpeg -nostdin -hide_banner -loglevel error -y -f x11grab \
       -video_size "${slot_width}x${slot_height}" -framerate 8 -i "$xdisp" \
       "$SLOT_EVID/${base}-continuous.mp4" 2>/dev/null &
     slot_ffpid=$!
@@ -322,7 +322,7 @@ done
 # Stitch evidence PNGs into a contact-sheet video (2 fps, watchable).
 if ls "$EVID"/*.png >/dev/null 2>&1; then
   ( cd "$EVID" && ls tst_*.png sample_*.png 2>/dev/null | sort > frames.txt
-    ffmpeg -hide_banner -loglevel error -y -r 2 -f concat -safe 0 \
+    ffmpeg -nostdin -hide_banner -loglevel error -y -r 2 -f concat -safe 0 \
       -i <(awk '{print "file \x27"$0"\x27"}' frames.txt) \
       -vf "scale=1280:-2:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:color=black" \
       -pix_fmt yuv420p evidence.mp4 2>/dev/null ) || true
