@@ -181,10 +181,12 @@ jobs:
 
       - name: Install the RPM with no Qt preinstalled
         # Resolves Requires from the repos only - this is what proves the
-        # declared dependency list is complete and installable.
+        # declared dependency list is complete and installable. Fedora's minimal
+        # container defaults to tsflags=nodocs; clear it so the lifecycle audit
+        # can verify the documentation files that are present in the RPM payload.
         run: |
           (cd pkg && sha256sum --check --strict ./*.rpm.sha256)
-          dnf -y install ./pkg/*.rpm
+          dnf -y --setopt=tsflags= install ./pkg/*.rpm
 
       - name: Launch smoke (offscreen)
         run: |

@@ -9,15 +9,17 @@ is required. Broad display and desktop support remains evidence-gated.
 
 [![CI](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/actions/workflows/ci.yml/badge.svg)](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
-[![Release: v1.0.0-beta.1](https://img.shields.io/badge/release-v1.0.0--beta.1-blue.svg)](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/releases/tag/v1.0.0-beta.1)
+[![Release: v1.0.0](https://img.shields.io/badge/release-v1.0.0-blue.svg)](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/releases/tag/v1.0.0)
 
 ![EdgeHub running in portrait and landscape beside EdgeHub Manager](docs/marketing-site/assets/release/v1.0.0-beta.1/edgehub-v1.0.0-beta.1-website-hero.png)
 
-> **Current public status: beta.** `v1.0.0-beta.1` is published with accepted
-> risks. The release owner waived the planned 48-hour soak, so this beta makes
-> no long-duration stability or formal performance claim. See the
-> [beta decision](docs/BETA_PLAN.md) and
-> [beta.1 release notes](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/releases/tag/v1.0.0-beta.1).
+> **Current public status: stable.** `v1.0.0` is the first stable EdgeHub
+> release. The release owner waived both the planned 30-minute instrumented
+> observation and the earlier 48-hour soak, so this release makes no formal
+> performance or long-duration stability claim. The scripted physical-touch
+> certificate was not completed; physical panel input was owner-confirmed but
+> is not reported as a certified manual audit. See the
+> [1.0 release notes](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/releases/tag/v1.0.0).
 
 **[Watch the 71-second live product film](docs/marketing-site/trailer.html)** or
 **[open the MP4 directly](docs/marketing-site/assets/release/v1.0.0-beta.1/edgehub-v1.0.0-beta.1-live-product-film.mp4)**.
@@ -135,13 +137,13 @@ Most apps promise they don't phone home. EdgeHub's design makes the promise chec
 
 ### Performance
 
-No passing CPU or memory number is claimed for the stable candidate. A
+No passing CPU or memory number is claimed for the stable release. A
 historical 2026-07-21 run measured a then-current dirty development binary:
 startup and average CPU met that run's targets, while peak RSS failed. Those
-numbers describe only that obsolete dirty binary. The exact clean candidate
-must complete the owner-approved literal 30-minute, 14-widget instrumented
-observation. The historical 48-hour soak was waived, so this release will not
-make a long-duration stability claim from the substitute.
+numbers describe only that obsolete dirty binary. The release owner waived the
+planned 30-minute, 14-widget instrumented observation and the historical
+48-hour soak. They are reported as not run, not as passes, and this release
+makes no formal performance or long-duration stability claim.
 
 ---
 
@@ -186,11 +188,9 @@ A companion desktop app (`xeneon-edge-manager`) that mirrors your Edge in real t
 ## Install
 
 The latest published release is
-**[v1.0.0-beta.1](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/releases/tag/v1.0.0-beta.1)**.
-**Release target:** `v1.0.0`. This checkout is unreleased and is not published
-or certified.
-The `release/1.0.0` branch contains unreleased stable-candidate work; its
-presence is not stable certification.
+**[v1.0.0](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/releases/tag/v1.0.0)**.
+The release page provides a bundled AppImage plus native DEB and RPM packages.
+Only files attached to that release are availability claims.
 
 ### Current checkout on CachyOS or Arch
 
@@ -207,7 +207,41 @@ configuration backup, stops Manager and Hub before replacement, installs with
 restores the Manager only if it was open before the update. A dirty-tree install
 is labelled `-dirty` and remains development evidence.
 
-### CachyOS / Arch Linux, exact beta.1
+### Stable AppImage, DEB and RPM
+
+Download the package for your system plus `SHA256SUMS` and `SHA256SUMS.asc`
+from the [v1.0.0 release](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/releases/tag/v1.0.0).
+Verify the signed checksums before installation.
+
+```sh
+# Portable AppImage
+chmod +x xeneon-edge-hub-1.0.0-x86_64.AppImage
+./xeneon-edge-hub-1.0.0-x86_64.AppImage
+
+# Ubuntu 26.04
+sudo apt install ./xeneon-edge-hub_1.0.0_amd64.deb
+
+# Fedora 43
+sudo dnf install ./xeneon-edge-hub-1.0.0-1.x86_64.rpm
+```
+
+The native packages install both Hub and Manager. Package installation never
+starts Manager. The AppImage starts Hub by default and accepts `--manager` when
+you deliberately want the companion application.
+
+### CachyOS / Arch Linux, current source
+
+Until a stable AUR package is published, build and install the current checkout
+with the guarded local updater:
+
+```sh
+./scripts/update-local.sh
+```
+
+The committed AUR recipe remains pinned to the historical signed
+`v1.0.0-beta.1` source asset. It is not the stable 1.0 package.
+
+### Historical beta.1 Arch recipe
 
 The committed Arch recipe is pinned to the signed `v1.0.0-beta.1` source asset.
 Build the package from that signed source, close both product applications, and
@@ -225,7 +259,7 @@ sudo pacman -U packaging/aur/xeneon-edge-hub-1.0.0beta1-2-x86_64.pkg.tar.zst
 The final command must print `Xeneon Edge Linux Hub 1.0.0-beta.1`. The Manager
 is installed by the same package but is not started by this procedure.
 
-### Portable tarball (compatible x86-64 distributions)
+### Historical beta.1 portable tarball
 
 Download `xeneon-edge-hub_1.0.0-beta.1_x86_64.tar.gz`, `SHA256SUMS` and `SHA256SUMS.asc` from the [release page](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/releases/tag/v1.0.0-beta.1), then:
 
@@ -243,7 +277,7 @@ use a native package only when that exact release lists the distribution as
 supported. An AppImage, when attached to a release, bundles Qt for systems that
 do not provide a compatible version.
 
-The signed beta.1 recipe lives in
+The historical signed beta.1 recipe lives in
 [`packaging/aur/PKGBUILD`](packaging/aur/PKGBUILD). Its presence does not imply
 that a current package has been published to the AUR. The command above builds
 the pinned recipe locally from the signed release source. (`v1.0.0-alpha.1`
@@ -251,7 +285,7 @@ remains unsigned because it predates the release key.)
 
 ### Verifying your download
 
-The `v1.0.0-beta.1` release provides `SHA256SUMS` alongside a detached
+The `v1.0.0` release provides `SHA256SUMS` alongside a detached
 `SHA256SUMS.asc`, made with the EdgeHub release key. (`v1.0.0-alpha.1` predates
 the key and is checksum-only - it has no `.asc`.)
 
@@ -384,8 +418,8 @@ build; docs/link checks; QML and C++ suites; independent Rust and C++ line
 coverage at ≥95%; and the all-assertion-backed QML requirements checklist - see
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml). The hardware suite needs a
 physical Edge and therefore runs locally. A working-tree run is development
-evidence, not a release certificate. The beta.1 decision and its accepted risks
-are recorded in [`docs/BETA_PLAN.md`](docs/BETA_PLAN.md). Full plan:
+evidence, not a release certificate. The stable release notes distinguish every
+passed, waived, cancelled, and not-run gate. Full plan:
 [`docs/DEV_AND_TEST_PLAN.md`](docs/DEV_AND_TEST_PLAN.md).
 
 The hardware suite asserts its widget list against `WidgetCatalog.qml`, so a new widget cannot go silently unexercised - a drift check added after the list had quietly omitted two widgets while still reporting green.
@@ -394,17 +428,18 @@ The hardware suite asserts its widget list against `WidgetCatalog.qml`, so a new
 
 ## Release status
 
-Beta.1 is the latest published build. The current branch is an uncertified
-stable candidate. What is deliberately not claimed for either without new exact
-candidate evidence:
+Version 1.0.0 is the latest published build. The release deliberately does not
+claim the following:
 
-- **Packaging is incomplete.** AppImage, Flatpak, `.deb` and `.rpm` recipes are
-  authored, but native distro jobs still need candidate evidence and the
-  AppImage zsync update round trip has never been exercised against a published
-  release.
+- **No Flatpak or stable AUR package.** The published channels are AppImage,
+  Ubuntu 26.04 DEB, and Fedora 43 RPM. The committed AUR recipe remains pinned
+  to beta.1, and the Flatpak recipe is development material only.
 - **No formal performance or long-soak claim.** The release owner accepted the
-  beta without the planned 48-hour soak, and earlier development RSS results do
-  not support a release performance claim.
+  stable release without the planned 30-minute observation or 48-hour soak, and
+  earlier development RSS results do not support a release performance claim.
+- **No formal physical-touch certificate.** The owner confirmed that physical
+  panel input works, but the scripted nine-action manual audit was not completed
+  and is reported as not tested rather than passed.
 - **The current defaults are selected, not pending:** Nord, Atkinson Hyperlegible,
   animated background and widget glow off, with normal transitions on and a
   separate reduce-motion preference. Legal review of the Inspired themes and any
@@ -413,7 +448,9 @@ candidate evidence:
 - **The Manager follows a single-writer rule.** While the Hub is connected,
   display/autostart changes go over the control socket and the Hub persists them;
   the Manager writes directly only while it is the offline owner.
-- **Physical rotation** is wired and debounced from the HID sensor, but only a person can turn a panel - so it's verified by hand, not by the suite.
+- **Physical rotation** is wired and debounced from the HID sensor. Automated
+  orientation and Manager-reflection behavior is covered; a completed signed
+  physical-turn audit is not claimed for this release.
 - **GPU detail depends on the Linux driver.** AMD, Intel and NVIDIA devices are
   discovered through DRM sysfs, but a driver may not expose every utilization,
   temperature, power, clock, fan or VRAM value.
@@ -422,11 +459,10 @@ candidate evidence:
 
 ## Roadmap
 
-Beta.1 contains 30 widgets, 19 presets, the Manager, and expanded test and
-release tooling. The next milestone remains evidence-led: address beta reports,
-run the accepted 30-minute resource observation, and verify every advertised
-package lifecycle before broadening release claims. The soak waiver means no
-long-duration stability claim.
+Version 1.0 contains 30 widgets, 19 presets, the Manager, and expanded test and
+release tooling. The next milestone is evidence-led: address stable-release
+feedback, add a stable AUR package, finish Flatpak validation, and collect the
+performance and physical-touch evidence that 1.0 deliberately does not claim.
 
 Beyond 1.0: segment integration packs (OBS, MangoHud, Prometheus, smart home, market data), a WASM widget SDK, and internationalization.
 
@@ -436,7 +472,7 @@ Full plan: **[ROADMAP.md](ROADMAP.md)** · changes: **[CHANGELOG.md](CHANGELOG.m
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Bug reports from the beta are especially welcome - please say what broke and on what hardware.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Bug reports are especially welcome - please say what broke and on what hardware.
 
 ## Security
 
