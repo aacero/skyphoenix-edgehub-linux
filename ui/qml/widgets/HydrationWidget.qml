@@ -162,7 +162,11 @@ WidgetChrome {
         ? Math.max(1, (w.tileBodyWidth - theme.spacingLg) / 2)
         : w.tileBodyWidth
     readonly property bool stackTileActions:
-        !w.micro && !w.horiz && w.tileColumnWidth < 360
+        // A tight wide tile still has only half its body width for controls.
+        // At enlarged text sizes the two honest, minimum-touch-target buttons
+        // cannot share that column. Stack only that genuinely narrow column;
+        // regular wide tiles retain the compact side-by-side presentation.
+        !w.micro && w.tileColumnWidth < 280
     // The count line is the readout micro is built around, so it scales to the
     // box there and stays a caption everywhere else. The caption measures against
     // its own COLUMN (wide puts it beside the grid, so the full width would

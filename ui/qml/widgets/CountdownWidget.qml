@@ -283,6 +283,12 @@ WidgetChrome {
             Text {
                 objectName: "countdownContext"
                 Layout.fillWidth: true
+                // Qt 6.7 can allocate this wrapped Text its single-line
+                // implicit height during the first layout pass, even though
+                // contentHeight has already grown to multiple lines. Keep the
+                // layout contract explicit so enlarged micro-tile copy is not
+                // clipped until a later relayout.
+                Layout.minimumHeight: Math.ceil(contentHeight)
                 horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
                 // The event name is already the heading outside the micro tile.
                 // Avoid repeating an unbounded user string in the supporting
