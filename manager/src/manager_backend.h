@@ -22,6 +22,7 @@
 #include <QTimer>
 #include <QUrl>
 
+#include <cstdio>
 #include <functional>
 
 #include "path_sanitize.h"
@@ -865,7 +866,14 @@ private slots:
                 // of a complete Manager-to-Hub request/reply round trip. Keep it
                 // once per connection so the 500 ms live pull cannot flood logs.
                 if (!m_hubUiStateReceiptLogged) {
-                    qInfo() << "Manager: Hub UI-state reply accepted";
+                    // Qt may route qInfo to journald when stderr is redirected,
+                    // which made the clean-package smoke unable to observe a
+                    // reply it had actually received. This is a machine-readable
+                    // release receipt, so write and flush it directly.
+                    std::fprintf(
+                        stderr,
+                        "Manager: Hub UI-state reply accepted\n");
+                    std::fflush(stderr);
                     m_hubUiStateReceiptLogged = true;
                 }
                 QString currentConfigState;

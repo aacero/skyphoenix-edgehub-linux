@@ -167,6 +167,7 @@ HUB_PID=""
 # import cannot silently escape the packaging.
 SRC_ROOT="${SRC_ROOT:-$(pwd)}"
 if [ -d "$SRC_ROOT/ui/qml" ]; then
+  MODULES_OK=1
   # QML_DIR may be preset by the caller. The AppImage job does that: its modules
   # live inside the extracted AppDir (usr/qml), not in a system Qt prefix, and a
   # bare container has no qmake6 to ask.
@@ -196,6 +197,7 @@ if [ -d "$SRC_ROOT/ui/qml" ]; then
   if [ "${MODULE_COUNT:-0}" -eq 0 ]; then
     echo "FAIL: derived ZERO QML modules from $SRC_ROOT - the scan is broken."
     echo "      (this app imports many; an empty list is never a clean result)"
+    MODULES_OK=0
     RC=1
   fi
   for m in $MODULES; do
@@ -204,11 +206,12 @@ if [ -d "$SRC_ROOT/ui/qml" ]; then
       echo "  present: $m"
     else
       echo "  MISSING: $m  (expected $p/qmldir)"
+      MODULES_OK=0
       RC=1
     fi
   done
-  [ "$RC" -eq 0 ] && echo "--- verified ${MODULE_COUNT} imported QML module(s) are installed"
-  [ "$RC" -ne 0 ] && echo "FAIL: an imported QML module is not installed by the package's dependencies"
+  [ "$MODULES_OK" -eq 1 ] && echo "--- verified ${MODULE_COUNT} imported QML module(s) are installed"
+  [ "$MODULES_OK" -ne 1 ] && echo "FAIL: an imported QML module is not installed by the package's dependencies"
 else
   echo "--- skipping module check (sources not present; set SRC_ROOT to enable)"
 fi
