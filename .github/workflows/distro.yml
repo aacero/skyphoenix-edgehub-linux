@@ -193,7 +193,7 @@ jobs:
 
       - name: Validate AppStream + desktop entries
         run: |
-          dnf -y install appstream desktop-file-utils
+          dnf -y install appstream desktop-file-utils diffutils
           for f in /usr/share/metainfo/com.skyphoenix_it.*.xml; do
             appstreamcli validate --no-net "$f"
           done
