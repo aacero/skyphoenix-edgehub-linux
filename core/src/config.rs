@@ -2264,6 +2264,66 @@ broken = = toml
         assert_eq!(fs::read_to_string(path).unwrap(), "preserve these bytes");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn private_config_directory_rejects_a_foreign_owned_directory() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+        // GitHub-hosted and desktop test users are unprivileged. A root-run test
+        // cannot prepare this system-owned fixture without changing ownership,
+        // so leave that environment to the dedicated privileged audit.
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let path = std::path::Path::new("/etc");
+        let before = fs::metadata(path).unwrap();
+        let error = ensure_private_config_dir(path).unwrap_err();
+
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(
+            error.to_string(),
+            "configuration directory is not owned by the current user"
+        );
+        let after = fs::metadata(path).unwrap();
+        assert_eq!(after.uid(), before.uid());
+        assert_eq!(
+            after.permissions().mode() & 0o777,
+            before.permissions().mode() & 0o777
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn config_reader_rejects_a_foreign_owned_regular_file() {
+        use std::os::unix::fs::MetadataExt;
+
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let path = std::path::Path::new("/etc/passwd");
+        let owner = fs::metadata(path).unwrap().uid();
+        assert_ne!(owner, unsafe { libc::geteuid() });
+
+        let error = match read_config_snapshot(path) {
+            Err(error) => error,
+            Ok(_) => panic!("a foreign-owned config must not be readable"),
+        };
+        match error {
+            ConfigError::Io {
+                path: error_path,
+                source,
+            } => {
+                assert_eq!(error_path, path);
+                assert_eq!(source.kind(), io::ErrorKind::PermissionDenied);
+                assert_eq!(
+                    source.to_string(),
+                    "configuration file is not owned by the current user"
+                );
+            }
+            other => panic!("expected an ownership error, got {other}"),
+        }
+    }
+
     #[test]
     fn invalid_utf8_snapshot_is_rejected_with_a_bounded_path_only_error() {
         let path = std::path::Path::new("/private/config.toml");

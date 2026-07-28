@@ -289,6 +289,7 @@ WidgetChrome {
                 // layout contract explicit so enlarged micro-tile copy is not
                 // clipped until a later relayout.
                 Layout.minimumHeight: Math.ceil(contentHeight)
+                Layout.preferredHeight: Math.ceil(contentHeight)
                 horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
                 // The event name is already the heading outside the micro tile.
                 // Avoid repeating an unbounded user string in the supporting

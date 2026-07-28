@@ -898,7 +898,11 @@ struct CpuTempSensorPath {
 /// Read every discovered CPU temperature source. Paths are cached, while the
 /// values remain live on each metrics sample.
 fn read_cpu_temperatures() -> Vec<CpuTemperatureReading> {
-    let Some(paths) = get_or_discover(&TEMP_SENSORS, discover_cpu_temp_sensors) else {
+    read_cpu_temperatures_from(get_or_discover(&TEMP_SENSORS, discover_cpu_temp_sensors))
+}
+
+fn read_cpu_temperatures_from(paths: Option<Vec<CpuTempSensorPath>>) -> Vec<CpuTemperatureReading> {
+    let Some(paths) = paths else {
         return Vec::new();
     };
     paths
@@ -1721,6 +1725,39 @@ mod tests {
     fn test_count_cpus() {
         let count = count_cpus();
         assert!(count > 0);
+    }
+
+    #[test]
+    fn cpu_temperature_reader_keeps_valid_sensors_and_isolates_bad_sources() {
+        let dir = tempfile::tempdir().unwrap();
+        let valid = dir.path().join("valid");
+        let malformed = dir.path().join("malformed");
+        fs::write(&valid, "42500\n").unwrap();
+        fs::write(&malformed, "not-a-temperature\n").unwrap();
+
+        let readings = read_cpu_temperatures_from(Some(vec![
+            CpuTempSensorPath {
+                id: "package".to_string(),
+                label: "CPU package".to_string(),
+                path: valid.display().to_string(),
+            },
+            CpuTempSensorPath {
+                id: "malformed".to_string(),
+                label: "Malformed sensor".to_string(),
+                path: malformed.display().to_string(),
+            },
+            CpuTempSensorPath {
+                id: "missing".to_string(),
+                label: "Missing sensor".to_string(),
+                path: dir.path().join("missing").display().to_string(),
+            },
+        ]));
+
+        assert_eq!(readings.len(), 1);
+        assert_eq!(readings[0].id, "package");
+        assert_eq!(readings[0].label, "CPU package");
+        assert!((readings[0].celsius - 42.5).abs() < f64::EPSILON);
+        assert!(read_cpu_temperatures_from(None).is_empty());
     }
 
     #[test]
