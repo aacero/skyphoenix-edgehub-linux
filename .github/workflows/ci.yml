@@ -288,7 +288,7 @@ jobs:
       - name: Install cargo-llvm-cov + lcov + gcovr
         run: |
           cargo install cargo-llvm-cov --version 0.8.7 --locked
-          cargo-llvm-cov --version | grep -Fx 'cargo-llvm-cov 0.8.7'
+          cargo llvm-cov --version | grep -Fx 'cargo-llvm-cov 0.8.7'
           sudo apt-get update
           sudo apt-get install -y lcov gcovr
       - name: Rust coverage (lcov + JSON summary)
