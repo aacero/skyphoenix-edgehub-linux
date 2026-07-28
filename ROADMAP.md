@@ -1,14 +1,12 @@
 # EdgeHub roadmap
 
-**Last updated:** 2026-07-27
-**Public baseline:** `v1.0.0-beta.1`
-**Release target:** `v1.0.0`
-**Development status:** stable 1.0 candidate hardening on `release/1.0.0`;
-publication is not certified and no code freeze is declared
+**Last updated:** 2026-07-28
+**Public baseline:** `v1.0.0`
+**Development status:** stable 1.0 maintenance on `master`
 
-Beta.1 is the latest published milestone. The current branch is a candidate work
-area, not a stable release. A stable milestone changes only when its evidence is
-complete and an actual tag is published.
+Version 1.0.0 is the latest published milestone. Its supported download channels
+are the AppImage, Ubuntu 26.04 DEB, and Fedora 43 RPM attached to the signed
+GitHub release.
 
 ## Current implementation
 
@@ -26,37 +24,31 @@ complete and an actual tag is published.
 These are implementation facts, not a statement that every release requirement
 has passed.
 
-## Gate to the next public milestone
+## Version 1.0 release status
 
-- [ ] Resolve every P0/P1 and every release-blocking requirement finding.
-- [ ] Complete the final Manager, Hub and integrated physical-Edge suites with
-      zero failures and zero hidden skips.
-- [ ] Run required Fedora/Ubuntu native-package jobs for the exact candidate.
-- [ ] Exercise AppImage discovery and zsync update against published artifacts.
-- [ ] Record reproducible idle/active CPU, RSS, startup and growth measurements.
-- [ ] Complete the owner-approved literal 30-minute, 14-widget instrumented
-      substitute. The historical 48-hour soak was waived, so no long-duration
-      stability claim may be made from this release evidence.
-- [x] Remove Qt Virtual Keyboard from the product, packages and build pipeline.
-- [ ] Close the remaining legal/trademark and payment/delivery decisions.
-- [ ] Limit the release branch to release blockers, evidence work and
-      owner-approved corrections.
-- [ ] Fix release-blocking defects and re-run the affected gates.
-- [ ] Enter code freeze only with a clean, reviewed, immutable candidate.
-- [ ] Run the final strict suite from that candidate, then sign, publish and
-      verify the release assets.
-
-Until every item is complete, marketing copy must say **beta/development
-candidate**, must not advertise unsupported distro/store availability, and must
-not quote unverified performance or long-duration stability numbers.
+- [x] Publish the signed `v1.0.0` tag and signed checksum manifest.
+- [x] Publish and lifecycle-test the AppImage, Ubuntu 26.04 DEB, and Fedora 43
+      RPM from the exact stable tag.
+- [x] Pass the Rust, C++, compiled-resource QML, coverage, security, network,
+      package, and local compositor gates described in the release notes.
+- [x] Remove Qt Virtual Keyboard from the product, packages, and build pipeline.
+- [ ] Record reproducible idle/active CPU, RSS, startup, and growth
+      measurements. The release owner waived this for 1.0, so no formal
+      performance claim is made.
+- [ ] Complete the scripted physical-touch certificate. Physical panel input
+      was owner-confirmed, but 1.0 does not report a certified manual audit.
+- [ ] Run a long-duration soak. The release owner waived this for 1.0, so no
+      long-duration stability claim is made.
 
 ## After a verified 1.0
 
-Potential, demand-driven work includes OBS/MangoHud/Prometheus/smart-home
-integrations, a sandboxed widget SDK, marketplace governance and localization.
-None has a committed delivery date.
+Post-1.0 work includes stable AUR publication, Flatpak validation, the deferred
+performance and physical-touch evidence, and fixes driven by real-world release
+feedback. Potential, demand-driven work includes OBS, MangoHud, Prometheus,
+smart-home integrations, a sandboxed widget SDK, marketplace governance, and
+localization. None has a committed delivery date.
 
-See [the beta/release gate](docs/BETA_PLAN.md), [distribution status](docs/DISTRIBUTION.md)
+See [the historical beta/release gate](docs/BETA_PLAN.md), [distribution status](docs/DISTRIBUTION.md)
 and [the changelog](CHANGELOG.md).
 
 ---
