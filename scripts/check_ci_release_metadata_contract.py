@@ -51,6 +51,20 @@ def release_stage(version: str) -> str:
     return "prerelease" if "-" in version else "stable"
 
 
+def appstream_version(version: str) -> str:
+    """Translate release SemVer into AppStream's sortable version syntax."""
+    validate_version(version, "release version")
+    match = re.fullmatch(
+        r"v([0-9]+)\.([0-9]+)\.([0-9]+)"
+        r"(?:-(alpha|beta|rc)\.([0-9]+))?",
+        version,
+    )
+    assert match is not None
+    base = ".".join(match.group(index) for index in (1, 2, 3))
+    channel = match.group(4)
+    return base if channel is None else f"{base}~{channel}.{match.group(5)}"
+
+
 def validate_version(version: str, label: str) -> None:
     if not VERSION_RE.fullmatch(version):
         raise AssertionError(
@@ -170,7 +184,14 @@ def appstream_releases(
         raise AssertionError(f"{path} must contain at least one release")
     for item in result:
         version = item.attrib.get("version", "")
-        validate_version(f"v{version}", f"{path} AppStream release version")
+        semantic_version = f"v{version.replace('~', '-', 1)}"
+        validate_version(
+            semantic_version, f"{path} AppStream release version")
+        if version != appstream_version(semantic_version):
+            raise AssertionError(
+                f"{path} AppStream release version must use sortable "
+                f"prerelease syntax; got {version!r}"
+            )
     return result
 
 
@@ -306,6 +327,8 @@ def validate_release_metadata(
     assert target_version is not None
     target_plain = target_version.removeprefix("v")
     public_plain = public_version.removeprefix("v")
+    target_appstream = appstream_version(target_version)
+    public_appstream = appstream_version(public_version)
 
     if stage == "published":
         require(
@@ -389,25 +412,25 @@ def validate_release_metadata(
         releases = appstream_releases(path, root=root)
         versions = [item.attrib["version"] for item in releases]
         if stage == "development":
-            if versions[0] != public_plain:
+            if versions[0] != public_appstream:
                 raise AssertionError(
-                    f"{path} must list published {public_plain} first in "
+                    f"{path} must list published {public_appstream} first in "
                     "development"
                 )
-            if target_plain in versions:
+            if target_appstream in versions:
                 raise AssertionError(
-                    f"{path} must not advertise unreleased {target_plain} in "
+                    f"{path} must not advertise unreleased {target_appstream} in "
                     "development"
                 )
             continue
 
-        if versions[0] != target_plain:
+        if versions[0] != target_appstream:
             raise AssertionError(
-                f"{path} must list exact {stage} target {target_plain} first"
+                f"{path} must list exact {stage} target {target_appstream} first"
             )
-        if stage == "candidate" and public_plain not in versions[1:]:
+        if stage == "candidate" and public_appstream not in versions[1:]:
             raise AssertionError(
-                f"{path} must retain published predecessor {public_plain}"
+                f"{path} must retain published predecessor {public_appstream}"
             )
         target = releases[0]
         expected_type = (

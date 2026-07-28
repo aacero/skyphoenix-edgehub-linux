@@ -56,12 +56,12 @@
         <p>Stable release with true Hub layout and appearance previews, live orientation reflection, touch-friendly editing, preset guidance, and hardened local synchronization.</p>
       </description>
     </release>
-    <release version="1.0.0-beta.1" date="2026-07-21" type="development">
+    <release version="1.0.0~beta.1" date="2026-07-21" type="development">
       <description>
         <p>Published beta with live Hub screen selection, orientation reflection, responsive previews, animated background fidelity, and exact version reporting.</p>
       </description>
     </release>
-    <release version="1.0.0-alpha.2" date="2026-07-16" type="development">
+    <release version="1.0.0~alpha.2" date="2026-07-16" type="development">
       <description>
         <p>First signed alpha release of the companion Manager, with live Hub layout and appearance control.</p>
       </description>

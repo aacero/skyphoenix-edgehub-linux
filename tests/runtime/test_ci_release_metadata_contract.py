@@ -100,7 +100,8 @@ class ReleaseMetadataContractTests(unittest.TestCase):
 
         if stage == "development":
             releases = (
-                f'<release version="{public_plain}" date="2026-07-21" '
+                f'<release version="{CONTRACT.appstream_version(public)}" '
+                'date="2026-07-21" '
                 'type="development"/>\n'
             )
         else:
@@ -110,7 +111,8 @@ class ReleaseMetadataContractTests(unittest.TestCase):
             )
             if stage == "candidate":
                 releases += (
-                    f'<release version="{public_plain}" date="2026-07-21" '
+                    f'<release version="{CONTRACT.appstream_version(public)}" '
+                    'date="2026-07-21" '
                     'type="development"/>\n'
                 )
         document = (

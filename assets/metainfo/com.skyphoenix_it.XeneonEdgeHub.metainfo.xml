@@ -61,12 +61,12 @@
         <p>Stable release with per-size readable widgets, faithful Manager previews, smooth live orientation, persistent reminder alerts, hardened recovery, and exact-candidate release evidence.</p>
       </description>
     </release>
-    <release version="1.0.0-beta.1" date="2026-07-21" type="development">
+    <release version="1.0.0~beta.1" date="2026-07-21" type="development">
       <description>
         <p>Published beta with Hub and Manager live synchronization, per-size widget layouts, real preset previews, version reporting, and memory fixes.</p>
       </description>
     </release>
-    <release version="1.0.0-alpha.2" date="2026-07-16" type="development">
+    <release version="1.0.0~alpha.2" date="2026-07-16" type="development">
       <description>
         <p>First signed alpha release, with curated presets, controlled network widgets, policy support, and hardened configuration and IPC handling.</p>
       </description>
