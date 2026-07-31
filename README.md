@@ -21,6 +21,9 @@ is required. Broad display and desktop support remains evidence-gated.
 > is not reported as a certified manual audit. See the
 > [1.0 release notes](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/releases/tag/v1.0.0).
 
+**Release target:** `v1.0.1`. This checkout is unreleased and is not published
+or certified.
+
 **[Watch the 71-second live product film](docs/marketing-site/trailer.html)** or
 **[open the MP4 directly](docs/marketing-site/assets/release/v1.0.0-beta.1/edgehub-v1.0.0-beta.1-live-product-film.mp4)**.
 

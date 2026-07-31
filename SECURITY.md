@@ -6,6 +6,7 @@ Only published versions listed below receive security fixes.
 
 | Version | Supported |
 |---------|-----------|
+| 1.0.1 | No (unreleased) |
 | 1.0.0 | Yes |
 | 1.0.0-beta.1 | No |
 | 1.0.0-alpha.x | No |

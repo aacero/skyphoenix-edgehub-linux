@@ -3,5 +3,5 @@
 # Published status is verified externally after publication and is never
 # self-declared by this file.
 schema = 1
-stage = "candidate"
-target_version = "v1.0.0"
+stage = "development"
+target_version = "v1.0.1"
