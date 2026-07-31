@@ -313,9 +313,18 @@ section is implemented without explicit product-owner approval (scope-control po
   Nothing caught it because `5eb04c9`, `915b36c`, `d603bda` and `400f374` all carry
   `[skip ci]`, so no workflow has run on `master` since 2026-07-27.
 
-  Not fixed here: resolving it means declaring this repository's actual release state, and
-  `release-metadata.toml`'s own comment says published status "is verified externally after
-  publication and is never self-declared by this file" — so the correct fix depends on that
-  external process, not on editing either file to match the other. Worth deciding at the
-  same time whether release-documentation commits should keep using `[skip ci]`, since that
-  is what let a red gate sit unnoticed on `master`.
+  **FIXED 2026-07-31** (#3). The contradiction was one file: everything else had advanced
+  to "v1.0.0 published" while `release-metadata.toml` still declared
+  `stage = "candidate", target_version = "v1.0.0"`. Since the contract permits only
+  `development` or `candidate` there, and both require README and ROADMAP to name a target
+  strictly newer than the published release, there is no valid resting state after a
+  publication until the next target is declared — rolling forward is the step the
+  publication skipped. Set to `development` / `v1.0.1`, matching what the repository
+  already said about itself (ROADMAP: "stable 1.0 maintenance on `master`"; CHANGELOG
+  `[Unreleased]` empty), with the README/ROADMAP markers, SECURITY row and RELEASE_NOTES
+  the contract requires. Verified in CI: `Docs` and `QML Tests + Enumerated Requirements`
+  both green, and the contract passes on merged `master`.
+
+  **STILL OPEN:** whether release-documentation commits should keep using `[skip ci]`.
+  That is what let a red gate sit unnoticed on `master` from 2026-07-27 until the framework
+  adoption PR ran the workflows again four days later.
