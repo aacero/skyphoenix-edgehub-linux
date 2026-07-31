@@ -1,0 +1,23 @@
+# Kimi Code adapter definition (documentation; logic in scripts/agent-framework/render.py)
+provider: kimi
+status: supported-through-adapter
+instruction_bridge: "Native AGENTS.md (managed block)"
+targets:
+  - path: .agents/skills/<name>/
+    mode: generated-copy (shared)
+    note: "Kimi scans .agents/skills natively"
+  - path: .kimi-code/agents/<role>.md
+    mode: generated
+    source: canonical/roles/<role>.yaml
+    note: "ADAPTER FALLBACK: Kimi has no user-defined subagent format (built-ins coder/explore/plan only). Role briefs are shipped as referenceable prompt documents."
+  - path: .kimi-code/AGENTS.md
+    mode: generated
+    note: "In-session pointer Kimi reads natively; makes the role briefs discoverable without reading the README first"
+  - path: .kimi-code/README.md
+    mode: generated
+    note: "Documents the fallback + user-level permission profile to copy using the official [[permission.rules]] schema (decision/pattern[/scope/reason]); verify with `kimi doctor`. Kimi permission rules are not project-committable; .kimi-code/local.toml is machine-local and gitignored"
+limitations:
+  - "Custom subagents unsupported -> role briefs are advisory, not tool-enforced"
+  - "Permission profile cannot be committed; applied manually in ~/.kimi-code/config.toml"
+  - "Headless (`kimi -p`) is EXPERIMENTAL: prompt must be the -p option value (no stdin mode); stream-json schema and auto-mode deny-rule behavior unverified against a live run (capability matrix unknowns)"
+  - "AGENTS.md merge/nesting semantics undocumented (2026-07-18)"

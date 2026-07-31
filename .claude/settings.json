@@ -1,0 +1,30 @@
+{
+  "autoMemoryEnabled": true,
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Read(./.env.production)",
+      "Read(./secrets/**)",
+      "Read(./credentials/**)",
+      "Bash(git push --force *)",
+      "Bash(git push -f *)"
+    ],
+    "ask": [
+      "Bash(git reset --hard *)",
+      "Bash(docker compose down -v *)",
+      "Bash(rm -rf *)",
+      "Bash(find * -delete)"
+    ],
+    "allow": [
+      "Bash(python3 -m unittest *)",
+      "Bash(python3 scripts/agent-framework/validate.py *)",
+      "Bash(python3 scripts/agent-framework/check-drift.py *)",
+      "Bash(python3 scripts/agent-framework/render.py --check *)",
+      "Bash(env CI=1 timeout 900 bash ./scripts/ci.sh *)",
+      "Bash(env CI=1 timeout 600 bash ./scripts/ci.sh *)",
+      "Bash(env CI=1 bash ./scripts/ci.sh *)",
+      "Bash(bash scripts/ci.sh *)"
+    ]
+  }
+}

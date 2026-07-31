@@ -1,0 +1,118 @@
+# Provider Capability Matrix — agent framework v1.1.0
+# Statuses: supported | supported-through-adapter | experimental | unsupported | unknown
+# Evidence: agent-framework/reports/provider-research.md (all sources accessed 2026-07-18)
+version: 1.1.0
+accessed: 2026-07-18
+
+capabilities:
+  instructions_agents_md:
+    claude:    { status: supported-through-adapter, note: "Does not read AGENTS.md natively; official pattern CLAUDE.md '@AGENTS.md' import (used here)" }
+    codex:     { status: supported, note: "Native; walk git-root->cwd, 32KiB combined default cap (project_doc_max_bytes)" }
+    kimi:      { status: supported, note: "Native (root AGENTS.md, .kimi-code/AGENTS.md, ~/.agents/AGENTS.md); merge/nesting semantics undocumented" }
+    opencode:  { status: supported, note: "Native; plus opencode.json instructions globs/URLs; CLAUDE.md fallback" }
+    jetbrains: { status: supported, note: "Agent modes + Junie (default guidelines file); chat uses .aiassistant/rules instead" }
+    generic:   { status: supported-through-adapter, note: "Prepend AGENTS.md content to system prompt for OpenAI-compatible endpoints" }
+
+  skills_open_spec:
+    claude:    { status: supported, note: ".claude/skills/ only; open spec + Claude extensions; does not scan .agents/skills" }
+    codex:     { status: supported, note: "Explicit agentskills.io adoption; scans .agents/skills project tree" }
+    kimi:      { status: supported, note: "Scans .agents/skills and .kimi-code/skills; format compatible; current docs omit spec citation" }
+    opencode:  { status: supported, note: "Scans .opencode/skills > .claude/skills > .agents/skills > global" }
+    jetbrains: { status: supported, note: "AI chat with Claude/Codex agents reads <project>/.agents/skills; Junie CLI uses .junie/skills + import" }
+    generic:   { status: supported-through-adapter, note: "No discovery; adapter must inline selected SKILL.md bodies into prompt" }
+
+  custom_subagents:
+    claude:    { status: supported, note: ".claude/agents/*.md; tools/model/permissionMode/memory/isolation frontmatter" }
+    codex:     { status: supported, note: ".codex/agents/*.toml; name/description/developer_instructions; max_depth=1 default" }
+    kimi:      { status: supported-through-adapter, note: "Built-in coder/explore/plan only; roles rendered as referenceable prompt documents (.kimi-code/agents/*.md, discovered via the generated .kimi-code/AGENTS.md pointer) — not skills; manual wiring possible" }
+    opencode:  { status: supported, note: ".opencode/agents/*.md; mode primary|subagent|all; per-agent permissions" }
+    jetbrains: { status: unsupported, note: "No user-defined subagent format documented" }
+    generic:   { status: supported-through-adapter, note: "Role briefs injected as system prompt by the supervisor/caller" }
+
+  hooks_events:
+    claude:    { status: supported, note: "30+ events, blocking exit-code 2, JSON decisions, settings-file config" }
+    codex:     { status: unknown, note: "No hooks system found in official docs (2026-07-18)" }
+    kimi:      { status: supported, note: "16 events in user config.toml; PreToolUse/UserPromptSubmit/Stop blockable; user-level only, not project-committable" }
+    opencode:  { status: supported, note: "JS/TS plugin events (tool.execute.before/after, session.*, permission.*)" }
+    jetbrains: { status: unsupported, note: "No hook/event system documented" }
+    generic:   { status: unsupported, note: "Caller-side wrapping only" }
+
+  permissions_config_committable:
+    claude:    { status: supported, note: ".claude/settings.json allow/ask/deny, deny-wins merge; OS sandboxing available" }
+    codex:     { status: supported, note: ".codex/config.toml trust-gated; approval_policy + sandbox_mode; network enforcement is a static off switch (network_access=false) — allowlist modes are NOT implementable" }
+    kimi:      { status: supported-through-adapter, note: "Permission rules live in user-level config.toml; project .kimi-code/local.toml is machine-local/gitignored -> template ships documented profile to copy" }
+    opencode:  { status: supported, note: "opencode.json permission block, bash patterns, per-agent overrides" }
+    jetbrains: { status: unknown, note: "Approval flows exist; no committable allow/deny config file documented" }
+    generic:   { status: unsupported, note: "Enforce in the calling harness" }
+
+  headless_cli:
+    claude:    { status: supported, note: "claude -p, --output-format json/stream-json, --resume, --max-turns, --bare" }
+    codex:     { status: supported, note: "codex exec, --json JSONL, --output-schema, --ephemeral, exec resume" }
+    kimi:      { status: experimental, note: "kimi -p <prompt> (prompt is a required option value, NO stdin mode; forces auto permission policy), --output-format stream-json, --session; stream-json schema and deny-rule behavior in auto mode unverified against a live run — experimental until an attended pilot passes" }
+    opencode:  { status: supported, note: "opencode run --format json, --session, --auto; serve + --attach" }
+    jetbrains: { status: supported-through-adapter, note: "AI Assistant IDE-bound; Junie CLI/CI is the headless path" }
+    generic:   { status: supported, note: "Any OpenAI-compatible endpoint; OpenCode provider block is the reference route" }
+
+  long_running_tasks:
+    claude:    { status: supported, note: "Background subagents/tasks; supervisor pattern via session_id resume documented" }
+    codex:     { status: experimental, note: "/goal feature-flag-gated ([features] goals); exec resume stable" }
+    kimi:      { status: supported, note: "/goal + queue, background tasks first-class, print-mode steer, goal exit codes 0/3/6" }
+    opencode:  { status: supported-through-adapter, note: "No goals feature; session resume + serve/attach enable supervision" }
+    jetbrains: { status: unsupported, note: "Not applicable to supervisor-driven runs; Junie CI runs are single-shot" }
+    generic:   { status: unsupported, note: "Bring-your-own shim against the provider-<name>.sh contract (scripts/agent-framework/provider-common.sh); no generic shim ships and the run schema does not accept provider: generic" }
+
+  local_models:
+    claude:    { status: unsupported, note: "Anthropic models only" }
+    codex:     { status: unknown, note: "OSS/local model support not confirmed in current official docs" }
+    kimi:      { status: supported, note: "[providers.<id>] custom providers via models.dev catalog / OpenAI-compatible" }
+    opencode:  { status: supported, note: "@ai-sdk/openai-compatible; Ollama/LM Studio/llama.cpp documented — designated local-LLM path" }
+    jetbrains: { status: supported, note: "Ollama/LM Studio/OpenAI-compatible; MCP tools unavailable with local models" }
+    generic:   { status: supported, note: "By definition" }
+
+  bash_readonly_enforcement:
+    # Enforcement level of the canonical 'bash-readonly' tool class (read-only roles
+    # that keep shell access to re-run evidence). Where prose is the only boundary,
+    # that is a DOCUMENTED WAIVER, not an oversight (review finding KF-H08; decision D6).
+    claude:    { status: supported-through-adapter, note: "Tools allowlist grants full Bash; boundary = role prose + settings.json deny/ask on dangerous patterns + native per-tool prompting. Not a command-class boundary (documented waiver)" }
+    codex:     { status: supported, note: "read-only sandbox blocks writes mechanically; command execution itself remains possible" }
+    kimi:      { status: unsupported, note: "Prose only; user-level permission profile applies if the adopter installed it" }
+    opencode:  { status: supported, note: "Generated per-agent bash pattern permissions: inspection commands allowed, mutations ask (interactive) / deny (supervised profiles)" }
+    jetbrains: { status: unsupported, note: "Prose only (documented waiver)" }
+    generic:   { status: unsupported, note: "Enforce in the calling harness" }
+
+  model_tiering:
+    # Whether the canonical model_class (premium/standard/economy) is mechanically
+    # applied per role (review finding KF-M05).
+    claude:    { status: supported, note: "model_class rendered as model pins in .claude/agents frontmatter (opus/sonnet/haiku)" }
+    codex:     { status: unsupported, note: "No per-agent model mapping; generated briefs carry an explicit not-enforceable notice" }
+    kimi:      { status: unsupported, note: "Briefs carry an explicit not-enforceable notice" }
+    opencode:  { status: unsupported, note: "Per-agent model field exists but is not generated (model ids are deployment-specific, e.g. local providers); briefs carry an explicit not-enforceable notice" }
+    jetbrains: { status: unsupported, note: "IDE-selected model" }
+    generic:   { status: unsupported, note: "Caller-selected model" }
+
+  mcp:
+    claude:    { status: supported, note: ".mcp.json, per-subagent servers, managed policies" }
+    codex:     { status: supported, note: "[mcp_servers.<id>] stdio + HTTP, tool allowlists" }
+    kimi:      { status: supported, note: "mcp config + plugins" }
+    opencode:  { status: supported, note: "MCP support per docs" }
+    jetbrains: { status: experimental, note: "Beta; not available with local models" }
+    generic:   { status: unsupported, note: "Depends on calling harness" }
+
+render_targets:
+  claude:    [".claude/skills/", ".claude/agents/", ".claude/rules/", "CLAUDE.md managed block", ".claude/settings.json permissions (merged)"]
+  codex:     [".agents/skills/ (shared)", ".codex/agents/*.toml", ".codex/config.toml", "AGENTS.md managed block (shared)"]
+  kimi:      [".agents/skills/ (shared)", ".kimi-code/agents/*.md role briefs (adapter)", ".kimi-code/AGENTS.md pointer", ".kimi-code/README.md permission profile doc", "AGENTS.md managed block (shared)"]
+  opencode:  [".agents/skills/ (shared)", ".opencode/agents/*.md", ".opencode/agents/af-supervised-*.md (explicit-policy supervised profiles)", "opencode.json ($schema+permission keys only; other keys project-owned)", "AGENTS.md managed block (shared)"]
+  jetbrains: [".aiassistant/rules/*.md", ".agents/skills/ (shared)", "AGENTS.md managed block (shared)"]
+  generic:   ["agent-framework/providers/generic/ docs + prompt-assembly guidance", "AGENTS.md managed block (shared)"]
+
+unknowns:
+  - "Whether kimi -p auto mode honors static user-config deny rules (official docs silent; a third-party source disputes it) — resolve with one attended live check before any unattended Kimi use"
+  - "Kimi stream-json event schema (session_id/usage fields) — shim parser fails closed until verified against a recorded live run"
+  - "JetBrains rule-type activation is selected in the IDE UI; in-file activation frontmatter is not documented and the generated rules carry intended-activation comments only"
+  - "Claude Code / Codex loader behavior on a malformed agent file (reject file vs directory) — moot while the parse gate keeps artifacts valid"
+  - "Kimi Code AGENTS.md merge/nesting semantics and size caps (undocumented 2026-07-18)"
+  - "Codex CLI-to-cloud delegation (not documented on official pages)"
+  - "Codex hooks (no official hooks system found)"
+  - "JetBrains committable permission configuration"
+  - "Per-adopter Agent Skills spec adoption dates (agentskills.io shows no dates)"

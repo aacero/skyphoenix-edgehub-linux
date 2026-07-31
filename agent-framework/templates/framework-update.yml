@@ -1,0 +1,253 @@
+# Agent framework auto-update — installed into adopting repositories by
+# scripts/agent-framework/update-framework.py. Framework-managed: edit the template
+# copy (agent-framework/templates/framework-update.yml) and re-run the updater;
+# local edits here are preserved but reported on every update.
+#
+# Trust model: ADR 0001 decision 4. This workflow fetches code from another repository,
+# so it deliberately does NOT execute it. The updater runs with --no-verify and with no
+# write-scoped token in its step environment; the verification gate runs afterwards on
+# the pull request, under this repository's own review. Runs propose, humans dispose.
+#
+# MANUAL-ONLY BY DESIGN (owner decision 2026-07-30, BACKLOG option (d)).
+# There is deliberately no `schedule:` trigger. The weekly cron used to fire in every
+# adopting repository and fail 100% of the time at the resolve step: the template
+# repository is PRIVATE, this job checks out with `persist-credentials: false` and holds
+# no cross-repo read credential, so `git ls-remote` was anonymous and git fell through to
+# an interactive credential prompt. GITHUB_TOKEN cannot fix it — it is scoped to the
+# calling repository and cannot read another private repo. Rather than ship an automation
+# that cannot work and trains people to ignore red runs, updates are driven manually:
+# see `agent-framework/reports/migration-guide.md` → "Updating manually".
+#
+# To restore automation later, provision a read-only cross-repo credential and expose it
+# as the `AF_TEMPLATE_READ_TOKEN` secret; the resolve/fetch steps below already use it
+# when present, and only then. Re-adding a `schedule:` block is safe once that secret
+# exists in the repository.
+#
+# Requirements that follow from that:
+#   * The template ref is always an immutable, SIGNED tag. AF_REQUIRE_SIGNED_TAG=1 makes
+#     the updater run `git verify-tag` and refuse if it does not pass, so the template
+#     maintainers must publish signed release tags.
+#   * Scheduled runs resolve the highest semver tag rather than tracking a branch —
+#     there is no branch default any more (ADR 0001 decision 1).
+#
+# Note on triggering your own CI: pull requests created with the built-in GITHUB_TOKEN
+# deliberately do NOT start other workflows, so the gate would never run on the PR. To
+# get the gate, create a repo secret `AF_UPDATE_TOKEN` holding a fine-grained PAT with
+# contents:write + pull-requests:write — it is used automatically when present. Without
+# it, run ./scripts/ci.sh on the PR branch manually before merging.
+name: Agent framework update
+
+on:
+  # No `schedule:` — see the header. A scheduled run against a private template fails
+  # 100% of the time and cannot be fixed from inside this repository.
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Template tag to update from (signed; blank = highest semver tag)"
+        required: false
+        default: ""
+      adopt:
+        description: "Take over locally modified framework files (backs each up first)"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-framework-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # persist-credentials: false — the updater step must not find a write-scoped
+      # token sitting in .git/config while it handles freshly fetched template code.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - run: python3 -m pip install --quiet pyyaml
+
+      - name: Resolve the template tag to update to
+        id: ref
+        env:
+          INPUT_REF: ${{ github.event.inputs.ref }}
+          # Optional read-only cross-repo credential. Absent by default; when absent this
+          # step fails fast with instructions instead of hanging on a credential prompt.
+          AF_TEMPLATE_READ_TOKEN: ${{ secrets.AF_TEMPLATE_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Never fall through to an interactive credential prompt. Without this, an
+          # anonymous fetch of a PRIVATE template dies with the misleading
+          # "could not read Username for 'https://github.com': No such device or address".
+          export GIT_TERMINAL_PROMPT=0
+          export GCM_INTERACTIVE=never
+
+          URL="$(python3 - <<'PY'
+          import re, pathlib
+          src = pathlib.Path("scripts/agent-framework/update-framework.py").read_text()
+          print(re.search(r'DEFAULT_TEMPLATE_URL = "([^"]+)"', src).group(1))
+          PY
+          )"
+
+          # Authenticate only if a token was provided. Passed as an HTTP header rather
+          # than embedded in the URL so it cannot leak through an error message that
+          # echoes the remote.
+          auth=()
+          if [ -n "${AF_TEMPLATE_READ_TOKEN:-}" ]; then
+            basic="$(printf 'x-access-token:%s' "$AF_TEMPLATE_READ_TOKEN" | base64 | tr -d '\n')"
+            auth=(-c "http.extraheader=AUTHORIZATION: basic ${basic}")
+            echo "Using AF_TEMPLATE_READ_TOKEN to read the template repository."
+          else
+            echo "No AF_TEMPLATE_READ_TOKEN secret is set; attempting an anonymous read."
+          fi
+
+          if [ -n "$INPUT_REF" ]; then
+            REF="$INPUT_REF"
+          else
+            # Highest semver tag. No branch fallback: a missing tag is an error, not a
+            # reason to silently track a moving ref.
+            # ${auth[@]+"${auth[@]}"} — not "${auth[@]}". Under `set -u`, expanding an
+            # EMPTY array is an unbound-variable error on bash 3.2 (macOS). Hosted
+            # runners ship bash 5.x where it is fine, so the plain form would have
+            # passed CI and broken only for anyone running this logic locally.
+            if ! remote_tags="$(git ${auth[@]+"${auth[@]}"} ls-remote --tags --refs --sort=-v:refname -- "$URL" 2>&1)"; then
+              echo "::error::Could not read the template repository at $URL" >&2
+              echo "::error::git said: ${remote_tags}" >&2
+              echo "::error::" >&2
+              echo "::error::The SKYPhoenix template is PRIVATE. This job holds no cross-repo" >&2
+              echo "::error::read credential by design (ADR 0001 decision 4), and GITHUB_TOKEN" >&2
+              echo "::error::cannot read another private repository." >&2
+              echo "::error::Fix: either update manually (see agent-framework/reports/" >&2
+              echo "::error::migration-guide.md -> 'Updating manually'), or add a read-only" >&2
+              echo "::error::cross-repo secret named AF_TEMPLATE_READ_TOKEN to this repository." >&2
+              exit 1
+            fi
+            REF="$(printf '%s\n' "$remote_tags" | sed 's#.*refs/tags/##' \
+                   | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)"
+          fi
+          if [ -z "$REF" ]; then
+            echo "::error::no semver tag found on the template — refusing to update" >&2
+            exit 1
+          fi
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+          echo "Updating from template tag: $REF"
+
+      # AF_REQUIRE_SIGNED_TAG=1 runs `git verify-tag`, which needs the signing key's
+      # PUBLIC half in the runner's keyring. A hosted runner starts with an empty
+      # keyring, so without this step verify-tag exits 1 ("No public key") and the
+      # workflow would refuse every update forever — fail-closed, but inoperative.
+      # The trust anchor ships with the framework payload; trusting it is the same act
+      # as trusting the template repository the payload came from.
+      - name: Import the framework maintainer trust anchor
+        run: |
+          set -euo pipefail
+          ANCHOR="agent-framework/trust/framework-maintainer.asc"
+          if [ ! -f "$ANCHOR" ]; then
+            echo "::error::$ANCHOR is missing — cannot verify the template tag signature." >&2
+            echo "::error::Re-run the updater manually once to install it, then retry." >&2
+            exit 1
+          fi
+          if grep -q "PRIVATE KEY" "$ANCHOR"; then
+            echo "::error::$ANCHOR contains private key material — refusing to import." >&2
+            exit 1
+          fi
+          gpg --quiet --import "$ANCHOR"
+          gpg --list-keys --keyid-format LONG
+
+      # Untrusted workflow inputs pass through the environment, never interpolated into
+      # the shell command (script-injection safe). --no-verify: fetched code is copied,
+      # never executed, in this job.
+      - name: Run the framework updater (no execution of fetched code)
+        env:
+          TEMPLATE_REF: ${{ steps.ref.outputs.ref }}
+          ADOPT: ${{ github.event.inputs.adopt || 'false' }}
+          AF_REQUIRE_SIGNED_TAG: "1"
+          AF_TEMPLATE_READ_TOKEN: ${{ secrets.AF_TEMPLATE_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          export GIT_TERMINAL_PROMPT=0
+
+          # The updater runs its own `git ls-remote` and `git fetch` in a subprocess, so
+          # the credential has to be visible to plain git rather than passed as an argument.
+          # Scope note (ADR 0001 decision 4): what that decision forbids here is a
+          # WRITE-scoped token sitting in reach while this job handles freshly fetched
+          # template code. A read-only contents credential is the minimum required to read
+          # a private template at all, and fetched code is still never executed in this
+          # job (--no-verify). If the secret is absent, git stays anonymous.
+          if [ -n "${AF_TEMPLATE_READ_TOKEN:-}" ]; then
+            basic="$(printf 'x-access-token:%s' "$AF_TEMPLATE_READ_TOKEN" | base64 | tr -d '\n')"
+            git config --global "http.extraheader" "AUTHORIZATION: basic ${basic}"
+          fi
+
+          args=(--ref "$TEMPLATE_REF" --no-verify)
+          [ "$ADOPT" = "true" ] && args+=(--adopt)
+          rc=0
+          python3 scripts/agent-framework/update-framework.py "${args[@]}" || rc=$?
+
+          # Always drop the credential, success or failure, before any later step runs.
+          git config --global --unset-all "http.extraheader" || true
+          exit "$rc"
+
+      - name: Open or refresh the update pull request
+        env:
+          GH_TOKEN: ${{ secrets.AF_UPDATE_TOKEN || secrets.GITHUB_TOKEN }}
+          TEMPLATE_REF: ${{ steps.ref.outputs.ref }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
+            echo "Framework already up to date — no pull request needed."
+            exit 0
+          fi
+          VERSION="$(cat agent-framework/VERSION)"
+          BRANCH="chore/agent-framework-update"
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add -A
+          git commit -m "chore: update agent framework to ${VERSION}
+
+          Automated update from the enterprise template (signed tag: ${TEMPLATE_REF})
+          via scripts/agent-framework/update-framework.py.
+
+          NOT VERIFIED in the update job by design (ADR 0001 decision 4): fetched
+          template code is copied, never executed, before human review. Run
+          ./scripts/ci.sh on this branch before merging."
+          git push --force-with-lease "$REMOTE" "$BRANCH"
+          if gh pr view "$BRANCH" --json number >/dev/null 2>&1; then
+            echo "Existing pull request refreshed."
+          else
+            gh pr create \
+              --base "${GITHUB_REF_NAME}" \
+              --head "$BRANCH" \
+              --title "chore: update agent framework to ${VERSION}" \
+              --body "Automated framework update from the enterprise template (signed tag \`${TEMPLATE_REF}\`).
+
+          Produced by \`scripts/agent-framework/update-framework.py\`, which refuses to
+          overwrite anything it cannot prove the framework owns — review the diff for any
+          \`.bak-pre-framework\` files.
+
+          **The gate did NOT run in the update job, by design** (ADR 0001 decision 4):
+          this workflow fetches code from another repository and must not execute it
+          before a human has looked at it. The tag's signature was verified before
+          anything was copied.
+
+          **Before merging:** confirm the Quality workflow ran on this PR, or run
+          \`./scripts/ci.sh\` on this branch yourself. A PR opened with the default
+          \`GITHUB_TOKEN\` does not trigger other workflows.
+
+          Generated provider artifacts are re-rendered from canonical sources; project
+          content outside the managed blocks is untouched."
+          fi

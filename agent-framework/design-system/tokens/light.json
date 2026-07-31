@@ -1,0 +1,47 @@
+{
+  "$description": "SKYPhoenix semantic tokens — LIGHT theme. Status: EXTRACTED (the only theme that exists on CompanyWebsite; site is single-light-theme — no prefers-color-scheme, no darkMode config, no toggle found 2026-07-18). References {base.*} = tokens/base.json. Sources in $extensions.",
+  "$status": "extracted",
+  "semantic": {
+    "color": {
+      "text-primary": { "$value": "#1f2937", "$extensions": { "source": ["www/assets/css/custom.css:12 (--color-text)"] } },
+      "text-secondary": { "$value": "#374151", "$extensions": { "source": ["portal/assets/css/portal.css:120,154,177,215"] } },
+      "text-muted": { "$value": "#6b7280", "$extensions": { "source": ["www/assets/css/custom.css:13 (--color-text-light), portal.css:29,114,245"], "note": "4.83:1 on white (WCAG relative-luminance formula) — passes AA (4.5:1) at all text sizes, including normal-size text. WCAG 2.2 'large text' is defined as ≥18.66px bold or ≥24px regular, not 14px/18px." } },
+      "text-disabled": { "$value": "#9ca3af", "$extensions": { "source": ["portal/assets/css/portal.css:60,91"], "note": "~2.5:1 on white — FAILS AA; extracted as-is, restricted to disabled/decorative per brand-guidelines.md" } },
+      "text-heading": { "$value": "#111827", "$extensions": { "source": ["portal/assets/css/portal.css:240"] } },
+      "text-on-brand": { "$value": "#ffffff", "$extensions": { "source": ["www/index.php:14 (hero), portal/includes/header.php:143 (active nav)"] } },
+      "text-link": { "$value": "{brand.color.secondary}", "$extensions": { "source": ["www/index.php:57 ('Mehr erfahren' links)"], "note": "3.7:1 on white — fails AA for normal-size links; accessible alternative in high-contrast.json" } },
+      "background": { "$value": "#ffffff", "$extensions": { "source": ["www/partials/header.php:113 (bg-white)"] } },
+      "background-app": { "$value": "#f9fafb", "$extensions": { "source": ["portal/includes/header.php:122 (bg-gray-50), portal.css:30,39,57,219"] } },
+      "background-subtle": { "$value": "#f8fafc", "$extensions": { "source": ["www/assets/css/custom.css:14 (--color-bg-light)"] } },
+      "background-hover": { "$value": "#eff6ff", "$extensions": { "source": ["www/assets/css/custom.css:83,106; portal.css:54,261"] } },
+      "background-selected": { "$value": "#dbeafe", "$extensions": { "source": ["portal/assets/css/portal.css:124,164"] } },
+      "surface": { "$value": "#ffffff", "$extensions": { "source": ["www/index.php:47 (bg-white cards)"] } },
+      "border": { "$value": "#e5e7eb", "$extensions": { "source": ["www/assets/css/custom.css:15 (--color-border), portal.css:31"] } },
+      "border-strong": { "$value": "#d1d5db", "$extensions": { "source": ["portal/assets/css/portal.css:68,111,216 (inputs, outline buttons)"] } },
+      "brand-surface": { "$value": "{brand.color.primary}", "$extensions": { "source": ["www/index.php:275 (CTA band bg-primary), portal sidebar active"] } },
+      "focus-outline": { "$value": "{brand.color.secondary}", "$extensions": { "source": ["www/assets/css/custom.css:40-47 (2px solid, offset 2px), portal.css:4-7"] } },
+      "danger": { "$value": "#dc2626", "$extensions": { "source": ["portal/assets/css/portal.css:180,222"], "note": "hover #b91c1c portal.css:227" } },
+      "success-bg": { "$value": "#f0fdf4", "$extensions": { "source": ["portal/assets/css/portal.css:266"] } },
+      "success-border": { "$value": "#bbf7d0", "$extensions": { "source": ["portal/assets/css/portal.css:267"] } },
+      "success-text": { "$value": "#166534", "$extensions": { "source": ["portal/assets/css/portal.css:268"] } },
+      "warning-bg": { "$value": "#fffbeb", "$extensions": { "source": ["portal/assets/css/portal.css:256"] } },
+      "warning-border": { "$value": "#fde68a", "$extensions": { "source": ["portal/assets/css/portal.css:257"] } },
+      "warning-text": { "$value": "#92400e", "$extensions": { "source": ["portal/assets/css/portal.css:258"] } },
+      "info-bg": { "$value": "#eff6ff", "$extensions": { "source": ["portal/assets/css/portal.css:261"] } },
+      "info-border": { "$value": "#bfdbfe", "$extensions": { "source": ["portal/assets/css/portal.css:262"] } },
+      "info-text": { "$value": "#1e40af", "$extensions": { "source": ["portal/assets/css/portal.css:263"] } },
+      "error-bg": { "$value": "#fef2f2", "$extensions": { "source": ["portal/assets/css/portal.css:271"] } },
+      "error-border": { "$value": "#fecaca", "$extensions": { "source": ["portal/assets/css/portal.css:272"] } },
+      "error-text": { "$value": "#991b1b", "$extensions": { "source": ["portal/assets/css/portal.css:273"] } },
+      "footer-bg": { "$value": "#111827", "$extensions": { "source": ["www/partials/footer.php:5 (bg-gray-900)"] } },
+      "footer-text": { "$value": "#d1d5db", "$extensions": { "source": ["www/partials/footer.php:5 (text-gray-300)"] } }
+    },
+    "component": {
+      "button-primary": { "$value": "bg {brand.color.primary}, text #fff, hover {brand.color.primary-dark}", "$extensions": { "source": ["portal/assets/css/portal.css:197-204"] } },
+      "button-secondary": { "$value": "bg {brand.color.secondary}, text #fff, hover #2563eb", "$extensions": { "source": ["portal/assets/css/portal.css:205-212"], "note": "ACCESSIBILITY: text #fff on bg {brand.color.secondary} (#3b82f6) at 0.875rem/500 measures 3.68:1 (WCAG relative-luminance formula) — FAILS WCAG AA 4.5:1 for non-large text (0.875rem/500 does not meet the large-text exemption). Extracted as-is; MUST NOT be replicated for new secondary-button text at this size/weight. The extracted hover color #2563eb measures 5.17:1 for text #fff on bg #2563eb — passes AA for non-large text — and is the conforming default for new secondary-button text; prefer #2563eb over the resting #3b82f6 for any new text-bearing surface." } },
+      "button-outline": { "$value": "bg #fff, text #374151, border #d1d5db, hover bg #f9fafb", "$extensions": { "source": ["portal/assets/css/portal.css:213-220"] } },
+      "button-danger": { "$value": "bg #dc2626, text #fff, hover #b91c1c", "$extensions": { "source": ["portal/assets/css/portal.css:221-228"] } },
+      "status-badges": { "$value": "draft gray-100/700, submitted blue-100/700, approved green-100/700, rejected red-100/700, pending yellow-100/700, cancelled gray-100/500, billed purple-100/700", "$extensions": { "source": ["portal/includes/functions.php:227-236"], "note": "Tailwind palette classes — semantic convention, not custom hex" } }
+    }
+  }
+}

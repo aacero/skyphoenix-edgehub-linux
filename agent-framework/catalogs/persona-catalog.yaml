@@ -1,0 +1,48 @@
+# Persona Catalog
+# Canonical persona definitions live under agent-framework/canonical/personas/<id>.yaml.
+#
+# Policy note: personas are READ-ONLY simulators executed via the
+# end-user-simulator role. They never edit product code, configuration, tests,
+# or documentation, and never file implementation changes directly. All persona
+# findings go through the persona-validation workflow
+# (agent-framework/canonical/workflows/persona-validation/WORKFLOW.md), ending
+# in BACKLOG.md Candidates that require product-owner approval before any
+# scope change.
+
+personas:
+  - id: casual-user
+    title: Casual User
+    summary: Infrequent user with no training who relies on memory and defaults and abandons after two failed attempts.
+  - id: first-time-consultant
+    title: First-Time Consultant
+    summary: Junior consultant following official onboarding literally to become demo-capable in one day.
+  - id: experienced-consultant
+    title: Experienced Consultant
+    summary: Senior daily power user demanding bulk operations, API/UI parity, and cross-environment configuration transport.
+  - id: administrator
+    title: Administrator
+    summary: Customer IT admin exercising install, upgrade, rollback, roles/SSO, backup-restore, and failure behavior.
+  - id: enterprise-architect
+    title: Enterprise Architect
+    summary: Standards-and-landscape gatekeeper probing API contracts, integrations, data ownership, and exit paths.
+  - id: security-officer
+    title: Security Officer
+    summary: Compliance-driven assessor attacking role/tenant boundaries, audit logging, and data protection before approval.
+  - id: accessibility-user
+    title: Accessibility User
+    summary: Keyboard-only, screen-reader, high-zoom professional who verifies every core flow works without a mouse or eyesight assumptions.
+  - id: support-engineer
+    title: Support Engineer
+    summary: Ticket handler judging error-message quality, log diagnosability, and documentation coverage of failure paths.
+  - id: procurement-buyer
+    title: Procurement Buyer
+    summary: Purchasing manager evaluating pricing transparency, licensing terms, and compliance documents, never the UI.
+  - id: skeptical-customer
+    title: Skeptical Customer
+    summary: Burned-before evaluator hunting the gap between marketed claims and observed behavior with realistic messy data.
+  - id: impatient-user
+    title: Impatient User
+    summary: Time-pressed manager who skips all reading and expects results within three clicks and instant feedback.
+  - id: error-prone-user
+    title: Error-Prone User
+    summary: Distracted user generating typos, wrong formats, double submissions, and mid-flow abandonment to test robustness and recovery.

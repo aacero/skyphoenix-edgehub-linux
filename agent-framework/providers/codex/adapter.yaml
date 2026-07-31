@@ -1,0 +1,22 @@
+# OpenAI Codex adapter definition (documentation; logic in scripts/agent-framework/render.py)
+provider: codex
+status: supported
+instruction_bridge: "Native AGENTS.md (managed block); 32KiB default combined cap raised to 64KiB in generated .codex/config.toml"
+targets:
+  - path: .codex/config.toml
+    mode: generated
+    content: "approval_policy=on-request, sandbox_mode=workspace-write, network_access=false, project_doc_max_bytes=65536"
+    note: "Loaded only when the user marks the project trusted (Codex trust gate)"
+  - path: .codex/agents/<role>.toml
+    mode: generated
+    source: canonical/roles/<role>.yaml
+    mapping:
+      sandbox_mode: "read_only role -> read-only; writer role -> workspace-write"
+      model: "unset — inherits user's Codex model (no OpenAI model names hardcoded)"
+      developer_instructions: role brief
+  - path: .agents/skills/<name>/
+    mode: generated-copy (shared with kimi/opencode/jetbrains)
+    note: "Codex scans .agents/skills natively (open Agent Skills standard)"
+limitations:
+  - "No hooks system documented (2026-07-18)"
+  - "/goal long-task feature is feature-flag gated ([features] goals) — supervisor uses codex exec resume instead"

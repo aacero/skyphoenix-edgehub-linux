@@ -1,0 +1,26 @@
+# Claude Code adapter definition (documentation of the render mapping; logic in scripts/agent-framework/render.py)
+provider: claude
+status: supported
+instruction_bridge: "CLAUDE.md managed block imports AGENTS.md via '@AGENTS.md' (official pattern; Claude Code does not read AGENTS.md natively)"
+targets:
+  - path: CLAUDE.md
+    mode: managed-block
+    source: canonical/core-instructions.md (via AGENTS.md) + Claude-specific block
+  - path: .claude/skills/<name>/
+    mode: generated-copy
+    source: canonical/skills/<name>/ (default_install + project.yaml selection)
+    note: open-spec frontmatter only; generated marker inserted after frontmatter
+  - path: .claude/agents/<role>.md
+    mode: generated
+    source: canonical/roles/<role>.yaml
+    mapping:
+      tools: "read/search->Read,Grep,Glob; edit->Edit,Write; bash|bash-readonly->Bash; web->WebSearch,WebFetch; delegate->Agent"
+      model: "premium->opus, standard->sonnet, economy->haiku"
+      read_only: "no Edit/Write in tools + explicit prohibition in body"
+  - path: .claude/rules/agent-framework.md
+    mode: generated
+    source: pointer digest to canonical policies/contracts/catalogs
+permissions:
+  path: .claude/settings.json
+  mode: hand-maintained (merged, not generated) — deny force-push (both spellings)/secret reads; ask on destructive ops. The security-critical subset is semantically PINNED by validate.py — weakening a pinned rule fails CI (CXR-013/KF-H12)
+enforcement: "settings.json permissions + OS sandboxing available; hooks available for future gates"

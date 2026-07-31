@@ -1,0 +1,22 @@
+# OpenCode adapter definition (documentation; logic in scripts/agent-framework/render.py)
+provider: opencode
+status: supported
+instruction_bridge: "Native AGENTS.md (managed block)"
+targets:
+  - path: .opencode/agents/<role>.md
+    mode: generated
+    source: canonical/roles/<role>.yaml
+    mapping:
+      mode: "orchestrator -> primary; all others -> subagent"
+      permission: "read_only role -> edit: deny; no-bash role -> bash: deny; bash-readonly role -> per-agent bash patterns (inspection commands allow, mutations deny, everything else ask); web role -> webfetch: allow"
+      model: "unset — inherits opencode.json / user default (local models supported); model_class carries an explicit not-enforceable notice"
+  - path: .opencode/agents/af-supervised-writer.md and af-supervised-readonly.md
+    mode: generated
+    note: "Explicit-policy agent profiles for supervised (unattended) runs, selected by provider-opencode.sh via `opencode run --agent`. Only explicit allow/deny decisions (no asks for --auto to approve), external_directory: deny, webfetch: deny. The shim never uses --auto."
+  - path: opencode.json
+    mode: generated-json-keys
+    content: "ONLY the $schema and permission keys are generated (interactive posture: edit allow; bash '*' allow with force-push/hard-reset/compose-down/rm-rf denied; webfetch ask; external_directory ask). Every other top-level key (provider, model, mcp, plugin, ...) is project-owned and preserved across renders; the manifest hashes the generated subset only."
+  - path: .agents/skills/<name>/
+    mode: generated-copy (shared)
+    note: "OpenCode scans .opencode/skills > .claude/skills > .agents/skills; shared copies suffice"
+local_llm: "Designated local-model path: opencode.json provider block with @ai-sdk/openai-compatible — see providers/generic/README.md for Ollama/LM Studio/llama.cpp examples"

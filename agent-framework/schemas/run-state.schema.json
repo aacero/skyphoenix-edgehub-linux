@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "skyphoenix://agent-framework/schemas/run-state.schema.json",
+  "title": "Autonomous session persistent run state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["run_id", "state", "started_at", "deadline_at", "last_heartbeat_at", "last_checkpoint_at", "provider", "model", "sessions", "restarts_used", "tasks", "budget_spent", "stop_reason", "provider_calls", "exec_plan_file", "morning_report_file"],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "state": { "type": "string", "enum": ["INITIALIZE", "DISCOVER", "PLAN", "IMPLEMENT", "VERIFY", "REVIEW", "UPDATE_STATE", "SELECT_NEXT_TASK", "CONTINUE_OR_HANDOVER", "FINAL_REPORT", "STOPPED"] },
+    "started_at": { "type": "string", "format": "date-time" },
+    "deadline_at": { "type": "string", "format": "date-time" },
+    "last_heartbeat_at": { "type": ["string", "null"], "format": "date-time" },
+    "last_checkpoint_at": { "type": ["string", "null"], "format": "date-time" },
+    "provider": { "type": "string", "enum": ["claude", "codex", "kimi", "opencode"] },
+    "model": { "type": "string", "minLength": 1 },
+    "sessions": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": false,
+        "required": ["index", "provider_session_ref", "started_at", "ended_at", "exit_kind", "phase_at_exit", "handover_file", "recovery_model"],
+        "properties": {
+          "index": { "type": "integer", "minimum": 1 },
+          "provider_session_ref": { "type": ["string", "null"], "description": "session id / rollout ref used for resume" },
+          "started_at": { "type": "string", "format": "date-time" },
+          "ended_at": { "type": ["string", "null"], "format": "date-time" },
+          "exit_kind": { "type": ["string", "null"], "enum": ["completed", "context-exhausted", "crashed", "timeout", "killed", null] },
+          "phase_at_exit": { "type": ["string", "null"] },
+          "handover_file": { "type": ["string", "null"] },
+          "recovery_model": { "type": ["string", "null"], "enum": ["handover-injection", "native-resume", null], "description": "How this session received prior-session context (null for the first session)" }
+        } }
+    },
+    "restarts_used": { "type": "integer", "minimum": 0 },
+    "provider_calls": { "type": "integer", "minimum": 0, "description": "Total provider invocations across all sessions; basis of the max_provider_calls hard cap. Checkpointed BEFORE each provider launch (durable reservation)" },
+    "tasks": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": false,
+        "required": ["id", "status", "blocker_class", "evidence"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "enum": ["pending", "in_progress", "done-verified", "done-claimed", "blocked", "skipped"] },
+          "blocker_class": { "type": ["string", "null"], "enum": ["needs-decision", "needs-access", "needs-approval", "budget-exhausted", null] },
+          "evidence": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "Command + result lines (agent-asserted); done-verified requires at least one entry (semantic invariant enforced on resume)" }
+        } }
+    },
+    "budget_spent": {
+      "type": "object", "additionalProperties": false,
+      "required": ["cost_usd", "total_tokens"],
+      "properties": { "cost_usd": { "type": "number", "minimum": 0 }, "total_tokens": { "type": "integer", "minimum": 0 } }
+    },
+    "stop_reason": { "type": ["string", "null"], "enum": ["deadline", "budget", "backlog-exhausted", "kill-switch", "max-restarts", "blocked-all-tasks", "signal", "min-work-window", "provider-output-invalid", "crashed", null] },
+    "exec_plan_file": { "type": "string", "minLength": 1 },
+    "morning_report_file": { "type": ["string", "null"] }
+  }
+}

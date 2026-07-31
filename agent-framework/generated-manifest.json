@@ -1,0 +1,427 @@
+{
+  "framework_version": "1.2.4",
+  "marker_begin": "<!-- AGENT-FRAMEWORK:BEGIN \u2014 GENERATED from agent-framework/canonical/. Do not edit inside this block; edit canonical sources and run: python3 scripts/agent-framework/render.py -->",
+  "marker_end": "<!-- AGENT-FRAMEWORK:END -->",
+  "files": {
+    ".agents/skills/architecture-review/SKILL.md": {
+      "mode": "full",
+      "sha256": "d9606c80ff9df2bc5eba3861fcb44178775652652d30d1f6bd0c2e31d87dcd8a"
+    },
+    ".agents/skills/debug-systematically/SKILL.md": {
+      "mode": "full",
+      "sha256": "dd564b11ba5275dc44b5581c5427be91ec047752c4cd88c107f1c2f40fd7c264"
+    },
+    ".agents/skills/feature-slice/SKILL.md": {
+      "mode": "full",
+      "sha256": "00a100eed2745c3112b04baf433a74f15a21599d7ec89fc80bbdd359ac6f342a"
+    },
+    ".agents/skills/release-readiness/SKILL.md": {
+      "mode": "full",
+      "sha256": "7a61d478ae90393ad50088daa93b9bb761e43e609f1f8b8b2b05ef4f33fd264a"
+    },
+    ".agents/skills/resource-safety/SKILL.md": {
+      "mode": "full",
+      "sha256": "59a1d518305ef47ba912e3c0a84c66878c8a87dc042c531b027d7549ed71909a"
+    },
+    ".agents/skills/security-review/SKILL.md": {
+      "mode": "full",
+      "sha256": "6092c91add9e88bbb3d0b64366be602400e96ab172dc81bdf93785bbd1916ee3"
+    },
+    ".agents/skills/ui-ux-review/SKILL.md": {
+      "mode": "full",
+      "sha256": "0d6092e9384800f39baad72d8645be0a1bf73eefb67ab06a9292e2cdc59fb6bb"
+    },
+    ".aiassistant/rules/00-core-project.md": {
+      "mode": "full",
+      "sha256": "83b0b24c4ffb596c56bd0d1aca302cb662871b5c5a76b8a2b48cbe17f3a7d56f"
+    },
+    ".aiassistant/rules/scope-and-delegation.md": {
+      "mode": "full",
+      "sha256": "d7c15fdec7924610029edc3128c554132b25fe95ff34b52768f5ff2bc57e60ae"
+    },
+    ".aiassistant/rules/security.md": {
+      "mode": "full",
+      "sha256": "eb7825179293d83a4d13e842341bbbc3dd4d7160d1e34a0e83d2ad0872f4a1ee"
+    },
+    ".aiassistant/rules/strict-review.md": {
+      "mode": "full",
+      "sha256": "0b89309fe6afe650a6ffd5a11a01ce9de32a38b9629291c975c0cdbcb12e3fb0"
+    },
+    ".aiassistant/rules/testing.md": {
+      "mode": "full",
+      "sha256": "31c66421c45c4e222dede8a68bcd133559c4aa4cbc4f71b70a50b3d4708523b2"
+    },
+    ".claude/agents/accessibility-reviewer.md": {
+      "mode": "full",
+      "sha256": "fe773b399c89e1082874f7aa130627ef411415daf74757b3dc15e163425adde7"
+    },
+    ".claude/agents/code-reviewer.md": {
+      "mode": "full",
+      "sha256": "5a870ca849a3aa6bbd591e5a206981c5d7caac5222d75c22e2048809329f0dc3"
+    },
+    ".claude/agents/data-database-engineer.md": {
+      "mode": "full",
+      "sha256": "5109646d9332dc7f7814014c54965efd4ecd895f7212db23a41f01f90e80be6f"
+    },
+    ".claude/agents/deep-researcher.md": {
+      "mode": "full",
+      "sha256": "d67b7fb8edf420e59d89f66d695a82d83709d99fca372d15bae85876053bf137"
+    },
+    ".claude/agents/devops-release-engineer.md": {
+      "mode": "full",
+      "sha256": "68e2d30fd9a7c7f9dc2d791a528cae7aa339e574968c1e6a9444ccb089ba6d56"
+    },
+    ".claude/agents/end-user-simulator.md": {
+      "mode": "full",
+      "sha256": "b1174d7c861fedaefebb6aaa1bd9c8afd8bcb6f082be618f7eb8cfcd8fc4a0e9"
+    },
+    ".claude/agents/implementation-engineer.md": {
+      "mode": "full",
+      "sha256": "cb8b709df4c786295769d730017fa80b161098a978283d7886995654df32180f"
+    },
+    ".claude/agents/integration-architect.md": {
+      "mode": "full",
+      "sha256": "5cee3a02b45df44bb7d7a628d7b82aedbbd55555e155c755a9d40252b57e46ee"
+    },
+    ".claude/agents/market-opportunity-researcher.md": {
+      "mode": "full",
+      "sha256": "fd050b6bc624d37fd72b0f6d53d7adbdb6c58943e5d30b20ab50482e897c051a"
+    },
+    ".claude/agents/orchestrator.md": {
+      "mode": "full",
+      "sha256": "20481663bee3bbbf6a5f19baae3253c744d6952faefe8ed828dac84fa0660e5a"
+    },
+    ".claude/agents/performance-reliability-engineer.md": {
+      "mode": "full",
+      "sha256": "3c3fb60c0090736f9d45cd437fab1768d810aa9c19a7953bb13275fb62cdcdf2"
+    },
+    ".claude/agents/product-manager.md": {
+      "mode": "full",
+      "sha256": "eef3948c7b6e3fa369944ea6e43eacec8176aa5585cc7114f110304811bdaeff"
+    },
+    ".claude/agents/qa-test-engineer.md": {
+      "mode": "full",
+      "sha256": "8f2b3bde05ed1a3df446a481c0bf8bd33a446f7bf109be94cfb18bf5e0c49f5f"
+    },
+    ".claude/agents/rubber-duck.md": {
+      "mode": "full",
+      "sha256": "761cbacf9c93dab17975b697161e2904f5f1b4d8029eefcb408ea19ef456b2ff"
+    },
+    ".claude/agents/security-privacy-reviewer.md": {
+      "mode": "full",
+      "sha256": "25451ec9cda80dc4d5e2fe2a858d31e777637311186ab38429d6806826153359"
+    },
+    ".claude/agents/skeptical-reviewer.md": {
+      "mode": "full",
+      "sha256": "5b39390da2a8b8fa4ba7cf1b85e89e34700b6457fb78a30e01682db6598d7636"
+    },
+    ".claude/agents/software-architect.md": {
+      "mode": "full",
+      "sha256": "110ed7d1a35b3fedf38b0031557f2acc8db8f3e051ea701c41f7a5adee4c44bc"
+    },
+    ".claude/agents/technical-writer.md": {
+      "mode": "full",
+      "sha256": "9648fb14f6a8d2b6a211c86df8bb7b70ec108375555257a2b790b32cd6474dd3"
+    },
+    ".claude/agents/ui-ux-designer.md": {
+      "mode": "full",
+      "sha256": "a933aea4db6df217858834065f156d5001a77e0cbda5b5c0724412c802b25f40"
+    },
+    ".claude/rules/agent-framework.md": {
+      "mode": "full",
+      "sha256": "62b4e9c0895c1d97cd090fe6fd1cc7e8b62e26280a3b622930108f10dfc6be89"
+    },
+    ".claude/skills/architecture-review/SKILL.md": {
+      "mode": "full",
+      "sha256": "d9606c80ff9df2bc5eba3861fcb44178775652652d30d1f6bd0c2e31d87dcd8a"
+    },
+    ".claude/skills/debug-systematically/SKILL.md": {
+      "mode": "full",
+      "sha256": "dd564b11ba5275dc44b5581c5427be91ec047752c4cd88c107f1c2f40fd7c264"
+    },
+    ".claude/skills/feature-slice/SKILL.md": {
+      "mode": "full",
+      "sha256": "00a100eed2745c3112b04baf433a74f15a21599d7ec89fc80bbdd359ac6f342a"
+    },
+    ".claude/skills/release-readiness/SKILL.md": {
+      "mode": "full",
+      "sha256": "7a61d478ae90393ad50088daa93b9bb761e43e609f1f8b8b2b05ef4f33fd264a"
+    },
+    ".claude/skills/resource-safety/SKILL.md": {
+      "mode": "full",
+      "sha256": "59a1d518305ef47ba912e3c0a84c66878c8a87dc042c531b027d7549ed71909a"
+    },
+    ".claude/skills/security-review/SKILL.md": {
+      "mode": "full",
+      "sha256": "6092c91add9e88bbb3d0b64366be602400e96ab172dc81bdf93785bbd1916ee3"
+    },
+    ".claude/skills/ui-ux-review/SKILL.md": {
+      "mode": "full",
+      "sha256": "0d6092e9384800f39baad72d8645be0a1bf73eefb67ab06a9292e2cdc59fb6bb"
+    },
+    ".codex/agents/accessibility-reviewer.toml": {
+      "mode": "full",
+      "sha256": "af285c42cb3aadb4db313a74d657fe3fad61e42832d8537c911d7a5dd232df72"
+    },
+    ".codex/agents/code-reviewer.toml": {
+      "mode": "full",
+      "sha256": "1eb0c75c130361faa6db6b37b10f4d9e501246a67f2e3641da7c1adecea68d68"
+    },
+    ".codex/agents/data-database-engineer.toml": {
+      "mode": "full",
+      "sha256": "a4e3ca809cb1a1acd83a5673001ee16adbef3d766665c7598b0f66a514c19010"
+    },
+    ".codex/agents/deep-researcher.toml": {
+      "mode": "full",
+      "sha256": "f731c5af9140c1118df467b942f63ace961408d8caf59a654942e39872094029"
+    },
+    ".codex/agents/devops-release-engineer.toml": {
+      "mode": "full",
+      "sha256": "29921adae1c2b97b8f1ae36550d3620d7f9cfdb9f1e8453aa46a375f00443f2f"
+    },
+    ".codex/agents/end-user-simulator.toml": {
+      "mode": "full",
+      "sha256": "5b4cc08e94fa4b61c0e77545e7e681fe207c79fd6f858768b2c5532d4464bd0e"
+    },
+    ".codex/agents/implementation-engineer.toml": {
+      "mode": "full",
+      "sha256": "1050ea98615413489a284285d10945f2cea4db97317050f603827139902bb142"
+    },
+    ".codex/agents/integration-architect.toml": {
+      "mode": "full",
+      "sha256": "ec9e841f6df1a02ec39b918f7ff51f9849abc23f8429131e4cd1c042bc31ebc5"
+    },
+    ".codex/agents/market-opportunity-researcher.toml": {
+      "mode": "full",
+      "sha256": "ac62bfcdaf012ee0de3e1e04ee11ee2d5505bd34efec30bbe05bf40a66760202"
+    },
+    ".codex/agents/orchestrator.toml": {
+      "mode": "full",
+      "sha256": "60231a4e93992477df93304e61daeb423289ffa229c6e0e0ac1bec3ed1e5c0f9"
+    },
+    ".codex/agents/performance-reliability-engineer.toml": {
+      "mode": "full",
+      "sha256": "8705b4c5a556dc91a05db76e6ebb78a7fcf368e06feee69dc1f5345d5ef9da3e"
+    },
+    ".codex/agents/product-manager.toml": {
+      "mode": "full",
+      "sha256": "8ec675b5b0c0e9a3818625e51f79f40a096caa882d5de45a15ad5de5a79ca9ca"
+    },
+    ".codex/agents/qa-test-engineer.toml": {
+      "mode": "full",
+      "sha256": "36dc5f0bfa076a8961c48613708263997fdc87737430b2b20f58ee4f3f22b453"
+    },
+    ".codex/agents/rubber-duck.toml": {
+      "mode": "full",
+      "sha256": "6b9626b1f3a77c73d2f547f1f151e2c2bea11d0d3ba35d4ae176e615555653b1"
+    },
+    ".codex/agents/security-privacy-reviewer.toml": {
+      "mode": "full",
+      "sha256": "f305fab7a187a25238a8ecd7ed9e87bab6e3848c3ac31c62ea5b17ef882e5fde"
+    },
+    ".codex/agents/skeptical-reviewer.toml": {
+      "mode": "full",
+      "sha256": "5d0f7777bf520daea65a83571831d01768a55bc1085da78132a8b986b5a65ff7"
+    },
+    ".codex/agents/software-architect.toml": {
+      "mode": "full",
+      "sha256": "d8f044f6ced637f408af960c4b363a5310332becf13c8fd91d99c93d8f46aca7"
+    },
+    ".codex/agents/technical-writer.toml": {
+      "mode": "full",
+      "sha256": "b1c387f6435a4485e8589ec0f12ba8809348c2ce262aa1938daf800c6044333a"
+    },
+    ".codex/agents/ui-ux-designer.toml": {
+      "mode": "full",
+      "sha256": "a241b90a57dbcfd57ed27a112cf9fd96e7ae6ecc4026536e5021828a8c3b682d"
+    },
+    ".codex/config.toml": {
+      "mode": "full",
+      "sha256": "8be3e2ea46a6753600c45c0530d3622939e94248bb6e8260b20a2042717dd28e"
+    },
+    ".kimi-code/AGENTS.md": {
+      "mode": "full",
+      "sha256": "02023c21308ea74bc0cb942560d1779c61eccb4c1820b934be163fbfea7e02de"
+    },
+    ".kimi-code/README.md": {
+      "mode": "full",
+      "sha256": "278f378ee3276ce9a37b5d372ec1adda7046cc6dbe7ceea400c8d51cb2e2db14"
+    },
+    ".kimi-code/agents/accessibility-reviewer.md": {
+      "mode": "full",
+      "sha256": "5294d0cbb09469ee4c524657e8c4848d9793baa7bcf4dca9621147d05525ad2c"
+    },
+    ".kimi-code/agents/code-reviewer.md": {
+      "mode": "full",
+      "sha256": "c7aee3132242aae777f55f1f8a820c7421b3f3c88c77065099e3e3e3d6708613"
+    },
+    ".kimi-code/agents/data-database-engineer.md": {
+      "mode": "full",
+      "sha256": "010e414c79bc1d21a7ccdcfa4d6941fc49bfd9b1dddf86b92d6439dbd732f52b"
+    },
+    ".kimi-code/agents/deep-researcher.md": {
+      "mode": "full",
+      "sha256": "de837e99fcd16a28ab9f55e02ad5d1f40696a1cac5b4b969d835248a850d102e"
+    },
+    ".kimi-code/agents/devops-release-engineer.md": {
+      "mode": "full",
+      "sha256": "be585997a242124078417605eccca61de501ebd5ac5ecdf7729e2ea99007f8e9"
+    },
+    ".kimi-code/agents/end-user-simulator.md": {
+      "mode": "full",
+      "sha256": "8a98a99944a5a16a060f5e2f50090f5e78d6eed94de69c587fb5b5110537112a"
+    },
+    ".kimi-code/agents/implementation-engineer.md": {
+      "mode": "full",
+      "sha256": "7a9a74c437104c9bfc3484b519b4d46bf8de109a1b7576d52c682ac0230635bb"
+    },
+    ".kimi-code/agents/integration-architect.md": {
+      "mode": "full",
+      "sha256": "a2712575f62539b905d5c17bfd6ae8a918e36edc75e75399df56886c6fd07c83"
+    },
+    ".kimi-code/agents/market-opportunity-researcher.md": {
+      "mode": "full",
+      "sha256": "6a5731f65b9131356c5e0b3030df52ba354f5a35a95cf22ab986677d10fbf822"
+    },
+    ".kimi-code/agents/orchestrator.md": {
+      "mode": "full",
+      "sha256": "799d8505052ac53bfa83877ab4d0440c2f2cf428900d5d69258e49cd154173f2"
+    },
+    ".kimi-code/agents/performance-reliability-engineer.md": {
+      "mode": "full",
+      "sha256": "f050ce24b6c23cd2acc426e423a56edbd628514fa6e47c01ef06be7a6b38b7ca"
+    },
+    ".kimi-code/agents/product-manager.md": {
+      "mode": "full",
+      "sha256": "d9c13e41684597fa0ed7860e713f29a17633b8b13943c76d708e205897343d4e"
+    },
+    ".kimi-code/agents/qa-test-engineer.md": {
+      "mode": "full",
+      "sha256": "c88773aa7e9e9df2a6217d760deb532acfefae736bc7cc7ef990691b7c9dd99b"
+    },
+    ".kimi-code/agents/rubber-duck.md": {
+      "mode": "full",
+      "sha256": "41e7148139bc4c0006fd96f767cc40715a9d38037e73464426586be03775e916"
+    },
+    ".kimi-code/agents/security-privacy-reviewer.md": {
+      "mode": "full",
+      "sha256": "679fc5d52f7d349a897443bce1f75eb6e3d5a2d2e6075b4d30bee1388aff0034"
+    },
+    ".kimi-code/agents/skeptical-reviewer.md": {
+      "mode": "full",
+      "sha256": "55b8912c960ca8b16819f1cbba937c33cdd69b207c4b2c831d92f8d65325106b"
+    },
+    ".kimi-code/agents/software-architect.md": {
+      "mode": "full",
+      "sha256": "97113f87eb47d6a50bc8ce9b69b9e8f8e15a2def3841717c3c6a3fa8a7466f30"
+    },
+    ".kimi-code/agents/technical-writer.md": {
+      "mode": "full",
+      "sha256": "188442624088c5ec6647c75998de0c3d4cd41c9f18bcfa4dbb64e255ab846756"
+    },
+    ".kimi-code/agents/ui-ux-designer.md": {
+      "mode": "full",
+      "sha256": "d0562ffbda0f9eb3891446f393e2271cba5d383d06552e3557ef9db7fac3fdbf"
+    },
+    ".opencode/agents/accessibility-reviewer.md": {
+      "mode": "full",
+      "sha256": "432f54c790f0bd6d48fa5e8ce1afcc46423fb4a0a97050c60d2feaab0543bc3a"
+    },
+    ".opencode/agents/af-supervised-readonly.md": {
+      "mode": "full",
+      "sha256": "af83b3b496951d1cd75a913ad1ee4b8f9a2a1db341ed40584a63eba7d9b7e1eb"
+    },
+    ".opencode/agents/af-supervised-writer.md": {
+      "mode": "full",
+      "sha256": "0b589cac1cf638147f2812bcfdbc2f5d4cc253dc9886bcb815637cb03923ecf6"
+    },
+    ".opencode/agents/code-reviewer.md": {
+      "mode": "full",
+      "sha256": "8047d138a954466a7b71c2b2791032db9113e8f62b17b62e120ef9394527fbca"
+    },
+    ".opencode/agents/data-database-engineer.md": {
+      "mode": "full",
+      "sha256": "65a73db248fea968ac0054592c9c3f4f13d259190b75c712a9e9c92b2df55873"
+    },
+    ".opencode/agents/deep-researcher.md": {
+      "mode": "full",
+      "sha256": "dc75220fb64a42d19bb292b07f5fa4a7293c3f921cb86bb33847fc0ad013ae06"
+    },
+    ".opencode/agents/devops-release-engineer.md": {
+      "mode": "full",
+      "sha256": "173b94aeb5116193d762eef50ad648fb2fc430233203073753e747a2976c30fe"
+    },
+    ".opencode/agents/end-user-simulator.md": {
+      "mode": "full",
+      "sha256": "bf1b3c99ac0e115d2447a4ee974867dd949a9a2be2380a887a9df12b6ddcb680"
+    },
+    ".opencode/agents/implementation-engineer.md": {
+      "mode": "full",
+      "sha256": "c7ee9a3998ee5a57b830a6a5f090dde1425b9fff716599dc3c361e87f8abd70c"
+    },
+    ".opencode/agents/integration-architect.md": {
+      "mode": "full",
+      "sha256": "178cf6ccee4d7f0fc2b178da271334f7fccab723006d46489cf9b990bf413e50"
+    },
+    ".opencode/agents/market-opportunity-researcher.md": {
+      "mode": "full",
+      "sha256": "d14f96657920528b146f43f68f08a050803522c7bceaf5772b687886b211cbee"
+    },
+    ".opencode/agents/orchestrator.md": {
+      "mode": "full",
+      "sha256": "3396115199f449d3ba85cfbf3446365d85931358e7178cfd3c9518c583460e8b"
+    },
+    ".opencode/agents/performance-reliability-engineer.md": {
+      "mode": "full",
+      "sha256": "cfe80f41d35e150ffd1ed9b7746279e2abac340f15464727ed9a6e38d0eacb55"
+    },
+    ".opencode/agents/product-manager.md": {
+      "mode": "full",
+      "sha256": "dd9bbca2321da82ea398f3d37043afada3bd553ec25fca478b32724643954e76"
+    },
+    ".opencode/agents/qa-test-engineer.md": {
+      "mode": "full",
+      "sha256": "e1b6f096ec77000da433f91d08ae59eb31c39512f8cec1c9e61b44f477ca84d1"
+    },
+    ".opencode/agents/rubber-duck.md": {
+      "mode": "full",
+      "sha256": "a07ec5aa7ad409cd156f5bc1c61f4aaefe51dbf592180884fd7dd4f140b5ae77"
+    },
+    ".opencode/agents/security-privacy-reviewer.md": {
+      "mode": "full",
+      "sha256": "a6216e8dc944933a272e2f5dcfa153d891280020172e060b5cfbcea1450a1cb0"
+    },
+    ".opencode/agents/skeptical-reviewer.md": {
+      "mode": "full",
+      "sha256": "455d551c000df3be79653e9df16b4742507b21fdf6c7e0d2987c4a12b1bdb735"
+    },
+    ".opencode/agents/software-architect.md": {
+      "mode": "full",
+      "sha256": "59e7ee7bacb77409873a80d3d4fb9edb94593328b4a28071bebe54c694a34858"
+    },
+    ".opencode/agents/technical-writer.md": {
+      "mode": "full",
+      "sha256": "bb62701f2a980287a874b25f1b7d78303729381d109231facdc6c068bf84da52"
+    },
+    ".opencode/agents/ui-ux-designer.md": {
+      "mode": "full",
+      "sha256": "8a3240b5fa7c065e07848278772b8937ef0ee398eef0e05f23402357bb29d63a"
+    },
+    "opencode.json": {
+      "mode": "json-keys",
+      "keys": [
+        "$schema",
+        "permission"
+      ],
+      "sha256": "2266227246266bc081180e85327e80b1f8839ac3f7dbfcf7df4b831262aa8e61"
+    },
+    "AGENTS.md": {
+      "mode": "block",
+      "sha256": "a6992ef53ddd59eded67a82a650359f6dd6c5c804c64d6dea8a65d08df329114"
+    },
+    "CLAUDE.md": {
+      "mode": "block",
+      "sha256": "e75831f20403836c1133bdf9889b1c97fc2db7ad7edc96422899d6a187d1c6a0"
+    }
+  }
+}

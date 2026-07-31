@@ -1,0 +1,120 @@
+# GENERATED-ADJACENT SUMMARY — hand-maintained alongside canonical/roles/. Keep in sync.
+version: 1.1.0
+roles:
+  - id: orchestrator
+    title: Orchestrator
+    decision_role: orchestrator
+    read_only: false
+    model_class: premium
+    summary: Decomposes approved work, delegates under the task contract, and verifies every subagent result against the evidence policy; never implements directly.
+  - id: product-manager
+    title: Product Manager
+    decision_role: advisor
+    read_only: true
+    model_class: standard
+    summary: Checks traceability to the product vision, drafts requirements and acceptance criteria as reports, and recommends backlog priorities without approving scope.
+  - id: software-architect
+    title: Software Architect
+    decision_role: advisor
+    read_only: false
+    model_class: premium
+    summary: Designs system structure and records decisions as ADRs; writes only docs/adr/ and docs/architecture/, never implementation.
+  - id: implementation-engineer
+    title: Implementation Engineer
+    decision_role: builder
+    read_only: false
+    model_class: standard
+    summary: Implements bounded vertical slices and fixes with focused tests inside task-assigned owned files, with evidence for every claim.
+  - id: code-reviewer
+    title: Code Reviewer
+    decision_role: reviewer
+    read_only: true
+    model_class: standard
+    summary: Independently reviews a specific diff for correctness, quality, and architecture conformance; reports findings, never fixes.
+  - id: qa-test-engineer
+    title: QA Test Engineer
+    decision_role: builder
+    read_only: false
+    model_class: standard
+    summary: Owns suite-level, failure-path, and regression test coverage in test files only; defects found are reported, not fixed in product code.
+  - id: security-privacy-reviewer
+    title: Security and Privacy Reviewer
+    decision_role: reviewer
+    read_only: true
+    model_class: premium
+    summary: Reviews trust boundaries, authorization, input handling, secrets, and data exposure; specifies required threat-model updates and gate verdicts.
+  - id: devops-release-engineer
+    title: DevOps and Release Engineer
+    decision_role: builder
+    read_only: false
+    model_class: standard
+    summary: Sole owner of CI/CD, build, packaging, and release tooling; release-affecting operations execute only with explicit human approval.
+  - id: data-database-engineer
+    title: Data and Database Engineer
+    decision_role: builder
+    read_only: false
+    model_class: standard
+    summary: Implements schemas, migrations with tested rollbacks, and data-access code under approved ADRs; destructive operations require approval.
+  - id: integration-architect
+    title: Integration Architect
+    decision_role: advisor
+    read_only: false
+    model_class: standard
+    summary: Specifies contracts with external systems (APIs, webhooks, events) as ADRs and specs; defers internal structure to software-architect.
+  - id: ui-ux-designer
+    title: UI/UX Designer
+    decision_role: advisor
+    read_only: false
+    model_class: standard
+    summary: Produces flow specifications and design tokens that builders implement; writes design docs and design-system files only.
+  - id: accessibility-reviewer
+    title: Accessibility Reviewer
+    decision_role: reviewer
+    read_only: true
+    model_class: standard
+    summary: Reviews implemented UI and design specs against accessibility criteria; reports findings and a gate verdict, never edits.
+  - id: performance-reliability-engineer
+    title: Performance and Reliability Engineer
+    decision_role: builder
+    read_only: false
+    model_class: standard
+    summary: Diagnoses and fixes measured performance and reliability problems; every optimization is justified by before/after measurements.
+  - id: technical-writer
+    title: Technical Writer
+    decision_role: builder
+    read_only: false
+    model_class: standard
+    summary: Maintains documentation in sync with implemented behavior and applies approved drafts from advisor roles; documentation files only.
+  - id: deep-researcher
+    title: Deep Researcher
+    decision_role: researcher
+    read_only: true
+    model_class: standard
+    summary: Answers version-sensitive technical questions from primary sources under research-policy.md; delivers source-ledger-bearing reports, no repo writes.
+  - id: market-opportunity-researcher
+    title: Market Opportunity Researcher
+    decision_role: researcher
+    read_only: true
+    model_class: standard
+    summary: Researches demand, competitors, and opportunities; recommends via proposed BACKLOG.md Candidates and never changes the roadmap.
+  - id: rubber-duck
+    title: Rubber Duck
+    decision_role: advisor
+    read_only: true
+    model_class: economy
+    summary: Asks precise diagnostic questions, exposes assumptions, and flags contradictions in stuck threads; no answers, no edits, no early redesigns.
+  - id: skeptical-reviewer
+    title: Skeptical Reviewer
+    decision_role: reviewer
+    read_only: true
+    model_class: premium
+    summary: Attempts to falsify completion claims by re-running evidence and hunting counterexamples; classifies each claim CONFIRMED, REFUTED, or UNVERIFIABLE.
+  - id: end-user-simulator
+    title: End User Simulator
+    decision_role: simulator
+    read_only: true
+    model_class: economy
+    summary: Runs the product in character as personas from agent-framework/canonical/personas/ and reports experience findings; never edits code.
+principles:
+  - Persistent roles exist only for differing permissions, decision role, context isolation, output contract, or review responsibility.
+  - Technology expertise is provided by skills, not roles. There are no technology-specific roles; task contracts load the relevant domain skills onto these generic roles.

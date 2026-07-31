@@ -1,0 +1,26 @@
+# JetBrains AI Assistant / Junie adapter definition (documentation; logic in scripts/agent-framework/render.py)
+provider: jetbrains
+status: supported
+instruction_bridge: "Agent modes + Junie read AGENTS.md natively (Junie: .junie/AGENTS.md -> root AGENTS.md); AI chat uses .aiassistant/rules/"
+targets:
+  - path: .aiassistant/rules/00-core-project.md
+    mode: generated
+    activation: always
+  - path: .aiassistant/rules/security.md
+    mode: generated
+    activation: model-decision
+  - path: .aiassistant/rules/testing.md
+    mode: generated
+    activation: model-decision
+  - path: .aiassistant/rules/strict-review.md
+    mode: generated
+    activation: manual
+  - path: .aiassistant/rules/scope-and-delegation.md
+    mode: generated
+    activation: model-decision
+  - path: .agents/skills/<name>/
+    mode: generated-copy (shared)
+    note: "AI Assistant reads <project>/.agents/skills for Claude/Codex agents; Junie CLI can import"
+limitations:
+  - "No custom subagents; roles are guidance-only in this IDE"
+  - "No committable permission config documented (2026-07-18) — safety rules are advisory here; rely on VCS review"

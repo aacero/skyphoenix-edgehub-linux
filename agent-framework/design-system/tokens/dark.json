@@ -1,0 +1,44 @@
+{
+  "$description": "SKYPhoenix semantic tokens — DARK theme. Status: PROPOSED-DERIVED, NOT EXTRACTED. CompanyWebsite has no dark theme (verified 2026-07-18: no prefers-color-scheme rule, no Tailwind darkMode config, no toggle — see source-ledger.md). These values are DERIVED from extracted brand tokens by the documented rules below and REQUIRE BRAND-OWNER APPROVAL before product use. Brand hues are never altered; only surface/text mappings are proposed.",
+  "$status": "proposed-derived",
+  "$derivation_rules": [
+    "Brand hues (primary family, secondary, accent) are reused unchanged from base.json — no invented colors.",
+    "Neutral surfaces reuse the site's own extracted dark neutrals where they exist (footer #111827 / #1f2937 family from the extracted text scale, inverted).",
+    "Text colors invert the extracted gray scale (text-primary #1f2937 <-> near-white #f9fafb, both values present in the extracted palette).",
+    "Semantic alert colors keep extracted text hues, swapping bg/text roles; verify contrast before adoption.",
+    "Every pairing must be contrast-checked (WCAG 2.2 AA) at adoption time; this file proposes, it does not certify."
+  ],
+  "$extensions": {
+    "deferred": {
+      "note": "This file is materially incomplete vs tokens/light.json. The following light.json token groups have no dark counterpart yet and are set at adoption, not here:",
+      "missing_color_tokens": ["text-heading", "text-disabled", "background-selected", "border-strong (present but unpaired with a light-equivalent rationale)", "focus-outline note", "danger hover step", "success-bg", "success-border", "warning-bg", "warning-border", "info-bg", "info-border", "error-bg", "error-border", "footer-bg", "footer-text"],
+      "missing_component_section": "the entire `component` section (button-primary/secondary/outline/danger, status-badges) present in light.json has no dark proposal at all",
+      "carry_over_note": "No light.json values are intended to carry over unchanged into dark — every dark-surface pairing requires its own contrast-checked proposal per $derivation_rules; nothing here should be assumed inherited from light.json without an explicit dark entry.",
+      "resolution": "brand-owner approval + contrast evidence required before these are added and before this file's $status can move off proposed-derived"
+    }
+  },
+  "semantic": {
+    "color": {
+      "text-primary": { "$value": "#f9fafb", "$note": "inversion of extracted background-app #f9fafb" },
+      "text-secondary": { "$value": "#d1d5db", "$note": "extracted footer-text value reused" },
+      "text-muted": { "$value": "#9ca3af", "$note": "extracted; on #111827 measured 6.99:1 (WCAG relative-luminance formula) — passes AA normal text (unlike on white)" },
+      "text-on-brand": { "$value": "#ffffff" },
+      "text-link": { "$value": "#60a5fa", "$note": "PROPOSED lighter step of brand secondary for dark surfaces (Tailwind blue-400, same family the site already draws from); requires approval — brand.secondary #3b82f6 on #111827 measured 4.82:1 (WCAG relative-luminance formula), passes AA normal text, not borderline. #60a5fa itself measures 6.98:1 on #111827." },
+      "background": { "$value": "#111827", "$note": "extracted footer-bg reused as app background" },
+      "background-app": { "$value": "#111827" },
+      "background-subtle": { "$value": "#1f2937", "$note": "extracted text-primary neutral reused as raised-surface tone" },
+      "background-hover": { "$value": "#1e3a5f", "$note": "brand.primary doubles as hover wash on dark — extracted hue, proposed role. Measured against surface #1f2937: 1.28:1 — the hover wash is nearly invisible (WCAG 1.4.11 non-text 3:1 target is nowhere close). Value retained as-proposed (no extracted value changed); a lighter hover step MUST be proposed and contrast-verified at adoption before this token ships." },
+      "surface": { "$value": "#1f2937" },
+      "border": { "$value": "#374151", "$note": "extracted text-secondary neutral reused as border on dark" },
+      "border-strong": { "$value": "#6b7280" },
+      "brand-surface": { "$value": "{brand.color.primary}" },
+      "focus-outline": { "$value": "#60a5fa", "$note": "matches proposed dark link color; 2px solid + 2px offset per extracted focus pattern" },
+      "danger": { "$value": "#f87171", "$note": "PROPOSED lighter step of extracted #dc2626 for dark-surface contrast" },
+      "success-text": { "$value": "#bbf7d0", "$note": "extracted success-border hue promoted to text on dark" },
+      "warning-text": { "$value": "#fde68a" },
+      "info-text": { "$value": "#bfdbfe" },
+      "error-text": { "$value": "#fecaca" },
+      "alert-bg-pattern": { "$value": "surface + 1px border in the semantic hue at ~40% strength", "$note": "pattern proposal; concrete values to be set at adoption with contrast evidence" }
+    }
+  }
+}

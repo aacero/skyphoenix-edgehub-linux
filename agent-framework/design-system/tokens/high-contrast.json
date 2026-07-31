@@ -1,0 +1,35 @@
+{
+  "$description": "SKYPhoenix semantic tokens — HIGH-CONTRAST theme. Status: PROPOSED-DERIVED, NOT EXTRACTED (no high-contrast mode exists on CompanyWebsite; verified 2026-07-18). Purpose: WCAG 2.2 AAA-leaning overrides fixing the contrast failures documented in the extraction (secondary link 3.7:1, disabled text 2.5:1). Requires brand-owner approval.",
+  "$status": "proposed-derived",
+  "$derivation_rules": [
+    "Only extracted hues or their documented darker/lighter steps already present in the sites' palette are used.",
+    "Every text pairing targets >= 7:1 (AAA) on its background; minimum accepted 4.5:1 for large text.",
+    "Focus indicators widen to 3px and must never rely on color alone.",
+    "Windows High Contrast / forced-colors mode: respect system colors; do not override forced-colors palettes."
+  ],
+  "semantic": {
+    "color": {
+      "text-primary": { "$value": "#111827", "$note": "extracted heading color promoted to body text (~17.4:1 on white)" },
+      "text-secondary": { "$value": "#1f2937" },
+      "text-muted": { "$value": "#374151", "$note": "replaces #6b7280 (~4.6:1) with ~9.9:1 pairing" },
+      "text-disabled": { "$value": "#4b5563", "$note": "replaces failing #9ca3af; still visually de-emphasized but >= 7:1" },
+      "text-link": { "$value": "#1e40af", "$note": "extracted info-text hue (portal.css:263) replaces #3b82f6 links: ~8.4:1 on white, underline required" },
+      "background": { "$value": "#ffffff" },
+      "surface": { "$value": "#ffffff" },
+      "border": { "$value": "#374151", "$note": "borders darken so structure survives low vision / greyscale" },
+      "brand-surface": { "$value": "{brand.color.primary}", "$note": "#1e3a5f on white 11.50:1 — extracted primary already excellent. Corrected 2026-07-20 from a previously stated ~10.9:1; recomputed independently twice (relative luminance L=0.041284). 10.9 matches no plausible surface — the nearest candidate, bg-subtle #f9fafb, gives 11.01:1 — so it appears to have been an arithmetic slip rather than a different pairing" },
+      "text-on-brand": { "$value": "#ffffff" },
+      "focus-outline": { "$value": "#1e40af", "$note": "3px solid, 2px offset, plus visible shape change" },
+      "danger": { "$value": "#991b1b", "$note": "extracted error-text hue used as action color for AA on white" },
+      "success-text": { "$value": "#166534", "$note": "extracted" },
+      "warning-text": { "$value": "#92400e", "$note": "extracted" },
+      "info-text": { "$value": "#1e40af", "$note": "extracted" }
+    },
+    "policy": {
+      "underline-links": { "$value": true },
+      "min-contrast-normal-text": { "$value": "7:1 target, 4.5:1 floor" },
+      "focus-width": { "$value": "3px" },
+      "forced-colors": { "$value": "respect system palette; no overrides under forced-colors media query" }
+    }
+  }
+}

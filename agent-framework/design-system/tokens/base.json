@@ -1,0 +1,83 @@
+{
+  "$schema": "https://design-tokens.github.io/community-group/format/",
+  "$description": "SKYPhoenix immutable brand tokens. Every value extracted from CompanyWebsite (read-only) on 2026-07-18; source file:line per token in $extensions.source. See references/source-ledger.md. Do not add values without evidence.",
+  "brand": {
+    "color": {
+      "primary": { "$value": "#1e3a5f", "$type": "color", "$extensions": { "source": ["www/assets/css/custom.css:8", "www/partials/header.php:66", "portal/includes/header.php:110"] } },
+      "primary-dark": { "$value": "#152a45", "$type": "color", "$extensions": { "source": ["www/assets/css/custom.css:9", "www/partials/header.php:67"] } },
+      "primary-light": { "$value": "#2d5a8a", "$type": "color", "$extensions": { "source": ["www/partials/header.php:68"], "note": "Defined in Tailwind config but unused anywhere in either site" } },
+      "secondary": { "$value": "#3b82f6", "$type": "color", "$extensions": { "source": ["www/assets/css/custom.css:10", "portal/assets/css/portal.css:5"], "note": "Equals Tailwind blue-500. Contrast on white ~3.7:1 — fails WCAG AA for normal text; see brand-guidelines.md accessibility rules" } },
+      "accent": { "$value": "#0ea5e9", "$type": "color", "$extensions": { "source": ["www/assets/css/custom.css:11", "portal/includes/header.php:112"], "note": "Equals Tailwind sky-500; used only as border accent (www/index.php:134)" } },
+      "logo-ink": { "$value": "#231815", "$type": "color", "$extensions": { "source": ["www/assets/logos/skyphoenix-logo.svg:5-23", "design-system/brand/logo/skyphoenix-logo-color.svg"], "role": "logo-only", "note": "Logo wordmark near-black. LOGO PALETTE ONLY — body text uses the light.json text tokens, not this. Note the black logo variant is pure #000000, not this value" } },
+      "logo-red": { "$value": "#b92d26", "$type": "color", "$extensions": { "source": ["www/assets/logos/skyphoenix-logo.svg:5-23", "design-system/brand/logo/skyphoenix-logo-color.svg"], "role": "brand-moment", "note": "Phoenix body. Brand-owner decision 2026-07-20: logo, marketing gradients and splash surfaces ONLY. MUST NOT become a functional UI color — it is adjacent to the error color #dc2626 and would make 'brand' and 'destructive' ambiguous. See brand-guidelines.md" } },
+      "logo-orange": { "$value": "#ed6d1f", "$type": "color", "$extensions": { "source": ["www/assets/logos/skyphoenix-logo.svg:5-23", "design-system/brand/logo/skyphoenix-logo-color.svg"], "role": "cta", "note": "Role is deliberately named 'cta', NOT 'accent' — brand.color.accent is already #0ea5e9 (Tailwind sky-500, used as a border accent). Reusing 'accent' for orange would make the two indistinguishable in generated per-platform artifacts. Phoenix accents. Brand-owner decision 2026-07-20: promoted to the UI accent / call-to-action color alongside navy primary. CONSTRAINTS (WCAG ratios computed 2026-07-20): 3.08:1 on white — fails AA normal text, passes AA large. WHITE TEXT ON THIS FILL IS ALSO 3.08:1 AND FAILS — an orange CTA button must use #231815 (5.61:1) or #000000 (6.81:1) label text, never white. 3.73:1 on navy #1e3a5f. Never a meaning-bearing thin icon in this color. Full table in brand-guidelines.md" } }
+    },
+    "gradient": {
+      "hero": { "$value": "linear-gradient(135deg, #1e3a5f 0%, #152a45 100%)", "$type": "gradient", "$extensions": { "source": ["www/assets/css/custom.css:67-72", "portal/login.php:36"] } }
+    }
+  },
+  "font": {
+    "family": {
+      "sans": { "$value": "Inter, system-ui, -apple-system, sans-serif", "$type": "fontFamily", "$extensions": { "source": ["www/partials/header.php:74"], "note": "Declared in Tailwind config but Inter is never loaded (no @font-face/CDN link found); effective font is the system stack. Portal uses Tailwind default sans" } },
+      "mono": { "$value": "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace", "$type": "fontFamily", "$extensions": { "source": ["portal/assets/css/portal.css:81"] } }
+    },
+    "weight": {
+      "medium": { "$value": 500, "$type": "fontWeight", "$extensions": { "source": ["portal/assets/css/portal.css:191 (buttons/labels/nav)"] } },
+      "semibold": { "$value": 600, "$type": "fontWeight", "$extensions": { "source": ["portal/assets/css/portal.css:27 (table headers), www/index.php:53 (h3)"] } },
+      "bold": { "$value": 700, "$type": "fontWeight", "$extensions": { "source": ["portal/assets/css/portal.css:239 (stat values), www/index.php:14 (h1/h2)"] } }
+    },
+    "size": {
+      "xs": { "$value": "0.75rem", "$type": "dimension", "$extensions": { "source": ["portal/assets/css/portal.css:26 (table th), portal.css:181 (error text)"] } },
+      "sm": { "$value": "0.875rem", "$type": "dimension", "$extensions": { "source": ["portal/assets/css/portal.css:70,153,175,191 (buttons, forms, labels)"] } },
+      "stat": { "$value": "1.875rem", "$type": "dimension", "$extensions": { "source": ["portal/assets/css/portal.css:238"] } },
+      "h1-hero": { "$value": "text-4xl lg:text-5xl", "$type": "utility", "$extensions": { "source": ["www/index.php:14"], "note": "Tailwind utility scale; mobile overrides 1.75rem/1.5rem at <=768px/<=375px custom.css:262-284; 4rem at >=1920px custom.css:320-325" } },
+      "h2-section": { "$value": "text-3xl", "$type": "utility", "$extensions": { "source": ["www/index.php:39,112,156,203,277"] } },
+      "h3-card": { "$value": "text-xl", "$type": "utility", "$extensions": { "source": ["www/index.php:53"] } }
+    }
+  },
+  "spacing": {
+    "section-y": { "$value": "py-16 lg:py-24", "$type": "utility", "$extensions": { "source": ["www/index.php:36,108,153,200,275"] } },
+    "hero-y": { "$value": "py-20 lg:py-28", "$type": "utility", "$extensions": { "source": ["www/index.php:11"] } },
+    "container": { "$value": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8", "$type": "utility", "$extensions": { "source": ["www/partials/header.php:119", "portal/includes/header.php:322"] } },
+    "container-wide": { "$value": "1400px", "$type": "dimension", "$extensions": { "source": ["www/assets/css/custom.css:293-297", "portal/assets/css/portal.css:395-399"], "note": "At >=1920px: www 1600px (custom.css:301-303) vs portal 1800px (portal.css:403) — divergence flagged; www also 2000px at >=2560px (custom.css:311-313)" } },
+    "card-padding": { "$value": "1.5rem", "$type": "dimension", "$extensions": { "source": ["portal/assets/css/portal.css:235 (stat card; 1rem mobile :359, 2rem >=1920 :408); www uses p-8/p-6/p-5 www/index.php:47,163,126"] } },
+    "button-padding": { "$value": "0.5rem 1rem", "$type": "dimension", "$extensions": { "source": ["portal/assets/css/portal.css:190"], "note": "Mobile: 0.75rem 1rem + min-height 44px portal.css:310-311" } },
+    "input-padding": { "$value": "0.5rem 0.75rem", "$type": "dimension", "$extensions": { "source": ["portal/assets/css/portal.css:67"] } },
+    "table-cell": { "$value": "0.75rem 1rem", "$type": "dimension", "$extensions": { "source": ["portal/assets/css/portal.css:25,34"] } },
+    "sidebar-width": { "$value": "16rem", "$type": "dimension", "$extensions": { "source": ["portal/includes/header.php:129 (w-64), content offset lg:pl-64 :321"] } },
+    "header-height": { "$value": "4rem", "$type": "dimension", "$extensions": { "source": ["www/partials/header.php:120 (h-16)", "portal/includes/header.php:131"] } },
+    "touch-target-min": { "$value": "44px", "$type": "dimension", "$extensions": { "source": ["www/assets/css/custom.css:235", "portal/assets/css/portal.css:311"] } }
+  },
+  "radius": {
+    "sm": { "$value": "0.375rem", "$type": "dimension", "$extensions": { "source": ["www/partials/header.php:132 (rounded-md nav links, 20 uses)"] } },
+    "md": { "$value": "0.5rem", "$type": "dimension", "$extensions": { "source": ["portal/assets/css/portal.css:69,113,193,250 (inputs/buttons/alerts); rounded-lg 177 uses www"] } },
+    "lg": { "$value": "0.75rem", "$type": "dimension", "$extensions": { "source": ["portal/assets/css/portal.css:233 (stat cards); rounded-xl 187 uses www (cards, www/index.php:47)"] } },
+    "pill": { "$value": "9999px", "$type": "dimension", "$extensions": { "source": ["portal/assets/css/portal.css:280,286 (pills/progress); rounded-full badges portal/includes/functions.php:238"] } }
+  },
+  "border": {
+    "width-default": { "$value": "1px", "$type": "dimension", "$extensions": { "source": ["portal/assets/css/portal.css:31,68,111"] } },
+    "width-emphasis": { "$value": "2px", "$type": "dimension", "$extensions": { "source": ["www/assets/css/custom.css:181 (toolchain box), www/index.php:27 (hero secondary button border-2)"] } },
+    "width-accent-stripe": { "$value": "4px", "$type": "dimension", "$extensions": { "source": ["www/index.php:126-142 (border-l-4 accent cards)"] } }
+  },
+  "shadow": {
+    "card-hover": { "$value": "0 10px 25px -5px rgba(0,0,0,0.1)", "$type": "shadow", "$extensions": { "source": ["www/assets/css/custom.css:62"] } },
+    "card-hover-portal": { "$value": "0 4px 12px rgba(0,0,0,0.1)", "$type": "shadow", "$extensions": { "source": ["portal/assets/css/portal.css:14"] } },
+    "dropdown": { "$value": "0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)", "$type": "shadow", "$extensions": { "source": ["portal/assets/css/portal.css:140"] } },
+    "focus-ring": { "$value": "0 0 0 3px rgba(59,130,246,0.1)", "$type": "shadow", "$extensions": { "source": ["portal/assets/css/portal.css:75"] } }
+  },
+  "motion": {
+    "duration-fast": { "$value": "0.15s", "$type": "duration", "$extensions": { "source": ["portal/assets/css/portal.css:116"] } },
+    "duration-base": { "$value": "0.2s", "$type": "duration", "$extensions": { "source": ["www/assets/css/custom.css:57", "portal/assets/css/portal.css:11,71,194"] } },
+    "duration-slow": { "$value": "0.3s", "$type": "duration", "$extensions": { "source": ["www/assets/css/custom.css:27", "portal/assets/css/portal.css:287"] } },
+    "hover-lift": { "$value": "translateY(-2px)", "$type": "transform", "$extensions": { "source": ["www/assets/css/custom.css:61 (www); portal -1px portal.css:15"] } },
+    "reduced-motion": { "$value": "honored", "$type": "policy", "$extensions": { "source": ["www/assets/css/custom.css:369-378"], "note": "www only — portal lacks a prefers-reduced-motion rule (gap flagged)" } }
+  },
+  "breakpoint": {
+    "sm": { "$value": "640px", "$type": "dimension", "$extensions": { "source": ["Tailwind defaults used in markup (sm:), www/partials/header.php:119"] } },
+    "md": { "$value": "768px", "$type": "dimension", "$extensions": { "source": ["www/partials/header.php:130 (desktop nav switch); custom media max-width:768px custom.css:233"] } },
+    "lg": { "$value": "1024px", "$type": "dimension", "$extensions": { "source": ["portal/includes/header.php:129 (sidebar switch); min-width:1024px custom.css:293"] } },
+    "xl-wide": { "$value": "1920px", "$type": "dimension", "$extensions": { "source": ["www/assets/css/custom.css:300", "portal/assets/css/portal.css:402"] } },
+    "xxl-wide": { "$value": "2560px", "$type": "dimension", "$extensions": { "source": ["www/assets/css/custom.css:311 (www only)"] } },
+    "compact": { "$value": "375px", "$type": "dimension", "$extensions": { "source": ["www/assets/css/custom.css:281", "portal/assets/css/portal.css:376"] } }
+  }
+}

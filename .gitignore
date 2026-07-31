@@ -111,7 +111,19 @@ build-cov-agent/
 # Local install-validation tree produced by release packaging checks.
 build-install/
 
-# Claude Code local state: settings.local.json is personal, and worktrees/ holds
-# agent git worktrees - 37 of them once reached 26GB here. Neither is shared.
-.claude/
+# Claude Code local state. Narrowed from a blanket `.claude/` on 2026-07-31: the agent
+# framework RENDERS .claude/agents/, .claude/rules/ and .claude/skills/ and records them
+# in agent-framework/generated-manifest.json, so ignoring the whole directory left 28
+# generated files untracked and check-drift.py failed in CI with "in manifest but missing
+# on disk" - green locally, red on the runner. Only the genuinely local state is ignored:
+# settings.local.json is personal, and worktrees/ holds agent git worktrees - 37 of them
+# once reached 26GB here.
+.claude/settings.local.json
+.claude/worktrees/
 captures/
+
+# agent framework
+agent-framework/runs/
+.claude/settings.local.json
+.kimi-code/local.toml
+*.bak-pre-framework

@@ -1,0 +1,20 @@
+project:
+  name: "EdgeHub"
+  slug: "skyphoenix-edgehub-linux"
+  description: "Native Linux widget dashboard for the Corsair Xeneon Edge and selected secondary/portrait touchscreens, with a companion Manager."
+  owner: "SKYPhoenix IT GmbH"
+  status: released
+technology:
+  language: "C++20 (Qt 6 / QML) application over a Rust core and adapters"
+  runtime: "native Linux desktop; Wayland and X11, KDE and GNOME"
+  # scripts/build.sh is this repository's real CMake build and needs Qt 6.7 present.
+  # scripts/test.sh is still the adoption scaffold stub and proves nothing — the real
+  # suites (ctest, cargo test, QML tests) run from .github/workflows/ci.yml, which
+  # installs Qt. .github/workflows/quality.yml therefore runs the framework gates only
+  # and does not invoke scripts/ci.sh. Replacing the stub is filed in BACKLOG.md.
+  build_command: "./scripts/build.sh"
+  test_command: "./scripts/test.sh"
+agent_framework:
+  # Domain skills installed into this repository (opt-in; see
+  # agent-framework/catalogs/skill-catalog.yaml for the available ids).
+  skills: []

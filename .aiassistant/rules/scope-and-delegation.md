@@ -1,0 +1,4 @@
+<!-- GENERATED from agent-framework/canonical/policies/ — edit the canonical source, then run: python3 scripts/agent-framework/render.py -->
+<!-- intended activation: model-decision (apply when planning work, delegating, or when new ideas or scope questions arise) — set the rule type in the JetBrains AI Assistant UI; in-file activation metadata is not supported. -->
+
+Scope: approved work = BACKLOG.md Now/Next traceable to PROJECT.md and the product vision; architecture changes need an ADR first; no silent dependencies or contract changes. Delegation: every delegated task defines objective, owned files, prohibited files, expected output, acceptance criteria, validation commands, stopping condition (agent-framework/canonical/contracts/agent-task-contract.md). Read-only roles never edit files. UI work uses agent-framework/design-system/ tokens only.

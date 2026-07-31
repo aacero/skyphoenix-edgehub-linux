@@ -1,0 +1,61 @@
+# Workflow Catalog
+# Canonical workflows live under agent-framework/canonical/workflows/<id>/WORKFLOW.md.
+# The orchestrator selects a workflow, then engages only the roles the current
+# task requires (see delegation-policy.md); stages are skippable with a recorded reason.
+#
+# Note: the autonomous-session workflow exists separately and will be added to
+# this catalog by the framework owner.
+
+workflows:
+  - id: software-lifecycle
+    title: Software Lifecycle Workflow
+    summary: Full lifecycle from product discovery through release, operations, and user validation with evidence-gated stages.
+    roles:
+      - orchestrator
+      - product-manager
+      - market-opportunity-researcher
+      - deep-researcher
+      - software-architect
+      - integration-architect
+      - data-database-engineer
+      - ui-ux-designer
+      - implementation-engineer
+      - code-reviewer
+      - qa-test-engineer
+      - security-privacy-reviewer
+      - accessibility-reviewer
+      - performance-reliability-engineer
+      - technical-writer
+      - devops-release-engineer
+      - end-user-simulator
+      - rubber-duck
+      - skeptical-reviewer
+    entry_point: agent-framework/canonical/workflows/software-lifecycle/WORKFLOW.md
+
+  - id: deep-research
+    title: Deep Research Workflow
+    summary: Technical research via question refinement, primary-source sweep, adversarial verification, and labeled synthesis; read-only, report output only.
+    roles:
+      - orchestrator
+      - deep-researcher
+      - skeptical-reviewer
+    entry_point: agent-framework/canonical/workflows/deep-research/WORKFLOW.md
+
+  - id: market-research
+    title: Market Research Workflow
+    summary: Market and commercial opportunity assessment with the evidence-only Opportunity Score rubric; researcher recommends, product owner decides.
+    roles:
+      - orchestrator
+      - market-opportunity-researcher
+      - skeptical-reviewer
+      - product-manager
+    entry_point: agent-framework/canonical/workflows/market-research/WORKFLOW.md
+
+  - id: persona-validation
+    title: Persona Validation Workflow
+    summary: Read-only persona simulations producing deduplicated, severity-times-frequency-ranked findings that become backlog candidates pending product-owner approval.
+    roles:
+      - orchestrator
+      - end-user-simulator
+      - product-manager
+    entry_point: agent-framework/canonical/workflows/persona-validation/WORKFLOW.md

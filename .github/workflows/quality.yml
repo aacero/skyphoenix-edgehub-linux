@@ -1,0 +1,174 @@
+name: Quality
+on:
+  pull_request:
+  push:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - run: python3 -m pip install --quiet pyyaml
+      - run: bash ./scripts/validate-repository.sh
+      # scripts/ci.sh (framework payload) ends with scripts/build.sh + scripts/test.sh.
+      # build.sh here is the real Qt/CMake build, and this runner has no Qt — ci.yml owns
+      # build and test and installs Qt 6.7 for them. Running ci.sh would duplicate that
+      # job and fail. So this job runs exactly the framework half of ci.sh and nothing
+      # else. quality.yml is a framework SCAFFOLD file: customizing it is supported, and
+      # an update reports it instead of overwriting it.
+      - name: Framework gates (the ci.sh body, minus the project build/test it delegates)
+        run: |
+          set -euo pipefail
+          bash -n scripts/agent-framework/provider-*.sh
+          python3 -m compileall -q scripts/agent-framework
+          python3 -m unittest discover -s tests/agent-framework -t .
+          python3 scripts/agent-framework/evals/run-evals.py --report "$(mktemp)"
+  secrets:
+    # Maintained secret scanner over full git history and the working tree (review
+    # finding CXR-021/KF-M30, owner decision D11; final-verification finding 11).
+    # gitleaks-action@v2 stopped being executable on hosted runners after the
+    # 2026-06-02 Node-24 default switch, so this job runs the PINNED gitleaks
+    # binary directly: checksum-verified download, no JS-runtime dependency,
+    # redacted output, exit 1 on any finding, and no report artifact is written
+    # or uploaded. The invocation shape is regression-tested in
+    # tests/agent-framework/test_validate_gates.py (TestSecretScanningCI).
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+      - name: Install pinned gitleaks 8.30.1 (checksum-verified)
+        run: |
+          curl -sSfL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+      - name: Scan full git history (redacted; fails on any finding)
+        run: ./gitleaks git --redact --exit-code 1 .
+      - name: Scan working tree (redacted; fails on any finding)
+        run: ./gitleaks dir --redact --exit-code 1 .
+  dependencies:
+    # Dependency vulnerability scanning (BACKLOG Now, approved 2026-07-19): closes the
+    # "known-vulnerability check" gap in agent-framework/canonical/skills/security-review/
+    # SKILL.md (line 35 / checklist line 47), which was structurally unanswerable with no
+    # scanner in CI. This template is inherited by repos of different stacks, so the job
+    # first detects whether any recognized Python or Node dependency manifest exists; if
+    # none is present, every remaining step is skipped and no network access beyond the
+    # mandatory checkout is needed, and the job stays green.
+    #
+    # Tool: osv-scanner (pinned binary, checksum-verified — same shape as the gitleaks
+    # job above), not pip-audit/npm-audit alone. pip-audit was tried first, but its JSON
+    # output (even with `-s osv --desc on`) carries no severity/CVSS field at all — this
+    # was verified empirically by auditing a requirements.txt pinning a known-vulnerable
+    # Django release, whose pip-audit JSON entries have only id/aliases/description/
+    # fix_versions, no severity — so pip-audit cannot implement the "fail only on
+    # HIGH/CRITICAL" requirement below. osv-scanner's JSON output includes a CVSS
+    # `max_severity` per vulnerability group, which the filter step gates on. osv-scanner
+    # also natively parses Node lockfiles, so one pinned tool covers both ecosystems with
+    # one severity-filtering mechanism instead of two.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - name: Detect dependency manifests
+        id: detect
+        run: |
+          set -euo pipefail
+          hit="$(find . -type d \( -name .git -o -name node_modules -o -name .venv -o -name vendor \) -prune -o \
+            -type f \( -name 'requirements*.txt' -o -name 'Pipfile.lock' -o -name 'poetry.lock' -o -name 'uv.lock' \
+                       -o -name 'package-lock.json' -o -name 'npm-shrinkwrap.json' -o -name 'yarn.lock' \
+                       -o -name 'pnpm-lock.yaml' \) -print -quit)"
+          if [ -n "$hit" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "Dependency manifest detected: $hit"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "No recognized Python or Node dependency manifest found; skipping scan (no network access needed)."
+          fi
+      - name: Install pinned osv-scanner 2.4.0 (checksum-verified)
+        if: steps.detect.outputs.found == 'true'
+        run: |
+          set -euo pipefail
+          curl -sSfL -o osv-scanner "https://github.com/google/osv-scanner/releases/download/v2.4.0/osv-scanner_linux_amd64"
+          echo "15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0  osv-scanner" | sha256sum -c -
+          chmod +x osv-scanner
+      - name: Scan dependency manifests (osv-scanner, JSON output)
+        if: steps.detect.outputs.found == 'true'
+        run: |
+          set -euo pipefail
+          # osv-scanner exits 1 when it finds vulnerabilities (the filter step below
+          # decides whether those are blocking) and other non-zero codes on real errors.
+          # A bare `|| true` would collapse both into success, so a scanner that failed
+          # to run could emit a results-free JSON and be read as "no vulnerabilities" —
+          # a silent pass in a security gate. Distinguish the two.
+          set +e
+          ./osv-scanner scan source --recursive --allow-no-lockfiles --format json . > osv-scan.json
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 1 ]; then
+            echo "::error::osv-scanner failed to run (exit $rc) — failing closed rather than reporting no findings" >&2
+            exit "$rc"
+          fi
+          python3 -c "import json,sys; json.load(open('osv-scan.json'))" || {
+            echo "::error::osv-scanner produced unparseable output — failing closed" >&2
+            exit 1
+          }
+      - name: Fail on HIGH/CRITICAL findings (prints full advisory output)
+        if: steps.detect.outputs.found == 'true'
+        run: |
+          set -euo pipefail
+          python3 - osv-scan.json <<'PY'
+          import json, sys
+
+          with open(sys.argv[1]) as fh:
+              data = json.load(fh)
+
+          findings = []
+          for result in data.get("results", []):
+              src = result.get("source", {}).get("path", "unknown")
+              for pkg in result.get("packages", []):
+                  name = pkg["package"]["name"]
+                  version = pkg["package"].get("version", "unknown")
+                  eco = pkg["package"].get("ecosystem", "unknown")
+                  vulns_by_id = {v["id"]: v for v in pkg.get("vulnerabilities", [])}
+                  for group in pkg.get("groups", []):
+                      sev_str = group.get("max_severity", "")
+                      is_high = False
+                      try:
+                          if sev_str and float(sev_str) >= 7.0:
+                              is_high = True
+                      except ValueError:
+                          pass
+                      if not is_high:
+                          for vuln_id in group.get("ids", []):
+                              v = vulns_by_id.get(vuln_id)
+                              if v and str(v.get("database_specific", {}).get("severity", "")).upper() in ("HIGH", "CRITICAL"):
+                                  is_high = True
+                      if is_high:
+                          details = []
+                          for vuln_id in group.get("ids", []):
+                              v = vulns_by_id.get(vuln_id)
+                              if v:
+                                  text = (v.get("details") or "")[:300].replace("\n", " ")
+                                  details.append(f"{v.get('id')}: {text}")
+                          findings.append({
+                              "source": src, "package": name, "version": version, "ecosystem": eco,
+                              "ids": group.get("ids", []), "aliases": group.get("aliases", []),
+                              "max_severity": sev_str, "details": details,
+                          })
+
+          if findings:
+              print("HIGH/CRITICAL dependency vulnerabilities found:")
+              for f in findings:
+                  print(f"- [{f['ecosystem']}] {f['package']}@{f['version']} (source: {f['source']})")
+                  print(f"  ids: {', '.join(f['ids'])}  aliases: {', '.join(f['aliases'])}  max_severity(CVSS): {f['max_severity']}")
+                  for d in f["details"]:
+                      print(f"  {d}")
+              sys.exit(1)
+          else:
+              print("No HIGH or CRITICAL dependency vulnerabilities found (osv-scanner).")
+              sys.exit(0)
+          PY
