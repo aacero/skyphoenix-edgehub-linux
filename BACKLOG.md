@@ -328,3 +328,25 @@ section is implemented without explicit product-owner approval (scope-control po
   **STILL OPEN:** whether release-documentation commits should keep using `[skip ci]`.
   That is what let a red gate sit unnoticed on `master` from 2026-07-27 until the framework
   adoption PR ran the workflows again four days later.
+
+- **🔴 `push` and `pull_request` stopped dispatching workflow runs on 2026-07-31.** Every
+  workflow — `Docs`, `CI`, `Quality`, `Supply Chain` — has the same last event-triggered
+  run: `e59e3d7`, 19:18. After that, PR #3 (19:36) produced no `pull_request` runs and two
+  pushes to `master` (`641ca32` 20:12, `9640c29` 20:13) produced no `push` runs. Only
+  `workflow_dispatch` and CodeQL default setup still fire, and a dispatched `Docs` on
+  `master` passes — so the workflows themselves are fine.
+
+  Ruled out: path filters (both commits match `**.md`, and `641ca32` also matches
+  `release-metadata.toml`, which `ci.yml` does not ignore); workflow state (all `active`,
+  all registered paths present on `master`); repository Actions settings
+  (`enabled: true`, `allowed_actions: all`, not archived/disabled); a stuck queue
+  (`queued` and `in_progress` both 0, the one cancelled run finished); a GitHub incident
+  (none listed for 2026-07-31); and an org-wide fault (`skyphoenix-company-website`'s
+  scheduled `uptime` workflow kept running through 2026-08-01T05:05).
+
+  Not yet explained. The change that landed at 19:18 was the agent-framework adoption,
+  which added `.github/workflows/framework-update.yml` and a new `quality.yml` — but those
+  same files were present for the 19:18 run, which did dispatch normally, and the other
+  eleven repositories took the identical addition without losing their triggers.
+  Org-level Actions policy could not be read from here (needs `admin:org`), so that is the
+  first thing to check; after that, GitHub Support with these run IDs.
