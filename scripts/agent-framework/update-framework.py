@@ -474,8 +474,26 @@ def sync_scaffold(source: Path, target: Path, prior: dict, adopt: bool, rep: Rep
             continue
         if not owned(rel, current, new_hash, prior):
             conflicts.append((rel, dst, data, src_rel))
-            installed[rel] = current  # keep tracking the customized file's hash
+            # Do NOT record the customized file's hash (ADR 0003). The scaffold map is the
+            # framework's own write-record and owned() treats a match in it as PROOF of
+            # ownership, so writing the target's bytes here silently converts "I saw this
+            # file" into "I own this file" — and the next update takes the branch below,
+            # overwriting the customization in place with no backup, no report entry, and
+            # no --adopt required. Carry forward the last hash the framework actually
+            # wrote, or record nothing if it never wrote one.
+            carried = prior.get("scaffold", {}).get(rel)
+            if carried is not None:
+                installed[rel] = carried
             continue
+        # An existing scaffold file whose bytes differ from the template is backed up and
+        # reported even when it is provably owned. Scaffold files are the ones adopters are
+        # EXPECTED to customize, and manifests poisoned before ADR 0003 still claim
+        # ownership of customized bytes — this is what stops such a claim from being
+        # actioned silently. A first install (current is None) has nothing to preserve.
+        if current is not None:
+            write_file(dst.with_name(dst.name + ".bak-pre-framework"), dst.read_bytes())
+            rep.note(f"replaced framework-owned {rel} with the template version; the "
+                     f"previous bytes are in {rel}.bak-pre-framework")
         write_file(dst, data)
         installed[rel] = new_hash
         (rep.installed if current is None else rep.updated).append(rel)

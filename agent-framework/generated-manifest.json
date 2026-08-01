@@ -1,5 +1,5 @@
 {
-  "framework_version": "1.2.5",
+  "framework_version": "1.2.7",
   "marker_begin": "<!-- AGENT-FRAMEWORK:BEGIN \u2014 GENERATED from agent-framework/canonical/. Do not edit inside this block; edit canonical sources and run: python3 scripts/agent-framework/render.py -->",
   "marker_end": "<!-- AGENT-FRAMEWORK:END -->",
   "files": {
@@ -417,7 +417,7 @@
     },
     "AGENTS.md": {
       "mode": "block",
-      "sha256": "8cd9ecefc5c95a8e94ee4bbe3812f2157b15f03397554986898df7f0602be8b8"
+      "sha256": "9dc3a223bb494d6ba600b354bf2a8daeb1e169792e5a8f4a4cd22549a0d221f7"
     },
     "CLAUDE.md": {
       "mode": "block",

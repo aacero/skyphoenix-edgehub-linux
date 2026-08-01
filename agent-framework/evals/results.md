@@ -1,4 +1,4 @@
-# Behavioral eval results — framework v1.2.5
+# Behavioral eval results — framework v1.2.7
 
 Executed deterministically (`python3 scripts/agent-framework/evals/run-evals.py`).
 

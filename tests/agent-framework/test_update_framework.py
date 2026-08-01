@@ -13,6 +13,7 @@ end-to-end test therefore runs render/validate/check-drift explicitly instead.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -324,6 +325,58 @@ class TestCustomizedCiPreserved(UpdaterTestBase):
         backup = wf.with_name(wf.name + ".bak-pre-framework")
         self.assertTrue(backup.exists(), "adopt replaced the CI workflow without a backup")
         self.assertIn("REPO-SPECIFIC-PIPELINE", backup.read_text(encoding="utf-8"))
+
+    # ── ADR 0003: a scaffold file the framework never wrote is never "owned" ──────
+    def test_customized_scaffold_is_never_recorded_as_framework_owned(self):
+        """The scaffold map is the framework's own write-record, not a sighting log.
+
+        sync_scaffold used to store the CUSTOMIZED file's hash when it declined to take
+        the file over. owned() treats a match there as proof of ownership, so one update
+        later the customization was overwritten in place — no backup, no report entry, no
+        --adopt. That is how a required ripgrep install step was deleted from
+        skyphoenix-company-website's quality.yml during the v1.2.4 rollout.
+        """
+        wf = self._write_custom_ci()
+        self.assertEqual(self.update().returncode, 0)
+        recorded = self.payload_manifest().get("scaffold", {}).get(".github/workflows/quality.yml")
+        custom_hash = hashlib.sha256(wf.read_bytes()).hexdigest()
+        self.assertNotEqual(
+            recorded, custom_hash,
+            "the customized file's hash was recorded as the framework's baseline, which "
+            "makes owned() report it as framework-owned on the next run")
+
+    def test_a_second_update_does_not_silently_overwrite_the_customization(self):
+        """The end-to-end regression: the damage only appeared on the SECOND update."""
+        wf = self._write_custom_ci()
+        self.assertEqual(self.update().returncode, 0)
+        p2 = self.update()
+        self.assertEqual(p2.returncode, 0, p2.stdout + p2.stderr)
+        self.assertIn("REPO-SPECIFIC-PIPELINE", wf.read_text(encoding="utf-8"),
+                      "the second update silently replaced the customized workflow")
+        self.assertIn("kept customized .github/workflows/quality.yml", p2.stdout)
+
+    def test_a_manifest_poisoned_before_the_fix_cannot_overwrite_silently(self):
+        """Adopters updated before ADR 0003 still carry a manifest that claims ownership
+        of their customized bytes. Fixing the recording does not heal those, so an
+        overwrite of an existing scaffold file is backed up and reported even when the
+        manifest says it is owned."""
+        wf = self._write_custom_ci()
+        self.assertEqual(self.update().returncode, 0)
+        # Reproduce the pre-fix manifest exactly: the customized hash recorded as baseline.
+        mf = self.repo / "agent-framework" / ".framework-payload.json"
+        data = json.loads(mf.read_text(encoding="utf-8"))
+        data.setdefault("scaffold", {})[".github/workflows/quality.yml"] = \
+            hashlib.sha256(wf.read_bytes()).hexdigest()
+        mf.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+        p = self.update()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        backup = wf.with_name(wf.name + ".bak-pre-framework")
+        self.assertTrue(backup.exists(),
+                        "a poisoned manifest let the workflow be replaced with no backup")
+        self.assertIn("REPO-SPECIFIC-PIPELINE", backup.read_text(encoding="utf-8"))
+        self.assertIn("bak-pre-framework", p.stdout,
+                      "the replacement must be reported, not silent")
 
 
 class TestAutoUpdateWorkflowAsset(unittest.TestCase):

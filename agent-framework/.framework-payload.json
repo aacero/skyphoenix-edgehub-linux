@@ -1,11 +1,11 @@
 {
-  "framework_version": "1.2.5",
-  "template": "https://github.com/skyphoenix-it/skyphoenix-enterprise-template.git@agent-framework-v1.2.5 (37005f6577c9)",
+  "framework_version": "1.2.7",
+  "template": "local checkout",
   "source_url": "https://github.com/skyphoenix-it/skyphoenix-enterprise-template.git",
-  "source_commit": "37005f6577c9a3cc090acc057fcd4b61fa7f9443",
+  "source_commit": "cc6d78fa5f69b6ad1f4cea06feb4087e1014753a",
   "files": {
     "agent-framework/README.md": "7bd4a7d37afc5f8844612b72908ec938de97dd7edafc68f1f2f36afcccc51764",
-    "agent-framework/VERSION": "fe2b7c237b5a6e42818aa3e4f7fc5820f49c32289c32c96260ef89a8c8f6d3d7",
+    "agent-framework/VERSION": "d9e8e8429c6a7d0b965e4fac26a5efff7103f055faa98cceb5bd4731fd24603a",
     "agent-framework/canonical/contracts/agent-handover-contract.md": "8cd9b37e1a12485cdf4cc206cbfa17fdfc0cc59cd6507a9e54cf949959281b25",
     "agent-framework/canonical/contracts/agent-task-contract.md": "8edae621a7319ffab75cfc408aafee1b9285be2f8e119762e3ce07b8360db4fd",
     "agent-framework/canonical/contracts/definition-of-done-contract.md": "624049d46083418d3c4cc451f6e80116178589cbf29b6346c12b94de38dabe76",
@@ -162,7 +162,7 @@
     "scripts/agent-framework/provider-opencode.sh": "dc1962609d673b6c5f064b7e02f8fae4f28f0680eb0770ebed47063fcc187cf5",
     "scripts/agent-framework/render.py": "283c17701ce3442b53fa59dd6284077d3a82b0c329cca531fcb2402b9cfbfa7d",
     "scripts/agent-framework/run-autonomous-session.py": "bad00ad3678ae7c10cd6bc07368d287704ef7395642880c48a9c6bee058cec75",
-    "scripts/agent-framework/update-framework.py": "580eb191692fa627737c6fcb05d96c7c1a4c17d0551af8bca30202db3ee51471",
+    "scripts/agent-framework/update-framework.py": "1241ab2cdff0b40d1ceb6b54411d229d78df7a679d90d2115932ded90bbcc1b8",
     "scripts/agent-framework/validate.py": "6544c0d122daf557695634038f786a3f0b07fc2a3f07c40380d9990f041ce97d",
     "scripts/ci.sh": "325dbf4a84a05a3372571c5dcd2da158818c48809c620d5aec6fccfb699d9e64",
     "scripts/create-worktree.sh": "e331c0e57ac66a1a9500c25a93398d0c6893ddce0d2c1372a66801118eafd087",
@@ -174,7 +174,8 @@
     "tests/agent-framework/test_provider_shims.py": "d46f657a52c806e7ca9c141d585161f56f7e5fc9dc4c8e9c20f4ee74d46b5dfe",
     "tests/agent-framework/test_render_safety.py": "848542862964bd92156606d6796969de2a6029ee774fcb39f959da11ffaa73d1",
     "tests/agent-framework/test_supervisor.py": "a6b39ae5cdece7b64fc65617e0a45a1fad7c212880360ad364de1872dd4a8814",
-    "tests/agent-framework/test_update_framework.py": "8f289352a6a8f799834e9704bc89d003b0c23fdbf1abcfa7fcaeb9d66aa20637",
+    "tests/agent-framework/test_update_estate.py": "2aeaa57a8fd71d02360d73c2861a35f379fee5154c4f1ae382932531d8fe207b",
+    "tests/agent-framework/test_update_framework.py": "d9758415379d2a1f635586d5136a91867561dc61fd4cf9ce104808a20dfa0c5d",
     "tests/agent-framework/test_validate_gates.py": "c583e74135345265d1d64a2ee80b99a4217f9bb02f08109d450314daff9c8d3a"
   },
   "scaffold": {
