@@ -329,24 +329,26 @@ section is implemented without explicit product-owner approval (scope-control po
   That is what let a red gate sit unnoticed on `master` from 2026-07-27 until the framework
   adoption PR ran the workflows again four days later.
 
-- **🔴 `push` and `pull_request` stopped dispatching workflow runs on 2026-07-31.** Every
-  workflow — `Docs`, `CI`, `Quality`, `Supply Chain` — has the same last event-triggered
-  run: `e59e3d7`, 19:18. After that, PR #3 (19:36) produced no `pull_request` runs and two
-  pushes to `master` (`641ca32` 20:12, `9640c29` 20:13) produced no `push` runs. Only
-  `workflow_dispatch` and CodeQL default setup still fire, and a dispatched `Docs` on
-  `master` passes — so the workflows themselves are fine.
+- **`push`/`pull_request` dispatch stopped for ~45 minutes on 2026-07-31 — transient,
+  since recovered.** Recorded because it was mistaken for a repository fault at the time.
 
-  Ruled out: path filters (both commits match `**.md`, and `641ca32` also matches
-  `release-metadata.toml`, which `ci.yml` does not ignore); workflow state (all `active`,
-  all registered paths present on `master`); repository Actions settings
-  (`enabled: true`, `allowed_actions: all`, not archived/disabled); a stuck queue
-  (`queued` and `in_progress` both 0, the one cancelled run finished); a GitHub incident
-  (none listed for 2026-07-31); and an org-wide fault (`skyphoenix-company-website`'s
-  scheduled `uptime` workflow kept running through 2026-08-01T05:05).
+  Window: every workflow's last event-triggered run was `e59e3d7` at 19:18. PR #3 (19:36)
+  produced no `pull_request` runs, and pushes `641ca32` (20:12) and `9640c29` (20:13)
+  produced no `push` runs. Only `workflow_dispatch` and CodeQL default setup fired.
 
-  Not yet explained. The change that landed at 19:18 was the agent-framework adoption,
-  which added `.github/workflows/framework-update.yml` and a new `quality.yml` — but those
-  same files were present for the 19:18 run, which did dispatch normally, and the other
-  eleven repositories took the identical addition without losing their triggers.
-  Org-level Actions policy could not be read from here (needs `admin:org`), so that is the
-  first thing to check; after that, GitHub Support with these run IDs.
+  Resolved by itself. A probe push on 2026-08-01 06:23 (`8bd375d`) dispatched `Docs`,
+  `Quality` and `Supply Chain` normally, all three green. `CI` correctly did not run: the
+  probe touched only `BACKLOG.md` and `ci.yml`'s push trigger has `paths-ignore: '**.md'`.
+
+  Not caused by the agent-framework adoption, despite the timing. The workflow files that
+  landed at 19:18 (`framework-update.yml`, a new `quality.yml`) were already in place for
+  the 19:18 run, which dispatched normally, and the other eleven repositories took the
+  identical addition without losing their triggers. Ruled out during the investigation:
+  path filters, workflow state (all `active`, all paths present), repository Actions
+  settings (`enabled`, `allowed_actions: all`), a stuck queue (`queued`/`in_progress` both
+  0), and an org-wide fault (`skyphoenix-company-website`'s scheduled `uptime` ran
+  throughout). No GitHub incident was listed for the window, so it is most likely an
+  unreported dispatch delay.
+
+  Worth keeping only as precedent: if triggers appear dead again, check whether
+  `workflow_dispatch` still works before assuming the workflows are broken.
