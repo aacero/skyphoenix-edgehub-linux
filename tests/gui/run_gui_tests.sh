@@ -81,7 +81,22 @@ if [ "${1:-}" = "__slot" ]; then
   # even when the QML root requests the correct height.
   slot_width="${XENEON_GUI_WIDTH:-2560}"
   slot_height="${XENEON_GUI_HEIGHT:-1800}"
-  kwin_wayland "${slot_kwin_args[@]}" --xwayland --xwayland-display "$xdisp" \
+  # Xwayland ONLY when recording. The tests are Wayland clients
+  # (QT_QPA_PLATFORM=wayland below); the X server exists solely so --record's
+  # ffmpeg can x11grab $xdisp. On the CI runner Xwayland SEGFAULTS during startup
+  # every single time - "Caught signal 11 ... Server aborting" appears in every
+  # kwin-*.log of run 30690709064, in the slots that passed as well as the ones
+  # that did not. When KWin survives it logs "Xwayland process crashed" and
+  # carries on; when it does not, its log stops dead at the crash while the
+  # Wayland socket already exists. The slot's readiness check then passes, the
+  # runner connects to a compositor that never answers, and it produces no output
+  # at all until the bound kills it. That is 21 of 22 files in that run.
+  # Starting an X server we do not use to run Wayland tests bought nothing and
+  # cost the whole suite.
+  if [ "${SLOT_RECORD:-0}" = "1" ]; then
+    slot_kwin_args+=(--xwayland --xwayland-display "$xdisp")
+  fi
+  kwin_wayland "${slot_kwin_args[@]}" \
     --width "$slot_width" --height "$slot_height" --no-lockscreen --no-global-shortcuts \
     --socket "$sock" > "$SLOT_LOGDIR/kwin-$base.log" 2>&1 &
   kpid=$!
@@ -226,12 +241,22 @@ run_one() {
   # including J=1. The memory-budget reducer can turn a requested -j8 into -j1;
   # keeping a separate sequential path there used to put KWin outside both the
   # RSS watchdog and RLIMIT_AS, recreating the exact OOM hole this runner fixes.
+  # stdbuf -oL: the slot's stdout is a FILE, so libc block-buffers it. A TIMEKILL
+  # or MEMKILL is a SIGKILL, which discards that buffer - so every timed-out file
+  # used to leave a log containing NOTHING but the kill line, and nobody could see
+  # which test it died in. Measured on run 30658588377: 11 of 16 files TIMEKILLed,
+  # all 11 logs empty apart from the kill notice, while their kwin-*.log showed the
+  # compositor had come up fine. Line buffering keeps whatever the runner had
+  # already printed, which is the only way this is diagnosable at all.
+  local t0 t1
+  t0=$(date +%s)
   run_bounded SLOT_F="$f" SLOT_N="$slot" SLOT_QT="$QT" \
     SLOT_IMPORTS="$IMPORTS" SLOT_MD="$MOUSEDELAY" SLOT_KD="$KEYDELAY" \
     SLOT_LOGDIR="$LOGDIR" SLOT_XDG="$XDG_RUNTIME_DIR" \
     SLOT_VIRTUAL="$((1 - VISIBLE))" SLOT_RECORD="$RECORD" SLOT_EVID="$EVID" \
-    bash "$SELF" __slot > "$LOGDIR/$base.log" 2>&1
+    stdbuf -oL -eL bash "$SELF" __slot > "$LOGDIR/$base.log" 2>&1
   rc=$?
+  t1=$(date +%s)
   case "$rc" in
     97) echo "!! $base was MEMKILLed (>${RUN_MEM_MAX_MB} MiB RSS)" >> "$LOGDIR/$base.log" ;;
     98) echo "!! $base was TIMEKILLed (>${RUN_TIMEOUT}s)" >> "$LOGDIR/$base.log" ;;
@@ -240,6 +265,16 @@ run_one() {
   # the real bounded-runner status must not disappear. Aggregate these status
   # files together with QtTest's textual totals below.
   printf '%s\n' "$rc" > "$LOGDIR/$base.rc"
+  # Report completion as it happens. The summary is aggregated only after `wait`,
+  # so when the suite overran its CI job limit the log showed 20 [start] lines and
+  # nothing else for the whole hour - no durations, no results, no way to tell a
+  # slow file from a wedged one.
+  case "$rc" in
+    0)  echo "==> [done]  $base ($((t1 - t0))s)" ;;
+    97) echo "==> [MEMKILL] $base after $((t1 - t0))s (>${RUN_MEM_MAX_MB} MiB RSS)" ;;
+    98) echo "==> [TIMEKILL] $base after $((t1 - t0))s (>${RUN_TIMEOUT}s)" ;;
+    *)  echo "==> [fail]  $base rc=$rc ($((t1 - t0))s)" ;;
+  esac
   return 0
 }
 

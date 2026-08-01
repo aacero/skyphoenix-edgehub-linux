@@ -344,7 +344,15 @@ jobs:
   gui-test:
     name: QML Compositor Suite
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # The suite runs 22 files, RUN_TIMEOUT-bounded, J at a time - so its worst case
+    # is ceil(22/J) * RUN_TIMEOUT plus ~4 min of Qt/apt/build setup. At the previous
+    # J=4 / RUN_TIMEOUT=900 that was 6 * 15 = 90 min against a 60 min cap, so a run
+    # with several slow files could never finish: GitHub killed the job mid-suite,
+    # the summary is only aggregated after `wait`, and the whole hour produced no
+    # result at all. RUN_TIMEOUT=540 below makes the worst case 6 * 9 = 54 min, and
+    # this cap leaves margin so the SCRIPT always reports before the runner kills it.
+    # Keep the three numbers consistent if any of them changes.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # action commit pinned
@@ -381,6 +389,11 @@ jobs:
           # host core. Five parallel slots oversubscribe a four-core runner and
           # can exhaust the per-file wall clock despite making forward progress.
           LP_NUM_THREADS: "1"
+          # Per-file bound. 540s is ~4x the slowest file that currently completes
+          # (tst_gui_shell_nav_edit, 124s), and keeps ceil(22/4) waves inside the
+          # job cap above. A file needing more than this is a broken test, not a
+          # slow one - which is exactly what the per-file report now shows.
+          RUN_TIMEOUT: "540"
         # CI is not a watchable demonstration. Remove the runner's deliberate
         # human-visible mouse/key delays so this required gate completes inside
         # the job limit without changing any assertion or bounded wait.

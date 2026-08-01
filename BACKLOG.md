@@ -352,3 +352,28 @@ section is implemented without explicit product-owner approval (scope-control po
 
   Worth keeping only as precedent: if triggers appear dead again, check whether
   `workflow_dispatch` still works before assuming the workflows are broken.
+
+- **🔴 370 accessibility assertions fail — newly visible, never seen before.** The QML
+  compositor suite could not run at all (Xwayland crash, fixed separately), so these have
+  been failing silently for as long as they have existed. First clean run: 22/22 files
+  complete, **pass=2271 fail=370**.
+
+  **368 of the 370 are one defect class: text clipping.** `tst_gui_widget_legibility`
+  reports `contentHeight N > height M`, overwhelmingly by 2–4 px — 208 × `30 > 28`,
+  164 × `24 > 21`, 146 × `28 > 24`. They cluster in the accessibility fonts
+  (`hyperlegible`, `lexend`) at raised text scales (`text1.3`, `text1.45`) in the small
+  tiles (`0.5x0.5`, `1x0.5`, `0.5x1`) — e.g. `'2 MINUTES HISTORY' (contentHeight 30 >
+  height 28)`. That reads as one systemic layout rule, not 368 separate bugs: the label
+  boxes do not grow with the user's text scale. 787 assertions in that same file pass.
+
+  The other two:
+  - `tst_gui_backdrop_contrast`: `dark/amber/orbs secondary pixel minimum=3.76:1, needs
+    4.5:1` — a WCAG AA shortfall, the same class as the known white-on-orange CTA issue.
+  - `tst_gui_shell_wallpaper_presets`: `the themed background differs from high-contrast`
+    returned FALSE — the high-contrast preset is not actually distinct.
+
+  Deliberately not "fixed" here. Every available shortcut — relaxing the clipping contract,
+  lowering the 4.5:1 threshold, blacklisting the matrix cases — would disable the
+  accessibility gates at the exact moment they started working. The real fixes are product
+  decisions: how the tiles reflow at raised text scale, what `dark/amber/orbs` becomes to
+  reach 4.5:1, and what the high-contrast preset should look like.
