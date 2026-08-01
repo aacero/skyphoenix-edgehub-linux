@@ -369,7 +369,22 @@ jobs:
           sudo apt-get install -y cmake g++ kwin-wayland xwayland libxkbcommon0 \
             libgl1-mesa-dev \
             fonts-dejavu-core fontconfig ffmpeg python3-pil
+          # The product's system font stack is "Inter, Segoe UI, Roboto,
+          # sans-serif" (ui/qml/Theme.qml). With only fonts-dejavu-core present
+          # NONE of those resolve, so every system-stack string fell back to
+          # DejaVu Sans - whose line height is taller than Inter/Roboto - and
+          # overflowed layouts by 2-4px. That produced 368 clipping failures in
+          # tst_gui_widget_legibility on run 30692759731, spread evenly across
+          # all three font choices (system 115, hyperlegible 123, lexend 130)
+          # because a widget mixes the chosen face with system-stack text. The
+          # same file passes locally, where the stack resolves. Installing the
+          # fonts the product actually targets makes this gate measure the
+          # product's real rendering instead of a substitute it never ships.
+          # Inter first (exact match), Roboto as the stack's own next choice.
+          sudo apt-get install -y fonts-inter || sudo apt-get install -y fonts-inter-variable || true
+          sudo apt-get install -y fonts-roboto-unhinted
           sudo fc-cache -f
+          echo "resolved system stack:"; fc-match "Inter"; fc-match "Roboto"; fc-match "sans-serif"
       - name: Build the resource-aware QuickTest runner
         # Stock qmltestrunner has no product QRCs, so every qrc:/ icon,
         # wallpaper and font would be missing and rendered-pixel checks would be
