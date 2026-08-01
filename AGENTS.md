@@ -92,7 +92,7 @@ C FFI in `core/src/ffi.rs` and `core/xeneon_core.h`. The repository does not use
 <!-- AGENT-FRAMEWORK:BEGIN — GENERATED from agent-framework/canonical/. Do not edit inside this block; edit canonical sources and run: python3 scripts/agent-framework/render.py -->
 ## Agent framework core instructions
 
-Framework v1.2.4 — generated into provider files from `agent-framework/canonical/`. Edit canonical sources, then run `python3 scripts/agent-framework/render.py`.
+Framework v1.2.5 — generated into provider files from `agent-framework/canonical/`. Edit canonical sources, then run `python3 scripts/agent-framework/render.py`.
 
 ### Read first
 

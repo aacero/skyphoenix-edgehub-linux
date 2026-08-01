@@ -1,11 +1,11 @@
 {
-  "framework_version": "1.2.4",
-  "template": "https://github.com/skyphoenix-it/skyphoenix-enterprise-template.git@release/agent-framework-v1.2.4 (23eb923cd1b3)",
+  "framework_version": "1.2.5",
+  "template": "https://github.com/skyphoenix-it/skyphoenix-enterprise-template.git@agent-framework-v1.2.5 (37005f6577c9)",
   "source_url": "https://github.com/skyphoenix-it/skyphoenix-enterprise-template.git",
-  "source_commit": "23eb923cd1b3527b94523c6e0d25ddf7a4b4198d",
+  "source_commit": "37005f6577c9a3cc090acc057fcd4b61fa7f9443",
   "files": {
     "agent-framework/README.md": "7bd4a7d37afc5f8844612b72908ec938de97dd7edafc68f1f2f36afcccc51764",
-    "agent-framework/VERSION": "563a0b4eec3c77bbc34ac630d4fa5214f5c6726ae01468404fd704473110084e",
+    "agent-framework/VERSION": "fe2b7c237b5a6e42818aa3e4f7fc5820f49c32289c32c96260ef89a8c8f6d3d7",
     "agent-framework/canonical/contracts/agent-handover-contract.md": "8cd9b37e1a12485cdf4cc206cbfa17fdfc0cc59cd6507a9e54cf949959281b25",
     "agent-framework/canonical/contracts/agent-task-contract.md": "8edae621a7319ffab75cfc408aafee1b9285be2f8e119762e3ce07b8360db4fd",
     "agent-framework/canonical/contracts/definition-of-done-contract.md": "624049d46083418d3c4cc451f6e80116178589cbf29b6346c12b94de38dabe76",
@@ -75,7 +75,7 @@
     "agent-framework/canonical/skills/tricentis-qtest/references/SOURCES.md": "39e4f23e76927507005fdfaa3c7dcc39304ac7c1d52e4cc4475ff56e4809ff76",
     "agent-framework/canonical/skills/tricentis-tosca/SKILL.md": "d38cb77dc78fdf55034748eeb237a92d2472dc55a74c462910f871c188e10c86",
     "agent-framework/canonical/skills/tricentis-tosca/references/SOURCES.md": "42320878deffa19f15e2756055d305f1e1820c0896e1647bc1ad86013b064475",
-    "agent-framework/canonical/skills/ui-ux-review/SKILL.md": "7ff3e1644e1cef0ecc5554d2731e2c8c81e5410d716b8cd328998b0f790e2041",
+    "agent-framework/canonical/skills/ui-ux-review/SKILL.md": "0a1344d8d74f5285fe66cd064a1ad5b4b80a5febea3a89eff39880772cb62edf",
     "agent-framework/canonical/skills/uipath/SKILL.md": "5ca6b0b537b820e81db01bed31aeb8a48555e66e8fe9473f90b9ec49da6175f2",
     "agent-framework/canonical/skills/uipath/references/SOURCES.md": "93bf7dcc407133fb9e5966df5b0c588758755c48541c0603973c463b2417d401",
     "agent-framework/canonical/skills/worksoft-certify/SKILL.md": "843ad053e4951722f8f3f7309f7da47c6a3c08f38b459935c7baeb9f19d3c1bd",
@@ -127,7 +127,7 @@
     "agent-framework/design-system/brand/raster/skyphoenix-logo-white-256w.png": "0d57528dbb9a83b8fe35eb0a186edc394387d153e50c18cf43fcf8c1900438ac",
     "agent-framework/design-system/brand/raster/skyphoenix-logo-white-512w.png": "af166f6c602ac2f6c141eac99f6278e0c5a69c3caf802654959a1e2cefbc7da9",
     "agent-framework/design-system/brand/social/og-image-1200x630.png": "de79f4532dd6ddf0b40bcf06c2bf0960426cbf38c7bb53be0cecd408cab11835",
-    "agent-framework/design-system/component-principles.md": "94b16044f2b7e987f8a2da58bcb978b609d34f53bd7bacfbe34cd2750a2e70ce",
+    "agent-framework/design-system/component-principles.md": "bb6ef283e4f4797e7b7bcd7b889f3d0b3dcaebb8463b00f1862951f7fbcd74e8",
     "agent-framework/design-system/consumer-products.md": "fd75d8c1983928b0d7b72e2c4b19651f13d900fab47c24ec85ce1f1fb82bdbd1",
     "agent-framework/design-system/cross-platform-standard.md": "6976968d719edf3ced2735597174a9300971bcd15acd999bb3fcaf03824e06b2",
     "agent-framework/design-system/references/source-ledger.md": "a975037ca54941cf7ea6382f1bb244bb98806fe07b5985faf961f30c61988c3a",
@@ -135,6 +135,7 @@
     "agent-framework/design-system/tokens/dark.json": "b8fa5a6ead7bd6649f1ec97596af6cfac28b80d0bd04b31675403e9e04ab1d53",
     "agent-framework/design-system/tokens/high-contrast.json": "0b67e81a6526f609aec26cc1e5aa552f28c5614a4eada68b74d074bb541613d7",
     "agent-framework/design-system/tokens/light.json": "53baf598ca740c14a8d92f1c5459137147ba44a78f337aaaf107f570975cc0e4",
+    "agent-framework/design-system/typography-and-legibility.md": "6e2c3c2c5db26ff043c983d531a321561564d2e2e9dd9d66d035fbecf593882a",
     "agent-framework/evals/rubrics.md": "fe352e823924dff61e887713b73e71e1690ec193573b2f4d8b2e56a25e218f1a",
     "agent-framework/providers/claude/adapter.yaml": "ff4b5f5b213fe5dd77898e91aabfff9556063345bd7c5f187a731d79c0f8fa57",
     "agent-framework/providers/codex/adapter.yaml": "cd456feed243d1f1b8ddca9ee1ef4a999479dc8a69a9c77bfae35f13dc50de8d",
@@ -178,6 +179,6 @@
   },
   "scaffold": {
     ".github/workflows/framework-update.yml": "80b28a33867e382088ef43b97ca80d791515abb4faf4ece9ab9a6c99cb3e1eb0",
-    ".github/workflows/quality.yml": "5f9809176f1e0235e4e1eef19879ebfce73337a972f3f81eeee3e73347b2fcc6"
+    ".github/workflows/quality.yml": "d65510618f3d67e8aea1be10dc23a661d68895f3edafcf54af1cfad0c7dd08f3"
   }
 }

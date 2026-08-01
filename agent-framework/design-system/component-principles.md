@@ -47,6 +47,10 @@ Danger variant button + explicit confirmation that names the object ("Delete pro
 
 Comfortable default density (44px touch targets, 0.75–1rem cell padding); breakpoints 640/768/1024 with wide tiers 1920+ (container-wide) and 375px compact adjustments; wide screens grow the container, not the font-only. Print styles exist (`custom.css:218`, `portal.css:416`) — keep exports printable.
 
+## Typography & legibility (binding)
+
+Type rules live in `typography-and-legibility.md` in this directory: a declared font family must be shipped or the design must target the generic stack explicitly; checks confirm the family that *rendered*, not the one requested; text boxes are sized from measured font metrics, never `fontSize + constant`; containers never compress text below its measured line box; and each product states the user-text-scale range it supports and verifies its densest surfaces at the top of it. Every rule there carries the production measurement that produced it.
+
 ## Focus & keyboard (binding)
 
 2px visible outline, 2px offset, on every interactive element (`custom.css:40-47`); never `outline: none` without an equal-or-better visible replacement; skip link on every page (`custom.css:19-32` — currently missing in portal); logical tab order; Escape closes overlays.
