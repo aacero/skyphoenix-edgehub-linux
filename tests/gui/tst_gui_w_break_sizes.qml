@@ -102,6 +102,16 @@ Item {
             }
         }
 
+        // Every weekday EXCEPT today. Used by the "outside" row so the widget is
+        // genuinely outside its active hours instead of merely being seeded that
+        // way - see the row itself.
+        function daysExceptToday() {
+            var today = new Date().getDay()
+            var days = []
+            for (var i = 0; i < 7; i++) if (i !== today) days.push(i)
+            return days.join(",")
+        }
+
         function test_states_data() {
             return [
                 { tag: "running", state: "Running",
@@ -113,8 +123,19 @@ Item {
                 { tag: "snoozed", state: "Snoozed",
                   patch: { running: true, due: false, snoozed: true,
                            scheduleSuspended: false, endEpoch: Date.now() + 300000 } },
+                // The schedule must genuinely EXCLUDE today, not merely be seeded
+                // suspended. The default patch below opens every weekday, so a
+                // row that only set `scheduleSuspended: true` was asserting a
+                // state the product actively contradicts: BreakWidget's own 1s
+                // timer calls applyScheduleState(), sees that we ARE inside
+                // active hours, and correctly clears the flag. The assertion
+                // then passed or failed purely on whether it beat that timer -
+                // and it lost on a CI runner (run 30761207111). Excluding today
+                // makes withinSchedule() false, so the product KEEPS the flag
+                // and the state is stable by construction.
                 { tag: "outside", state: "Outside active hours",
                   patch: { running: true, due: false, snoozed: false,
+                           workDays: daysExceptToday(),
                            scheduleSuspended: true, endEpoch: 0, pausedRemaining: 900 } },
                 { tag: "disabled", state: "Schedule disabled",
                   patch: { running: true, due: false, workDays: "",

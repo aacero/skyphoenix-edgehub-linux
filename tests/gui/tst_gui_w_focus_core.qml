@@ -352,9 +352,34 @@ Item {
             prep("FocusWidget.qml", "tall", 696, 1229, false,
                  { preset: "classic", phase: "work", running: true, doneToday: 1, dailyGoal: 2,
                    celebrate: true, day: todayKey(), endEpoch: Date.now() - 3000 })
-            tryVerify(function () { return G.byText(wh.item, "Goal") !== null }, 3000,
-                      "goal-reached celebration banner shows")
+            // Wait for the STATE the completion produces, not for a frame.
+            //
+            // The expiry is noticed by the widget's own repeating 1s timer
+            // (FocusWidget.qml: `Timer { interval: 1000; running: w.active }`),
+            // so the thing being waited for is one tick of that timer - not a
+            // render. This used to poll the scene for a visible "Goal" Text
+            // within 3s, which conflated "the session completed" with "the
+            // banner is on screen" and went red on a CI runner that was starved
+            // by two hung compositor slots. `celebrateMsg` is set by
+            // celebrateNow() and never cleared (prep() blanks it per case), so
+            // it is the durable witness that the goal celebration fired; the
+            // label it drives fades back to opacity 0 about a second later.
+            tryVerify(function () { return ("" + wh.item.celebrateMsg).indexOf("Goal") >= 0 },
+                      8000, "the session that crossed the goal celebrated")
             compare(stg().doneToday, 2, "session that crossed the goal counted")
+            // The ONE-TIME goal bonus, not just any celebration: 10 for the
+            // session plus 50 for crossing the goal. This is what distinguishes
+            // this case from test_focus_natural_short, and it is durable state,
+            // so asserting it here cannot race.
+            compare(stg().points, 60, "crossing the goal awarded the one-time bonus")
+            // And the banner really is wired to that message. Deterministic once
+            // celebrateMsg is set: the Text keeps its text and stays `visible`
+            // (only its opacity animates), so this is a binding check, not a
+            // race against the fade-out.
+            var banner = G.byText(wh.item, "Goal")
+            verify(banner !== null, "the celebration banner carries the goal message")
+            verify(banner.width > 0 && banner.height > 0,
+                   "the celebration banner has a rendered box")
             snap(wh, "focus_natural_goal")
         }
         function test_focus_autostart_data() {

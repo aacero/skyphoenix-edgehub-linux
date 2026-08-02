@@ -268,24 +268,56 @@ sabotage tried, and that it went red) in the PR/commit body - every agent this
 session was asked to do exactly that, and it caught real defects in *their own*
 work four separate times.
 
-## Known flake: `test_focus_natural_goal` races the celebration banner
+## ~~Known flake: `test_focus_natural_goal` races the celebration banner~~ — FIXED
 
-Opened 2026-08-02. Pre-existing — it also failed on run `30717604059`, before this
-branch touched anything — and it is a DIFFERENT class from the unexposed-window
-flake below, which is why the retry there deliberately does not cover it: retrying
-an assertion failure would be masking, not repair.
+Opened and closed 2026-08-02. **The first diagnosis here was wrong and is worth
+recording as such:** it said the assertion was "a 3 s window onto a state the
+product deliberately shows for about a second", because `G.byText` requires
+`n.visible`. But QML `visible` is not `opacity` — the celebration label animates
+its *opacity* back to 0 while `visible` stays true and its `text` is never
+cleared. The banner check was therefore durable all along.
 
-`tests/gui/tst_gui_w_focus_core.qml::test_focus_natural_goal` seeds an already
-expired session and waits up to 3 s for a "Goal" banner. The banner is transient
-by design (`FocusWidget.qml`: fade in → `PauseAnimation { duration: 950 }` → fade
-out), and `G.byText` requires `n.visible`. So the assertion is a 3 s window onto a
-state the product deliberately shows for about a second, on a runner where the
-widget's own tick may not fire promptly. Every ingredient of a race is present.
+The real race was upstream of the banner: expiry is noticed by the widget's own
+repeating **1 s** timer (`FocusWidget.qml`: `Timer { interval: 1000; running:
+w.active }`), and the test gave that timer a 3 s budget while the CI runner was
+being starved by two hung compositor slots. The assertion conflated "the session
+completed" with "the banner is on screen", so a slow tick read as a missing
+banner.
 
-Worth fixing at the source rather than by widening the wait: assert on the state
-that persists (`celebrateMsg`, the awarded bonus, `doneToday`) and treat the
-banner's *appearance* as a separate, motion-aware check. Passes consistently
-locally; seen twice in CI.
+Fixed by asserting the state the completion produces rather than a frame:
+
+- `celebrateMsg` contains "Goal" — set by `celebrateNow()`, never cleared, and
+  blanked per case by `prep()`, so it is a durable per-case witness. Bound
+  raised to 8 s, which costs nothing on a healthy run because `tryVerify`
+  returns the moment it is true.
+- `points == 60` — 10 for the session plus the ONE-TIME 50 for crossing the
+  goal. This is what actually distinguishes this case from
+  `test_focus_natural_short`, and it is persisted state, so it cannot race.
+- The banner is then checked as a *binding*, not a moment: the label carries the
+  goal message and has a rendered box.
+
+Negative controls, both proven by sabotaging the product and watching this test
+go red: removing `+ (hitGoal ? 50 : 0)` fails "crossing the goal awarded the
+one-time bonus"; announcing the ordinary message instead of the goal one fails
+"the session that crossed the goal celebrated". Reverted, test green (123/123).
+
+## ~~Known flake: `test_states(outside)` asserts a state the product contradicts~~ — FIXED
+
+Opened and closed 2026-08-02, found on the post-merge `master` run
+(`30761207111`). Same family as the Focus one above, and the more interesting
+kind: the TEST was wrong and the product was right.
+
+The `outside` row seeded `scheduleSuspended: true` while the surrounding patch
+opened **every** weekday (`workDays: "0,1,2,3,4,5,6"`, `workStartHour ==
+workEndHour`), so `withinSchedule()` was true. `BreakWidget`'s own 1 s timer
+calls `applyScheduleState()`, sees that we ARE inside active hours, and correctly
+clears the flag. The assertion therefore passed only when it beat that timer.
+
+Fixed by making the row self-consistent: `workDays` now excludes today, so the
+widget is genuinely outside its active hours, the product KEEPS the flag, and the
+state is stable by construction rather than by timing. Negative control: dropping
+the `scheduleSuspended` branch from `stateLabel` makes the row fail; reverted,
+16/16 green.
 
 ## Known flake: the nested compositor occasionally never exposes a window
 
