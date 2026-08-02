@@ -22,6 +22,15 @@
              the only way every machine agrees. -->
         <file alias="JetBrainsMono-Regular.ttf">fonts/JetBrainsMono-Regular.ttf</file>
         <file alias="JetBrainsMono-Bold.ttf">fonts/JetBrainsMono-Bold.ttf</file>
+        <!-- The product's own UI face, for the same reason as the mono one
+             above. `fontDisplay`'s "system" option was the string "Inter, Segoe
+             UI, Roboto, sans-serif", which Qt matches as ONE family name - so
+             Inter was never selected on any machine, and what users actually got
+             was each machine's default sans. Bundling the face the product has
+             always named first makes the "product look" a fact instead of a
+             wish, and makes it identical everywhere. -->
+        <file alias="Inter-Regular.ttf">fonts/Inter-Regular.ttf</file>
+        <file alias="Inter-Bold.ttf">fonts/Inter-Bold.ttf</file>
         <!-- Brand wordmark face. Chakra Petch (OFL 1.1) is a close free stand-in
              for the SKYPhoenix IT logo lettering (squared, angular, cut terminals).
              Used only for the "EdgeHub" lockup; swap in the real brand font later

@@ -296,20 +296,26 @@ Item {
             win.reduceMotion = true                    // collapse fx: only dims matter
             win.width = 720; win.height = 1280         // tall panel (hidden → free resize)
             win.orientationMode = "landscape"
-            // A resize is a compositor round-trip, so `wait(120)` is a guess
-            // about how long that takes on this machine. On a CI runner hosting
-            // four nested compositors it is too short: the grab then captures
-            // the pre-rotation geometry and the rotation assertion below fails
-            // for a reason that has nothing to do with the product. Poll the
-            // geometry itself - a rotation that never happens still fails, it
-            // just is not decided by a stopwatch.
-            // 10s, not 3s: this is a compositor round-trip, and a poll costs
-            // nothing on a healthy run - it returns the moment the geometry
-            // lands. The 3s bound failed on a CI runner that was starved by two
-            // hung slots; a bound tight enough to fail under load is a bound
-            // that measures the runner, not the product.
+            // A resize is a compositor round-trip, so the original `wait(120)`
+            // was a guess about how long that takes on this machine. Wait for
+            // the ROTATION to settle using the same helper every other case in
+            // this file uses - the width swap is part of that transition, so
+            // polling the width alone was waiting for a consequence while
+            // ignoring its cause.
+            settleRotation("landscape")
+            // Then the geometry itself, generously: a poll costs nothing on a
+            // healthy run because it returns the moment the value lands.
+            //
+            // The message carries the NUMBERS on purpose. This assertion failed
+            // twice on CI and could not be reproduced locally - not on Qt 6.7.3,
+            // 6.9.3 or 6.11, not under llvmpipe, not pinned to four cores - and
+            // "returned FALSE" told us nothing about which of the three values
+            // was wrong. If it fails again, the report will say what it saw.
             tryVerify(function () { return cr.width === win.height }, 10000,
-                      "contentRoot width takes window height in landscape")
+                      "contentRoot width takes window height in landscape"
+                      + " (cr " + Math.round(cr.width) + "x" + Math.round(cr.height)
+                      + ", win " + Math.round(win.width) + "x" + Math.round(win.height)
+                      + ", swapped=" + cr.swapped + ", rot=" + Math.round(cr.rotation) + ")")
             var img = snap(cr, "landscape")
             verify(img.width > img.height,
                    "landscape grab is wider than tall (" + img.width + "x" + img.height + ")")

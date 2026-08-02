@@ -368,6 +368,24 @@ the runner worse. The slot now watches its own log for the marker Qt prints
 *before* it blocks and aborts in seconds: measured end-to-end at **5 s** for a
 probe that hangs twice, against 1080 s before.
 
+**Mitigated 2026-08-02, still not root-caused.** It got worse as the suite got
+healthier — up to three files a run, a different one each time, which points at
+slot timing rather than at any test. Two timing mitigations, both stated as
+mitigations rather than fixes because the race reproduces nowhere locally:
+
+- **Compositor startup is staggered** (`XENEON_GUI_SLOT_STAGGER`, default 2 s).
+  Every slot begins by launching its own `kwin_wayland`, and launching J of them
+  in the same instant puts J compositors through initialisation simultaneously on
+  a runner with J cores. That is the one moment all of them are doing heavy work
+  at once.
+- **The post-socket settle is 3 s, not 1 s.** It is the whole margin between "the
+  socket exists" and "the compositor can expose a surface", and 1 s was not
+  covering it under four-way contention.
+
+The single retry stays as the safety net — and it is not always enough: on PR #10
+`tst_gui_w_cal_weather` hit the same failure on BOTH attempts (each aborted in
+seconds by the fail-fast, so it cost ~10 s rather than 18 min).
+
 Still open:
 
 - Understand why it happens at all. Both occurrences were at `-j4` on a
@@ -638,12 +656,12 @@ section is implemented without explicit product-owner approval (scope-control po
   - `tst_gui_widget_legibility`: 1 × `There are still "2" items in the process of being
     created at engine destruction` — asynchronous creation still pending at teardown.
 
-- **The product's system font stack is inert — `font.family` never selects Inter.**
-  `ui/qml/Theme.qml:207` declares `_fontDisplaySystem: "Inter, Segoe UI, Roboto,
-  sans-serif"`, a CSS-style stack. Qt does not split a comma-separated `font.family`, so
-  the whole string is matched as one family name, fails, and falls back to the default
-  sans. Measured with Inter installed (Ubuntu `fonts-inter` 4.0, the exact package CI
-  installs), "CPU" at `pixelSize: 20`:
+- ~~**The product's system font stack is inert — `font.family` never selects Inter.**~~
+  **FIXED 2026-08-02.** `Theme.qml` declared `_fontDisplaySystem: "Inter, Segoe UI, Roboto,
+  sans-serif"`. That reads like a CSS stack, but Qt does not split a comma-separated
+  `font.family`: the whole string was matched as one family name, failed, and fell back to
+  the machine's default sans. Measured with Inter installed — the exact package CI installs
+  — "CPU" at `pixelSize: 20`:
 
   | `font.family` | contentWidth × contentHeight |
   |---|---|
@@ -652,48 +670,17 @@ section is implemented without explicit product-owner approval (scope-control po
   | `"Inter, Segoe UI, Roboto, sans-serif"` | 39.33 × 28 |
   | `"sans-serif"` | 39.33 × 28 |
 
-  Every user on the "system" font choice has been getting the fallback sans, never Inter,
-  and `541a9eb` installed Inter on the runner for a stack that cannot reach it. The fix is
-  one line (`font.families: ["Inter", "Segoe UI", "Roboto", "sans-serif"]`, or resolve the
-  first available family), but it CHANGES THE PRODUCT'S TYPEFACE on any machine that has
-  Inter — including every layout the legibility matrix measures. That is a product
-  decision, not a bug fix, so it is filed here rather than applied.
+  So no user had ever seen Inter, on any machine, whatever they had installed — and what
+  they saw instead varied by distro. Same defect as `fontMono`, found the same way, fixed
+  the same way: **Inter is now bundled** (OFL-1.1, no new licence identifier) and resolved
+  through a `FontLoader` like the a11y and mono faces. Bundling rather than merely fixing
+  the lookup is deliberate — a name list would still render differently on every machine
+  that lacks Inter, which is most of them, and "system" here has always meant *the
+  product's own look*, not *whatever this machine defaults to*.
 
-  **🔴 ESCALATED 2026-08-02 — the same defect in `fontMono` is USER-VISIBLE, and it is
-  now proven, not inferred.** `Theme.qml:159` declares
-  `fontMono: "JetBrains Mono, Fira Code, monospace"` with the comment "fontMono stays mono
-  on purpose (tabular data readouts need fixed-pitch digits)". It does not. The whole
-  string is matched as one family name, so which face you get depends entirely on what
-  fontconfig decides on that machine — and it decides differently:
+  `tst_theme` now asserts the resolution rather than the spelling; comparing against the
+  literal string passed happily while Qt rendered something else entirely.
 
-  - **this workstation** renders the Focus timer as real monospace: slashed zeros, uniform
-    digit widths, wide colon spacing (that is what `tests/visual/baselines/widget-focus.png`
-    contains, captured at `4c22922`);
-  - **the CI runner** renders the identical widget in a PROPORTIONAL sans: round zeros,
-    tighter digits, no fixed pitch at all.
-
-  So the promised fixed-pitch digits are a coin flip per machine. A timer counting down in
-  a proportional face jitters on every digit change, which is precisely the thing the
-  comment says the mono token exists to prevent.
-
-  Found by the visual-baseline gate the moment it could finally run in CI — it had never
-  executed there (its Pillow dependency was missing, and the step only runs when the
-  compositor suite passes, which it never had). It fails 7 of 50 cases, all rms-only
-  (0.85–2.73% of pixels changed against a 5% cap, but rms 10.7–15.2 against a 10.0 cap):
-  few pixels, large differences — the signature of glyphs, not of layout. The diff images
-  show only text lighting up.
-
-  Two decisions, both product-owner calls, which is why nothing here is applied:
-
-  1. **Make `fontMono` actually mono.** `font.families: ["JetBrains Mono", "Fira Code",
-     "monospace"]` fixes the resolution, but it does NOT make the two machines agree —
-     each still resolves `monospace` to its own face (DejaVu Sans Mono on Ubuntu, a
-     different one here). Determinism needs a bundled mono face in `assets/fonts/`,
-     exactly as Atkinson Hyperlegible and Lexend already are — which adds a font asset and
-     a licence row.
-  2. **What the reviewed baselines are a reference FOR.** They currently encode this
-     workstation's font resolution. Either re-capture them from a CI run (making the
-     runner the reference), or keep them dev-box-only and do not run the comparison in CI.
-     `scripts/visual_baselines.py` is explicit that baselines are reviewed artifacts and
-     must never be regenerated as an automatic consequence of a failed comparison, so this
-     is not a decision an agent gets to make quietly.
+  Full GUI suite green (22 files, `pass=2641 fail=0`) and the 50 reviewed visual baselines
+  unchanged — expected, since the shipped default `fontChoice` is `hyperlegible`, so this
+  changes what the *"system"* option renders, not the default look.

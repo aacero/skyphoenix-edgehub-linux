@@ -200,6 +200,11 @@ QtObject {
         FontLoader { source: t._fontsDir + "JetBrainsMono-Regular.ttf" }
     readonly property FontLoader monoBoldLoader:
         FontLoader { source: t._fontsDir + "JetBrainsMono-Bold.ttf" }
+    // The product's own UI face. See _fontDisplaySystem below.
+    readonly property FontLoader interLoader:
+        FontLoader { source: t._fontsDir + "Inter-Regular.ttf" }
+    readonly property FontLoader interBoldLoader:
+        FontLoader { source: t._fontsDir + "Inter-Bold.ttf" }
     // Brand wordmark face (Chakra Petch, OFL) - close free stand-in for the
     // SKYPhoenix IT logo lettering. Used only for the "EdgeHub" lockup.
     readonly property FontLoader brandLoader:
@@ -228,7 +233,28 @@ QtObject {
     // data readouts need fixed-pitch digits). Unknown values fall through to
     // system, so a config from a newer build degrades safely.
     property string fontChoice: "hyperlegible"
-    readonly property string _fontDisplaySystem: "Inter, Segoe UI, Roboto, sans-serif"
+    // The "system" font choice - which has always meant "the product's own
+    // look", not "whatever this machine defaults to".
+    //
+    // It was the string "Inter, Segoe UI, Roboto, sans-serif". That reads like a
+    // CSS stack, but Qt does not split a comma-separated `font.family`: the
+    // whole thing was matched as a single family name, failed, and fell back to
+    // the machine's default sans. Measured with Inter installed - the exact
+    // package CI installs - "CPU" at pixelSize 20: `"Inter"` renders 42.25x25,
+    // while `"Inter, sans-serif"` and the full stack both render 39.33x28,
+    // identical to plain `"sans-serif"`. So NO user has ever seen Inter, on any
+    // machine, no matter what they had installed; and what they saw instead
+    // varied per distro. Same defect as fontMono above, and it was found the
+    // same way.
+    //
+    // Resolve through the bundled face, exactly as the a11y and mono families
+    // do. Bundling rather than merely fixing the lookup is deliberate: a name
+    // list would still render differently on every machine that lacks Inter,
+    // which is most of them. The literal stack survives only as the
+    // resource-missing fallback.
+    readonly property string _fontDisplaySystem:
+        interLoader.status === FontLoader.Ready
+            ? interLoader.name : "Inter, sans-serif"
     property string fontDisplay:
         fontChoice === "hyperlegible" ? fontFamilyHyperlegible
       : fontChoice === "lexend" ? fontFamilyLexend

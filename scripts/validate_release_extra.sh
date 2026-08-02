@@ -137,6 +137,7 @@ required_payloads=(
     usr/share/licenses/xeneon-edge-hub/LICENSE-MIT-PhosphorIcons.txt \
     usr/share/licenses/xeneon-edge-hub/LICENSE-OFL-AtkinsonHyperlegible.txt \
     usr/share/licenses/xeneon-edge-hub/LICENSE-OFL-ChakraPetch.txt \
+    usr/share/licenses/xeneon-edge-hub/LICENSE-OFL-Inter.txt \
     usr/share/licenses/xeneon-edge-hub/LICENSE-OFL-JetBrainsMono.txt \
     usr/share/licenses/xeneon-edge-hub/LICENSE-OFL-Lexend.txt \
     usr/share/licenses/xeneon-edge-hub/THIRD_PARTY_NOTICES-RUST.txt \

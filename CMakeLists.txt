@@ -348,6 +348,7 @@ install(FILES LICENSE LICENSE-MIT LICENSE-APACHE
         assets/icons/LICENSE-MIT-PhosphorIcons.txt
         assets/fonts/LICENSE-OFL-AtkinsonHyperlegible.txt
         assets/fonts/LICENSE-OFL-ChakraPetch.txt
+        assets/fonts/LICENSE-OFL-Inter.txt
         assets/fonts/LICENSE-OFL-JetBrainsMono.txt
         assets/fonts/LICENSE-OFL-Lexend.txt
         DESTINATION share/licenses/xeneon-edge-hub)

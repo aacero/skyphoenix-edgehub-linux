@@ -760,15 +760,23 @@ Item {
             compare(theme.fontDisplay, theme.fontFamilyHyperlegible)
             theme.fontChoice = "lexend"
             compare(theme.fontDisplay, theme.fontFamilyLexend)
+            // "system" means the product's OWN face, and it must resolve to a
+            // real loaded family. Comparing against the old literal
+            // "Inter, Segoe UI, Roboto, sans-serif" passed happily while Qt was
+            // matching that whole string as one family name and rendering the
+            // machine's default sans instead - a test can only see that if it
+            // asserts the resolution, not the spelling.
             theme.fontChoice = "system"
-            compare(theme.fontDisplay, "Inter, Segoe UI, Roboto, sans-serif")
+            compare(theme.interLoader.status, FontLoader.Ready,
+                    "the bundled UI face is loaded")
+            compare(theme.fontDisplay, theme.interLoader.name)
         }
 
         // A fontChoice value from a newer build must degrade to system, never
         // to a broken family string.
         function test_font_choice_unknown_value_falls_back_to_system() {
             theme.fontChoice = "papyrus"
-            compare(theme.fontDisplay, "Inter, Segoe UI, Roboto, sans-serif")
+            compare(theme.fontDisplay, theme.interLoader.name)
         }
 
         // fontMono is exempt on purpose: tabular readouts need fixed pitch.

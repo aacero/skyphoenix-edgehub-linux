@@ -132,7 +132,12 @@ if [ "${1:-}" = "__slot" ]; then
   # the gate failed every local run. There is no portable "ready" event here
   # without adding a Wayland probe dependency. run_one detects the exact Qt
   # signature afterwards and retries the file once instead - see there.
-  sleep 1
+  #
+  # 3s rather than 1s for the same reason as the stagger above: this settle is
+  # the whole margin between "the socket exists" and "the compositor can expose
+  # a surface", and 1s was not covering it under four-way contention. Paid once
+  # per file, overlapped across slots.
+  sleep 3
   if [ "${SLOT_RECORD:-0}" = "1" ]; then
     mkdir -p "$SLOT_EVID"
     DISPLAY="$xdisp" ffmpeg -nostdin -hide_banner -loglevel error -y -f x11grab \
@@ -370,6 +375,15 @@ if [ "$J" -gt 1 ]; then
     slot=$((slot+1))
     echo "==> [start] $(basename "$f" .qml)"
     run_one "$f" "$slot" &
+    # Stagger compositor STARTUP. Every slot begins by launching its own
+    # kwin_wayland, and launching J of them in the same instant puts J
+    # compositors through initialisation simultaneously on a runner that has J
+    # cores. That is the only moment all four are doing heavy work at once, and
+    # it is exactly when the "window was never exposed" failures land - they hit
+    # a different file each run, which points at slot timing rather than at any
+    # test. This is a MITIGATION for a race that reproduces nowhere locally, not
+    # a proven fix; the detect-and-retry below remains the safety net.
+    sleep "${XENEON_GUI_SLOT_STAGGER:-2}"
     while [ "$(jobs -rp | wc -l)" -ge "$J" ]; do sleep 1; done
   done
   wait
