@@ -65,6 +65,24 @@ Item {
         active: false
     }
 
+    // Every measured Text's allocated box AND its content box, as one string.
+    // This is the exact quantity the clipping contract compares, so "the
+    // signature stopped changing" means "the re-flow this row triggered is
+    // finished" - not merely "some time passed". See settleLayout() below.
+    function textBoxSignature(node) {
+        var parts = []
+        G.eachItem(node, function (candidate) {
+            if (!candidate || candidate.text === undefined
+                    || candidate.font === undefined)
+                return
+            parts.push(Math.round(candidate.width) + "x"
+                       + Math.round(candidate.height) + ":"
+                       + Math.round(candidate.contentWidth) + "x"
+                       + Math.round(candidate.contentHeight))
+        })
+        return parts.join("|")
+    }
+
     function projected(size, landscape, outputScale) {
         var def = sizes.table[size]
         if (!def) return ({ width: 0, height: 0 })
@@ -579,6 +597,49 @@ Item {
 
         property string loadedFile: ""
 
+        // Wait until the row's re-flow is FINISHED, instead of guessing how
+        // long it takes.
+        //
+        // The matrix drives 1152 rows through ONE harness: every row changes
+        // the tile box, the text scale, the font family and the content, and
+        // QQuickLayout re-flows on the polish pass, not synchronously. This
+        // used to be a flat `wait(32)`, which is enough on an idle developer
+        // machine and NOT enough on a CI runner hosting four nested
+        // compositors - so hundreds of assertions measured half-reflowed
+        // geometry. A Text still carrying the previous row's allocation while
+        // already reporting the new row's contentHeight reads exactly like a
+        // clipping defect, which is how this file reported ~310 "accessibility
+        // failures" that were nothing of the sort.
+        //
+        // Proven by construction on 2026-08-02: shortening the settle to
+        // `wait(0)` locally reproduces the CI signature (487 failures, the same
+        // label strings, same 2-4px overflows); restoring it clears them; and
+        // two CI runs of IDENTICAL product code disagreed on 321 of ~474
+        // failing tags, which no font or layout rule can explain.
+        //
+        // Two exits, both meaning "nothing is still moving":
+        //   * the signature is unchanged across a PRESENTED frame, or
+        //   * no frame is presented at all within the quiet window - the scene
+        //     graph is clean, so no polish can be pending.
+        // Both are paced by the compositor rather than by the clock, so a
+        // slower machine waits longer instead of measuring earlier. A genuinely
+        // clipped label is stable and is still reported, so this cannot hide a
+        // real defect; it can only stop the suite from inventing one.
+        function settleLayout(node) {
+            // The frame that carries this row's state. Generous, because it is
+            // paid once and only while the scene is actually dirty.
+            waitForRendering(node, 2000)
+            var previous = root.textBoxSignature(node)
+            for (var attempt = 0; attempt < 40; attempt++) {
+                var framed = waitForRendering(node, 120)
+                var current = root.textBoxSignature(node)
+                if (!framed || current === previous)
+                    return true
+                previous = current
+            }
+            return false
+        }
+
         function initTestCase() {
             var projections = 0
             for (var i = 0; i < catalog.items.length; i++)
@@ -683,7 +744,8 @@ Item {
             applyDirectContent(row.type, row.profile)
             wait(0)
             primeVisibleEditors(harness.item, row.profile)
-            wait(32)
+            verify(settleLayout(harness.item),
+                   row.tag + " layout settles before it is measured")
 
             compare(harness.item.width, box.width, row.tag + " projected width")
             compare(harness.item.height, box.height, row.tag + " projected height")

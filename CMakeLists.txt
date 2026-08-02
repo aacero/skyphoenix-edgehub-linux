@@ -105,7 +105,7 @@ option(XENEON_COVERAGE "Instrument tested C++ for gcov/gcovr coverage" OFF)
 option(XENEON_QA_HOOKS "Compile in the XENEON_GRAB/EXPAND QA automation hooks" OFF)
 
 # Find Qt6
-find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml DBus Network Svg QuickControls2)
+find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui Quick Qml DBus Network Svg QuickControls2)
 
 # --- Build Rust Core Library ---
 
@@ -287,7 +287,7 @@ endif()
 # temp XDG_CONFIG_HOME so config round-trips are hermetic.
 if(XENEON_BUILD_TESTS)
     enable_testing()
-    find_package(Qt6 6.5 REQUIRED COMPONENTS Test QuickTest)
+    find_package(Qt6 6.9 REQUIRED COMPONENTS Test QuickTest)
     add_subdirectory(tests/cpp)
 
     # Resource-aware qmltestrunner replacement for tests/gui.  Linking the
@@ -348,6 +348,7 @@ install(FILES LICENSE LICENSE-MIT LICENSE-APACHE
         assets/icons/LICENSE-MIT-PhosphorIcons.txt
         assets/fonts/LICENSE-OFL-AtkinsonHyperlegible.txt
         assets/fonts/LICENSE-OFL-ChakraPetch.txt
+        assets/fonts/LICENSE-OFL-JetBrainsMono.txt
         assets/fonts/LICENSE-OFL-Lexend.txt
         DESTINATION share/licenses/xeneon-edge-hub)
 # Debian Policy expects the installed package copyright record at this exact
@@ -460,7 +461,7 @@ qml6-module-qtqml-workerscript")
     set(CPACK_RPM_PACKAGE_VERSION "${XENEON_NATIVE_PACKAGE_VERSION}")
     set(CPACK_RPM_PACKAGE_GROUP "Applications/System")
     set(CPACK_RPM_PACKAGE_REQUIRES
-        "qt6-qtbase >= 6.5, qt6-qtdeclarative, qt6-qtsvg, qt6-qtwayland")
+        "qt6-qtbase >= 6.9, qt6-qtdeclarative, qt6-qtsvg, qt6-qtwayland")
     set(CPACK_RPM_FILE_NAME "RPM-DEFAULT")
 
     # Per-generator tooling checks run at *cpack* time, after -G has selected

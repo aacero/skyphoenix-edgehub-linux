@@ -156,7 +156,25 @@ QtObject {
     property int fontTitle: Math.round(17 * textScaleEff)
     property int fontLabel: Math.round(15 * textScaleEff)
     property int fontCaption: Math.round(13 * textScaleEff)
-    property string fontMono: "JetBrains Mono, Fira Code, monospace"
+    // Fixed-pitch face for tabular data readouts (timers, metric values, the
+    // Focus countdown). This was the string "JetBrains Mono, Fira Code,
+    // monospace" - which reads like a CSS stack but is NOT one: Qt does not
+    // split a comma-separated `font.family`, so the whole thing was matched as a
+    // single family name and fontconfig picked whatever it liked. It liked
+    // different things on different machines. Proven 2026-08-02 by the
+    // visual-baseline comparison the first time it could run in CI: the
+    // committed baseline renders the Focus timer in real monospace (slashed
+    // zeros, uniform digit widths) and the runner rendered the identical widget
+    // in a PROPORTIONAL sans. A countdown whose digits change width jitters on
+    // every tick - exactly what this token exists to prevent.
+    //
+    // Resolve through the bundled face, exactly as the a11y families do. The
+    // literal name is only reached if the resource is somehow missing, and
+    // "monospace" is kept as the final fallback so text is never left to a
+    // proportional default.
+    readonly property string fontMono:
+        monoLoader.status === FontLoader.Ready
+            ? monoLoader.name : "JetBrains Mono, monospace"
 
     // ── Bundled a11y fonts (SIL OFL 1.1, unmodified; assets/fonts/) ──────────
     // Loaded HERE so both apps and the test harness get them from the single
@@ -176,6 +194,12 @@ QtObject {
         FontLoader { source: t._fontsDir + "Lexend-Regular.ttf" }
     readonly property FontLoader lexendBoldLoader:
         FontLoader { source: t._fontsDir + "Lexend-Bold.ttf" }
+    // Tabular readout face, bundled for the same reason the a11y faces are: so
+    // every machine renders the same glyphs. See fontMono below.
+    readonly property FontLoader monoLoader:
+        FontLoader { source: t._fontsDir + "JetBrainsMono-Regular.ttf" }
+    readonly property FontLoader monoBoldLoader:
+        FontLoader { source: t._fontsDir + "JetBrainsMono-Bold.ttf" }
     // Brand wordmark face (Chakra Petch, OFL) - close free stand-in for the
     // SKYPhoenix IT logo lettering. Used only for the "EdgeHub" lockup.
     readonly property FontLoader brandLoader:

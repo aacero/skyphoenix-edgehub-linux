@@ -10,7 +10,7 @@ pkgdesc="Native Linux widget dashboard for the Corsair Xeneon Edge and other sec
 arch=('x86_64')
 url="https://github.com/skyphoenix-it/skyphoenix-edgehub-linux"
 license=('MIT' 'Apache-2.0' 'OFL-1.1' 'BSD-3-Clause' 'MPL-2.0' 'Unicode-3.0')
-depends=('qt6-base' 'qt6-declarative' 'qt6-svg' 'qt6-wayland' 'hicolor-icon-theme')
+depends=('qt6-base>=6.9' 'qt6-declarative' 'qt6-svg' 'qt6-wayland' 'hicolor-icon-theme')
 makedepends=('cmake' 'rust')
 install="$pkgname.install"
 

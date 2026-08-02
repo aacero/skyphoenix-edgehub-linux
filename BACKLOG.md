@@ -268,6 +268,84 @@ sabotage tried, and that it went red) in the PR/commit body - every agent this
 session was asked to do exactly that, and it caught real defects in *their own*
 work four separate times.
 
+## Known flake: `test_focus_natural_goal` races the celebration banner
+
+Opened 2026-08-02. Pre-existing — it also failed on run `30717604059`, before this
+branch touched anything — and it is a DIFFERENT class from the unexposed-window
+flake below, which is why the retry there deliberately does not cover it: retrying
+an assertion failure would be masking, not repair.
+
+`tests/gui/tst_gui_w_focus_core.qml::test_focus_natural_goal` seeds an already
+expired session and waits up to 3 s for a "Goal" banner. The banner is transient
+by design (`FocusWidget.qml`: fade in → `PauseAnimation { duration: 950 }` → fade
+out), and `G.byText` requires `n.visible`. So the assertion is a 3 s window onto a
+state the product deliberately shows for about a second, on a runner where the
+widget's own tick may not fire promptly. Every ingredient of a race is present.
+
+Worth fixing at the source rather than by widening the wait: assert on the state
+that persists (`celebrateMsg`, the awarded bonus, `doneToday`) and treat the
+banner's *appearance* as a separate, motion-aware check. Passes consistently
+locally; seen twice in CI.
+
+## Known flake: the nested compositor occasionally never exposes a window
+
+Opened 2026-08-02, on the first CI runs where the GUI suite could complete at all.
+
+A slot can lose a whole file to this, once, without any product or test cause.
+Qt prints it plainly and then does exactly what it says:
+
+```
+Test '.../tst_gui_w_media_data.qml' window was never exposed!
+If the test case was expecting windowShown, it will hang.
+```
+
+`when: windowShown` never fires, the file hangs, and `run_bounded` kills it at
+`RUN_TIMEOUT` — 540 s of a four-core runner spent on a file that produced nothing,
+which also starves the three slots sharing it. Seen once (run 30753137211,
+`tst_gui_w_media_data`, 89 s in the run immediately before and 32 s locally); the
+same commit's other 21 files were within a few seconds of their previous timings,
+so it is the exposure, not runner-wide slowness.
+
+`.github/workflows/ci.yml` already forces `LIBGL_ALWAYS_SOFTWARE` +
+`GALLIUM_DRIVER=llvmpipe` because Qt Quick's automatic Mesa selection "can still
+pick Zink and leave Wayland windows permanently unexposed" — so this is the
+residue of a hazard the workflow already knows about, not a new one.
+
+**Handled 2026-08-02, and honestly rather than silently.** `run_one` detects that
+exact Qt signature and re-runs the file ONCE, on a fresh slot number (the killed
+compositor leaves its socket file behind, so reusing the name would let the
+readiness check pass against a dead socket). The first attempt's log is kept as
+`<file>.unexposed.log`, the summary line carries `(RETRIED: …)`, and the totals
+block prints a `RETRIED (unexposed window, first attempt discarded)` list — a
+silent retry is how a suite starts lying about what it ran. Proven both ways: a
+test that emits the signature and then fails deterministically is retried AND
+still reported as FAILURE, so the retry cannot rescue a real defect.
+
+Waiting for a readiness *marker* in the compositor log was tried first and
+rejected: KWin's banner depends on its backend, and this workstation's KWin uses
+Vulkan (radv) and never prints the OpenGL line the CI runner does, so the gate
+failed every local run. There is no portable "compositor is ready" event here
+without adding a Wayland probe dependency.
+
+**Fail-fast added the same day, and it was not optional.** Detecting the hang but
+still waiting out the 540 s bound treated the symptom while amplifying the cause:
+on run `30759072341` two slots spun for 540 s each and starved the rest badly
+enough that unrelated 3 s `tryVerify` bounds began to fail
+(`tst_gui_shell_orient_settings`, `tst_gui_w_focus_core`) — the retry was making
+the runner worse. The slot now watches its own log for the marker Qt prints
+*before* it blocks and aborts in seconds: measured end-to-end at **5 s** for a
+probe that hangs twice, against 1080 s before.
+
+Still open:
+
+- Understand why it happens at all. Both occurrences were at `-j4` on a
+  four-core runner, i.e. four compositors initialising at once. If that is the
+  trigger, the cheapest real fix may be staggering slot starts rather than
+  detecting the symptom.
+
+Not a product defect, and deliberately NOT worked around by widening the timeout:
+a file that hangs is not a slow file.
+
 ## Candidates
 
 Unapproved ideas, findings, and out-of-scope proposals land here. Nothing in this
@@ -377,3 +455,213 @@ section is implemented without explicit product-owner approval (scope-control po
   accessibility gates at the exact moment they started working. The real fixes are product
   decisions: how the tiles reflow at raised text scale, what `dark/amber/orbs` becomes to
   reach 4.5:1, and what the high-contrast preset should look like.
+
+  **DIAGNOSIS CORRECTED 2026-08-02 — the clipping failures were not product defects, and
+  neither the "systemic layout rule" above nor the "fontconfig hinting" theory from the
+  font-stack fix (`541a9eb`) survives contact with the evidence.** They were a measurement
+  race in the test itself. Three independent proofs:
+
+  - **The failures are not stable.** Runs `9ab5ec7` and `d9ff376` are agent-framework
+    commits that touch no file under `ui/`, `tests/gui/`, `assets/` or `ci.yml`, yet they
+    disagree on **321 of the ~474 failing tags** (322 vs 305 failures, only 153 in common).
+    No font metric and no layout rule can move half its failures between two runs of
+    identical product code.
+  - **The signature reproduces on demand.** `tst_gui_widget_legibility` drove 1152 rows
+    through ONE harness and waited a flat `wait(32)` for each row's re-flow. Shortening
+    that to `wait(0)` on a developer machine reproduces the CI failure signature exactly —
+    487 failures, the same label strings, the same 2–4 px overflows — and restoring it
+    clears them. QQuickLayout re-flows on the polish pass, so a Text still carrying the
+    previous row's allocation while already reporting the new row's `contentHeight` reads
+    exactly like a clipped label. 32 ms is enough on an idle workstation and not enough on
+    a runner hosting four nested compositors.
+  - **The font theories are disproved by measurement.** Ubuntu's `fonts-noto-core`
+    `NotoSans-Regular.ttf` and this workstation's carry identical `hhea`/`OS/2` typo
+    metrics (1069/−293 at 1000 upem), so the resolved face is the same on both sides. And
+    installing Inter changes nothing, because `font.family` never selected it (below).
+
+  Fixed in the tests, with no assertion relaxed: the matrix now waits for the re-flow to
+  finish (signature unchanged across a presented frame, or no frame presented at all —
+  both compositor-paced, so a slower machine waits longer instead of measuring earlier)
+  and fails loudly if a row never settles. Negative control per the test-integrity rule
+  above: `Layout.maximumHeight: 12` on the MetricGauge history caption makes the fixed gate
+  report **96** genuine clipping failures, so the settle cannot mask a real defect.
+
+  The other two entries were also mis-attributed:
+  - `tst_gui_shell_wallpaper_presets::test_highcontrast_plain_gradient_grab` **never
+    entered high-contrast.** QuickTest runs a TestCase's functions in ALPHABETICAL order,
+    so it ran *before* `test_highcontrast_suppresses_backdrop`, and its "high-contrast"
+    grab was whatever the previous test left on screen. It compared two frames of the same
+    decorative theme and passed only when the animated backdrop had moved between them.
+    Now enters high-contrast itself and waits for the backdrop to respond.
+  - `tst_gui_shell_orient_settings::test_ori_b_landscape_grab_wider` asserted window
+    geometry 120 ms after requesting a resize — a compositor round-trip timed with a
+    stopwatch. Now polls the geometry.
+
+  **CLOSED** (full local suite on Qt 6.11: 22 files, `pass=2641 fail=0`, SUCCESS; the two
+  entries below are both resolved):
+  - ~~**🔴 `tst_gui_backdrop_contrast`: the orbs backdrop draws HARD-EDGED RINGS on Qt 6.7.**~~
+    `dark/amber/orbs secondary pixel minimum=3.76:1` on CI, **5.66:1** on this workstation,
+    for the identical combination with motion already frozen. The saved frame (added for
+    exactly this question, `gui-evidence/contrast-dark-amber-orbs.png`, PR #8 run
+    30740217834) shows why: on CI the card carries three crisp circle OUTLINES, and those
+    strokes are the pixels that fail. Where it renders correctly the same card is a smooth
+    wash with no visible edge at all — which is why the passing minimum matches the `none`
+    backdrop exactly.
+
+    **It is the Qt version, not the renderer** — the first reading of this ("draws
+    differently under CI's Mesa CPU rasteriser") was wrong, and the two-variable isolation
+    says so plainly:
+
+    | | real GPU | llvmpipe |
+    |---|---|---|
+    | **Qt 6.11.1** | 5.66:1 pass | pass |
+    | **Qt 6.7.3** | 3.81:1 FAIL | 3.76:1 FAIL |
+
+    **ROOT CAUSE + FIXED 2026-08-02.** It was never the gradient. `ShapePath.strokeColor`
+    defaults to **white**, and Qt < 6.9 still rasterises a hairline for a zero-width
+    stroke — so `strokeWidth: 0` alone left a white outline around every orb. Naming the
+    stroke transparent removes it on every Qt version, and the same two lines were missing
+    from all three `ShapePath` backdrops: `AnimatedBackground.qml` (orbs),
+    `MeshGradientBackground.qml` (mesh) and `BokehBackground.qml` (bokeh). Verified on
+    Qt 6.7.3 + llvmpipe — the whole 9251-combination matrix passes where it previously
+    aborted at the first orbs entry — and still passes on 6.11.
+
+    Owner decision the same day: **the supported Qt floor moves 6.5 → 6.9**, so neither
+    this nor the SwipeView defect below can reach a supported user in the first place.
+    `find_package(Qt6 6.9 REQUIRED …)`, the RPM `qt6-qtbase >= 6.9` requirement, both
+    PKGBUILDs, the AppImage builder and every install/support doc now say 6.9, and CI
+    pins **6.9.3** — the floor, deliberately, so CI keeps testing the oldest Qt the
+    product claims to support. Costs nothing: Fedora 43 ships 6.10.3, Ubuntu 26.04 ships
+    6.10.2, Arch is rolling, and Ubuntu 24.04 (6.4.2) was already excluded. The floor is
+    enforced, not just documented: `find_package(Qt6 6.9 REQUIRED …)` against a 6.7.3 tree
+    with no fallback path is rejected with "Could not find a configuration file for
+    package Qt6 that is compatible", while the full project configures against 6.9.3.
+
+    Note the hard technical minimum is still 6.5 (`QtQuick.Effects`); 6.9 is a *support*
+    decision, and `docs/DISTRIBUTION.md` §1 states both so the number is not mistaken for
+    a module requirement later.
+
+    The measurement that got here, kept because it is the shape of this class of bug:
+
+    | | real GPU | llvmpipe |
+    |---|---|---|
+    | **Qt 6.11.1** | 5.66:1 pass | pass |
+    | **Qt 6.7.3** | 3.81:1 FAIL | 3.76:1 FAIL |
+
+    Three follow-ups fell out of the matrix running to completion for the first time —
+    it had always aborted within seconds at the first orbs entry, so its real cost had
+    never been paid:
+
+    - **It timed out CI, and took a bystander with it.** 9251 combinations × ~11k sampled
+      pixels ran past the 540 s per-file bound, and because it then held a slot at full
+      CPU on a four-core runner it dragged `tst_gui_w_cal_weather` from 62 s to a timeout
+      as well. The measurement was doing four times the necessary work: it walked the
+      image once per foreground, and recomputed the *foreground's* luminance for every
+      pixel. One pass, both foregrounds, foreground luminance hoisted out — **186 s → 72 s**
+      locally, and proven numerically identical (220 combinations across themes, accents
+      and all 11 styles, exact `compare` of both minima against the old implementation).
+    - A grab that comes back at the wrong size is retried against a presented frame (seen
+      once in 9251 combinations under llvmpipe). Judging a frame that has not been
+      presented says nothing about the product; the assertion itself is unchanged.
+    - The failing frame is still saved to `gui-evidence/`, because that PNG is what turned
+      this from "a contrast number is low" into "there is a white stroke here".
+
+    Verified on a deliberately CI-shaped run — 4 cores (`taskset -c 0-3`), Qt 6.9.3,
+    llvmpipe, `-j4`: 22 files, `pass=2641 fail=0`, RESULT: SUCCESS, no TIMEKILLs, slowest
+    file 82 s.
+  - ~~`tst_gui_shell_nav_edit`: 8 × `QML ListView: Binding loop detected for property
+    "currentIndex"`~~ — **RESOLVED 2026-08-02: an upstream Qt < 6.9 defect, not ours.**
+    The first guess (Qt's internal ListView fighting `Dashboard.qml`'s `_applyWant()` /
+    `positionViewAtIndex`) was wrong, and so were two attempted product fixes — pinning
+    the SwipeView's implicit size, and making the `PageIndicator` one-way — neither of
+    which changed the count. Instrumenting `swipeView` showed the loops do not happen
+    during the swipe at all: they land while `count` is collapsing and growing again
+    (`3 → 1 → 2 …`, `currentIndex` passing through `-1`) as the test rebuilds its pages;
+    QtTest merely attributes the warning to whichever function was running.
+
+    Proved upstream by construction: a `SwipeView` holding four plain `Rectangle`s, with
+    no product code anywhere near it, reproduces the warning on Qt 6.7.3 as soon as its
+    `Repeater` count collapses and grows — and the identical file is clean on Qt 6.11.1.
+    Upstream fixed it by routing `Container.content{Width,Height}` through
+    `implicitContent{Width,Height}` (qtdeclarative, 2024-12-14, released in 6.9). Adding
+    a page is not something this product can stop doing, and the loop lives inside a
+    component we do not own.
+
+    `scripts/check_qml_diagnostics.sh` now dispositions that exact line as external, and
+    the disposition is **pinned to the versions that have the defect**: it is not
+    installed on Qt ≥ 6.9, it only matches Qt's own `qrc:/qt-project.org/imports/…`
+    copy of `SwipeView.qml`, and it does nothing at all if the log does not say which Qt
+    produced it. All three limits are asserted in
+    `scripts/check_release_gate_contract.sh`, so the suppression cannot outlive its cause
+    or quietly widen. The warnings stay visible in the report (`known_external=8`) rather
+    than being filtered out of existence.
+
+    Reproduction recipe, since this class will recur — CI pins Qt 6.7.3 and this
+    workstation runs 6.11: `aqt install-qt linux desktop 6.7.3 linux_gcc_64` into a
+    scratch dir, configure a second build tree with `-DCMAKE_PREFIX_PATH=<that>`, build
+    `xeneon-qmltestrunner`, then point the suite at it with `XENEON_TEST_BUILD_DIR` and
+    the matching `LD_LIBRARY_PATH` / `QT_PLUGIN_PATH` / `QML2_IMPORT_PATH`. That turned a
+    CI-only failure into a 70-second local loop; five attempts to reproduce it by making
+    the machine slower had all come back clean, because it was never about speed.
+  - `tst_gui_widget_legibility`: 1 × `There are still "2" items in the process of being
+    created at engine destruction` — asynchronous creation still pending at teardown.
+
+- **The product's system font stack is inert — `font.family` never selects Inter.**
+  `ui/qml/Theme.qml:207` declares `_fontDisplaySystem: "Inter, Segoe UI, Roboto,
+  sans-serif"`, a CSS-style stack. Qt does not split a comma-separated `font.family`, so
+  the whole string is matched as one family name, fails, and falls back to the default
+  sans. Measured with Inter installed (Ubuntu `fonts-inter` 4.0, the exact package CI
+  installs), "CPU" at `pixelSize: 20`:
+
+  | `font.family` | contentWidth × contentHeight |
+  |---|---|
+  | `"Inter"` | 42.25 × 25 |
+  | `"Inter, sans-serif"` | 39.33 × 28 |
+  | `"Inter, Segoe UI, Roboto, sans-serif"` | 39.33 × 28 |
+  | `"sans-serif"` | 39.33 × 28 |
+
+  Every user on the "system" font choice has been getting the fallback sans, never Inter,
+  and `541a9eb` installed Inter on the runner for a stack that cannot reach it. The fix is
+  one line (`font.families: ["Inter", "Segoe UI", "Roboto", "sans-serif"]`, or resolve the
+  first available family), but it CHANGES THE PRODUCT'S TYPEFACE on any machine that has
+  Inter — including every layout the legibility matrix measures. That is a product
+  decision, not a bug fix, so it is filed here rather than applied.
+
+  **🔴 ESCALATED 2026-08-02 — the same defect in `fontMono` is USER-VISIBLE, and it is
+  now proven, not inferred.** `Theme.qml:159` declares
+  `fontMono: "JetBrains Mono, Fira Code, monospace"` with the comment "fontMono stays mono
+  on purpose (tabular data readouts need fixed-pitch digits)". It does not. The whole
+  string is matched as one family name, so which face you get depends entirely on what
+  fontconfig decides on that machine — and it decides differently:
+
+  - **this workstation** renders the Focus timer as real monospace: slashed zeros, uniform
+    digit widths, wide colon spacing (that is what `tests/visual/baselines/widget-focus.png`
+    contains, captured at `4c22922`);
+  - **the CI runner** renders the identical widget in a PROPORTIONAL sans: round zeros,
+    tighter digits, no fixed pitch at all.
+
+  So the promised fixed-pitch digits are a coin flip per machine. A timer counting down in
+  a proportional face jitters on every digit change, which is precisely the thing the
+  comment says the mono token exists to prevent.
+
+  Found by the visual-baseline gate the moment it could finally run in CI — it had never
+  executed there (its Pillow dependency was missing, and the step only runs when the
+  compositor suite passes, which it never had). It fails 7 of 50 cases, all rms-only
+  (0.85–2.73% of pixels changed against a 5% cap, but rms 10.7–15.2 against a 10.0 cap):
+  few pixels, large differences — the signature of glyphs, not of layout. The diff images
+  show only text lighting up.
+
+  Two decisions, both product-owner calls, which is why nothing here is applied:
+
+  1. **Make `fontMono` actually mono.** `font.families: ["JetBrains Mono", "Fira Code",
+     "monospace"]` fixes the resolution, but it does NOT make the two machines agree —
+     each still resolves `monospace` to its own face (DejaVu Sans Mono on Ubuntu, a
+     different one here). Determinism needs a bundled mono face in `assets/fonts/`,
+     exactly as Atkinson Hyperlegible and Lexend already are — which adds a font asset and
+     a licence row.
+  2. **What the reviewed baselines are a reference FOR.** They currently encode this
+     workstation's font resolution. Either re-capture them from a CI run (making the
+     runner the reference), or keep them dev-box-only and do not run the comparison in CI.
+     `scripts/visual_baselines.py` is explicit that baselines are reviewed artifacts and
+     must never be regenerated as an automatic consequence of a failed comparison, so this
+     is not a decision an agent gets to make quietly.

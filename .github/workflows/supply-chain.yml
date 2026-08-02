@@ -139,10 +139,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # action commit pinned
         with:
           toolchain: '1.86.0'
-      - name: Install Qt 6.7
+      - name: Install Qt 6.9
         uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
-          version: '6.7.3'
+          version: '6.9.3'
           cache: true
       - name: Install build tools + strace
         # A real scalable font: the hub renders offscreen, and a missing font

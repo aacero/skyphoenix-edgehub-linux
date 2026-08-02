@@ -74,7 +74,7 @@ Documentation contributions are always welcome:
 - **Rust** 1.86+ (stable): https://rustup.rs
 - **C++ compiler**: GCC 12+ or Clang 16+
 - **CMake** 3.22+
-- **Qt 6.5+** development packages
+- **Qt 6.9+** development packages
 
 #### CachyOS / Arch Linux
 ```bash
@@ -88,7 +88,7 @@ sudo apt install git cargo cmake make g++ qt6-base-dev qt6-declarative-dev \
   qt6-svg-dev qt6-wayland-dev qt6-tools-dev libglib2.0-dev
 ```
 
-Ubuntu 24.04's native Qt 6.4 is below the project's Qt 6.5 minimum. Use the
+Ubuntu 24.04's native Qt 6.4 is below the project's Qt 6.9 minimum. Use the
 AppImage or an upstream Qt toolchain there.
 
 ### Build

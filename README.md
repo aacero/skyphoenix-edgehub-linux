@@ -273,7 +273,7 @@ tar -xf xeneon-edge-hub_1.0.0-beta.1_x86_64.tar.gz
 ```
 
 The tarball is a relocatable `/usr` payload, not a self-contained bundle: its
-binaries use the build host's glibc floor and the target system's Qt 6.5+
+binaries use the build host's glibc floor and the target system's Qt 6.9+
 libraries. The current maintainer build requires glibc 2.39 or newer. After
 extracting, run the Hub or Manager from the archive's `usr/bin/` directory, or
 use a native package only when that exact release lists the distribution as
@@ -342,7 +342,7 @@ is documented in the
 - **Rust** 1.86+ (the minimum declared by the locked Rust graph)
 - **C++17 compiler** (GCC 12+ or Clang 16+)
 - **CMake** 3.22+
-- **Qt 6.5+** with Qt Quick, Quick Controls, DBus, Network, SVG and Wayland
+- **Qt 6.9+** with Qt Quick, Quick Controls, DBus, Network, SVG and Wayland
   support
 
 **Arch / CachyOS**
@@ -360,7 +360,7 @@ sudo apt install git cargo cmake make g++ qt6-base-dev qt6-declarative-dev \
 ```
 
 Ubuntu 24.04's apt Qt 6.4.2 is below the project floor. Use a release
-AppImage when one is offered, or install an upstream Qt 6.5 or newer toolchain;
+AppImage when one is offered, or install an upstream Qt 6.9 or newer toolchain;
 the repository does not claim native Ubuntu 24.04 package support.
 
 ### Build & run
@@ -497,7 +497,7 @@ desktop environment. Review the exact dynamically linked and bundled Qt
 inventory for each release artifact against the official
 [Qt licensing table](https://doc.qt.io/qt-6/licensing.html).
 
-**Bundled fonts:** the selectable typeface options include [Atkinson Hyperlegible](https://github.com/googlefonts/atkinson-hyperlegible) (© Braille Institute of America) and [Lexend](https://github.com/googlefonts/lexend) (© The Lexend Project Authors); the brand wordmark uses [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) (© The Chakra Petch Project Authors). All three are bundled unmodified under the SIL Open Font License 1.1. Their OFL texts ship in both [`assets/fonts/`](assets/fonts/) and installed packages (`LICENSE-OFL-AtkinsonHyperlegible.txt`, `LICENSE-OFL-ChakraPetch.txt`, `LICENSE-OFL-Lexend.txt`).
+**Bundled fonts:** the selectable typeface options include [Atkinson Hyperlegible](https://github.com/googlefonts/atkinson-hyperlegible) (© Braille Institute of America) and [Lexend](https://github.com/googlefonts/lexend) (© The Lexend Project Authors); the brand wordmark uses [Chakra Petch](https://fonts.google.com/specimen/Chakra+Petch) (© The Chakra Petch Project Authors); and tabular readouts (timers, metric values) use [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) (© The JetBrains Mono Project Authors), bundled so fixed-pitch digits render identically on every machine rather than depending on what the local fontconfig resolves. All four are bundled unmodified under the SIL Open Font License 1.1. Their OFL texts ship in both [`assets/fonts/`](assets/fonts/) and installed packages (`LICENSE-OFL-AtkinsonHyperlegible.txt`, `LICENSE-OFL-ChakraPetch.txt`, `LICENSE-OFL-JetBrainsMono.txt`, `LICENSE-OFL-Lexend.txt`).
 
 **Bundled icons:** the interface includes SVGs derived from [Phosphor Icons core](https://github.com/phosphor-icons/core), Copyright (c) 2023 Phosphor Icons, under the MIT License. The exact upstream notice is stored at [`assets/icons/LICENSE-MIT-PhosphorIcons.txt`](assets/icons/LICENSE-MIT-PhosphorIcons.txt) and accompanies every installed package.
 

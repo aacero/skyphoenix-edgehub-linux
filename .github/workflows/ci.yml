@@ -87,13 +87,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # action commit pinned
         with:
           toolchain: '1.86.0'
-      # Ubuntu 24.04's apt Qt is 6.4.2, but the project requires Qt >= 6.5
-      # (QtQuick.Effects/MultiEffect) and needs QML modules the minimal apt
-      # packages omit (QtQml.WorkerScript). Install a full Qt >= 6.5 instead.
-      - name: Install Qt 6.7
+      # Ubuntu 24.04's apt Qt is 6.4.2; the project's supported floor is 6.9
+      # (see docs/DISTRIBUTION.md §1), and it needs QML modules the minimal apt
+      # packages omit (QtQml.WorkerScript, QtQuick.Effects). The pin is the
+      # FLOOR on purpose: CI's job is to catch what breaks on the OLDEST Qt this
+      # product claims to support, not on the newest one a developer happens to
+      # have. Raise this only together with the floor in CMakeLists.txt.
+      - name: Install Qt 6.9
         uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
-          version: '6.7.3'
+          version: '6.9.3'
           cache: true
       - name: Install build tools
         run: |
@@ -117,12 +120,13 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-      # Full Qt >= 6.5: the apt qt6-declarative is 6.4.2 and lacks bundled QML
-      # modules (QtQml.WorkerScript, QtQuick.Effects) the widgets need.
-      - name: Install Qt 6.7 (+ qmltestrunner)
+      # Full Qt at the supported floor: the apt qt6-declarative is 6.4.2 and
+      # lacks bundled QML modules (QtQml.WorkerScript, QtQuick.Effects) the
+      # widgets need. Keep in step with CMakeLists.txt's find_package floor.
+      - name: Install Qt 6.9 (+ qmltestrunner)
         uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
-          version: '6.7.3'
+          version: '6.9.3'
           cache: true
       - name: Install build tools, runtime libs + fonts
         # A real scalable font is required: several tests assert text metrics
@@ -192,10 +196,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # action commit pinned
         with:
           toolchain: '1.86.0'
-      - name: Install Qt 6.7
+      - name: Install Qt 6.9
         uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
-          version: '6.7.3'
+          version: '6.9.3'
           cache: true
       - name: Install build + coverage tools
         run: |
@@ -358,10 +362,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # action commit pinned
         with:
           toolchain: '1.86.0'
-      - name: Install Qt 6.7 (+ qmltestrunner)
+      - name: Install Qt 6.9 (+ qmltestrunner)
         uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
         with:
-          version: '6.7.3'
+          version: '6.9.3'
           cache: true
       - name: Install compositor + runtime libs
         run: |
@@ -413,6 +417,14 @@ jobs:
         # human-visible mouse/key delays so this required gate completes inside
         # the job limit without changing any assertion or bounded wait.
         run: bash tests/gui/run_gui_tests.sh --fast -j4
+      - name: Install Pillow for the visual-baseline comparison
+        # `python3-pil` above lands in the SYSTEM python, but install-qt-action
+        # puts a tool-cache python first on PATH - so `python3` here is 3.12 from
+        # /opt/hostedtoolcache with no Pillow, and the comparison exits with
+        # "Pillow is required". Nobody saw it because this step only runs when
+        # the compositor suite passes, and the suite had never passed. Install
+        # into the interpreter that actually runs the script.
+        run: python3 -m pip install --disable-pip-version-check --quiet pillow
       - name: Compare reviewed visual baselines
         run: python3 scripts/visual_baselines.py compare
       - name: Upload GUI evidence

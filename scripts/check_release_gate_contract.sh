@@ -232,6 +232,41 @@ printf '%s\n' \
     > "$diagnostic_log"
 check "exact Qt animation-driver dependency warning is separately dispositioned" \
     "$QML_DIAGNOSTIC_CHECKER" "$diagnostic_log" --tier compiled
+
+# The Qt < 6.9 SwipeView currentIndex binding loop is dispositioned, but only on
+# the versions that have the defect, only for Qt's OWN copy of SwipeView.qml, and
+# only when the log says which version produced it. Each of those three limits is
+# asserted here, because a disposition nobody can see expiring is how a gate goes
+# quietly inert.
+swipeview_loop='QWARN  : suite::case() qrc:/qt-project.org/imports/QtQuick/Controls/Basic/SwipeView.qml:15:18: QML ListView: Binding loop detected for property "currentIndex":'
+printf '%s\n' \
+    'Config: Using QtTest library 6.7.3, Qt 6.7.3 (x86_64-little_endian-lp64)' \
+    "$swipeview_loop" > "$diagnostic_log"
+check "Qt 6.7 SwipeView currentIndex loop is dispositioned as external" \
+    "$QML_DIAGNOSTIC_CHECKER" "$diagnostic_log" --tier composed
+printf '%s\n' \
+    'Config: Using QtTest library 6.11.1, Qt 6.11.1 (x86_64-little_endian-lp64)' \
+    "$swipeview_loop" > "$diagnostic_log"
+if "$QML_DIAGNOSTIC_CHECKER" "$diagnostic_log" --tier composed >/dev/null 2>&1; then
+    echo "  FAIL SwipeView disposition outlived the Qt release that needed it"; fail=$((fail + 1))
+else
+    echo "  ok   SwipeView disposition expires on Qt 6.9+"
+fi
+printf '%s\n' \
+    'Config: Using QtTest library 6.7.3, Qt 6.7.3 (x86_64-little_endian-lp64)' \
+    'QWARN  : suite::case() qrc:/qml/Dashboard.qml:1124:9: QML ListView: Binding loop detected for property "currentIndex":' \
+    > "$diagnostic_log"
+if "$QML_DIAGNOSTIC_CHECKER" "$diagnostic_log" --tier composed >/dev/null 2>&1; then
+    echo "  FAIL a product-file currentIndex binding loop was excused"; fail=$((fail + 1))
+else
+    echo "  ok   a product-file currentIndex binding loop still fails"
+fi
+printf '%s\n' "$swipeview_loop" > "$diagnostic_log"
+if "$QML_DIAGNOSTIC_CHECKER" "$diagnostic_log" --tier composed >/dev/null 2>&1; then
+    echo "  FAIL SwipeView loop was excused without a Qt version to justify it"; fail=$((fail + 1))
+else
+    echo "  ok   SwipeView disposition needs a Qt version in the log"
+fi
 rm -f "$diagnostic_log"
 
 echo "==> Nested-runner skip detection"

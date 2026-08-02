@@ -488,10 +488,27 @@ Item {
             verify(!theme.decorative || !bd.visible, "high-contrast hides the decorative backdrop")
             verify(!bd.visible, "backdrop suppressed under high-contrast")
         }
+        // QuickTest runs a TestCase's functions in ALPHABETICAL order, so this
+        // one runs BEFORE test_highcontrast_suppresses_backdrop, not after it.
+        // The high-contrast grab therefore never captured a high-contrast
+        // dashboard at all - it captured whatever the previous test happened to
+        // leave on screen, and the comparison below was between two frames of
+        // the SAME decorative theme. It passed locally only because the
+        // animated backdrop had moved between the two grabs, and it failed on
+        // CI when it had not. Enter high-contrast here instead of inheriting a
+        // neighbour's state, and wait for the backdrop to actually respond
+        // rather than for a fixed 150 ms.
         function test_highcontrast_plain_gradient_grab() {
+            store.load("blank")
+            store.setAppearance("wallpaper", ""); store.setAppearance("bgStyle", "orbs")
+            store.setAppearance("themeMode", "high_contrast"); dash.applyAppearance()
+            tryVerify(function () { return !bd.visible }, 3000,
+                      "high-contrast suppressed the decorative backdrop")
             var hc = snap(dash, "highcontrast")
             // restore a normal theme for cleanliness
-            store.setAppearance("themeMode", "midnight"); dash.applyAppearance(); wait(150)
+            store.setAppearance("themeMode", "midnight"); dash.applyAppearance()
+            tryVerify(function () { return bd.visible }, 3000,
+                      "midnight restored the decorative backdrop")
             var normal = grabSurface()
             verify(root.pxDiff(hc, normal) >= 1, "the themed background differs from high-contrast")
         }

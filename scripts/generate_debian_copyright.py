@@ -139,6 +139,10 @@ Files: assets/fonts/ChakraPetch-*.ttf
 Copyright: 2018 The Chakra Petch Project Authors
 License: OFL-1.1
 
+Files: assets/fonts/JetBrainsMono-*.ttf
+Copyright: 2020 The JetBrains Mono Project Authors
+License: OFL-1.1
+
 Files: assets/fonts/Lexend-*.ttf
 Copyright: 2018 The Lexend Project Authors
 License: OFL-1.1

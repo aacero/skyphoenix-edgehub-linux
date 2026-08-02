@@ -24,6 +24,10 @@ Item {
         antialiasing: true
         // Stays painted even when inactive; only the drift animations gate on `active`.
         ShapePath {
+            // Same trap as AnimatedBackground: ShapePath's strokeColor defaults
+            // to WHITE and Qt < 6.9 rasterises a hairline even at zero width,
+            // so each blob gains a hard ring. Name the stroke transparent.
+            strokeColor: "transparent"
             strokeWidth: 0
             fillGradient: RadialGradient {
                 centerX: blob.diameter / 2; centerY: blob.diameter / 2

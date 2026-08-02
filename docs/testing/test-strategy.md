@@ -231,7 +231,7 @@ fn test_mpris_play_pause_sends_correct_dbus_method() {
 | OS | Ubuntu 24.04 LTS (primary CI), Arch Linux (secondary) |
 | Display server | Xvfb (X11 virtual framebuffer) for headless tests |
 | Wayland | headless Wayland (wlroots-based) for Wayland tests |
-| Qt version | Qt 6.5 LTS (Ubuntu), Qt 6.7+ (Arch) |
+| Qt version | Qt 6.9.3 in CI (the supported floor), Qt 6.10+ on target distros, rolling on Arch |
 | Rust | Latest stable |
 
 ### Manual Test Environments

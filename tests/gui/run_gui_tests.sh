@@ -116,6 +116,22 @@ if [ "${1:-}" = "__slot" ]; then
     sleep 0.5
   done
   [ -S "$XDG_RUNTIME_DIR/$sock" ] || { echo "!! nested KWin never came up for $base"; exit 3; }
+  # The SOCKET is not readiness: KWin binds it before it can expose a surface,
+  # and a client that maps a window into a compositor that is not ready yet is
+  # never exposed. Qt says so and then does exactly what it says - "window was
+  # never exposed! ... it will hang" - and `when: windowShown` waits forever,
+  # costing the whole per-file bound and starving the slots sharing the runner.
+  # Measured twice in consecutive CI runs (30753137211: tst_gui_w_media_data,
+  # then tst_gui_priority_alert), each time with a perfectly healthy compositor
+  # log: four KWins racing to initialise on a four-core runner is more than this
+  # settle was ever going to cover.
+  #
+  # Waiting for a readiness MARKER in the compositor log was tried first and
+  # rejected: KWin's banner depends on its backend, and this workstation's KWin
+  # uses Vulkan (radv) and never prints the OpenGL line the CI runner does, so
+  # the gate failed every local run. There is no portable "ready" event here
+  # without adding a Wayland probe dependency. run_one detects the exact Qt
+  # signature afterwards and retries the file once instead - see there.
   sleep 1
   if [ "${SLOT_RECORD:-0}" = "1" ]; then
     mkdir -p "$SLOT_EVID"
@@ -126,8 +142,34 @@ if [ "${1:-}" = "__slot" ]; then
   fi
   WAYLAND_DISPLAY="$sock" QT_QPA_PLATFORM=wayland QT_LOGGING_RULES="qt.qpa.*=false" \
     "$SLOT_QT" -input "$SLOT_F" $SLOT_IMPORTS -maxwarnings 0 \
-    -mousedelay "$SLOT_MD" -keydelay "$SLOT_KD"
-  qrc=$?
+    -mousedelay "$SLOT_MD" -keydelay "$SLOT_KD" &
+  qpid=$!
+  # Fail FAST when the compositor never exposes the window. Qt prints the marker
+  # BEFORE it blocks on windowShown, and this slot's stdout IS the log file the
+  # parent redirects it to, so it can be watched from right here.
+  #
+  # Without this the file burns the entire RUN_TIMEOUT doing nothing. That is not
+  # merely wasted time: on a four-core runner, two slots spinning for 540s each
+  # starved the rest badly enough that unrelated 3s tryVerify bounds began to
+  # fail (run 30759072341 lost tst_gui_shell_orient_settings and
+  # tst_gui_w_focus_core that way). Detecting the hang but waiting out the bound
+  # treated the symptom while amplifying the cause.
+  qrc=""
+  while kill -0 "$qpid" 2>/dev/null; do
+    if grep -q "window was never exposed" "$SLOT_LOGDIR/$base.log" 2>/dev/null; then
+      echo "!! nested compositor never exposed the window for $base - aborting early"
+      kill -9 "$qpid" 2>/dev/null
+      qrc=96
+      break
+    fi
+    sleep 1
+  done
+  if [ -z "$qrc" ]; then
+    wait "$qpid"
+    qrc=$?
+  else
+    wait "$qpid" 2>/dev/null || true
+  fi
   if [ -n "$slot_ffpid" ]; then
     kill -9 "$slot_ffpid" 2>/dev/null
     wait "$slot_ffpid" 2>/dev/null
@@ -181,6 +223,26 @@ if [ ! -x "$QT" ]; then
   QT=/usr/lib/qt6/bin/qmltestrunner
   command -v qmltestrunner >/dev/null 2>&1 && QT=qmltestrunner
   echo "!! resource-aware $TEST_BUILD_DIR/xeneon-qmltestrunner missing; qrc pixel checks may fail"
+fi
+
+# The harness loads every widget from `qrc:/qml/` (tests/ui/WidgetHarness.qml),
+# so the product QML under test is the copy COMPILED INTO this runner, not the
+# one in the working tree. A runner older than the tree therefore validates code
+# that no longer exists - silently, and with a green result. Measured on
+# 2026-08-02: a deliberate clipping defect added to ui/qml/widgets/MetricGauge.qml
+# was invisible to this suite (0 failures) until the runner was rebuilt, after
+# which the same defect produced 96. Refuse to report on a stale runner; this is
+# the same rule as the other guards in scripts/ - a gate must not pass for the
+# state in which it did no work.
+if [ -x "$QT" ]; then
+  STALE=$(find ui/qml ui/qml.qrc manager/qml manager/manager.qrc assets \
+            -newer "$QT" -print -quit 2>/dev/null)
+  if [ -n "$STALE" ]; then
+    echo "!! $QT is OLDER than $STALE"
+    echo "!! it embeds the product QML, so this run would test the compiled-in copy"
+    echo "!! rebuild first: cmake --build $TEST_BUILD_DIR --target xeneon-qmltestrunner"
+    exit 2
+  fi
 fi
 
 EVID="$ROOT/gui-evidence"
@@ -256,6 +318,29 @@ run_one() {
     SLOT_VIRTUAL="$((1 - VISIBLE))" SLOT_RECORD="$RECORD" SLOT_EVID="$EVID" \
     stdbuf -oL -eL bash "$SELF" __slot > "$LOGDIR/$base.log" 2>&1
   rc=$?
+  # Safety net for the exposure race the readiness gate above is meant to close.
+  # If the compositor still failed to expose this file's window, Qt said so and
+  # then hung, so the result carries no information about the product - retry it
+  # ONCE. Loudly: a silent retry is how a suite starts lying about what it ran,
+  # and this repository has paid for that lesson already. Anything other than
+  # this exact signature is reported as-is and never retried.
+  if [ "$rc" != 0 ] \
+      && grep -q "window was never exposed" "$LOGDIR/$base.log" 2>/dev/null; then
+    echo "==> [retry] $base - nested compositor never exposed its window (rc=$rc)"
+    mv -f "$LOGDIR/$base.log" "$LOGDIR/$base.unexposed.log" 2>/dev/null
+    # A different slot number: the killed compositor leaves its socket file
+    # behind, and reusing the name would let the readiness check pass against a
+    # dead socket.
+    run_bounded SLOT_F="$f" SLOT_N="$((slot + 1000))" SLOT_QT="$QT" \
+      SLOT_IMPORTS="$IMPORTS" SLOT_MD="$MOUSEDELAY" SLOT_KD="$KEYDELAY" \
+      SLOT_LOGDIR="$LOGDIR" SLOT_XDG="$XDG_RUNTIME_DIR" \
+      SLOT_VIRTUAL="$((1 - VISIBLE))" SLOT_RECORD="$RECORD" SLOT_EVID="$EVID" \
+      stdbuf -oL -eL bash "$SELF" __slot > "$LOGDIR/$base.log" 2>&1
+    rc=$?
+    # run_one executes in a SUBSHELL under -jN, so a variable cannot carry this
+    # back to the summary. Leave a marker the aggregation loop can see.
+    : > "$LOGDIR/$base.retried"
+  fi
   t1=$(date +%s)
   case "$rc" in
     97) echo "!! $base was MEMKILLed (>${RUN_MEM_MAX_MB} MiB RSS)" >> "$LOGDIR/$base.log" ;;
@@ -300,6 +385,7 @@ fi
 # Aggregate AFTER the run, walking FILES in sorted order, so the summary reads
 # the same whether the files ran sequentially or finished out of order.
 TOTAL_PASS=0; TOTAL_FAIL=0; TOTAL_SKIP=0; FILECOUNT=0; FAILFILES=""; DIAGFAIL=0; RUNNERFAIL=0
+RETRIEDFILES=""
 SUMMARY="$LOGDIR/summary.txt"; : > "$SUMMARY"
 FAILLOG="$LOGDIR/failures.txt"; : > "$FAILLOG"
 
@@ -316,8 +402,13 @@ for f in $FILES; do
   if [ -f "$LOGDIR/$base.rc" ]; then
     IFS= read -r runner_rc < "$LOGDIR/$base.rc" || runner_rc="invalid"
   fi
-  printf "%-44s pass=%-4s fail=%-4s skip=%-4s rc=%s\n" \
-    "$base" "$p" "$m" "$k" "$runner_rc" >> "$SUMMARY"
+  retried=""
+  if [ -f "$LOGDIR/$base.retried" ]; then
+    retried="  (RETRIED: compositor never exposed the window on the first attempt)"
+    RETRIEDFILES="$RETRIEDFILES $base"
+  fi
+  printf "%-44s pass=%-4s fail=%-4s skip=%-4s rc=%s%s\n" \
+    "$base" "$p" "$m" "$k" "$runner_rc" "$retried" >> "$SUMMARY"
   case "$runner_rc" in
     0) ;;
     *)
@@ -367,6 +458,7 @@ echo
 echo "==================================================================="
 echo " GUI SUITE TOTALS: pass=$TOTAL_PASS fail=$TOTAL_FAIL skip=$TOTAL_SKIP  (files=$FILECOUNT)"
 echo " evidence: $EVID   logs: $LOGDIR"
+[ -n "$RETRIEDFILES" ] && echo " RETRIED (unexposed window, first attempt discarded):$RETRIEDFILES"
 [ -n "$FAILFILES" ] && echo " FAILED FILES:$FAILFILES" && echo " see $FAILLOG"
 echo "==================================================================="
 # Anti-vacuity floor: a run that judged NOTHING is a failure, not a pass. This

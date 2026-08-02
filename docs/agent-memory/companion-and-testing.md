@@ -1,7 +1,7 @@
 ---
 name: companion-and-testing
 description: "Xeneon Edge Manager companion app, hub control-socket IPC, and the QML GUI test harness"
-metadata:
+metadata: 
   node_type: memory
   type: project
   originSessionId: 59076df8-2015-4bf2-9a34-fa4a0f7bc65f
@@ -10,7 +10,7 @@ metadata:
 Added mid-2026 (same effort that hardened the widgets):
 
 - **Companion app `xeneon-edge-manager`** (`manager/`): standalone Qt6/QML desktop
-  app to manage the hub - layout (pages/tiles: add/reorder/resize/remove via the
+  app to manage the hub — layout (pages/tiles: add/reorder/resize/remove via the
   add-picker), appearance (theme/accent/glass/glow/reduce-motion), image upload,
   and display/autostart. It **reuses** `DashboardStore.qml` + `WidgetCatalog.qml`
   (aliased into `manager/manager.qrc` under `qrc:/manager/`) by having C++
@@ -21,7 +21,7 @@ Added mid-2026 (same effort that hardened the widgets):
   `QLocalServer` on socket `xeneon-edge-hub-ctl` (filesystem path `/tmp/xeneon-edge-hub-ctl`
   on this box), newline-delimited JSON (`getUiState`/`setUiState`/`ping`). Manager's
   `saveUiState` persists via the Rust config AND pushes `setUiState` over the socket.
-  ⚠️ CRITICAL FOR TESTING: on the hub, `setUiState` **PERSISTS TO DISK** - C++
+  ⚠️ CRITICAL FOR TESTING: on the hub, `setUiState` **PERSISTS TO DISK** — C++
   `ConfigBridge::applyExternalUiState` (main.cpp) calls `xeneon_config_set_ui_state` +
   `xeneon_config_save` AND applies live via QML `DashboardStore.applyExternal` (which
   itself does not re-save, but the C++ already did). So pushing test values over the
@@ -33,29 +33,29 @@ Added mid-2026 (same effort that hardened the widgets):
   the harness context and resolves `theme`/`store`/`media` by scope, exactly like
   Dashboard). `HarnessTheme.qml` mirrors main.qml's `_theme` tokens; `MockMedia.qml`
   stands in for the MPRIS bridge. GOTCHA: seed the store with `store.load("blank")`
-  BEFORE the widget loads (gate the Loader on a flag) - the store's `data` is only a
+  BEFORE the widget loads (gate the Loader on a flag) — the store's `data` is only a
   mutable JS object after `load()`; mutating the initial literal throws
   "Cannot assign to non-existent property". 250+ tests: per-widget smoke×boundary,
   logic, real mouse/key input, touch-target sizes. `qmltestrunner`/`qmllint` live in
   `/usr/lib/qt6/bin` (not on PATH).
 
 Key widget fix (systemic): in `Dashboard.qml` the tile tap-to-expand `MouseArea`
-(`tapMA`) is declared **before** the widget `Loader` so it sits UNDERNEATH it -
+(`tapMA`) is declared **before** the widget `Loader` so it sits UNDERNEATH it —
 widget controls (small MouseAreas on top) handle their taps; inert areas fall
 through to expand. Previously it was on top and swallowed every compact control.
 Any widget with a FULL-tile compact MouseArea (e.g. old HydrationWidget) would trap
-the expand gesture - use a bounded button instead. See [[dashboard-architecture]].
+the expand gesture — use a bounded button instead. See [[dashboard-architecture]].
 
 GOTCHA (hub-polish pass, cost a 164-test cascade): `qmllint --bare` AND even
 `qmllint -I ui/qml -I ui/qml/widgets` do NOT catch an `on<Prop>Changed:` handler
 for a property the object doesn't actually have (e.g. `onTintChanged:` on a Canvas
-whose `tint` lives on the parent `Item` - "Cannot assign to non-existent property").
+whose `tint` lives on the parent `Item` — "Cannot assign to non-existent property").
 Only `qmltestrunner`'s `compile()` (i.e. real instantiation) surfaces it, as
-"Type X unavailable" - and since WidgetChrome embeds a BackdropLayer, one broken
+"Type X unavailable" — and since WidgetChrome embeds a BackdropLayer, one broken
 background type cascades to EVERY widget test failing to load (null `item`). ALWAYS
 run `scripts/run_ui_tests.sh` after QML edits, not just qmllint. Related: a child
 Rectangle that is NOT a delegate/component root can't reference its OWN `property`
-from a child by BARE name ("sel is not defined") - give it an `id` and use `id.sel`
+from a child by BARE name ("sel is not defined") — give it an `id` and use `id.sel`
 (delegate roots + the file root DO resolve bare names; plain intermediate objects don't).
 
 REAL-EDGE E2E TESTING (2026-07, works headless as a bg agent, no sudo):
@@ -65,41 +65,41 @@ REAL-EDGE E2E TESTING (2026-07, works headless as a bg agent, no sudo):
   "watching /dev/hidraw5".
 - **Screenshots of the LIVE panel**: `spectacle -b -n -f -o full.png` works non-interactively
   on this KWin/Wayland session (captures the whole 5120×5440 canvas, no portal prompt), then
-  crop the Edge region `img.crop((4400,2880,5120,5440))` with PIL. (grim/`import` FAIL - no
+  crop the Edge region `img.crop((4400,2880,5120,5440))` with PIL. (grim/`import` FAIL — no
   wlr, X-auth.) For a single static native render, the built-in `XENEON_GRAB` hook is cleaner.
 - **Synthetic TOUCH without sudo/ydotool**: `/dev/uinput` is writable by simon via an ACL
-  (`user:simon:rw-`, set by the openlinkhub/Corsair daemon - verify with `getfacl`). Create a
+  (`user:simon:rw-`, set by the openlinkhub/Corsair daemon — verify with `getfacl`). Create a
   pure-python uinput ABSOLUTE POINTER (INPUT_PROP_POINTER, ABS_X/ABS_Y range 0..65535, BTN_LEFT)
-  - see `uinput_touch.py` (VPointer). Its 0..65535 range maps to the FULL canvas, so
+  — see `uinput_touch.py` (VPointer). Its 0..65535 range maps to the FULL canvas, so
   canvas(x,y)→abs = x/5120*65535, y/5440*65535; Edge-local (0..720,0..2560) = +4400,+2880.
-  TWO CRITICAL gotchas: (1) input_event struct on 64-bit is 24 bytes - pack `'=qqHHi'` (NOT
+  TWO CRITICAL gotchas: (1) input_event struct on 64-bit is 24 bytes — pack `'=qqHHi'` (NOT
   `'=llHHi'`; standard-mode 'l' is 4 bytes → EINVAL). (2) a single abs-jump+click does NOT
-  register on Wayland - must SETTLE: move→sleep .2→move→sleep .2→BTN down→hold .14→up. With
+  register on Wayland — must SETTLE: move→sleep .2→move→sleep .2→BTN down→hold .14→up. With
   that, taps land pixel-accurate (verified: tapping the 4 Focus preset segments changed
   cfg.preset exactly, confirmed via IPC getUiState). Swipes = press+incremental moves+release.
 - **VERIFY touch via IPC, not just screenshots**: drive the control socket (`getUiState`) to
-  confirm a tap's effect on ui_state (e.g. preset/dailyGoal/running changes) - the strongest
+  confirm a tap's effect on ui_state (e.g. preset/dailyGoal/running changes) — the strongest
   proof. Socket path: `/tmp/xeneon-edge-hub-ctl`. ALWAYS back up + restore config.toml around
   touch/IPC tests (setUiState persists to disk).
 - **Measured baselines (real Edge, 2026-07)**: IPC getUiState p50 0.02ms / p99 0.08ms over 300
   round-trips, 0 fails; 25 concurrent conns all answered; 500 connect/disconnect cycles clean;
   worst-case CPU with ALL animations on = 3.5% (0.5% with reduceMotion); RSS ~378MB steady
-  (plateaus - second-half growth negative over a 3-min soak, no leak); malformed/9MB-oversized/
+  (plateaus — second-half growth negative over a 3-min soak, no leak); malformed/9MB-oversized/
   partial input all survived; 40-tap storm no crash. Clean SIGTERM/shutdown, exit 0.
 
 HUB GRAB HOOK (added hub-polish pass): the hub now has `XENEON_GRAB=<path>` like the
 Manager (Qt-internal `QQuickWindow::grabWindow` → PNG → quit; needs the REAL display
-`DISPLAY=:0`, NOT offscreen which returns null; no X-auth/screenshot-tool needed -
+`DISPLAY=:0`, NOT offscreen which returns null; no X-auth/screenshot-tool needed —
 `import`/`spectacle` FAIL here on Wayland X-auth). Optional `XENEON_GRAB_W`/`_H`
 resize the window first so the 720×2560 portrait shell renders fully on a smaller dev
 monitor (e.g. 394×1400). Combine with `XENEON_EXPAND=<type>` to grab the expanded
 config overlay. Launch via `setsid env XENEON_GRAB=… DISPLAY=:0 ./build/xeneon-edge-hub
 --windowed & disown` then poll for the PNG. Metrics now run on a worker thread and
-MPRIS is fully async D-Bus (QDBusPendingCallWatcher) - neither blocks the GUI thread.
+MPRIS is fully async D-Bus (QDBusPendingCallWatcher) — neither blocks the GUI thread.
 
 GOTCHA (cost a rebuild): the `qmltestrunner` suite loads widgets from the SOURCE
 tree via `-I` import paths, so it does NOT catch a new widget file missing from
-`ui/qml.qrc` - the real app loads from qrc and fails with "<Type> is not a type".
+`ui/qml.qrc` — the real app loads from qrc and fails with "<Type> is not a type".
 When adding any `ui/qml/widgets/*.qml`, add a `<file alias="qml/X.qml">` line to
 `ui/qml.qrc` too (e.g. Sparkline/MetricGauge). Verify by actually launching the
 built hub and grepping the log for "is not a type", not just by running the suite.
@@ -138,11 +138,11 @@ TYPE, so `AppIcon{name:type}` needs no catalog lookup. WidgetChrome has `iconNam
 edit overlay, expand ⤢, Manager nav + add-picker + config header) to AppIcon.
 
 Orientation-aware layout (P0-3): C++ `main.cpp` connects `QScreen::orientationChanged`
-(NO setOrientationUpdateMask - removed in Qt6) on the target screen → sets root
+(NO setOrientationUpdateMask — removed in Qt6) on the target screen → sets root
 `sensorOrientation` (portrait/landscape/inverted-*); pushes initial only if
 `orientation()!=PrimaryOrientation`. main.qml: `orientationMode` (appearance
 `orientation`, "auto" follows sensor else fixed) → `effectiveOrientation` →
-`contentRotation` (0/90/180/270). A `contentRoot` Item wraps the StackView,
+`contentRotation` (0/90/180/270). A `contentRoot` Item wraps StackView+InputPanel,
 `rotation: contentRotation`, and SWAPS width/height when 90/270 so the dashboard
 inside lays out for the effective aspect. Dashboard `cols`: landscape (width>height)
 → `min(floor(w/300),4)` to fill; portrait → user's gridCols. Controls in on-device
@@ -159,21 +159,21 @@ ConfigField takes a `col` token object (keys: textPrimary/textSecondary/bg/accen
 panelAlt + optional `ctlH`/`fontBase` for touch sizing) so the SAME control renders in the
 desktop Manager (`col: m`, ctlH 46) and the on-device touch view (Dashboard `cfgCol`, ctlH 58).
 The HUB expanded view (`Dashboard.qml` overlay) is now a full-screen **live preview + config
-panel** (GridLayout: portrait stacks, landscape side-by-side) - not a big sparse widget.
+panel** (GridLayout: portrait stacks, landscape side-by-side) — not a big sparse widget.
 Field types: text/textarea/number-stepper/slider/toggle/segmented/date/hour/tasks/action/info;
 fields may carry `help`; every widget gets a General (custom title) + About section.
-⚠️ EVERY schema option MUST be honoured by its widget - no decorative toggles. Widgets read
+⚠️ EVERY schema option MUST be honoured by its widget — no decorative toggles. Widgets read
 live config via `readonly property var cfg: { var _=store?store.revision:0; return (store&&
 instanceId)?store.settingsFor(instanceId):({}) }` + `readonly property` helpers with defaults
 that MATCH the schema `dflt`. Metrics available are limited (cpu/gpu/ram/net-aggregate/disk-root
-only - no per-interface, no arbitrary mount), so don't add options the Rust metrics can't back.
+only — no per-interface, no arbitrary mount), so don't add options the Rust metrics can't back.
 Universal "Custom title" via `WidgetChrome.titleOverride`. Weather has a geocode action; on the
 hub `Dashboard.cfgAction("geocode")` calls the preview widget's `geocode()`.
 QA hook: launch hub with `XENEON_EXPAND=<type>` to auto-open that widget's expanded config view
 (mirrors the Manager's `XENEON_CFG`); context prop `_expandType` read in Dashboard.onCompleted. GOTCHA (cost ~an hour): a
 delegate binding `store: store` where the delegate TYPE also has a `property var
 store` SELF-BINDS to its own null property (name collision with the outer id), with
-NO error logged - the control silently reads nothing. Fix: name the passed-in
+NO error logged — the control silently reads nothing. Fix: name the passed-in
 property differently (used `st: store`). Watch for any `X: X` where X is both an
 outer id and the component's own property.
 
@@ -193,17 +193,17 @@ instantiated INLINE in Manager.qml (shares its scope) and the tile Loaders inher
 that context. Per-widget config form is still a stub popup (next pass).
 
 Capture the Manager UI headlessly: `QT_QPA_PLATFORM=offscreen XENEON_GRAB=/path.png
-XENEON_TAB=<0-3> ./build/xeneon-edge-manager` - C++ `QQuickWindow::grabWindow()`
+XENEON_TAB=<0-3> ./build/xeneon-edge-manager` — C++ `QQuickWindow::grabWindow()`
 renders + saves + quits (QML `grabToImage` did NOT fire in the headless/bg-job
 context; the C++ grab is reliable). NB: offscreen shows only an 800x800 virtual
 screen in the Display tab; real monitors appear when run on the actual display.
 Also: `pgrep -c -f 'build/xeneon-edge-hub'` over-counts (matches the invoking
-shell) - use `ps -eo pid,cmd | grep` to count app processes truthfully.
+shell) — use `ps -eo pid,cmd | grep` to count app processes truthfully.
 GOTCHA (widgets-polish pass): `XENEON_CFG=<type>` only auto-opens that widget's config
 dialog if a tile of `<type>` is actually PLACED on some page (Manager.qml Timer scans
 all pages for a matching tile; no match = silent no-op, stays on the Layout tab). Since
 the Manager live-syncs the RUNNING hub's layout, you can only grab config dialogs for
-widget types currently on the device - grabbing an unplaced type's dialog needs the hub
+widget types currently on the device — grabbing an unplaced type's dialog needs the hub
 stopped + the type added first. The real-display grab needs `DISPLAY=:0` (offscreen
 `grabWindow` returns null); launch with `setsid env … & disown` and poll for the PNG
 (GUI launch via the Bash tool otherwise reaps as exit 144).
@@ -219,7 +219,7 @@ layers + a few opacity-twinkling dots. Pickers: on-device SettingsPanel (global)
 Manager (global default in Appearance, per-page in the Layout tab). NB SettingsPanel
 is instantiated INLINE in Dashboard.qml, so it CAN reference the `store` id directly.
 
-Visible backgrounds (late-2026 fix - "page backgrounds do nothing" was really occlusion):
+Visible backgrounds (late-2026 fix — "page backgrounds do nothing" was really occlusion):
 cards are now FROSTED GLASS so the backdrop/wallpaper reads THROUGH them, not just in
 the gaps. `Theme.cardFill()` = `cardBackground` at alpha `0.22 + (1-glassOpacity)*0.62`
 (more glass ⇒ more transparent; opaque when `!decorative`, e.g. high-contrast); default
@@ -233,28 +233,28 @@ strength up, ~2× stars). Bundled "standard" wallpapers: 7 PNGs in `assets/wallp
 0.28 so images stay vivid. Pickers: hub SettingsPanel "Wallpaper" (None + swatches),
 Manager Images tab ("Standard wallpapers" + uploaded), Manager Layout tab per-page.
 
-Background SELECTION MODEL (fixed late-2026 - "animated styles don't show when selected"):
+Background SELECTION MODEL (fixed late-2026 — "animated styles don't show when selected"):
 the real bug was that a wallpaper OCCLUDES the animated backdrop (`BackdropLayer.visible:
 wallpaperSource===""`), so with a wallpaper set, picking Orbs/Waves/etc did nothing. Now a
-background is ONE coherent choice - wallpaper OR animated style. (1) `Dashboard.pageBg` resolver:
-a per-page override wins fully - `if pbg.wallpaper → wallpaper; elif pbg.style → {wallpaper:"",
+background is ONE coherent choice — wallpaper OR animated style. (1) `Dashboard.pageBg` resolver:
+a per-page override wins fully — `if pbg.wallpaper → wallpaper; elif pbg.style → {wallpaper:"",
 style} (suppresses the GLOBAL wallpaper on that page); else inherit global`. (2) All style pickers
 are mutually exclusive with wallpaper: tapping an animated style also clears the wallpaper at that
 scope (`setAppearance("bgStyle",v); setAppearance("wallpaper","")`), and a style shows "active"
 only when no wallpaper is set. Style list centralised in `ui/qml/BackgroundCatalog.qml` (shared by
 both pickers + BackdropLayer's style→component map). EIGHT animated styles now: none(Gradient),
-orbs, mesh, aurora, waves, stars, bokeh, grid - components in ui/qml/widgets/ (Mesh/Aurora/Bokeh/
+orbs, mesh, aurora, waves, stars, bokeh, grid — components in ui/qml/widgets/ (Mesh/Aurora/Bokeh/
 GridBackground.qml, same `active`-gates-only-animation convention; Grid uses a capped 20fps Canvas
 repaint, ~7% CPU). 12 bundled wallpapers. Also fixed: the empty-page hint (`Dashboard.qml`) now
-gates on `pageItem.index === swipeView.currentIndex` - after a live `applyExternal` state-swap an
+gates on `pageItem.index === swipeView.currentIndex` — after a live `applyExternal` state-swap an
 off-screen empty page's delegate could momentarily sit at x=0 and overlap the current page.
 
-QML PROPERTY-NAME TRAP (cost a rebuild + a confusing debug - mid-2026): a `property`
+QML PROPERTY-NAME TRAP (cost a rebuild + a confusing debug — mid-2026): a `property`
 whose name begins with `on` + an uppercase letter (e.g. `readonly property color
 onAccent: "#0D1117"`) is parsed as a SIGNAL HANDLER, so QML fails to load the whole
 component with "Cannot assign a value to a signal (expecting a script to be run)".
 Worse, on `QT_QPA_PLATFORM=offscreen` the QML load error prints NOTHING to stderr
-by default - the app just exits 1 silently. To surface it, run with
+by default — the app just exits 1 silently. To surface it, run with
 `QT_LOGGING_RULES='*=true'` and grep for "failed to load component". Never name a
 property `on<Capital>…` (this one was renamed to `textOnAccent`).
 
@@ -262,7 +262,7 @@ MANAGER LIVE-SYNC OVERRIDES FILE EDITS (since the task-22 full-live-sync backend
 when the hub is RUNNING, the Manager pulls the hub's in-memory `getUiState` over the
 control socket (on focus + periodic 4s timer) and adopts it, so editing
 `~/.config/xeneon-edge-hub/config.toml` on disk and then launching a Manager grab
-does NOT take effect - the Manager re-syncs to the hub's (unchanged) state. To
+does NOT take effect — the Manager re-syncs to the hub's (unchanged) state. To
 headless-grab the Manager against a specific config (e.g. to show a 2-column clone
 or a tall-tile page), you must STOP the hub first so the Manager falls back to the
 file. This is by design (it's the overwrite-race fix), not a bug.
@@ -278,29 +278,29 @@ resets); the config dialog's geocode now aborts in-flight XHRs + has an 8s timeo
 Build note: `cmake` may be absent (install `sudo pacman -S cmake`). Without it you
 can still: `cargo test` the core, run the QML suite, `qmllint`, and `g++
 -fsyntax-only` the C++ (Qt inc dirs under `/usr/include/qt6/Qt*`; NB the Bash tool's
-zsh does NOT word-split unquoted `$VAR` - pass g++ flags inline).
+zsh does NOT word-split unquoted `$VAR` — pass g++ flags inline).
 
 MANAGER UI/UX + ROBUSTNESS PASS (2026-07-13, later same day, all merged to master):
 - **THE config bug**: `WidgetConfigPanel`'s store property was named `store`, and the
   call sites (`WidgetConfigDialog`, hub `Dashboard`) passed `store: store` → the RHS
-  self-bound to the panel's OWN null property (the classic `X:X` trap - same one fixed
+  self-bound to the panel's OWN null property (the classic `X:X` trap — same one fixed
   earlier for ConfigField's `store`→`st`, but the PANEL was missed). Result: the ENTIRE
   per-widget config form (hub AND Manager) showed defaults + silently dropped edits.
   Fixed by renaming the panel prop to `st`. Gate: `tst_config_panel_wiring.qml`. Tests
   missed it because they passed the store under a different id (`cstore`), dodging the
-  collision - WATCH for any `prop: id` where `prop`==an outer id AND the component's own.
+  collision — WATCH for any `prop: id` where `prop`==an outer id AND the component's own.
 - **Dark QPalette required**: both apps `QQuickStyle::setStyle("Fusion")` + a dark
   `QPalette` (`darkPalette()` in each main.cpp). WITHOUT the palette, every Qt Quick
   control not hand-restyled (config Switch/Slider/Button/ScrollBar/Dialog button-boxes)
   renders in Fusion's default LIGHT gray on the dark UI. The hub previously set NO style
-  at all - now Fusion+palette (verified: config/wizard/diagnostics/dashboard all fine).
+  at all — now Fusion+palette (verified: config/wizard/diagnostics/dashboard all fine).
 - **Single-instance guard**: `app/src/single_instance.h` (QLockFile via
   `xeneon::acquireSingleInstance("hub"|"manager", grabMode)`), used in both main()s.
   Multiple hubs/managers writing config.toml concurrently RACE and corrupt it (empty
-  appearance / shuffled layout - seen live with 2 hubs + 3 managers up). Guard exits a
+  appearance / shuffled layout — seen live with 2 hubs + 3 managers up). Guard exits a
   2nd instance. **Skipped when XENEON_GRAB is set** so headless grabs run alongside a
   real instance (critical: my grabs all set XENEON_GRAB). The guard message uses
-  fprintf(stderr) not qWarning - Qt's default handler routes to journald when stderr
+  fprintf(stderr) not qWarning — Qt's default handler routes to journald when stderr
   isn't a TTY (the manager has no qtLogBridge, unlike the hub).
 - **Config preview scale**: the Manager config dialog's live preview injects
   `expanded=true` (720px-designed) into a ~340px pane → multi-button action rows clipped.
@@ -318,11 +318,11 @@ MANAGER UI/UX + ROBUSTNESS PASS (2026-07-13, later same day, all merged to maste
   connect to the user's running hub and adopt its state). `_normaliseDoc` is now a strict
   validator (drops non-object pages, non-string tile ids, coerces non-array pages/tiles).
 
-95%-COVERAGE TEST PUSH (2026-07-13, working tree - NOT committed; plan+results in
+95%-COVERAGE TEST PUSH (2026-07-13, working tree — NOT committed; plan+results in
 `docs/DEV_AND_TEST_PLAN.md`): brought all three layers to ≥95%. **Rust** 63→110 tests,
 96.44% line (`cargo llvm-cov --lib --summary-only`; config.rs the lone laggard at 93%).
 **C++ went from ZERO tests to a QtTest harness** in `tests/cpp/` (13 ctest: unit+IPC-
-integration+offscreen smoke), 97% filtered line via `gcovr` - enabled by EXTRACTING the
+integration+offscreen smoke), 97% filtered line via `gcovr` — enabled by EXTRACTING the
 logic classes out of the `main.cpp` TUs into headers (`app/src/config_bridge.h`,
 `display_match.*`, `autostart.*`, `metrics_worker.h`, `manager/src/manager_backend.h`,
 `reconcile.*`, `path_sanitize.h`); `main.cpp` is now bootstrap-only, `#include "main.moc"`
@@ -335,9 +335,9 @@ line-coverage tool, so coverage = a BEHAVIOR MATRIX: `scripts/qml_coverage.py` e
 a `// COVERS:` header only when the id's leaf token appears in a real assertion (has a
 `--selftest`; 99.4%). Tooling installed WITHOUT sudo: `cargo-llvm-cov`+`llvm-tools-preview`
 (via cargo/rustup), `gcovr` via **`uv tool install gcovr`** (pip/pip3 both absent on this
-box - `uv` works). Runners: `scripts/run_all_tests.sh`, `scripts/coverage.sh`,
+box — `uv` works). Runners: `scripts/run_all_tests.sh`, `scripts/coverage.sh`,
 `scripts/run_cpp_tests.sh`. CI (`ci.yml`) trigger was on `main` while repo is `master` (so
-it NEVER ran) - fixed to `[main, master]` + added qml-test/cpp-test/coverage jobs.
+it NEVER ran) — fixed to `[main, master]` + added qml-test/cpp-test/coverage jobs.
 Bugs fixed this pass: S10 (added `get_reconnect`/`get_notify_disconnect` FFI getters + wired
 disconnect behavior), two-writer save race (Manager IPC-only when hub connected), page-name
 dedup in `_normaliseDoc`, S5 RAM/GPU history mirroring, XENEON_GRAB use-after-free, a

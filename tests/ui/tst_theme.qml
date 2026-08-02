@@ -772,9 +772,22 @@ Item {
         }
 
         // fontMono is exempt on purpose: tabular readouts need fixed pitch.
+        //
+        // Assert the INTENT, not a literal family string. This used to compare
+        // against "JetBrains Mono, Fira Code, monospace", which looked like a
+        // CSS stack but was matched by Qt as ONE family name - so the assertion
+        // passed while the rendered face was whatever the local fontconfig
+        // happened to choose, and it chose differently on CI (a proportional
+        // sans) than here. A test that pins the string cannot see that.
         function test_font_choice_does_not_touch_mono() {
+            var before = theme.fontMono
             theme.fontChoice = "lexend"
-            compare(theme.fontMono, "JetBrains Mono, Fira Code, monospace")
+            compare(theme.fontMono, before,
+                    "fontChoice must not touch the tabular-readout face")
+            compare(theme.monoLoader.status, FontLoader.Ready,
+                    "the bundled fixed-pitch face is loaded")
+            compare(theme.fontMono, theme.monoLoader.name,
+                    "fontMono resolves through the bundled face, not fontconfig")
         }
     }
 }

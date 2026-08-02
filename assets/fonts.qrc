@@ -11,6 +11,17 @@
         <file alias="AtkinsonHyperlegible-Bold.ttf">fonts/AtkinsonHyperlegible-Bold.ttf</file>
         <file alias="Lexend-Regular.ttf">fonts/Lexend-Regular.ttf</file>
         <file alias="Lexend-Bold.ttf">fonts/Lexend-Bold.ttf</file>
+        <!-- Tabular readouts. `fontMono` used to be the string "JetBrains Mono,
+             Fira Code, monospace", which Qt does NOT split into a family list -
+             it matched the whole thing as one family name and let fontconfig
+             pick, so the SAME widget rendered in real monospace here and in a
+             proportional sans on the CI runner (proven by the visual-baseline
+             diff, 2026-08-02). A countdown in a proportional face jitters on
+             every digit change, which is the exact thing the mono token exists
+             to prevent. Bundling the first face the stack already asked for is
+             the only way every machine agrees. -->
+        <file alias="JetBrainsMono-Regular.ttf">fonts/JetBrainsMono-Regular.ttf</file>
+        <file alias="JetBrainsMono-Bold.ttf">fonts/JetBrainsMono-Bold.ttf</file>
         <!-- Brand wordmark face. Chakra Petch (OFL 1.1) is a close free stand-in
              for the SKYPhoenix IT logo lettering (squared, angular, cut terminals).
              Used only for the "EdgeHub" lockup; swap in the real brand font later

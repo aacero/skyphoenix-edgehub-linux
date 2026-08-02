@@ -290,6 +290,7 @@ assert_candidate_notices_and_autostart() {
     "$repo/assets/icons/LICENSE-MIT-PhosphorIcons.txt:$license_dir/LICENSE-MIT-PhosphorIcons.txt"
     "$repo/assets/fonts/LICENSE-OFL-AtkinsonHyperlegible.txt:$license_dir/LICENSE-OFL-AtkinsonHyperlegible.txt"
     "$repo/assets/fonts/LICENSE-OFL-ChakraPetch.txt:$license_dir/LICENSE-OFL-ChakraPetch.txt"
+    "$repo/assets/fonts/LICENSE-OFL-JetBrainsMono.txt:$license_dir/LICENSE-OFL-JetBrainsMono.txt"
     "$repo/assets/fonts/LICENSE-OFL-Lexend.txt:$license_dir/LICENSE-OFL-Lexend.txt"
     "$repo/packaging/THIRD_PARTY_NOTICES-RUST.txt:$license_dir/THIRD_PARTY_NOTICES-RUST.txt"
     "$repo/packaging/debian/copyright:/usr/share/doc/xeneon-edge-hub/copyright"

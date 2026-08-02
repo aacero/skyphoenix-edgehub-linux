@@ -6,10 +6,17 @@ How to let other people install this, and your options for making money.
 
 ## 1. What users need to build & run
 
-**Runtime:** a Linux desktop with **Qt6 ≥ 6.5** (Quick, QuickControls2, Svg, DBus
+**Runtime:** a Linux desktop with **Qt6 ≥ 6.9** (Quick, QuickControls2, Svg, DBus
 and Network) and a working GPU/compositor. No web browser, no server.
-The ≥ 6.5 floor is real - the widgets use `QtQuick.Effects`, which does not exist
-before it.
+The ≥ 6.9 floor is real, and it has two parts. The hard technical minimum is
+**6.5**: the widgets use `QtQuick.Effects`, which does not exist before it. The
+**supported** floor is 6.9, because Qt 6.7 and 6.8 render and behave differently
+in ways this product cannot paper over from QML - a zero-width `ShapePath`
+stroke is still rasterised as a hairline (it turned every backdrop orb into a
+hard ring, measured at 3.81:1 against `textSecondary` where 4.5:1 is required),
+and `SwipeView` re-enters its own `currentIndex` binding whenever the page count
+changes. Both are fixed upstream in 6.9. The floor costs nothing: every distro
+this project targets ships 6.10 or newer (see the table below).
 
 **Build:** a C++17 toolchain, CMake ≥ 3.22, the Rust toolchain (`cargo`), and the
 Qt6 dev packages. See `docs/installation/` for per-distro package lists
@@ -55,12 +62,14 @@ public support claim. At this audit point that candidate run is still required:
 | **Fedora 43** | 6.10.3 | RPM workflow exists; exact-candidate result pending |
 | **Ubuntu 26.04 LTS** | 6.10.2 | DEB workflow exists; exact-candidate result pending |
 | **Arch / CachyOS** | rolling | Local staged lifecycle tested; AUR publication/current package not verified |
-| **Ubuntu 24.04 LTS** | 6.4.2 | Native distro Qt is below the 6.5 floor; no native support claim |
+| **Ubuntu 24.04 LTS** | 6.4.2 | Native distro Qt is below the 6.9 floor; no native support claim |
 
-Both Fedora 43 and Ubuntu 26.04 now ship Qt ≥ 6.5 themselves, so building from
-source on either needs nothing beyond the distro's own packages. (`ci.yml` still
-installs Qt 6.7 via `jurplel/install-qt-action` because its jobs run on Ubuntu
-24.04, whose apt Qt is 6.4.2.)
+Both Fedora 43 and Ubuntu 26.04 ship Qt 6.10 themselves, comfortably above the
+6.9 floor, so building from source on either needs nothing beyond the distro's
+own packages. (`ci.yml` installs Qt 6.9.3 via `jurplel/install-qt-action`
+because its jobs run on Ubuntu 24.04, whose apt Qt is 6.4.2. The pin is the
+FLOOR, deliberately: CI's job is to catch what breaks on the oldest Qt this
+product claims to support, not on the newest one a developer happens to have.)
 
 Release-path workflows pin GitHub Actions to full commit SHAs and pin each
 Ubuntu or Fedora container to an exact `linux/amd64` OCI manifest digest. The
@@ -73,10 +82,10 @@ paths.
 ### AppImage
 
 Built by `packaging/appimage/build-appimage.sh` on **Ubuntu 24.04 + upstream Qt
-6.7.3** (aqtinstall / `install-qt-action`), not 24.04's own Qt 6.4.2. That pairing
+6.9.3** (aqtinstall / `install-qt-action`), not 24.04's own Qt 6.4.2. That pairing
 is deliberate: an AppImage's glibc floor is its build host's, so the oldest
-practical distro gives the widest reach, while the bundled Qt still has to be
-≥ 6.5 for `QtQuick.Effects`. The exact size and bundled library inventory are
+practical distro gives the widest reach, while the bundled Qt still has to meet
+the ≥ 6.9 supported floor. The exact size and bundled library inventory are
 recorded from each candidate artifact rather than copied from an older build.
 
 The builder downloads only two reviewed, immutable release assets and verifies

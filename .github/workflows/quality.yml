@@ -15,7 +15,7 @@ jobs:
       - run: bash ./scripts/validate-repository.sh
       # scripts/ci.sh (framework payload) ends with scripts/build.sh + scripts/test.sh.
       # build.sh here is the real Qt/CMake build, and this runner has no Qt — ci.yml owns
-      # build and test and installs Qt 6.7 for them. Running ci.sh would duplicate that
+      # build and test and installs Qt 6.9 for them. Running ci.sh would duplicate that
       # job and fail. So this job runs exactly the framework half of ci.sh and nothing
       # else. quality.yml is a framework SCAFFOLD file: customizing it is supported, and
       # an update reports it instead of overwriting it.

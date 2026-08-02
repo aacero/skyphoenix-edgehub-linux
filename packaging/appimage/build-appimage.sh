@@ -3,7 +3,7 @@
 #
 # Requires (downloaded automatically if missing, into build-appimage/tools):
 #   - linuxdeploy + linuxdeploy-plugin-qt   (https://github.com/linuxdeploy)
-# and on the build host: cmake, a C++ toolchain, Rust (cargo), and a Qt6 >= 6.5
+# and on the build host: cmake, a C++ toolchain, Rust (cargo), and a Qt6 >= 6.9
 # install with qmake6 on PATH.
 #
 # Build host choice matters: an AppImage's glibc floor is the build host's. CI
@@ -96,7 +96,7 @@ if [ "${1:-}" = "--print-name" ]; then
   exit 0
 fi
 
-command -v qmake6 >/dev/null || { echo "ERROR: qmake6 not on PATH (need Qt6 >= 6.5)"; exit 1; }
+command -v qmake6 >/dev/null || { echo "ERROR: qmake6 not on PATH (need Qt6 >= 6.9)"; exit 1; }
 QT_LIBS="$(qmake6 -query QT_INSTALL_LIBS)"
 
 mkdir -p "$TOOLS"

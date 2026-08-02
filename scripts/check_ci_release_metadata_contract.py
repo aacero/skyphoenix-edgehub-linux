@@ -533,7 +533,7 @@ def validate_static_contract(*, root: pathlib.Path) -> None:
 
     require(
         "CMakeLists.txt",
-        "find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml DBus "
+        "find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui Quick Qml DBus "
         "Network Svg QuickControls2)",
         root=root,
     )

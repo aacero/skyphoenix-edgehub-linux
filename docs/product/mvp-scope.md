@@ -50,7 +50,7 @@ released, frozen, supported on every desktop, or within its performance targets.
 |---|---|
 | CachyOS/Arch install, upgrade and uninstall | Local staged lifecycle evidence exists; exact public package route must be verified |
 | Ubuntu/Fedora native packages | CPack recipes and distro workflow exist; exact-candidate distro jobs are still required |
-| Ubuntu 24.04 | Distro Qt 6.4.2 is below the Qt 6.5 floor; no native-support claim |
+| Ubuntu 24.04 | Distro Qt 6.4.2 is below the Qt 6.9 floor; no native-support claim |
 | KDE/Wayland | Primary real-hardware environment; final candidate run pending |
 | GNOME and X11 | Do not claim release support without candidate evidence |
 | AppImage | Recipe exists; no published AppImage/zsync round trip has been exercised |

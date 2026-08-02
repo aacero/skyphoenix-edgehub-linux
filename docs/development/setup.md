@@ -10,7 +10,7 @@ EdgeHub requires:
 - Rust 1.86 or newer
 - A C++17 compiler
 - CMake 3.22 or newer
-- Qt 6.5 or newer with Core, GUI, Quick, QML, Quick Controls, DBus,
+- Qt 6.9 or newer with Core, GUI, Quick, QML, Quick Controls, DBus,
   Network and SVG development components
 - A Qt Wayland platform plugin for normal Wayland execution
 
@@ -34,9 +34,9 @@ sudo apt install git rustc cargo cmake g++ make libgl1-mesa-dev \
   qt6-base-dev qt6-declarative-dev qt6-svg-dev
 ```
 
-Ubuntu 24.04's apt Qt 6.4.2 is below the required 6.5 floor. Use an upstream
-Qt 6.5 or newer development toolchain there. The AppImage workflow deliberately
-builds on Ubuntu 24.04 with upstream Qt 6.7.3 so the artifact keeps an older
+Ubuntu 24.04's apt Qt 6.4.2 is below the required 6.9 floor. Use an upstream
+Qt 6.9 or newer development toolchain there. The AppImage workflow deliberately
+builds on Ubuntu 24.04 with upstream Qt 6.9.3 so the artifact keeps an older
 glibc floor while bundling a compatible Qt.
 
 ### Fedora

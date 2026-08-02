@@ -296,11 +296,23 @@ Item {
             win.reduceMotion = true                    // collapse fx: only dims matter
             win.width = 720; win.height = 1280         // tall panel (hidden → free resize)
             win.orientationMode = "landscape"
-            wait(120)
+            // A resize is a compositor round-trip, so `wait(120)` is a guess
+            // about how long that takes on this machine. On a CI runner hosting
+            // four nested compositors it is too short: the grab then captures
+            // the pre-rotation geometry and the rotation assertion below fails
+            // for a reason that has nothing to do with the product. Poll the
+            // geometry itself - a rotation that never happens still fails, it
+            // just is not decided by a stopwatch.
+            // 10s, not 3s: this is a compositor round-trip, and a poll costs
+            // nothing on a healthy run - it returns the moment the geometry
+            // lands. The 3s bound failed on a CI runner that was starved by two
+            // hung slots; a bound tight enough to fail under load is a bound
+            // that measures the runner, not the product.
+            tryVerify(function () { return cr.width === win.height }, 10000,
+                      "contentRoot width takes window height in landscape")
             var img = snap(cr, "landscape")
             verify(img.width > img.height,
                    "landscape grab is wider than tall (" + img.width + "x" + img.height + ")")
-            compare(cr.width, win.height, "contentRoot width takes window height in landscape")
         }
         // ORI-12 portrait grab taller-than-wide.
         function test_ori_b_portrait_grab_taller() {

@@ -49,6 +49,11 @@ Item {
             }
 
             ShapePath {
+                // Same trap as AnimatedBackground: ShapePath's strokeColor
+                // defaults to WHITE and Qt < 6.9 rasterises a hairline even at
+                // zero width, so each dot gains a hard ring. Name the stroke
+                // transparent.
+                strokeColor: "transparent"
                 strokeWidth: 0
                 fillGradient: RadialGradient {
                     centerX: dot.diameter / 2; centerY: dot.diameter / 2

@@ -23,6 +23,16 @@ Item {
         antialiasing: true
         // Stay painted even when inactive; only the drift animations gate on `active`.
         ShapePath {
+            // strokeWidth 0 is not enough on its own: ShapePath's strokeColor
+            // defaults to WHITE, and Qt < 6.9 still rasterises a hairline for a
+            // zero-width stroke. The orb then reads as a hard white RING over
+            // the wallpaper instead of a soft glow - measured at 3.81:1 against
+            // textSecondary for dark/amber/orbs (needs 4.5:1) on Qt 6.7.3, on a
+            // GPU and under llvmpipe alike, while the same file measures 5.66:1
+            // on 6.11. Naming the stroke transparent removes it on every
+            // version, so the backdrop no longer depends on which Qt happens to
+            // honour a zero width. Gated by tests/gui/tst_gui_backdrop_contrast.
+            strokeColor: "transparent"
             strokeWidth: 0
             fillGradient: RadialGradient {
                 centerX: orb.diameter / 2; centerY: orb.diameter / 2

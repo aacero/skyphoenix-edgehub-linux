@@ -1,6 +1,6 @@
 # Generic Linux installation
 
-Use this route when your distribution has Qt 6.5 or newer but no supported
+Use this route when your distribution has Qt 6.9 or newer but no supported
 native Xeneon Edge package. Ubuntu and Arch/CachyOS users should prefer their
 distribution-specific guides.
 
@@ -9,12 +9,16 @@ distribution-specific guides.
 - Rust and Cargo
 - a C++17 compiler
 - CMake 3.22 or newer
-- Qt 6.5 or newer with Core, Gui, Quick, QML, Quick Controls 2, DBus, Network,
+- Qt 6.9 or newer with Core, Gui, Quick, QML, Quick Controls 2, DBus, Network,
   SVG and Wayland support
 - OpenGL and a working Linux compositor
 
-The Qt 6.5 floor is required by `QtQuick.Effects`; a distribution with Qt 6.4
-cannot run a native system-Qt build of the current UI.
+`QtQuick.Effects` puts the hard technical minimum at Qt 6.5, so a distribution
+with Qt 6.4 cannot run a native system-Qt build of the current UI at all. The
+supported floor is 6.9 because Qt 6.7 and 6.8 diverge in rendering and control
+behaviour that this product cannot correct from QML - see
+`docs/DISTRIBUTION.md` §1 for what specifically. Every distribution this project
+targets ships 6.10 or newer.
 
 ## Build and run without installing
 
