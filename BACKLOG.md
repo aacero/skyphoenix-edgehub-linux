@@ -382,9 +382,20 @@ mitigations rather than fixes because the race reproduces nowhere locally:
   socket exists" and "the compositor can expose a surface", and 1 s was not
   covering it under four-way contention.
 
-The single retry stays as the safety net — and it is not always enough: on PR #10
-`tst_gui_w_cal_weather` hit the same failure on BOTH attempts (each aborted in
-seconds by the fail-fast, so it cost ~10 s rather than 18 min).
+The retry is now **up to two** (`RUN_UNEXPOSED_RETRIES`, default 2), because one
+was not enough: `tst_gui_w_cal_weather` lost BOTH attempts on PR #10 and again on
+`master` (`30764558072`), taking master red. With the fail-fast each loss costs
+about five seconds, so a third attempt is cheap; every attempt's log is kept
+(`<file>.unexposed-N.log`) and the summary says `RETRIED xN`.
+
+**One lead, checked and DISPROVEN — do not re-chase it.** The two files hit most
+often are also the only two whose test root exceeds the 2560x1800 virtual output:
+`tst_gui_w_media_data` (4300x2600) and `tst_gui_w_cal_weather` (2700x1700). A
+surface larger than the output is exactly the sort of thing a compositor might
+decline to expose. It is not that: running `tst_gui_w_misc` (root 1800x1700)
+against a deliberately tiny `XENEON_GUI_WIDTH=640 XENEON_GUI_HEIGHT=480` output
+produced **zero** exposure failures and a clean 114/114. The correlation is real
+but the mechanism is not this, at least not on this KWin.
 
 Still open:
 

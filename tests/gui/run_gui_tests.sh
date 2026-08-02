@@ -329,14 +329,22 @@ run_one() {
   # ONCE. Loudly: a silent retry is how a suite starts lying about what it ran,
   # and this repository has paid for that lesson already. Anything other than
   # this exact signature is reported as-is and never retried.
-  if [ "$rc" != 0 ] \
-      && grep -q "window was never exposed" "$LOGDIR/$base.log" 2>/dev/null; then
-    echo "==> [retry] $base - nested compositor never exposed its window (rc=$rc)"
-    mv -f "$LOGDIR/$base.log" "$LOGDIR/$base.unexposed.log" 2>/dev/null
-    # A different slot number: the killed compositor leaves its socket file
-    # behind, and reusing the name would let the readiness check pass against a
-    # dead socket.
-    run_bounded SLOT_F="$f" SLOT_N="$((slot + 1000))" SLOT_QT="$QT" \
+  # Up to RUN_UNEXPOSED_RETRIES further attempts, and only for this exact
+  # signature. Two, not one: on run 30764558072 tst_gui_w_cal_weather lost BOTH
+  # attempts, and with the fail-fast above each loss costs about five seconds
+  # rather than the 540s it used to, so a third attempt is cheap. Anything other
+  # than this signature is reported as-is and never retried.
+  attempt=0
+  while [ "$rc" != 0 ] \
+      && [ "$attempt" -lt "${RUN_UNEXPOSED_RETRIES:-2}" ] \
+      && grep -q "window was never exposed" "$LOGDIR/$base.log" 2>/dev/null; do
+    attempt=$((attempt + 1))
+    echo "==> [retry $attempt] $base - nested compositor never exposed its window (rc=$rc)"
+    mv -f "$LOGDIR/$base.log" "$LOGDIR/$base.unexposed-$attempt.log" 2>/dev/null
+    # A different slot number each time: the killed compositor leaves its socket
+    # file behind, and reusing the name would let the readiness check pass
+    # against a dead socket.
+    run_bounded SLOT_F="$f" SLOT_N="$((slot + 1000 * attempt))" SLOT_QT="$QT" \
       SLOT_IMPORTS="$IMPORTS" SLOT_MD="$MOUSEDELAY" SLOT_KD="$KEYDELAY" \
       SLOT_LOGDIR="$LOGDIR" SLOT_XDG="$XDG_RUNTIME_DIR" \
       SLOT_VIRTUAL="$((1 - VISIBLE))" SLOT_RECORD="$RECORD" SLOT_EVID="$EVID" \
@@ -344,8 +352,8 @@ run_one() {
     rc=$?
     # run_one executes in a SUBSHELL under -jN, so a variable cannot carry this
     # back to the summary. Leave a marker the aggregation loop can see.
-    : > "$LOGDIR/$base.retried"
-  fi
+    printf '%s\n' "$attempt" > "$LOGDIR/$base.retried"
+  done
   t1=$(date +%s)
   case "$rc" in
     97) echo "!! $base was MEMKILLed (>${RUN_MEM_MAX_MB} MiB RSS)" >> "$LOGDIR/$base.log" ;;
@@ -418,7 +426,8 @@ for f in $FILES; do
   fi
   retried=""
   if [ -f "$LOGDIR/$base.retried" ]; then
-    retried="  (RETRIED: compositor never exposed the window on the first attempt)"
+    IFS= read -r retry_count < "$LOGDIR/$base.retried" || retry_count="?"
+    retried="  (RETRIED x$retry_count: compositor never exposed the window)"
     RETRIEDFILES="$RETRIEDFILES $base"
   fi
   printf "%-44s pass=%-4s fail=%-4s skip=%-4s rc=%s%s\n" \
@@ -472,7 +481,7 @@ echo
 echo "==================================================================="
 echo " GUI SUITE TOTALS: pass=$TOTAL_PASS fail=$TOTAL_FAIL skip=$TOTAL_SKIP  (files=$FILECOUNT)"
 echo " evidence: $EVID   logs: $LOGDIR"
-[ -n "$RETRIEDFILES" ] && echo " RETRIED (unexposed window, first attempt discarded):$RETRIEDFILES"
+[ -n "$RETRIEDFILES" ] && echo " RETRIED (unexposed window, earlier attempts discarded):$RETRIEDFILES"
 [ -n "$FAILFILES" ] && echo " FAILED FILES:$FAILFILES" && echo " see $FAILLOG"
 echo "==================================================================="
 # Anti-vacuity floor: a run that judged NOTHING is a failure, not a pass. This
