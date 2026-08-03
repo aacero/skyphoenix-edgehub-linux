@@ -114,6 +114,31 @@ WidgetChrome {
     readonly property string windSym: windUnits === "mph" ? "mph"
         : (windUnits === "ms" ? "m/s" : "km/h")
     readonly property string precipitationSym: precipitationUnits === "inch" ? "in" : "mm"
+    // 16-point compass. A bearing in degrees is data; "NW" is information.
+    function compassPoint(deg) {
+        if (!isFinite(deg)) return ""
+        var pts = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+                   "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+        return pts[Math.round(((deg % 360) + 360) % 360 / 22.5) % 16]
+    }
+    readonly property string windText: isFinite(w.windSpeed)
+        ? Math.round(w.windSpeed) + " " + w.windSym
+          + (w.compassPoint(w.windDirection).length ? " " + w.compassPoint(w.windDirection) : "")
+        : "-"
+    readonly property string rainText: isFinite(w.precipChance)
+        ? Math.round(w.precipChance) + "%"
+        : (isFinite(w.precipitation) ? w.precipitation + " " + w.precipitationSym : "-")
+    // WHO/WMO bands. A number alone does not tell you whether to care.
+    function uvBand(v) {
+        if (!isFinite(v)) return ""
+        if (v < 3) return "Low"
+        if (v < 6) return "Moderate"
+        if (v < 8) return "High"
+        if (v < 11) return "Very high"
+        return "Extreme"
+    }
+    readonly property string uvText: isFinite(w.uvIndex)
+        ? Math.round(w.uvIndex) + " " + w.uvBand(w.uvIndex) : "-"
 
     property bool loaded: false
     property string errorText: ""
@@ -126,6 +151,14 @@ WidgetChrome {
     property real humidity: NaN
     property real windSpeed: NaN
     property real precipitation: NaN
+    // "Do I need an umbrella" is a probability, not a millimetre reading: 0.2 mm
+    // at 90% is a wet walk, 2 mm at 10% is a dry one. Open-Meteo returns it in
+    // the same call, so it costs nothing to ask for.
+    property real precipChance: NaN
+    property real windDirection: NaN
+    property real uvIndex: NaN
+    property real cloudCover: NaN
+    property real pressure: NaN
     property string sunrise: ""
     property string sunset: ""
     property double lastSuccessAt: 0
@@ -246,6 +279,11 @@ WidgetChrome {
             w.humidity = Number(d.current.relative_humidity_2m)
             w.windSpeed = Number(d.current.wind_speed_10m)
             w.precipitation = Number(d.current.precipitation)
+            w.precipChance = Number(d.current.precipitation_probability)
+            w.windDirection = Number(d.current.wind_direction_10m)
+            w.uvIndex = Number(d.current.uv_index)
+            w.cloudCover = Number(d.current.cloud_cover)
+            w.pressure = Number(d.current.surface_pressure)
             w.sunrise = d.daily.sunrise && d.daily.sunrise.length ? String(d.daily.sunrise[0]).slice(11, 16) : ""
             w.sunset = d.daily.sunset && d.daily.sunset.length ? String(d.daily.sunset[0]).slice(11, 16) : ""
             var out = []
@@ -285,6 +323,7 @@ WidgetChrome {
         var fdays = Math.max(1, Math.min(16, w.forecastDays + 1))
         var url = "https://api.open-meteo.com/v1/forecast?latitude=" + w.lat + "&longitude=" + w.lon
                 + "&current=temperature_2m,apparent_temperature,weather_code,relative_humidity_2m,wind_speed_10m,precipitation"
+                + ",precipitation_probability,wind_direction_10m,uv_index,cloud_cover,surface_pressure"
                 + "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset"
                 + (w.units === "fahrenheit" ? "&temperature_unit=fahrenheit" : "")
                 + (w.windUnits !== "kmh" ? "&wind_speed_unit=" + w.windUnits : "")
@@ -632,9 +671,9 @@ WidgetChrome {
 
             Repeater {
                 model: [
-                    { label: "HUMIDITY", value: isFinite(w.humidity) ? Math.round(w.humidity) + "%" : "-" },
-                    { label: "WIND", value: isFinite(w.windSpeed) ? Math.round(w.windSpeed) + " " + w.windSym : "-" },
-                    { label: "RAIN", value: isFinite(w.precipitation) ? w.precipitation + " " + w.precipitationSym : "-" }
+                    { label: "RAIN", value: w.rainText },
+                    { label: "WIND", value: w.windText },
+                    { label: "HUMIDITY", value: isFinite(w.humidity) ? Math.round(w.humidity) + "%" : "-" }
                 ]
                 delegate: ColumnLayout {
                     required property var modelData
@@ -717,9 +756,16 @@ WidgetChrome {
         Text {
             visible: w.loaded
             Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
+            objectName: "weatherDetailLine"
+            // Every clause is optional and omitted when its field is absent, so a
+            // provider that drops one leaves a shorter line rather than "NaN".
             text: (isFinite(w.humidity) ? "Humidity " + Math.round(w.humidity) + "%" : "")
-                  + (isFinite(w.windSpeed) ? " · Wind " + Math.round(w.windSpeed) + " " + w.windSym : "")
-                  + (isFinite(w.precipitation) ? " · Rain " + w.precipitation + " " + w.precipitationSym : "")
+                  + (isFinite(w.windSpeed) ? " · Wind " + w.windText : "")
+                  + (isFinite(w.precipChance) ? " · Rain " + Math.round(w.precipChance) + "%" : "")
+                  + (isFinite(w.precipitation) ? " · " + w.precipitation + " " + w.precipitationSym : "")
+                  + (isFinite(w.uvIndex) ? " · UV " + w.uvText : "")
+                  + (isFinite(w.cloudCover) ? " · Cloud " + Math.round(w.cloudCover) + "%" : "")
+                  + (isFinite(w.pressure) ? " · " + Math.round(w.pressure) + " hPa" : "")
                   + (w.sunrise.length ? " · Sunrise " + w.sunrise : "")
                   + (w.sunset.length ? " · Sunset " + w.sunset : "")
             color: theme.textSecondary; font.pixelSize: theme.fontLabel; elide: Text.ElideRight

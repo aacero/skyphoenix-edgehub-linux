@@ -99,6 +99,104 @@ Item {
             compare(w.precipitation, 1.2, "rain comes from precipitation")
         }
 
+        // The five fields added for "more than a temperature". Each is requested
+        // in the same call, so the cost is parse + layout, not another fetch.
+        // COVERS: schema:weather.units
+        function test_the_extra_current_conditions_are_parsed() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { lat: 35.68, lon: 139.69 })
+            w.refresh()
+            var u = lastFake.url
+            for (var i = 0; i < 5; i++) {
+                var f = ["precipitation_probability", "wind_direction_10m", "uv_index",
+                         "cloud_cover", "surface_pressure"][i]
+                verify(u.indexOf(f) >= 0, "the request asks for " + f)
+            }
+            lastFake.resolveWith(200, Fx.FORECAST_VALID)
+            compare(Math.round(w.precipChance), 80)
+            compare(Math.round(w.windDirection), 315)
+            compare(w.cloudCover, 42)
+            compare(Math.round(w.pressure), 1013)
+            verify(Math.abs(w.uvIndex - 6.4) < 0.01)
+        }
+
+        // A bearing in degrees is data; "NW" is information.
+        function test_wind_direction_reads_as_a_compass_point_data() {
+            return [
+                { tag: "north", deg: 0, want: "N" }, { tag: "east", deg: 90, want: "E" },
+                { tag: "south", deg: 180, want: "S" }, { tag: "west", deg: 270, want: "W" },
+                { tag: "north-west", deg: 315, want: "NW" },
+                { tag: "wraps", deg: 359, want: "N" },
+                { tag: "rounds-to-nearest", deg: 23, want: "NNE" },
+                { tag: "negative-normalises", deg: -90, want: "W" }
+            ]
+        }
+        function test_wind_direction_reads_as_a_compass_point(data) {
+            compare(h.item.compassPoint(data.deg), data.want,
+                    data.deg + " degrees reads as " + data.want)
+        }
+
+        function test_an_absent_bearing_is_omitted_not_guessed() {
+            compare(h.item.compassPoint(NaN), "", "no bearing means no compass point")
+            compare(h.item.compassPoint(undefined), "")
+        }
+
+        // "Do I need an umbrella" is a probability: 0.2 mm at 90% is a wet walk,
+        // 2 mm at 10% is a dry one. The tile leads with the chance and falls back
+        // to the millimetre reading only when the provider omits it.
+        function test_rain_leads_with_the_chance_and_falls_back_to_the_amount() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { lat: 35.68, lon: 139.69 })
+            w.refresh(); lastFake.resolveWith(200, Fx.FORECAST_VALID)
+            compare(w.rainText, "80%", "a chance is what the tile leads with")
+
+            w.refresh()
+            lastFake.resolveWith(200, JSON.stringify({
+                current: { temperature_2m: 21.4, apparent_temperature: 19.8,
+                           weather_code: 3, precipitation: 1.2 },
+                daily: { time: ["2026-07-13"], weather_code: [3],
+                         temperature_2m_max: [24.1], temperature_2m_min: [12.3] }
+            }))
+            compare(w.rainText, "1.2 mm", "no probability falls back to the amount")
+        }
+
+        // WHO/WMO bands: a bare number does not say whether to care.
+        function test_uv_index_is_banded_data() {
+            return [ { tag: "low", uv: 2, want: "Low" }, { tag: "moderate", uv: 5, want: "Moderate" },
+                     { tag: "high", uv: 7, want: "High" }, { tag: "very-high", uv: 9, want: "Very high" },
+                     { tag: "extreme", uv: 11, want: "Extreme" } ]
+        }
+        function test_uv_index_is_banded(data) {
+            compare(h.item.uvBand(data.uv), data.want, "UV " + data.uv + " is " + data.want)
+        }
+
+        // A provider that omits a field must shorten the line, never print NaN.
+        function test_missing_extras_shorten_the_line_rather_than_printing_nan() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { lat: 35.68, lon: 139.69 })
+            w.refresh()
+            lastFake.resolveWith(200, JSON.stringify({
+                current: { temperature_2m: 21.4, apparent_temperature: 19.8, weather_code: 3 },
+                daily: { time: ["2026-07-13"], weather_code: [3],
+                         temperature_2m_max: [24.1], temperature_2m_min: [12.3] }
+            }))
+            compare(w.providerState, "fresh", "a reading without the extras is still a reading")
+            compare(w.rainText, "-")
+            compare(w.windText, "-")
+            compare(w.uvText, "-")
+            var texts = []
+            function collect(n) {
+                if (!n) return
+                if (n.text !== undefined && n.visible) texts.push("" + n.text)
+                var k = n.children
+                for (var i = 0; k && i < k.length; i++) collect(k[i])
+            }
+            collect(w)
+            var joined = texts.join(" | ")
+            verify(joined.indexOf("NaN") < 0, "nothing renders NaN (" + joined.slice(0, 200) + ")")
+            verify(joined.indexOf("undefined") < 0, "and nothing renders undefined")
+        }
+
         // Open-Meteo returns "YYYY-MM-DDTHH:MM"; the widget slices [11,16]. A
         // provider that changed the format would have produced silent garbage.
         function test_sunrise_and_sunset_are_sliced_to_local_clock_times() {
@@ -168,8 +266,10 @@ Item {
             verify(joined.indexOf("Wind 12 " + data.sym) >= 0,
                    "the rendered wind reading carries the chosen unit (looked for "
                    + "'Wind 12 " + data.sym + "' in " + JSON.stringify(joined) + ")")
-            verify(joined.indexOf("Rain 1.2 " + data.psym) >= 0,
-                   "and so does the rendered rain reading")
+            // The line now leads with the CHANCE ("Rain 80%") and carries the
+            // amount after it, so the unit travels with the amount clause.
+            verify(joined.indexOf("· 1.2 " + data.psym) >= 0,
+                   "and so does the rendered rain amount (in " + JSON.stringify(joined) + ")")
         }
     }
 

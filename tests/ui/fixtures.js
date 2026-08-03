@@ -25,7 +25,9 @@
 var FORECAST_VALID = JSON.stringify({
     current: {
         temperature_2m: 21.4, apparent_temperature: 19.8, weather_code: 3,
-        relative_humidity_2m: 67, wind_speed_10m: 12.4, precipitation: 1.2
+        relative_humidity_2m: 67, wind_speed_10m: 12.4, precipitation: 1.2,
+        precipitation_probability: 80, wind_direction_10m: 315, uv_index: 6.4,
+        cloud_cover: 42, surface_pressure: 1013.2
     },
     daily: {
         time: ["2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17"],
