@@ -72,6 +72,16 @@ Item {
         })
         return found
     }
+    // Resolve an item by objectName, so an assertion can name the exact surface a
+    // setting governs instead of a shape-alike (audit 2026-08-03).
+    function findObjectName(rootNode, name) {
+        var found = null
+        eachItem(rootNode, function (n) {
+            if (found) return
+            if (n.objectName !== undefined && n.objectName === name) found = n
+        })
+        return found
+    }
     function findRing(node) {
         var found = null
         eachItem(node, function (n) {
@@ -458,6 +468,36 @@ Item {
             feed(); flush()                 // key absent - still nothing
             compare(w.hist.length, 1)
         }
+        // showDetails had property-level coverage only - the setting was proven to
+        // REACH w.showDetails, but nothing asserted the two surfaces it governs.
+        // Audit 2026-08-03.
+        function test_show_details_toggle_gates_both_surfaces() {
+            var w = h.item
+            h.expanded = true
+            // Real device data: the sub-line is only meaningful when there IS a
+            // hardware detail to show, which is the whole point of the toggle.
+            feedObject({ gpu_usage_percent: 30, gpu_temp_celsius: 65,
+                         gpu_devices: [ { id: "card0", name: "Radeon RX 7900",
+                                          vendor: "AMD", driver: "amdgpu",
+                                          usage_percent: 30, temp_celsius: 65,
+                                          vram_used_mb: 2048, vram_total_mb: 16384 } ],
+                         gpu_primary_id: "card0" })
+            var gauge = findGauge()
+            verify(gauge !== null, "the gauge exists")
+            verify(String(gauge.sub).length > 0,
+                   "the gauge sub-line carries the hardware detail while the toggle is on")
+            var panel = findObjectName(w, "gpuDetailPanel")
+            if (panel !== null)
+                verify(panel.visible, "the detail panel shows while the toggle is on")
+            h.storeCtl.setSetting("test-instance", "showDetails", false)
+            compare(w.showDetails, false, "the setting reaches the widget")
+            compare(String(gauge.sub), "",
+                    "the gauge sub-line is emptied when the toggle is off")
+            if (panel !== null)
+                compare(panel.visible, false,
+                        "the detail panel hides when the toggle is off")
+        }
+
         function test_showHistory_off_still_accumulates() {
             var w = h.item
             h.storeCtl.setSetting("test-instance", "showHistory", false)
@@ -466,9 +506,10 @@ Item {
             compare(findGauge().history.length, 0, "but the sparkline is fed an empty history")
         }
 
-        // BUG (audit, low): `active` is declared and bound by the host to pause
-        // sampling while expanded / off-page, but onMetricsChanged never checks it.
-        // Intended: an inactive instance stops accumulating.
+        // FIXED, and this test pins it (audit low). The defect was: `active` is
+        // declared and bound by the host to pause sampling while expanded / off-
+        // page, but onMetricsChanged never checks it. Intended: an inactive
+        // instance stops accumulating.
         function test_inactive_instance_pauses_sampling() {
             var w = h.item
             h.active = false
@@ -767,8 +808,9 @@ Item {
         when: windowShown
         function init() { tryVerify(function () { return h.ready }, 3000); reset() }
 
-        // BUG (audit, low): header amber threshold is warnTemp-17 but the ring's
-        // is warnTemp-12 - a 5°C band where the number is amber inside a calm ring.
+        // FIXED, and this test pins it (audit low). The defect was: header amber
+        // threshold is warnTemp-17 but the ring's is warnTemp-12 - a 5°C band
+        // where the number is amber inside a calm ring.
         function test_header_and_ring_amber_thresholds_agree() {
             var w = h.item
             h.storeCtl.setSetting("test-instance", "warnTemp", 90)
@@ -779,8 +821,9 @@ Item {
                     "the ring must agree with the header's amber threshold")
         }
 
-        // BUG (audit, low): showTemp=false disables ALL thermal ring colouring, so
-        // an overheating GPU renders a calm accent ring with no red anywhere.
+        // FIXED, and this test pins it (audit low). The defect was:
+        // showTemp=false disables ALL thermal ring colouring, so an overheating
+        // GPU renders a calm accent ring with no red anywhere.
         function test_thermal_warning_survives_showTemp_off() {
             var w = h.item
             h.storeCtl.patchSettings("test-instance", { showTemp: false, warnTemp: 90 })

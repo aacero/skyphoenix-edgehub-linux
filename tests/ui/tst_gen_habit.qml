@@ -13,8 +13,9 @@ import QtTest
 // per-instance accent, custom name / title override, compact-tile layout,
 // and the store==null no-op path.
 //
-// Several assertions encode CORRECT behaviour the audit flags as broken; those
-// are expected to FAIL against the current code and are the point of the file.
+// Several assertions encode behaviour an earlier audit flagged as broken. Every
+// one of those defects has since been fixed (verified 2026-08-03); the
+// assertions remain as the regression guards that keep them fixed.
 // ─────────────────────────────────────────────────────────────────────────
 Item {
     id: root
@@ -214,9 +215,10 @@ Item {
             compare(w.celebrateMsg, "7-day milestone!", "milestone popup on crossing 7")
         }
 
-        // BUG (audit line 58): re-checking the same already-milestone day
-        // re-fires the milestone celebration. Correct behaviour: no milestone
-        // message on a plain re-check. This assertion is expected to FAIL.
+        // FIXED, and this test pins it (audit line 58). The defect was: re-
+        // checking the same already-milestone day re-fires the milestone
+        // celebration. Correct behaviour: no milestone message on a plain re-
+        // check.
         function test_recheck_same_day_should_not_refire_milestone() {
             var w = hHabit.item
             hHabit.storeCtl.patchSettings("test-instance", { checkins: consecutiveDays(w, 7, 0) })
@@ -272,9 +274,9 @@ Item {
             compare(w.doneToday, true, "doneToday still reflects today's check-in after tick")
         }
 
-        // BUG (audit line 55): checkins is never pruned, so long-term use bloats
-        // the persisted array (only 28 days are ever displayed). Correct
-        // behaviour: bounded storage. This assertion is expected to FAIL.
+        // FIXED, and this test pins it (audit line 55). The defect was: checkins
+        // is never pruned, so long-term use bloats the persisted array (only 28
+        // days are ever displayed). Correct behaviour: bounded storage.
         function test_checkins_storage_is_bounded() {
             var w = hHabit.item
             hHabit.storeCtl.patchSettings("test-instance", { checkins: consecutiveDays(w, 40, 1) })
@@ -294,11 +296,12 @@ Item {
             clearSettings(hHabit)
         }
 
-        // BUG (audit line 37): streakOf() steps days with a fixed 86400000ms,
-        // which skips/duplicates a calendar date across a DST boundary when the
-        // walk crosses one near local midnight. A fully-consecutive run must
-        // count to its exact length. (Passes in non-DST zones / away from
-        // midnight; fails when the DST skip lands inside the run.)
+        // FIXED, and this test pins it (audit line 37). The defect was:
+        // streakOf() steps days with a fixed 86400000ms, which skips/duplicates
+        // a calendar date across a DST boundary when the walk crosses one near
+        // local midnight. A fully-consecutive run must count to its exact
+        // length. (Passes in non-DST zones / away from midnight; fails when the
+        // DST skip lands inside the run.)
         function test_consecutive_run_counts_across_dst() {
             var w = hHabit.item
             // 400 days spans at least one spring-forward and one fall-back.
@@ -307,10 +310,11 @@ Item {
                     "an unbroken daily run must count every calendar day (DST-safe)")
         }
 
-        // BUG (audit line 122): the heatmap cells use (27-index)*86400000 and can
-        // collapse two cells onto one calendar date across a DST boundary. All
-        // 28 cells must map to distinct consecutive dates, and exactly one cell
-        // (todayKey) carries the "today" border.
+        // FIXED, and this test pins it (audit line 122). The defect was: the
+        // heatmap cells use (27-index)*86400000 and can collapse two cells onto
+        // one calendar date across a DST boundary. All 28 cells must map to
+        // distinct consecutive dates, and exactly one cell (todayKey) carries
+        // the "today" border.
         function test_heatmap_28_distinct_days_and_one_today() {
             var w = hHabit.item
             hHabit.storeCtl.patchSettings("test-instance", { checkins: [] })
@@ -397,10 +401,10 @@ Item {
             hCompact.storeCtl._touchSettings()
         }
 
-        // BUG (audit line 96): compact content is centerIn:parent inside a
-        // clipped body, so on a 1x1 tile the check-in PillButton overflows and is
-        // clipped/untappable. It should stay fully within the tile and be
-        // touch-sized. This assertion is expected to FAIL on a 150px tile.
+        // FIXED, and this test pins it (audit line 96). The defect was: compact
+        // content is centerIn:parent inside a clipped body, so on a 1x1 tile the
+        // check-in PillButton overflows and is clipped/untappable. It should
+        // stay fully within the tile and be touch-sized.
         function test_checkin_button_visible_and_tappable() {
             var w = hCompact.item
             var pill = root.findPill(w)

@@ -95,6 +95,13 @@ Item {
             return n.objectName !== undefined && n.objectName === objectName
         })
     }
+    // The glance rows are {label, value} objects, not items - this audit needed a
+    // way to assert a row's PRESENCE without depending on its position.
+    function labelled(rows, label) {
+        for (var i = 0; i < (rows ? rows.length : 0); i++)
+            if (rows[i].label === label) return rows[i]
+        return null
+    }
     function findField(sch, key) {
         for (var i = 0; i < sch.sections.length; i++) {
             var fs = sch.sections[i].fields || []
@@ -241,6 +248,91 @@ Item {
             verify(w.hist[w.hist.length - 1] <= 1.0, "newest sample is a recent in-range reading")
         }
 
+        // ── Display toggles: the schema promises "every option here is honoured
+        // by the corresponding widget - nothing is decorative", and until this
+        // audit (2026-08-03) these four were only ever checked for their FIELD
+        // shape (type + default). A widget that ignored them entirely would have
+        // shipped green. Each case drives the real setting and asserts the
+        // surface it is documented to change.
+        function test_show_frequency_toggle_gates_the_clock_reading() {
+            var w = h.item
+            feed({ cpu_usage_percent: 20, cpu_frequency_mhz: 3600 })
+            compare(w.frequencyText, "3.60 GHz", "frequency is formatted from the metric")
+            verify(w.expandedDetails.indexOf("3.60 GHz") >= 0,
+                   "expanded details carry the clock while the toggle is on")
+            h.storeCtl.setSetting("test-instance", "showFrequency", false)
+            compare(w.showFrequency, false, "the setting reaches the widget")
+            verify(w.expandedDetails.indexOf("3.60 GHz") < 0,
+                   "expanded details drop the clock when the toggle is off")
+            // ...and the compact tile's CLOCK row, which is a separate code path.
+            h.expanded = false
+            h.storeCtl.setSetting("test-instance", "showFrequency", true)
+            verify(labelled(w.glanceDetails, "CLOCK") !== null,
+                   "the tile shows a CLOCK row while the toggle is on")
+            h.storeCtl.setSetting("test-instance", "showFrequency", false)
+            compare(labelled(w.glanceDetails, "CLOCK"), null,
+                    "the tile drops the CLOCK row when the toggle is off")
+            h.expanded = true
+        }
+
+        function test_show_load_average_toggle_gates_the_load_reading() {
+            var w = h.item
+            feed({ cpu_usage_percent: 20, cpu_load_1: 1.5, cpu_load_5: 1.25, cpu_load_15: 1 })
+            verify(w.expandedDetails.indexOf("load 1.50") >= 0,
+                   "expanded details carry the load averages while the toggle is on")
+            h.storeCtl.setSetting("test-instance", "showLoadAverage", false)
+            verify(w.expandedDetails.indexOf("load ") < 0,
+                   "expanded details drop the load averages when the toggle is off")
+            h.expanded = false
+            h.storeCtl.setSetting("test-instance", "showLoadAverage", true)
+            verify(labelled(w.glanceDetails, "LOAD 1M") !== null,
+                   "the tile shows a LOAD 1M row while the toggle is on")
+            h.storeCtl.setSetting("test-instance", "showLoadAverage", false)
+            compare(labelled(w.glanceDetails, "LOAD 1M"), null,
+                    "the tile drops the LOAD 1M row when the toggle is off")
+            h.expanded = true
+        }
+
+        // NOTE the tile half of this: the schema help calls showTopProcess an
+        // "Expanded view" option, but glanceDetails is the COMPACT path. The
+        // assertion documents where the option really applies.
+        function test_show_top_process_toggle_gates_both_surfaces() {
+            var w = h.item
+            feed({ cpu_usage_percent: 20, cpu_top_process_name: "cargo",
+                   cpu_top_process_percent: 42 })
+            compare(w.topProcessText, "cargo 42%", "the busiest process is formatted")
+            verify(w.expandedDetails.indexOf("cargo 42%") >= 0,
+                   "expanded details name the busiest process while the toggle is on")
+            h.storeCtl.setSetting("test-instance", "showTopProcess", false)
+            verify(w.expandedDetails.indexOf("cargo") < 0,
+                   "expanded details drop the busiest process when the toggle is off")
+            h.expanded = false
+            h.storeCtl.setSetting("test-instance", "showTopProcess", true)
+            verify(labelled(w.glanceDetails, "BUSIEST") !== null,
+                   "the TILE also shows a BUSIEST row - not only the expanded view")
+            h.storeCtl.setSetting("test-instance", "showTopProcess", false)
+            compare(labelled(w.glanceDetails, "BUSIEST"), null,
+                    "the tile drops the BUSIEST row when the toggle is off")
+            h.expanded = true
+        }
+
+        function test_show_per_core_toggle_gates_the_core_panel() {
+            var w = h.item
+            feed({ cpu_usage_percent: 20,
+                   cpu_core_usage_percent: [10, 90, 45, 5, 60, 20, 80, 30, 70] })
+            compare(w.busiestCores.length, 8, "the panel is capped at the eight busiest")
+            compare(w.busiestCores[0].value, 90, "the busiest core sorts first")
+            var panel = findObjectName(w, "cpuCorePanel")
+            verify(panel !== null, "the core panel exists")
+            verify(panel.visible, "the core panel shows while the toggle is on")
+            h.storeCtl.setSetting("test-instance", "showPerCore", false)
+            compare(panel.visible, false, "the core panel hides when the toggle is off")
+            // Empty core data must hide it too, regardless of the toggle.
+            h.storeCtl.setSetting("test-instance", "showPerCore", true)
+            feed({ cpu_usage_percent: 20 })
+            compare(panel.visible, false, "no per-core data means no panel")
+        }
+
         function test_history_window_setting_changes_retention() {
             var w = h.item
             h.storeCtl.setSetting("test-instance", "historyWindow", "1m")
@@ -252,8 +344,9 @@ Item {
             compare(w.historyLimit, 150, "five minutes retains 150 samples")
         }
 
-        // BUG (audit): history is a plain instance property, not shared through the
-        // store, so the expanded overlay (a separate instance) starts blank.
+        // FIXED, and this test pins it (audit). The defect was: history is a
+        // plain instance property, not shared through the store, so the expanded
+        // overlay (a separate instance) starts blank.
         function test_history_persisted_to_shared_store() {
             var w = h.item
             w.hist = []
@@ -264,7 +357,8 @@ Item {
                    "history should live in the shared store so tile + expanded overlay share it")
         }
 
-        // BUG (audit): `active` is declared but never read; hidden instances churn.
+        // FIXED, and this test pins it (audit). The defect was: `active` is
+        // declared but never read; hidden instances churn.
         function test_inactive_instance_pauses_accumulation() {
             var w = h.item
             w.hist = []
@@ -298,8 +392,9 @@ Item {
                    "55°C is amber once warnTemp drops to 60 (boundary 48)")
         }
 
-        // BUG (audit): header text turns amber at warnTemp-17 but the ring only at
-        // warnTemp-12 - a 5°C band where the two temperature signals disagree.
+        // FIXED, and this test pins it (audit). The defect was: header text
+        // turns amber at warnTemp-17 but the ring only at warnTemp-12 - a 5°C
+        // band where the two temperature signals disagree.
         function test_header_and_ring_agree_at_same_threshold() {
             var w = h.item
             // warnTemp 85. 70°C is below the ring's amber threshold (73) but above
@@ -337,7 +432,8 @@ Item {
             verify(w.accessibleSummary.indexOf("degrees Celsius") >= 0)
         }
 
-        // BUG (audit): a genuine 0°C reading is treated as missing (temp>0 gate).
+        // FIXED, and this test pins it (audit). The defect was: a genuine 0°C
+        // reading is treated as missing (temp>0 gate).
         function test_zero_celsius_is_displayed() {
             var w = h.item
             feed({ cpu_usage_percent: 20, cpu_temp_celsius: 0 })
@@ -468,7 +564,8 @@ Item {
             compare(g.sub, "", "collapsed tile hides the core-count sub-line")
         }
 
-        // BUG (audit testCase): 0/absent core count should hide, but renders "0 cores".
+        // FIXED, and this test pins it (audit testCase). The defect was:
+        // 0/absent core count should hide, but renders "0 cores".
         function test_core_count_hidden_when_absent() {
             var w = h.item
             h.expanded = true
@@ -534,7 +631,8 @@ Item {
             verify(findRing(w).value >= 0.0, "negative usage clamps the ring to empty")
         }
 
-        // BUG (audit testCase): the sparkline sample is w.v/100 unclamped.
+        // FIXED, and this test pins it (audit testCase). The defect was: the
+        // sparkline sample is w.v/100 unclamped.
         function test_history_sample_is_clamped() {
             var w = h.item
             w.hist = []

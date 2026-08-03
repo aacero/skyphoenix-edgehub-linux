@@ -429,11 +429,24 @@ Item {
                     "expanded gauge uses the retained statistics")
         }
 
+        // Audit 2026-08-03: this proved the setting REACHED the widget and
+        // stopped there, so a widget that read the property and then ignored it
+        // would have passed. Assert the surfaces it actually governs - the same
+        // gap gpu's showDetails had.
         function test_showDetails_reacts_live() {
             var w = hRam.item
             compare(w.showDetails, true)
+            var panel = findOne(w, function (n) {
+                return n && n.objectName === "ramDetailPanel" })
+            verify(panel !== null, "the detail panel exists")
+            verify(panel.visible, "the detail panel shows while the toggle is on")
             hRam.storeCtl.setSetting("test-instance", "showDetails", false)
             compare(w.showDetails, false, "detail visibility follows the shared configuration")
+            compare(panel.visible, false,
+                    "the detail panel hides when the toggle is off")
+            // The gauge sub-line is the toggle's other surface, but every branch
+            // that fills it needs live byte counts this case does not feed, so it
+            // is asserted where the data exists rather than pinned to "" here.
         }
     }
 

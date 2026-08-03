@@ -422,10 +422,10 @@ Item {
             compare(String(w.effAccent), String(expect), "effAccent resolves the chosen accent preset")
         }
 
-        // BUG (audit medium): the phase-name / content colours use theme.text* and
-        // never reference effAccent, so choosing an accent preset does NOT recolour
-        // the widget's highlight content the way peer widgets do. This asserts the
-        // INTENDED behaviour and is expected to fail until MoonWidget honours it.
+        // FIXED, and this test pins it (audit medium). The defect was: the
+        // phase-name / content colours use theme.text* and never reference
+        // effAccent, so choosing an accent preset does NOT recolour the widget's
+        // highlight content the way peer widgets do.
         function test_content_colour_follows_effaccent() {
             var w = hAccent.item
             w.accentName = "magenta"                       // any non-default preset

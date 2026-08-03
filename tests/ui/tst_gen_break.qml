@@ -457,14 +457,16 @@ Item {
         }
     }
 
-    // ── AUDITED BUGS - these assertions describe correct behavior and are
-    //    expected to FAIL until BreakWidget.qml is fixed. ─────────────────
+    // ── ONCE-BROKEN BEHAVIOUR, now pinned ────────────────────────────────
+    //    Every case below described a real defect when it was written. All four
+    //    were fixed; verified 2026-08-03, when the whole block was green. They
+    //    stay as regression guards, and each states the defect it prevents. 
     TestCase {
         name: "BreakBugs"
         when: windowShown
         function init() { tryVerify(function () { return h.ready }, 3000); root.clear(h) }
 
-        // BUG (high): a freshly-added, auto-running reminder never seeds endEpoch
+        // WAS BROKEN (high), now pinned. The defect was: a freshly-added, auto-running reminder never seeds endEpoch
         // (Component.onCompleted runs before the store is injected), so the
         // countdown is frozen at intervalMin*60 and never fires.
         function test_fresh_instance_seeds_endEpoch() {
@@ -475,7 +477,7 @@ Item {
                    "REAL BUG: a running, non-due reminder must have a live endEpoch to count down")
         }
 
-        // BUG (medium): BreakWidget never declares `property int tick`, so the
+        // WAS BROKEN (medium), now pinned. The defect was: BreakWidget never declares `property int tick`, so the
         // per-second tick binding is never injected and todayKey/breaksToday
         // never roll over at midnight.
         function test_declares_tick_property() {
@@ -484,7 +486,7 @@ Item {
                     "REAL BUG: BreakWidget must declare `property int tick` for midnight rollover")
         }
 
-        // BUG (medium): setInterval() unconditionally writes running:true, so
+        // WAS BROKEN (medium), now pinned. The defect was: setInterval() unconditionally writes running:true, so
         // tapping −5m / +5m while paused silently resumes the countdown.
         function test_setInterval_while_paused_keeps_paused() {
             var w = h.item
@@ -496,7 +498,7 @@ Item {
                     "REAL BUG: −5m/+5m while paused must NOT resume the timer")
         }
 
-        // BUG (low): pausing while a break is due snapshots pausedRemaining from
+        // WAS BROKEN (low), now pinned. The defect was: pausing while a break is due snapshots pausedRemaining from
         // `remaining`, which is forced to 0 when due - corrupting the state.
         function test_pause_while_due_does_not_zero_paused() {
             var w = h.item

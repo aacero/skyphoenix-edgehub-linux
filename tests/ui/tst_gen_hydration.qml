@@ -286,19 +286,21 @@ Item {
             w.accentName = ""
         }
 
-        // - BUG (audit #4): default accent makes the goal-reached colour invisible.
-        //   Correct behaviour is that effAccent and success differ so the reward
-        //   colour change is perceptible. With the default accent they are the
-        //   same byte value, so this fails.
+        // FIXED, and this test pins it (audit #4). The defect was: default
+        // accent makes the goal-reached colour invisible. Correct behaviour is
+        // that effAccent and success differ so the reward colour change is
+        // perceptible. With the default accent they are the same byte value, so
+        // this fails.
         function test_goal_color_change_visible_by_default() {
             var w = h.item
             verify(String(w.effAccent) !== String(h.theme.success),
                    "default accent must differ from success so hitting the goal recolours the count")
         }
 
-        // - BUG (audit line 49/58): lowering the goal below the current count
-        //   should credit the streak / mark the goal reached, but setGoal() only
-        //   writes goal and never re-evaluates attainment.
+        // FIXED, and this test pins it (audit line 49/58). The defect was:
+        // lowering the goal below the current count should credit the streak /
+        // mark the goal reached, but setGoal() only writes goal and never re-
+        // evaluates attainment.
         function test_lowering_goal_credits_streak() {
             var w = h.item
             seed(6, 8)          // 6 glasses, goal 8 (not yet reached, no streak)
@@ -311,9 +313,10 @@ Item {
             compare(w.streakDisplay, 1, "and bump the streak")
         }
 
-        // - BUG (audit line 54): re-crossing the goal the same day replays the
-        //   celebration. Correct behaviour: the celebration should not re-fire
-        //   (the streak is correctly guarded, but the flash/label are not).
+        // FIXED, and this test pins it (audit line 54). The defect was: re-
+        // crossing the goal the same day replays the celebration. Correct
+        // behaviour: the celebration should not re-fire (the streak is correctly
+        // guarded, but the flash/label are not).
         function test_recross_does_not_replay_celebration() {
             var w = h.item
             seed(0, 8)

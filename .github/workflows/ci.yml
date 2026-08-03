@@ -150,6 +150,8 @@ jobs:
         run: bash scripts/check_no_raw_xhr.sh
       - name: Enforce that every test actually runs (QtTest '_data' trap)
         run: bash scripts/check_live_tests.sh
+      - name: Enforce that known defects live in BACKLOG, not in test comments
+        run: bash scripts/check_no_open_bug_notes.sh
       - name: Enforce that UI links go somewhere
         run: bash scripts/check_ui_links.sh
       - name: Icon lint (every widget type has a bundled, registered icon)

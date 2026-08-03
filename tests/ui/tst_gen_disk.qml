@@ -199,9 +199,10 @@ Item {
             verify(Qt.colorEqual(w.col(98), h.theme.error), "98% is red (critical)")
         }
 
-        // BUG (audit, high): col() checks the hard-coded 97 red threshold BEFORE
-        // warnPercent. With warnPercent=99 a disk at 98% (BELOW the user's warn
-        // line) still renders red instead of the accent colour.
+        // FIXED, and this test pins it (audit high). The defect was: col()
+        // checks the hard-coded 97 red threshold BEFORE warnPercent. With
+        // warnPercent=99 a disk at 98% (BELOW the user's warn line) still
+        // renders red instead of the accent colour.
         function test_warn99_below_warnline_not_red() {
             var w = h.item
             set("warnPercent", 99)
@@ -211,9 +212,10 @@ Item {
                    "below the configured warn line the ring should show the accent colour")
         }
 
-        // BUG (audit, high): with warnPercent≥97 the amber band is unreachable -
-        // any value over the warn line is ≥97 so it goes straight to red. The
-        // schema help says "The ring turns amber above this fill level."
+        // FIXED, and this test pins it (audit high). The defect was: with
+        // warnPercent≥97 the amber band is unreachable - any value over the warn
+        // line is ≥97 so it goes straight to red. The schema help says "The ring
+        // turns amber above this fill level."
         function test_amber_reachable_above_high_warn() {
             var w = h.item
             set("warnPercent", 99)
@@ -226,8 +228,9 @@ Item {
                    "a completely full disk still reaches the critical state")
         }
 
-        // BUG (audit, high): the critical (red) threshold must always sit at or
-        // above the configured warn line - otherwise the band order inverts.
+        // FIXED, and this test pins it (audit high). The defect was: the
+        // critical (red) threshold must always sit at or above the configured
+        // warn line - otherwise the band order inverts.
         function test_critical_never_below_warnline() {
             var w = h.item
             set("warnPercent", 98)
@@ -282,8 +285,9 @@ Item {
             compare(w.reservedBytes, 5 * gib, "root-reserved bytes remain explicit")
         }
 
-        // BUG (audit, medium): freeBytes = total - used includes root-reserved
-        // space, so a disk the core calls 100% full can still print "N GB free".
+        // FIXED, and this test pins it (audit medium). The defect was: freeBytes
+        // = total - used includes root-reserved space, so a disk the core calls
+        // 100% full can still print "N GB free".
         function test_full_disk_does_not_show_free() {
             var w = h.item
             feed(100, 95 * gib, 100 * gib, 0, 5 * gib, true)
@@ -386,8 +390,9 @@ Item {
         }
 
         // ── Rounding boundary: label rounded, colour raw ─────────────────────
-        // BUG (audit, low): big shows v.toFixed(0) but col() branches on raw v.
-        // 96.6 and 97.0 both display "97%" but get different colours.
+        // FIXED, and this test pins it (audit low). The defect was: big shows
+        // v.toFixed(0) but col() branches on raw v. 96.6 and 97.0 both display
+        // "97%" but get different colours.
         function test_rounding_boundary_colour_consistent() {
             var w = h.item
             set("warnPercent", 90)
@@ -407,8 +412,9 @@ Item {
             compare(w.human(1000 * gib), "1000 GiB", "just under 1 tib stays coarse whole-GiB")
         }
 
-        // BUG (audit, low): human() divides by powers of two but labels the result
-        // decimal "GB"/"TB". A binary-computed size should carry a binary unit.
+        // FIXED, and this test pins it (audit low). The defect was: human()
+        // divides by powers of two but labels the result decimal "GB"/"TB". A
+        // binary-computed size should carry a binary unit.
         function test_human_uses_binary_unit_labels() {
             var w = h.item
             verify(w.human(tib).indexOf("iB") >= 0,
@@ -418,10 +424,11 @@ Item {
         }
 
         // ── warnPercent clamping ─────────────────────────────────────────────
-        // BUG (audit, low): warnPercent is taken verbatim from config with only an
-        // undefined→90 fallback. The schema slider is 50..99, but the Manager
-        // control socket / hand-edited JSON can inject anything. Values outside the
-        // sane range should be clamped.
+        // FIXED, and this test pins it (audit low). The defect was: warnPercent
+        // is taken verbatim from config with only an undefined→90 fallback. The
+        // schema slider is 50..99, but the Manager control socket / hand-edited
+        // JSON can inject anything. Values outside the sane range should be
+        // clamped.
         function test_warn_clamped_low() {
             var w = h.item
             set("warnPercent", 0)   // any disk >0% would go amber

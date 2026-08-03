@@ -322,11 +322,12 @@ Item {
         // ── Real-bug locks (intentionally failing) ─────────────────────────
 
         function test_inactive_does_not_repaint() {
-            // BUG (audit medium): `active` is declared (line 8) but never read.
-            // The tile loader sets active=false for off-screen / expanded /
-            // edit-mode tiles (single-driver rule, Dashboard.qml:14) so those
-            // clocks should stop repainting. They don't - the tick Connections
-            // (line 72) fires unconditionally. Correct behaviour: no repaint.
+            // FIXED, and this test pins it (audit medium). The defect was:
+            // `active` is declared (line 8) but never read. The tile loader sets
+            // active=false for off-screen / expanded / edit-mode tiles (single-
+            // driver rule, Dashboard.qml:14) so those clocks should stop
+            // repainting. They don't - the tick Connections (line 72) fires
+            // unconditionally. Correct behaviour: no repaint.
             var w = h.item
             h.active = false            // ⇒ item.active = false via harness binding
             compare(w.active, false, "widget received active=false")
@@ -339,10 +340,11 @@ Item {
         }
 
         function test_theme_switch_repaints_face() {
-            // BUG (audit low): onPaint reads theme.cardBorder / textTertiary /
-            // textSecondary / textPrimary at paint time, but nothing watches
-            // those roles - there is no Connections on `theme`. A dark→light
-            // switch that leaves effAccent unchanged does NOT repaint, so the
+            // FIXED, and this test pins it (audit low). The defect was: onPaint
+            // reads theme.cardBorder / textTertiary / textSecondary /
+            // textPrimary at paint time, but nothing watches those roles - there
+            // is no Connections on `theme`. A dark→light switch that leaves
+            // effAccent unchanged does NOT repaint, so the
             // ring/ticks/hands/numerals keep the old palette until the next
             // tick. Correct behaviour: the switch repaints the face.
             settle()

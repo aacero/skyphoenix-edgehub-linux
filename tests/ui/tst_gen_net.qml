@@ -155,8 +155,9 @@ Item {
             compare(w.fmt(0), "0 B/s", "zero")
         }
 
-        // BUG (audit): the < 1024 test happens before Math.round, so 1023.7 takes
-        // the B/s branch and rounds up to "1024 B/s" instead of rolling into KB/s.
+        // FIXED, and this test pins it (audit). The defect was: the < 1024 test
+        // happens before Math.round, so 1023.7 takes the B/s branch and rounds
+        // up to "1024 B/s" instead of rolling into KB/s.
         function test_fmt_byte_boundary_does_not_show_1024() {
             var w = h.item
             h.storeCtl.setSetting("test-instance", "unit", "bytes")
@@ -254,11 +255,12 @@ Item {
             compare(w.historyLabel, "5 minutes")
         }
 
-        // BUG (audit, medium): peaks + history are plain instance properties, not
-        // stored in the shared DashboardStore. A tile and its expanded overlay are
-        // SEPARATE instances, so the overlay resets peaks to 0 / an empty graph on
-        // every open - contradicting the store's documented shared-state design.
-        // The intended behaviour: session state lives in the store so both share it.
+        // FIXED, and this test pins it (audit medium). The defect was: peaks +
+        // history are plain instance properties, not stored in the shared
+        // DashboardStore. A tile and its expanded overlay are SEPARATE
+        // instances, so the overlay resets peaks to 0 / an empty graph on every
+        // open - contradicting the store's documented shared-state design. The
+        // intended behaviour: session state lives in the store so both share it.
         function test_peaks_persisted_to_shared_store() {
             var w = h.item
             feed(4000, 7000)
@@ -304,9 +306,10 @@ Item {
         }
 
         // ── The dead `active` gate ───────────────────────────────────────────
-        // BUG (audit, low): `active` is declared but never read; hidden/off-page
-        // instances keep pushing history + updating peaks every tick. Intended:
-        // an inactive instance pauses accumulation.
+        // FIXED, and this test pins it (audit low). The defect was: `active` is
+        // declared but never read; hidden/off-page instances keep pushing
+        // history + updating peaks every tick. Intended: an inactive instance
+        // pauses accumulation.
         function test_inactive_instance_pauses_accumulation() {
             var w = h.item
             w.hist = []

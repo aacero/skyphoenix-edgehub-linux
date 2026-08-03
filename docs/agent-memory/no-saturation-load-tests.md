@@ -23,6 +23,15 @@ here before: careless limitless tests already crashed his system once (see
 This is the second time my tooling has degraded his working machine, and he
 regards it as a hard line, not a trade-off to weigh.
 
+**The scratchpad is tmpfs — writing there IS using RAM.** `/tmp/claude-1000/...`
+is a 125 GB tmpfs on this machine, so anything downloaded or built there counts
+against memory, not disk. On 2026-08-03 I put two full Qt toolchains (6.7.3 and
+6.9.3, ~1.3 GB each), two build trees and several 78 MB CI artifacts there,
+peaking at ~3.4 GB of RAM without accounting for it as RAM. Harmless at that size
+on a 249 GB box, but budget scratch space as memory, delete large downloads as
+soon as they have served their purpose, and check `df -h /tmp` before pulling
+anything big.
+
 **How to apply:** never generate synthetic load as a debugging technique. To
 reproduce an environment-dependent failure, change the *environment*, not the
 machine's load: pin the real dependency version (e.g. `aqt install-qt` into the

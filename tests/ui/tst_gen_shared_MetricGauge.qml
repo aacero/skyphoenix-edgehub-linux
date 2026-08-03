@@ -189,7 +189,8 @@ Item {
             verify(isBlack(img, cx, cx), "the ring centre is hollow")
         }
 
-        // BUG (audit): value==0 paints a red round-cap dot at 12 o'clock.
+        // FIXED, and this test pins it (audit). The defect was: value==0 paints
+        // a red round-cap dot at 12 o'clock.
         function test_value_zero_draws_no_progress_dot() {
             ringA.progressColor = "#ff0000"; ringA.progressColor2 = "#ff0000"
             ringA.trackColor = "#0000ff"; ringA.value = 0.0
@@ -254,10 +255,11 @@ Item {
             verify(img.width === 200, "scene renders fine alongside a 0-sized ring")
         }
 
-        // BUG (audit): the two-colour gradient uses createLinearGradient(0,0,w,h)
-        // (bounding-box diagonal), not an arc-following ramp. For a full red→blue
-        // ring an arc-following gradient makes 9 o'clock (75% around) bluer than
-        // 3 o'clock (25% around); the bounding-box mapping reverses that.
+        // FIXED, and this test pins it (audit). The defect was: the two-colour
+        // gradient uses createLinearGradient(0,0,w,h) (bounding-box diagonal),
+        // not an arc-following ramp. For a full red→blue ring an arc-following
+        // gradient makes 9 o'clock (75% around) bluer than 3 o'clock (25%
+        // around); the bounding-box mapping reverses that.
         function test_two_colour_gradient_follows_arc() {
             ringA.trackColor = "#111111"
             ringA.progressColor = "#ff0000"   // start colour (12 o'clock)
@@ -363,9 +365,10 @@ Item {
             verify(yRight > sh - 14, "value<0 clamps to the bottom band (yRight=" + yRight + ")")
         }
 
-        // BUG (audit): a NaN/undefined sample makes Y() return NaN, and lineTo(x,
-        // NaN) breaks the whole polyline + fill. Intended: the bad sample is
-        // sanitized and the rest of the line still renders.
+        // FIXED, and this test pins it (audit). The defect was: a NaN/undefined
+        // sample makes Y() return NaN, and lineTo(x, NaN) breaks the whole
+        // polyline + fill. Intended: the bad sample is sanitized and the rest of
+        // the line still renders.
         function test_nan_sample_does_not_poison_line() {
             sparkA.values = [0.2, 0.4, 0.6]   // healthy baseline
             repaint()
@@ -394,8 +397,9 @@ Item {
             sparkA.values = []
         }
 
-        // BUG (audit): onValuesChanged only fires on reassignment, so mutating the
-        // bound array in place (history.push(...)) never repaints.
+        // FIXED, and this test pins it (audit). The defect was: onValuesChanged
+        // only fires on reassignment, so mutating the bound array in place
+        // (history.push(...)) never repaints.
         function test_in_place_mutation_repaints() {
             var arr = [0.1, 0.9]
             sparkA.values = arr
@@ -549,9 +553,10 @@ Item {
         name: "MetricGaugeJump"
         when: windowShown
 
-        // BUG (audit): the ring is Layout.fillHeight while the sparkline reserves
-        // Layout.preferredHeight only once history.length > 1. On the second
-        // sample the sparkline pops in and the ring abruptly shrinks (reflow).
+        // FIXED, and this test pins it (audit). The defect was: the ring is
+        // Layout.fillHeight while the sparkline reserves Layout.preferredHeight
+        // only once history.length > 1. On the second sample the sparkline pops
+        // in and the ring abruptly shrinks (reflow).
         function test_ring_does_not_shrink_when_sparkline_appears() {
             mgJump.ok = true; mgJump.value = 0.5; mgJump.big = "50%"
             mgJump.history = [0.5]          // sparkline hidden, ring gets full height
@@ -573,10 +578,11 @@ Item {
         name: "MetricGaugeFirstFrame"
         when: windowShown
 
-        // BUG (audit): font.pixelSize depends on ring.width, which is 0 until the
-        // ColumnLayout lays out, so the big number renders at pixelSize 0
-        // (invisible) on the very first frame. Inspect the just-created instance
-        // before any layout/wait settles.
+        // FIXED, and this test pins it (audit). The defect was: font.pixelSize
+        // depends on ring.width, which is 0 until the ColumnLayout lays out, so
+        // the big number renders at pixelSize 0 (invisible) on the very first
+        // frame. Inspect the just-created instance before any layout/wait
+        // settles.
         function test_big_text_nonzero_on_first_frame() {
             var g = gaugeComp.createObject(dynHost, {
                 width: 200, height: 200, big: "42%", value: 0.42, ok: true

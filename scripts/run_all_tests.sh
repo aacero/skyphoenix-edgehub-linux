@@ -287,6 +287,7 @@ run_suite "Tree-walk memory guard (check_tree_walks.py)" python3 "$PROJECT_DIR/s
 # 5b. Egress lint - raw XMLHttpRequest may only live in the NetHub gate.
 run_suite "Egress lint (no raw XHR)" bash "$PROJECT_DIR/scripts/check_no_raw_xhr.sh"
 run_suite "Live-test lint (no inert test_*_data)" bash "$PROJECT_DIR/scripts/check_live_tests.sh"
+run_suite "Open-defect lint (bugs belong in BACKLOG)" bash "$PROJECT_DIR/scripts/check_no_open_bug_notes.sh"
 # The Manager is never tested inside a nested compositor - it is tested against
 # a REAL hub in tests/hardware/. See the script header for why this is absolute.
 run_suite "No Manager tests under a compositor" bash "$PROJECT_DIR/scripts/check_no_manager_compositor_tests.sh"
