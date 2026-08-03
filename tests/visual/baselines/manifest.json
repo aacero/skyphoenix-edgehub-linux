@@ -274,11 +274,11 @@
     {
       "crop": null,
       "file": "widget-calendar.png",
-      "height": 818,
+      "height": 819,
       "id": "widget-calendar",
       "kind": "widget",
-      "sha256": "5c5b8c2873dbe0baaae907a5546467956ff9025d29a9a35f689a00031aaad199",
-      "source": "wcalwx_cal_size_p_1x1.png",
+      "sha256": "cd7795d1949b2cfab155571b09df6ca18f272866c115133eb6e164188baf359a",
+      "source": "wcalwx_cal_state_empty.png",
       "width": 696
     },
     {

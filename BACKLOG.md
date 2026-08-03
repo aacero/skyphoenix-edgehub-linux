@@ -407,6 +407,37 @@ Still open:
 Not a product defect, and deliberately NOT worked around by widening the timeout:
 a file that hangs is not a slow file.
 
+## Visual baselines decay with the wall clock
+
+Opened 2026-08-03. The reviewed visual baselines compare rendered pixels, and two
+of the fifty render content derived from `Date.now()`, so their baselines drift
+until they cross the rms tolerance. Same code was 50/50 green on `master` on
+2026-08-02 and failed the next morning at rms 10.469 and 10.031 against a 10.0
+cap, on a PR that touched only the GUI runner script.
+
+- **`widget-calendar`** — **FIXED.** Its source capture was the agenda state, and
+  the calendar test builds its ICS relative to `Date.now()` on purpose (*"a 'now'
+  event must span the wall clock, so a fixed date would be pruned"*). The diff was
+  event text and timestamps ghosting against different values. Re-pointed at
+  `wcalwx_cal_state_empty.png`: the chrome, the status pill and the empty-state
+  copy, with no dates, times or event text at all — deterministic by construction
+  rather than by luck.
+- **`preset-health`** — **STILL FRAGILE.** The diff is a break-timer countdown
+  ghosting ("30:00" against a different value), "off hours", and a `09:00 to
+  17:00` schedule line: the widget's own clock. It passed again the following day,
+  so it OSCILLATES around the tolerance rather than decaying monotonically — which
+  is worse than a steady drift, because it will fail on an unrelated PR at
+  unpredictable intervals. There is no clock-free variant of a whole preset screen
+  to re-point at, so the options are a `crop` that excludes the break tile, a
+  per-case threshold with the `variance_reason` the tool already requires, or
+  making the break widget's captured state clock-independent. Product-owner call.
+
+**Note for whoever fixes the next one:** `visual_baselines.py update` rewrites ALL
+fifty baselines, not the one you changed — it re-baselines 49 reviewed artifacts
+that were passing, which is precisely what its own docstring forbids. Re-capture
+the single case through `write_normalized` and patch that one manifest entry
+instead; the diff should be one PNG and its three manifest fields.
+
 ## Candidates
 
 Unapproved ideas, findings, and out-of-scope proposals land here. Nothing in this

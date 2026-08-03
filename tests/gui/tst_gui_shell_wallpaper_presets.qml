@@ -616,7 +616,30 @@ Item {
                     "found every Moon phase seam for " + d.tag)
             for (var m = 0; m < moons.length; m++)
                 moons[m]._cyclePos = 0.35
-            if (eods.length || moons.length) wait(60)
+            // Break reminders are clock-dependent twice over: `remaining` counts
+            // down from Date.now(), and stateLabel flips to "Outside active
+            // hours" whenever the run happens outside the 09:00-17:00 schedule.
+            // That is why preset-health's reviewed baseline failed at exactly
+            // rms=10.031 on two CI runs in the same time band while passing in
+            // another - a break tile rendering "30:00 / Paused" in one band and a
+            // live countdown or "off hours" in the next. Park the reminder: with
+            // running=false, `remaining` reads the fixed pausedRemaining instead
+            // of the wall clock, and stateLabel resolves to "Paused" before it
+            // ever consults the schedule. Same intent as the EOD and Moon seams
+            // above - pin the clock so the baseline measures layout, not the hour
+            // the suite happened to run.
+            var breaks = G.collectPred(dash, function (n) {
+                try {
+                    return n && n.stateLabel !== undefined && n.intervalMin !== undefined
+                           && n.snoozed !== undefined && n.instanceId !== undefined
+                } catch (e) { return false }
+            })
+            for (var b = 0; b < breaks.length; b++)
+                if (breaks[b].store)
+                    breaks[b].store.patchSettings(breaks[b].instanceId,
+                        { running: false, due: false, snoozed: false,
+                          scheduleSuspended: false, pausedRemaining: 1800 })
+            if (eods.length || moons.length || breaks.length) wait(60)
             snap(dash, "append_" + d.tag)
         }
 

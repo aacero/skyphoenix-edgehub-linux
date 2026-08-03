@@ -35,7 +35,7 @@
     {"id": "widget-media", "kind": "widget", "source": "wmedia_size_portrait-1x1.png", "crop": [0, 0, 696, 818]},
     {"id": "widget-httpjson", "kind": "widget", "source": "whttp_size_p_1x1.png", "crop": [800, 0, 696, 818]},
     {"id": "widget-kpi", "kind": "widget", "source": "wkpi_size_p_1x1.png", "crop": [1600, 0, 696, 818]},
-    {"id": "widget-calendar", "kind": "widget", "source": "wcalwx_cal_size_p_1x1.png"},
+    {"id": "widget-calendar", "kind": "widget", "source": "wcalwx_cal_state_empty.png"},
     {"id": "widget-nownext", "kind": "widget", "source": "wcalwx_nn_size_p_1x1.png"},
     {"id": "widget-weather", "kind": "widget", "source": "wcalwx_wx_size_p_1x1.png"},
     {"id": "widget-countdown", "kind": "widget", "source": "wmisc_cd_size_p_1x1.png"},
