@@ -251,5 +251,41 @@ Item {
             clickTarget(sw)
             compare(root.animatedBackground, false, "toggling writes root.animatedBackground")
         }
+
+        // The auto-cycle dwell. Unlike the switches above this writes straight to
+        // the store (it is a persisted appearance key, not a `root` alias), so the
+        // assertion is on what the document ends up holding.
+        function findObjectName(node, name) {
+            return findPred(panel, function (n) { return n.objectName === name })
+        }
+
+        function test_cycle_combo_offers_the_ladder_and_defaults_to_off() {
+            var combo = findObjectName(panel, "pageCycleCombo")
+            verify(combo !== null, "found the cycle dwell selector")
+            compare(combo.count, 7, "off plus six dwell choices")
+            compare(combo.currentIndex, 0, "a fresh document does not cycle")
+            compare(store.appearance().pageCycleSec, 0,
+                    "a normalised document carries the key explicitly set to off, "
+                    + "the same way hubControlsMode does")
+            var secs = []
+            for (var i = 0; i < combo.count; i++) secs.push(combo.model[i].secs)
+            compare(JSON.stringify(secs), JSON.stringify(store.pageCycleChoices),
+                    "the control offers exactly the ladder the store accepts - a "
+                    + "choice the store coerces to 0 would be a dead menu entry")
+        }
+
+        function test_cycle_combo_writes_the_selected_dwell() {
+            var combo = findObjectName(panel, "pageCycleCombo")
+            combo.currentIndex = 3
+            combo.activated(3)
+            compare(store.appearance().pageCycleSec, 60, "selecting writes through")
+            compare(combo.currentIndex, 3, "and the control keeps showing it")
+
+            // External change must still move the control: `onActivated` reasserts
+            // the binding it severs, the same trap the glass slider documents.
+            store.setAppearance("pageCycleSec", 300)
+            compare(combo.currentIndex, 6,
+                    "the selector still follows the store after being used")
+        }
     }
 }

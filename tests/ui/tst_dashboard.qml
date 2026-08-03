@@ -2004,5 +2004,248 @@ Item {
         }
     }
 
+    // ── Auto-cycle through screens ───────────────────────────────────────────
+    // Timers are resources, not visual children, so the tree walks above cannot
+    // see one. `data` is the union of both.
+    function findData(node, name) {
+        if (!node) return null
+        if (node.objectName === name) return node
+        var kids = node.data
+        for (var i = 0; kids && i < kids.length; i++) {
+            var hit = findData(kids[i], name)
+            if (hit) return hit
+        }
+        return null
+    }
+
+    TestCase {
+        name: "DashboardAutoCycle"
+        when: windowShown
+
+        function initTestCase() {
+            tryVerify(function () { return ld.status === Loader.Ready && ld.item !== null }, 5000)
+        }
+
+        function init() {
+            var d = ld.item
+            root.store().load("blank")
+            d.closeExpanded()
+            d.editMode = false
+            root.store().setAppearance("pageCycleSec", 0)
+        }
+        function cleanup() {
+            ld.item.editMode = false
+            root.store().setAppearance("pageCycleSec", 0)
+        }
+
+        function seedPages(tileCounts) {
+            var s = root.store(), pages = []
+            for (var i = 0; i < tileCounts.length; i++) {
+                var tiles = []
+                for (var j = 0; j < tileCounts[i]; j++)
+                    tiles.push({ id: "p" + i + "t" + j, type: "clock", size: "1x1" })
+                pages.push({ name: "P" + i, tiles: tiles })
+            }
+            s.applyExternal(JSON.stringify({ version: 1, appearance: {}, settings: {},
+                                             pages: pages }))
+            return s
+        }
+
+        // Default OFF. A display that starts moving by itself after an update is
+        // a surprise, and this ships B2B.
+        function test_cycling_is_off_until_it_is_asked_for() {
+            var d = ld.item
+            seedPages([1, 1, 1])
+            compare(d.pageCycleSec, 0, "no dwell configured means off")
+            compare(d.cycleRunning, false)
+            compare(root.findData(d, "cycleDwellTimer").running, false,
+                    "and nothing is armed")
+        }
+
+        // The ladder predicate itself: the single place that decides what a
+        // legal dwell is, used by both the write path and the load path.
+        // COVERS: fn:DashboardStore.isPageCycleChoice
+        function test_isPageCycleChoice_accepts_exactly_the_offered_ladder() {
+            var s = root.store()
+            var ladder = s.pageCycleChoices
+            for (var i = 0; i < ladder.length; i++)
+                verify(s.isPageCycleChoice(ladder[i]),
+                       "isPageCycleChoice accepts the offered value " + ladder[i])
+            var junk = [7, 0.5, -30, 86400, "soon", undefined, NaN, {}]
+            for (var j = 0; j < junk.length; j++)
+                verify(!s.isPageCycleChoice(junk[j]), "isPageCycleChoice rejects " + JSON.stringify(junk[j]))
+
+            // The predicate judges the COERCED number, which is what lets the
+            // string "60" from a hand-edited config work. The values that coerce
+            // to 0 are therefore accepted - and 0 is "off", so an empty or null
+            // dwell means the panel holds still rather than failing validation.
+            var emptyish = [null, "", []]
+            for (var k = 0; k < emptyish.length; k++) {
+                verify(s.isPageCycleChoice(emptyish[k]), "isPageCycleChoice reads " + JSON.stringify(emptyish[k]) + " as a number")
+                s.setAppearance("pageCycleSec", emptyish[k])
+                compare(s.appearance().pageCycleSec, 0, JSON.stringify(emptyish[k]) + " is stored as off, not as itself")
+            }
+        }
+
+        // Only the offered ladder is honoured: an arbitrary persisted number
+        // would be a dwell nobody can reproduce from the UI.
+        function test_only_offered_dwell_values_are_honoured_data() {
+            return [
+                { tag: "off", set: 0, want: 0 },
+                { tag: "15s", set: 15, want: 15 },
+                { tag: "60s", set: 60, want: 60 },
+                { tag: "5min", set: 300, want: 300 },
+                { tag: "not-on-ladder", set: 7, want: 0 },
+                { tag: "fractional", set: 0.5, want: 0 },
+                { tag: "absurd", set: 86400, want: 0 },
+                { tag: "negative", set: -30, want: 0 },
+                { tag: "text", set: "60", want: 60 },
+                { tag: "junk", set: "soon", want: 0 }
+            ]
+        }
+        function test_only_offered_dwell_values_are_honoured(data) {
+            var d = ld.item
+            seedPages([1, 1])
+            var s = root.store()
+            s.setAppearance("pageCycleSec", data.set)
+            // The STORE value is what reaches config.toml and what the Manager
+            // reads back over the control socket, so it must be clean at the
+            // source - not merely tidied up by whoever renders it. Asserting
+            // only d.pageCycleSec passes with the store's validation deleted,
+            // because the Dashboard coerces a second time (measured).
+            compare(s.appearance().pageCycleSec, data.want,
+                    JSON.stringify(data.set) + " must be PERSISTED as " + data.want)
+            compare(d.pageCycleSec, data.want,
+                    JSON.stringify(data.set) + " must resolve to " + data.want)
+        }
+
+        // A hand-edited config.toml is not a reason to render a dwell the UI
+        // cannot express.
+        function test_a_junk_dwell_in_a_loaded_document_is_coerced_off() {
+            var s = root.store()
+            s.applyExternal(JSON.stringify({
+                version: 1, appearance: { pageCycleSec: 7 }, settings: {},
+                pages: [ { name: "A", tiles: [] }, { name: "B", tiles: [] } ] }))
+            compare(s.appearance().pageCycleSec, 0, "7 is not on the ladder")
+            compare(ld.item.pageCycleSec, 0)
+        }
+
+        // Idle-gated: configuring a dwell does NOT start rotating while someone
+        // is using the panel.
+        // COVERS: fn:Dashboard.noteActivity
+        function test_activity_holds_the_current_screen() {
+            var d = ld.item
+            seedPages([1, 1, 1])
+            root.store().setAppearance("pageCycleSec", 60)
+            d.noteActivity()
+            compare(d.cycleIdle, false, "noteActivity means someone is here")
+            compare(d.cycleRunning, false, "so nothing rotates")
+            compare(root.findData(d, "cycleIdleTimer").running, true,
+                    "the grace period is counting instead")
+
+            d.cycleIdle = true      // grace elapsed
+            compare(d.cycleRunning, true)
+            compare(root.findData(d, "cycleDwellTimer").running, true)
+
+            d.noteActivity()        // touched again mid-rotation
+            compare(d.cycleRunning, false, "a second noteActivity stops the rotation")
+        }
+
+        // One number drives both halves, so they cannot drift apart.
+        function test_dwell_and_grace_use_the_configured_interval() {
+            var d = ld.item
+            seedPages([1, 1])
+            root.store().setAppearance("pageCycleSec", 90)
+            compare(root.findData(d, "cycleDwellTimer").interval, 90000)
+            compare(root.findData(d, "cycleIdleTimer").interval, 90000)
+        }
+
+        function test_suppressed_while_editing_or_expanded_data() {
+            return [ { tag: "edit-mode" }, { tag: "expanded-overlay" } ]
+        }
+        function test_suppressed_while_editing_or_expanded(data) {
+            var d = ld.item
+            seedPages([1, 1, 1])
+            root.store().setAppearance("pageCycleSec", 60)
+            d.cycleIdle = true
+            compare(d.cycleRunning, true, "precondition: rotating")
+
+            if (data.tag === "edit-mode") d.editMode = true
+            else { d.expandedType = "clock"; d.expandedId = "p0t0" }
+
+            compare(d.cycleSuppressed, true)
+            compare(d.cycleRunning, false,
+                    "the screen must hold still while the user is working on it")
+            compare(root.findData(d, "cycleDwellTimer").running, false)
+
+            if (data.tag === "edit-mode") d.editMode = false
+            else d.closeExpanded()
+            compare(d.cycleSuppressed, false)
+            compare(d.cycleIdle, false,
+                    "and coming back out starts the grace period, not the rotation")
+        }
+
+        // Nowhere to go is not a rotation.
+        function test_a_single_page_never_rotates() {
+            var d = ld.item
+            seedPages([2])
+            root.store().setAppearance("pageCycleSec", 15)
+            d.cycleIdle = true
+            compare(d.cycleSuppressed, true)
+            compare(d.cycleRunning, false)
+        }
+
+        // An empty screen is not worth a dwell.
+        function test_empty_pages_are_skipped() {
+            var d = ld.item
+            seedPages([1, 0, 1, 0, 2])
+            compare(JSON.stringify(d.cyclablePages), JSON.stringify([0, 2, 4]),
+                    "pages 1 and 3 have nothing on them")
+        }
+
+        // ...but never the one being looked at: rotating away because the user
+        // just emptied the page they are on would be its own surprise.
+        function test_the_current_page_counts_even_when_empty() {
+            var d = ld.item
+            seedPages([0, 1, 1])
+            compare(d.currentPageIndex, 0, "precondition: on the empty page")
+            verify(d.cyclablePages.indexOf(0) >= 0,
+                   "the page under the user is always a place to be")
+        }
+
+        // COVERS: fn:Dashboard.advanceCycle
+        function test_rotation_visits_every_non_empty_page_in_order() {
+            var d = ld.item
+            seedPages([1, 0, 1, 1])
+            root.store().setAppearance("pageCycleSec", 15)
+            var order = d.cyclablePages
+            compare(JSON.stringify(order), JSON.stringify([0, 2, 3]))
+
+            var seen = [d.currentPageIndex]
+            for (var i = 0; i < 3; i++) {
+                d.advanceCycle()
+                tryCompare(d, "currentPageIndex", order[(i + 1) % order.length], 2000)
+                seen.push(d.currentPageIndex)
+            }
+            compare(JSON.stringify(seen), JSON.stringify([0, 2, 3, 0]), "advanceCycle skips the empty page and wraps")
+        }
+
+        function test_advancing_from_a_page_that_left_the_rotation_recovers() {
+            var d = ld.item
+            seedPages([1, 1, 1])
+            d.goToPageExternal(2)
+            tryCompare(d, "currentPageIndex", 2, 2000)
+            // Page 2 empties underneath the rotation.
+            var s = root.store()
+            s.applyExternal(JSON.stringify({ version: 1, appearance: {}, settings: {},
+                pages: [ { name: "P0", tiles: [ { id: "a", type: "clock", size: "1x1" } ] },
+                         { name: "P1", tiles: [ { id: "b", type: "clock", size: "1x1" } ] },
+                         { name: "P2", tiles: [] } ] }))
+            d.advanceCycle()
+            tryCompare(d, "currentPageIndex", 0, 2000)
+            verify(d.currentPageIndex !== 2, "advanceCycle is not trapped on a page that left the rotation")
+        }
+    }
+
     App.PresetCatalog { id: presetCat }
 }

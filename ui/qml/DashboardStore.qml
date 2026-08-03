@@ -388,6 +388,12 @@ Item {
         if (doc.appearance.hubControlsMode !== "immersive"
                 && doc.appearance.hubControlsMode !== "standard")
             doc.appearance.hubControlsMode = "standard"
+        // A hand-edited or older document can carry anything here; an
+        // unrecognised dwell means off, never "some number of seconds".
+        if (!isPageCycleChoice(doc.appearance.pageCycleSec))
+            doc.appearance.pageCycleSec = 0
+        else
+            doc.appearance.pageCycleSec = Number(doc.appearance.pageCycleSec)
         if (!_isPlainObject(doc.settings)) doc.settings = {}
         for (var settingId in doc.settings)
             if (!_isPlainObject(doc.settings[settingId]))
@@ -642,10 +648,24 @@ Item {
 
     // ── Appearance ─────────────────────────────────────────────────────────
     function appearance() { return document.appearance || {} }
+
+    // Dwell times the auto-cycle offers, in seconds. 0 is "off" and is the
+    // default: a panel that starts moving by itself after an update is a
+    // surprise, and this ships B2B. Anything not on this ladder is coerced to
+    // off rather than honoured - an arbitrary persisted number (7, 0.5,
+    // 86400) would otherwise become a dwell nobody can reproduce from the UI.
+    readonly property var pageCycleChoices: [0, 15, 30, 60, 90, 120, 300]
+    function isPageCycleChoice(v) {
+        var n = Number(v)
+        return isFinite(n) && pageCycleChoices.indexOf(n) >= 0
+    }
+
     function setAppearance(key, val) {
         if (!document.appearance) document.appearance = {}
         if (key === "hubControlsMode" && val !== "standard" && val !== "immersive")
             val = "standard"
+        if (key === "pageCycleSec")
+            val = isPageCycleChoice(val) ? Number(val) : 0
         document.appearance[key] = val
         _touchSettings()
     }

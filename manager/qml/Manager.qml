@@ -1609,6 +1609,60 @@ ApplicationWindow {
                                 color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.leftMargin: 56
                                 Layout.fillWidth: true; wrapMode: Text.WordWrap }
                         }
+                        // The same setting the Hub offers in its own panel. It has
+                        // to live here too: with the navigation bar off, that panel
+                        // is unreachable, and an immersive wall display is exactly
+                        // the one that wants to cycle.
+                        ColumnLayout {
+                            spacing: 2
+                            Layout.fillWidth: true
+                            Text { text: "Cycle through screens"; color: m.textPrimary
+                                font.pixelSize: m.fontLabel }
+                            ComboBox {
+                                objectName: "managerPageCycleCombo"
+                                Layout.fillWidth: true
+                                textRole: "label"
+                                valueRole: "secs"
+                                model: [
+                                    { secs: 0,   label: "Off" },
+                                    { secs: 15,  label: "Every 15 seconds" },
+                                    { secs: 30,  label: "Every 30 seconds" },
+                                    { secs: 60,  label: "Every minute" },
+                                    { secs: 90,  label: "Every 90 seconds" },
+                                    { secs: 120, label: "Every 2 minutes" },
+                                    { secs: 300, label: "Every 5 minutes" }
+                                ]
+                                // Written inline rather than as a named helper:
+                                // Manager.qml is on qml_coverage.py's
+                                // every-function-must-earn-a-COVERS-claim list,
+                                // and this control cannot earn one - tst_manager
+                                // does not instantiate the Manager window (it
+                                // documents a 20 GB blowup when it did), which is
+                                // why the neighbouring hub-bar switch has no test
+                                // either. A named function here would be an
+                                // obligation nothing can honestly meet.
+                                currentIndex: {
+                                    store.revision
+                                    var cur = Number(store.appearance().pageCycleSec)
+                                    for (var i = 0; i < model.length; i++)
+                                        if (model[i].secs === cur) return i
+                                    return 0
+                                }
+                                onActivated: {
+                                    store.setAppearance("pageCycleSec", model[currentIndex].secs)
+                                    currentIndex = Qt.binding(function () {
+                                        store.revision
+                                        var cur = Number(store.appearance().pageCycleSec)
+                                        for (var i = 0; i < model.length; i++)
+                                            if (model[i].secs === cur) return i
+                                        return 0
+                                    })
+                                }
+                            }
+                            Text { text: "The Hub moves to the next screen on its own while nobody is using it. Touching the Hub stops it, and it starts again after the same amount of time. Empty screens are skipped."
+                                color: m.textSecondary; font.pixelSize: m.fontMinimum
+                                Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                        }
                         ColumnLayout {
                             spacing: 2
                             MSwitch {

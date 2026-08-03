@@ -45,6 +45,111 @@ Item {
         return store.appearance().hubControlsMode !== "immersive"
     }
 
+    // ── Auto-cycle through screens ───────────────────────────────────────────
+    // The screens that go unseen are the ones nobody is touching the panel for,
+    // so rotation is IDLE-GATED rather than unconditional: a timer that rotates
+    // regardless also rotates out from under a hand mid-read, and every fix for
+    // that is another pause/resume special case. Gating on idle removes the
+    // class instead of handling it.
+    //
+    // One number controls both halves: the dwell between screens, and the grace
+    // after an interaction before rotation resumes. "Cycle every 60s when I'm
+    // not using it, and after I touch it wait 60s before starting again."
+    readonly property int pageCycleSec: {
+        store.revision
+        var v = Number(store.appearance().pageCycleSec)
+        return store.isPageCycleChoice(v) ? v : 0
+    }
+
+    // Everything that must hold the current screen still. Editing and the
+    // expanded overlay are direct interactions; a single page has nowhere to go;
+    // and one non-empty page means the rotation would land right back here.
+    readonly property bool cycleSuppressed: dashboard.editMode
+                                            || dashboard.hasExpanded
+                                            || dashboard.cyclablePages.length <= 1
+
+    // Pages worth landing on. An empty screen is not worth a dwell, but the one
+    // the user is LOOKING at always counts - silently rotating away from a page
+    // because they just emptied it would be its own surprise.
+    readonly property var cyclablePages: {
+        store.revision
+        var ps = store.pages(), out = []
+        for (var i = 0; i < ps.length; i++) {
+            var tiles = ps[i] && ps[i].tiles
+            if ((tiles && tiles.length > 0) || i === dashboard.currentPageIndex)
+                out.push(i)
+        }
+        return out
+    }
+
+    // False while the user is (or has recently been) touching the panel.
+    property bool cycleIdle: false
+    readonly property bool cycleRunning: dashboard.pageCycleSec > 0
+                                         && !dashboard.cycleSuppressed
+                                         && dashboard.cycleIdle
+
+    // Any input anywhere restarts the grace period. Called from the passive
+    // pointer/key probes below, which observe without consuming - a probe that
+    // stole events would break every control underneath it.
+    function noteActivity() {
+        dashboard.cycleIdle = false
+        if (dashboard.pageCycleSec > 0 && !dashboard.cycleSuppressed)
+            cycleIdleTimer.restart()
+        else
+            cycleIdleTimer.stop()
+    }
+
+    function advanceCycle() {
+        var order = dashboard.cyclablePages
+        if (order.length <= 1) return
+        var at = order.indexOf(dashboard.currentPageIndex)
+        // Not on a cyclable page (it just emptied) - start the rotation from the
+        // beginning rather than refusing to move.
+        var next = at < 0 ? order[0] : order[(at + 1) % order.length]
+        swipeView.goToPage(next)
+    }
+
+    Timer {
+        id: cycleIdleTimer
+        objectName: "cycleIdleTimer"
+        interval: Math.max(1, dashboard.pageCycleSec * 1000)
+        repeat: false
+        onTriggered: dashboard.cycleIdle = true
+    }
+    Timer {
+        id: cycleDwellTimer
+        objectName: "cycleDwellTimer"
+        interval: Math.max(1, dashboard.pageCycleSec * 1000)
+        repeat: true
+        running: dashboard.cycleRunning
+        onTriggered: dashboard.advanceCycle()
+    }
+    // Turning the feature on (or leaving edit mode / closing an overlay) must
+    // start the grace period; turning it off must not leave a timer armed.
+    onCycleSuppressedChanged: dashboard.noteActivity()
+    onPageCycleSecChanged: dashboard.noteActivity()
+
+    // Passive input probes. A PointHandler takes a PASSIVE grab: it sees every
+    // press in the dashboard and steals none of them, so buttons, drags and the
+    // SwipeView keep working exactly as before. An overlaid MouseArea would have
+    // had to consume-and-replay, which is how input eaters get written.
+    PointHandler {
+        id: cycleActivityProbe
+        enabled: dashboard.pageCycleSec > 0
+        acceptedDevices: PointerDevice.AllPointerTypes
+        grabPermissions: PointerHandler.TakeOverForbidden
+        onActiveChanged: if (active) dashboard.noteActivity()
+    }
+    // Hovering counts as presence for a mouse user, who may never click.
+    HoverHandler {
+        enabled: dashboard.pageCycleSec > 0
+        onPointChanged: dashboard.noteActivity()
+    }
+    Keys.onPressed: function (event) {
+        dashboard.noteActivity()
+        event.accepted = false   // observe only
+    }
+
     // Reminder-class events are not ordinary toasts. Widgets enqueue them here
     // so an off-page timer or schedule can claim a persistent, unmistakable Hub
     // surface until the user chooses an action. A queue prevents two reminders

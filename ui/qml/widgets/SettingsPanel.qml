@@ -421,6 +421,48 @@ Rectangle {
                             text: "Turn this off for an immersive Hub. Screens and appearance are then managed in EdgeHub Manager; each widget's own corner configuration remains available on the Hub."
                             font.pixelSize: theme.fontCaption; color: theme.textTertiary
                         }
+                        Text { text: "Cycle through screens"; font.pixelSize: theme.fontLabel
+                            font.bold: true; color: theme.textSecondary
+                            Layout.topMargin: theme.spacingSm }
+                        Text {
+                            Layout.fillWidth: true; wrapMode: Text.WordWrap
+                            text: "Move to the next screen on its own while nobody is using the Hub. "
+                                  + "Touching the panel stops it, and it starts again after the same "
+                                  + "amount of time. Screens with nothing on them are skipped."
+                            font.pixelSize: theme.fontCaption; color: theme.textTertiary
+                        }
+                        ComboBox {
+                            objectName: "pageCycleCombo"
+                            Layout.fillWidth: true
+                            implicitHeight: theme.touchTertiary
+                            textRole: "label"
+                            valueRole: "secs"
+                            model: [
+                                { secs: 0,   label: "Off" },
+                                { secs: 15,  label: "Every 15 seconds" },
+                                { secs: 30,  label: "Every 30 seconds" },
+                                { secs: 60,  label: "Every minute" },
+                                { secs: 90,  label: "Every 90 seconds" },
+                                { secs: 120, label: "Every 2 minutes" },
+                                { secs: 300, label: "Every 5 minutes" }
+                            ]
+                            function _indexForStore() {
+                                var _ = store.revision
+                                var cur = Number(store.appearance().pageCycleSec)
+                                for (var i = 0; i < model.length; i++)
+                                    if (model[i].secs === cur) return i
+                                return 0
+                            }
+                            currentIndex: _indexForStore()
+                            // Selecting writes currentIndex internally, which would
+                            // sever the binding above for good - same trap the glass
+                            // slider documents. Push, then re-assert.
+                            onActivated: {
+                                store.setAppearance("pageCycleSec", model[currentIndex].secs)
+                                currentIndex = Qt.binding(function () { return _indexForStore() })
+                            }
+                        }
+
                         RowLayout {
                             Layout.fillWidth: true
                             Text { text: "Glass / Transparency"; font.pixelSize: theme.fontLabel; font.bold: true; color: theme.textSecondary; Layout.fillWidth: true }

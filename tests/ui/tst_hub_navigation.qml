@@ -261,10 +261,35 @@ Item {
                     "destroying the old note cannot echo stale text after the push")
             verify(s.document.settings["hub-note"] === undefined,
                    "the removed note has no settings key at all, not an orphan {} bucket")
-            compare(JSON.stringify(s._persistableData()), managerDoc,
-                    "the live Hub document exactly matches the Manager retry")
+            // The Hub NORMALISES what it applies, filling in its own appearance
+            // defaults, so byte-comparing against the raw Manager payload only
+            // ever passed because normalisation happened to be a no-op for the
+            // keys this document uses. It broke the moment a new defaulted key
+            // landed (`pageCycleSec`), and would break again for the next one.
+            //
+            // The invariant that actually matters is that the Hub changed
+            // nothing the Manager SAID: same pages, same settings, same version,
+            // and every key the Manager sent still carrying the Manager's value.
+            // Extra keys are allowed ONLY inside appearance, and only as
+            // defaults - pages and settings are still compared whole, so an
+            // invented tile or a dropped settings bucket still fails.
+            var live = s._persistableData()
+            var sent = JSON.parse(managerDoc)
+            compare(JSON.stringify(live.pages), JSON.stringify(sent.pages),
+                    "the live Hub pages are exactly the Manager retry's pages")
+            compare(JSON.stringify(live.settings), JSON.stringify(sent.settings),
+                    "and so are its settings buckets")
+            compare(live.version, sent.version, "and the schema version")
+            for (var sentKey in sent.appearance)
+                compare(live.appearance[sentKey], sent.appearance[sentKey],
+                        "appearance." + sentKey + " still holds what the Manager sent")
+            var topKeys = Object.keys(live).sort()
+            compare(JSON.stringify(topKeys),
+                    JSON.stringify(["appearance", "pages", "settings", "version"]),
+                    "the Hub invented no new top-level section")
             compare(root.savedUiState, managerDoc,
-                    "disk, live Hub, and the Manager retry converge on one document")
+                    "disk holds the Manager retry verbatim - the Hub's own defaults "
+                    + "reach it on the next save, not by rewriting the push")
             compare(win.persistenceWarningText, "",
                     "a successful explicit retry clears the resolved conflict")
         }
