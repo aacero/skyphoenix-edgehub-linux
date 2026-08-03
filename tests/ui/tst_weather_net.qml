@@ -170,6 +170,37 @@ Item {
             compare(h.item.uvBand(data.uv), data.want, "UV " + data.uv + " is " + data.want)
         }
 
+        // The tile grid is driven by conditionStats, which must carry everything
+        // the reading contains - the earlier strip showed three of eight - and
+        // must DROP what is absent rather than filling the grid with "-".
+        function test_condition_stats_carry_everything_present() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { lat: 35.68, lon: 139.69 })
+            w.refresh(); lastFake.resolveWith(200, Fx.FORECAST_VALID)
+            var labels = w.conditionStats.map(function (s) { return s.label })
+            compare(JSON.stringify(labels),
+                    JSON.stringify(["RAIN","WIND","HUMIDITY","UV","CLOUD","PRESSURE","SUNRISE","SUNSET"]),
+                    "a full reading yields all eight, in attention order")
+            for (var i = 0; i < w.conditionStats.length; i++)
+                verify(String(w.conditionStats[i].value).indexOf("-") !== 0,
+                       labels[i] + " has a real value, not a placeholder")
+        }
+
+        function test_condition_stats_omit_what_the_provider_did_not_send() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { lat: 35.68, lon: 139.69 })
+            w.refresh()
+            lastFake.resolveWith(200, JSON.stringify({
+                current: { temperature_2m: 21.4, apparent_temperature: 19.8,
+                           weather_code: 3, relative_humidity_2m: 67 },
+                daily: { time: ["2026-07-13"], weather_code: [3],
+                         temperature_2m_max: [24.1], temperature_2m_min: [12.3] }
+            }))
+            var labels = w.conditionStats.map(function (s) { return s.label })
+            compare(JSON.stringify(labels), JSON.stringify(["HUMIDITY"]),
+                    "only what arrived is offered a cell (got " + labels.join(",") + ")")
+        }
+
         // A provider that omits a field must shorten the line, never print NaN.
         function test_missing_extras_shorten_the_line_rather_than_printing_nan() {
             var w = h.item

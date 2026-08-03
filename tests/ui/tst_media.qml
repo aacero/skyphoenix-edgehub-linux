@@ -173,7 +173,12 @@ Item {
                 { tag: "file", url: "file:///home/u/cover.png", kept: true },
                 { tag: "qrc", url: "qrc:/img/cover.png", kept: true },
                 { tag: "data-png", url: "data:image/png;base64,iVBORw0KGgo=", kept: true },
-                { tag: "data-jpeg", url: "data:image/jpeg;base64,/9j/4AAQ", kept: true },
+                                // A REAL 1x1 JPEG, not a truncated header. A header alone is
+                // accepted by the policy (correctly - it is image/jpeg), and Qt
+                // then tries to DECODE it and warns "JPEG datastream contains
+                // no image". Local Qt stayed quiet; CI's Qt 6.9.3 did not, and
+                // the diagnostics gate counts warnings as failures.
+                { tag: "data-jpeg", url: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==", kept: true },
                 { tag: "relative-path", url: "covers/cover.png", kept: true },
                 { tag: "http", url: "http://example.com/cover.png", kept: false },
                 { tag: "https", url: "https://example.com/cover.png", kept: false },

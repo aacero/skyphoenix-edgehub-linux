@@ -65,11 +65,27 @@ WidgetChrome {
     readonly property int futureDays: Math.max(0, w.days.length - 1)
 
     // "Now" scales with the box; the forecast takes what is left.
+    // These ceilings used to be flat pixel constants (88 / 21) tuned for a small
+    // tile. On a half-screen tile they meant content stopped growing at a
+    // fraction of the box - an 88 px glyph and 21 px labels inside ~1280x770 -
+    // which reads as "tiny, surrounded by empty space". The ceiling now scales
+    // with the box's short edge, so a bigger tile buys bigger content instead of
+    // more blank area. The old constants remain the FLOOR, so a small tile is
+    // unchanged.
+    readonly property real _shortEdge: Math.min(w.width, w.height)
     readonly property real glyphPx: w.micro ? Math.min(w.width * 0.30, w.height * 0.26, 72)
-        : w.horiz ? Math.min(w.width * 0.10, w.height * 0.26, 80)
-        : Math.min(w.width * 0.18, w.height * 0.13, 88)
+        : w.horiz ? Math.min(w.width * 0.10, w.height * 0.26, Math.max(80, w._shortEdge * 0.30))
+        : Math.min(w.width * 0.18, w.height * 0.22, Math.max(88, w._shortEdge * 0.34))
     readonly property real tempPx: Math.max(18, Math.round(w.glyphPx * 0.78))
-    readonly property real subPx: Math.max(theme.fontLabel, Math.min(w.tempPx * 0.38, 21))
+    readonly property real subPx: Math.max(theme.fontLabel,
+                                           Math.min(w.tempPx * 0.38, Math.max(21, w._shortEdge * 0.055)))
+    // Stat cells scale too. Previously pinned at theme.fontLabel, so the grid
+    // grew and the text inside it did not - which is most of why it still looked
+    // empty after the grid landed.
+    readonly property real statValuePx: Math.max(theme.fontLabel,
+                                                 Math.min(w._shortEdge * 0.075, 40))
+    readonly property real statLabelPx: Math.max(theme.fontMinimum,
+                                                 Math.round(w.statValuePx * 0.52))
     // Width the "now" block claims when the forecast sits beside it.
     readonly property real nowW: Math.min(w.width * 0.32, 340)
 
@@ -139,6 +155,26 @@ WidgetChrome {
     }
     readonly property string uvText: isFinite(w.uvIndex)
         ? Math.round(w.uvIndex) + " " + w.uvBand(w.uvIndex) : "-"
+
+    // Everything the reading actually contains, in the order it earns attention.
+    // Absent fields are dropped rather than rendered as "-", so the grid shows
+    // real values instead of a wall of placeholders.
+    readonly property var conditionStats: {
+        var out = []
+        if (isFinite(w.precipChance) || isFinite(w.precipitation))
+            out.push({ label: "RAIN", value: w.rainText })
+        if (isFinite(w.windSpeed)) out.push({ label: "WIND", value: w.windText })
+        if (isFinite(w.humidity))
+            out.push({ label: "HUMIDITY", value: Math.round(w.humidity) + "%" })
+        if (isFinite(w.uvIndex)) out.push({ label: "UV", value: w.uvText })
+        if (isFinite(w.cloudCover))
+            out.push({ label: "CLOUD", value: Math.round(w.cloudCover) + "%" })
+        if (isFinite(w.pressure))
+            out.push({ label: "PRESSURE", value: Math.round(w.pressure) + " hPa" })
+        if (w.sunrise.length) out.push({ label: "SUNRISE", value: w.sunrise })
+        if (w.sunset.length) out.push({ label: "SUNSET", value: w.sunset })
+        return out
+    }
 
     property bool loaded: false
     property string errorText: ""
@@ -583,7 +619,7 @@ WidgetChrome {
 
                     Text {
                         text: dayCell.d ? dayCell.d.day : ""
-                        font.pixelSize: Math.max(theme.fontLabel, Math.min(dayCell.px * 0.32, 21))
+                        font.pixelSize: Math.max(theme.fontLabel, Math.min(dayCell.px * 0.32, Math.max(21, w._shortEdge * 0.05)))
                         color: theme.textSecondary
                         horizontalAlignment: w.horiz ? Text.AlignHCenter : Text.AlignLeft
                         verticalAlignment: Text.AlignVCenter
@@ -609,7 +645,7 @@ WidgetChrome {
                                           + "\n↓" + dayCell.d.min + w.degSym
                                         : dayCell.d.max + w.degSym
                                           + " / " + dayCell.d.min + w.degSym
-                        font.pixelSize: Math.max(theme.fontLabel, Math.min(dayCell.px * 0.32, 21))
+                        font.pixelSize: Math.max(theme.fontLabel, Math.min(dayCell.px * 0.32, Math.max(21, w._shortEdge * 0.05)))
                         color: theme.textPrimary
                         horizontalAlignment: w.horiz ? Text.AlignHCenter : Text.AlignRight
                         verticalAlignment: Text.AlignVCenter
@@ -662,31 +698,43 @@ WidgetChrome {
             }
         }
 
-        RowLayout {
+        GridLayout {
             objectName: "weatherConditionSummary"
-            visible: w.roomy && w.loaded
+            visible: w.roomy && w.loaded && w.conditionStats.length > 0
             Layout.columnSpan: w.horiz ? 3 : 1
             Layout.fillWidth: true
-            spacing: theme.spacingLg
+            // Take the leftover height rather than sitting as a strip along the
+            // bottom edge: on a tall tile the readings ARE the content, not a
+            // footnote under it.
+            Layout.fillHeight: true
+            // As many columns as fit a readable cell, so the stats wrap into
+            // rows and use the width instead of squeezing into one line.
+            // Derived from the WIDGET's width, never this layout's own: reading
+            // `width` here fed the column count back into the implicit size that
+            // determines it, and Qt Quick Layouts aborts with "Detected
+            // recursive rearrange" (caught by the QML diagnostics gate at
+            // p_1x1.5 - tests all passed, only the warning exposed it).
+            columns: Math.max(2, Math.min(4,
+                Math.floor(w.width / Math.max(1, theme.fontLabel * 6.5))))
+            rowSpacing: theme.spacingMd
+            columnSpacing: theme.spacingLg
 
             Repeater {
-                model: [
-                    { label: "RAIN", value: w.rainText },
-                    { label: "WIND", value: w.windText },
-                    { label: "HUMIDITY", value: isFinite(w.humidity) ? Math.round(w.humidity) + "%" : "-" }
-                ]
+                model: w.conditionStats
                 delegate: ColumnLayout {
                     required property var modelData
-                    Layout.fillWidth: true; spacing: 0
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: 0
                     Text {
                         Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
                         text: modelData.label; color: theme.textTertiary
-                        font.pixelSize: theme.fontLabel; font.letterSpacing: 1
+                        font.pixelSize: w.statLabelPx; font.letterSpacing: 1
                     }
                     Text {
                         Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
-                        text: modelData.value; color: theme.textSecondary
-                        font.pixelSize: theme.fontLabel; font.family: theme.fontMono
+                        text: modelData.value; color: theme.textPrimary
+                        font.pixelSize: w.statValuePx; font.family: theme.fontMono
                     }
                 }
             }
