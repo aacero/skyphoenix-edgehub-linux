@@ -355,10 +355,14 @@ jobs:
     # J=4 / RUN_TIMEOUT=900 that was 6 * 15 = 90 min against a 60 min cap, so a run
     # with several slow files could never finish: GitHub killed the job mid-suite,
     # the summary is only aggregated after `wait`, and the whole hour produced no
-    # result at all. RUN_TIMEOUT=540 below makes the worst case 6 * 9 = 54 min, and
-    # this cap leaves margin so the SCRIPT always reports before the runner kills it.
+    # result at all. The runner's CPU budget caps concurrency at one slot per two
+    # cores, so a four-core runner runs -j2 whatever the command line asks for:
+    # ceil(22/2) = 11 waves, and RUN_TIMEOUT=540 makes the pathological worst case
+    # 11 * 9 = 99 min. This cap leaves margin above that so the SCRIPT always
+    # reports before the runner kills it. (Real runs are nowhere near it - the
+    # slowest single file is ~80s, and less contention makes every file faster.)
     # Keep the three numbers consistent if any of them changes.
-    timeout-minutes: 75
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # action commit pinned

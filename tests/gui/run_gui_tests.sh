@@ -104,6 +104,12 @@ if [ "${1:-}" = "__slot" ]; then
   cleanup_slot() {
     [ -n "$slot_ffpid" ] && kill -9 "$slot_ffpid" 2>/dev/null
     kill -9 "$kpid" 2>/dev/null
+    # A SIGKILLed compositor never unlinks its socket, so every run used to
+    # leave 22 stale wayland-gui*-N pairs in XDG_RUNTIME_DIR forever - visible
+    # in the post-mortem's socket listing, dozens deep. Remove only the two
+    # files THIS slot created; never a glob, because a concurrent slot's socket
+    # is live.
+    rm -f "$XDG_RUNTIME_DIR/$sock" "$XDG_RUNTIME_DIR/$sock.lock" 2>/dev/null
   }
   # INT/TERM must exit after cleanup; a trap that only kills KWin lets the shell
   # continue and can outlive the outer timeout.
@@ -145,6 +151,60 @@ if [ "${1:-}" = "__slot" ]; then
       "$SLOT_EVID/${base}-continuous.mp4" 2>/dev/null &
     slot_ffpid=$!
   fi
+  # Post-mortem for a failed exposure, written next to the logs and uploaded with
+  # them. Everything here is answerable from /proc and ps alone - no session bus,
+  # no wayland-utils, nothing this runner cannot count on being present in a bare
+  # CI container.
+  #
+  # The question each field exists to answer:
+  #   kwin state/wchan  - is the compositor alive, running, or blocked, and on what?
+  #   client state/wchan- is the client blocked in a Wayland roundtrip?
+  #   sockets           - did the socket vanish, or is it there and unanswered?
+  #   concurrent slots  - how many OTHER compositors were initialising at once?
+  #                       This is the contention hypothesis, measured rather than
+  #                       assumed: staggering starts was supposed to reduce it.
+  #   loadavg + elapsed - how loaded the runner was, and how long KWin had had.
+  _slot_capture_unexposed() {
+    # One file per ATTEMPT - SLOT_N is offset by 1000 per retry, so a
+    # second loss cannot overwrite the first one's evidence.
+    local diag="$SLOT_LOGDIR/unexposed-$base-slot$SLOT_N.diag"
+    {
+      echo "=== unexposed-window post-mortem: $base ==="
+      echo "captured           : $(date -Is)"
+      echo "slot               : SLOT_N=$SLOT_N sock=$sock"
+      echo "kwin pid           : $kpid"
+      echo "client pid         : $qpid"
+      echo "kwin alive         : $(kill -0 "$kpid" 2>/dev/null && echo yes || echo NO)"
+      echo "kwin elapsed (s)   : $(ps -o etimes= -p "$kpid" 2>/dev/null | tr -d ' ')"
+      echo "loadavg            : $(cat /proc/loadavg 2>/dev/null)"
+      echo "nproc              : $(nproc 2>/dev/null)"
+      echo
+      echo "--- concurrent compositors (other slots alive right now) ---"
+      ps -eo pid,etimes,stat,rss,pcpu,args 2>/dev/null \
+        | grep -E "kwin_wayland" | grep -v grep
+      echo "count              : $(pgrep -c kwin_wayland 2>/dev/null || echo 0)"
+      echo
+      echo "--- kwin process ---"
+      ps -o pid,ppid,stat,rss,pcpu,etimes,wchan:32,args -p "$kpid" 2>/dev/null
+      echo "kwin /proc State   : $(awk '/^State:/{print $2,$3}' /proc/"$kpid"/status 2>/dev/null)"
+      echo "kwin /proc Threads : $(awk '/^Threads:/{print $2}' /proc/"$kpid"/status 2>/dev/null)"
+      echo "kwin wchan         : $(cat /proc/"$kpid"/wchan 2>/dev/null)"
+      echo
+      echo "--- client process ---"
+      ps -o pid,ppid,stat,rss,pcpu,etimes,wchan:32,args -p "$qpid" 2>/dev/null
+      echo "client /proc State : $(awk '/^State:/{print $2,$3}' /proc/"$qpid"/status 2>/dev/null)"
+      echo "client wchan       : $(cat /proc/"$qpid"/wchan 2>/dev/null)"
+      echo
+      echo "--- wayland sockets in $XDG_RUNTIME_DIR ---"
+      ls -la "$XDG_RUNTIME_DIR"/wayland-* 2>/dev/null
+      echo "this slot socket   : $([ -S "$XDG_RUNTIME_DIR/$sock" ] && echo present || echo MISSING)"
+      echo
+      echo "--- kwin log (whole file, $(wc -l < "$SLOT_LOGDIR/kwin-$base.log" 2>/dev/null) lines) ---"
+      cat "$SLOT_LOGDIR/kwin-$base.log" 2>/dev/null
+    } > "$diag" 2>&1
+    echo "!! post-mortem written to $diag"
+  }
+
   WAYLAND_DISPLAY="$sock" QT_QPA_PLATFORM=wayland QT_LOGGING_RULES="qt.qpa.*=false" \
     "$SLOT_QT" -input "$SLOT_F" $SLOT_IMPORTS -maxwarnings 0 \
     -mousedelay "$SLOT_MD" -keydelay "$SLOT_KD" &
@@ -163,6 +223,11 @@ if [ "${1:-}" = "__slot" ]; then
   while kill -0 "$qpid" 2>/dev/null; do
     if grep -q "window was never exposed" "$SLOT_LOGDIR/$base.log" 2>/dev/null; then
       echo "!! nested compositor never exposed the window for $base - aborting early"
+      # Capture the compositor's state BEFORE killing anything. Three runs of
+      # mitigations have not root-caused this, and every post-mortem so far has
+      # had only the kwin log to work from - which always looks healthy. Take
+      # the picture while the patient is still on the table.
+      _slot_capture_unexposed
       kill -9 "$qpid" 2>/dev/null
       qrc=96
       break
@@ -179,7 +244,10 @@ if [ "${1:-}" = "__slot" ]; then
     kill -9 "$slot_ffpid" 2>/dev/null
     wait "$slot_ffpid" 2>/dev/null
   fi
-  kill -9 "$kpid" 2>/dev/null
+  # Same teardown as the trap - including unlinking this slot's socket. Doing it
+  # by hand here and then clearing the trap is what left 854 stale sockets in
+  # XDG_RUNTIME_DIR: the SUCCESS path never ran cleanup_slot at all.
+  cleanup_slot
   trap - EXIT INT TERM
   exit $qrc
 fi
@@ -250,6 +318,22 @@ if [ -x "$QT" ]; then
   fi
 fi
 
+# Sweep stale sockets from runs that were killed before they could tear down.
+# The name carries the owning slot's PID (wayland-gui<PID>-<N>), so "stale" is
+# decidable rather than guessed: if that PID is gone, nothing can be using it.
+# Only this runner's own naming convention is ever considered - a desktop's
+# wayland-0 can never match. 854 of these had accumulated in XDG_RUNTIME_DIR
+# before the teardown bug above was fixed.
+swept=0
+for stale in "$XDG_RUNTIME_DIR"/wayland-gui[0-9]*-[0-9]*; do
+  [ -e "$stale" ] || continue
+  stale_pid=$(basename "$stale" | sed -nE 's/^wayland-gui([0-9]+)-[0-9]+(\.lock)?$/\1/p')
+  [ -n "$stale_pid" ] || continue
+  kill -0 "$stale_pid" 2>/dev/null && continue
+  rm -f "$stale" && swept=$((swept + 1))
+done
+[ "$swept" -gt 0 ] && echo "==> swept $swept stale wayland socket file(s) from $XDG_RUNTIME_DIR"
+
 EVID="$ROOT/gui-evidence"
 LOGDIR="$ROOT/build/gui-logs"
 rm -rf "$EVID" "$LOGDIR"; mkdir -p "$EVID" "$LOGDIR"
@@ -291,6 +375,34 @@ if [ "$J" -gt 1 ] && [ -r /proc/meminfo ]; then
     J=$max_safe_jobs
   else
     echo "==> memory budget: -j$J bounded to $((J * RUN_MEM_MAX_MB)) MiB (${mem_available_mb} MiB available, ${reserve_mb} MiB reserved)"
+  fi
+fi
+
+# ── CPU budget ────────────────────────────────────────────────────────────────
+# Memory was bounded above; nothing bounded CORES, and that is what the
+# unexposed-window failures turned out to be.
+#
+# Each slot is TWO CPU-hungry processes - a nested KWin compositing under
+# llvmpipe, and a Qt client rendering into it - so -j4 on a four-core runner is
+# eight of them on four cores. The post-mortem this runner now writes proved the
+# consequence (run 30768393914, tst_gui_w_cal_weather, all three attempts
+# agreeing): the socket was PRESENT, KWin was alive and only 4-5s old with
+# **7 threads** where a healthy one has 47, loadavg was 3.96-4.12 on nproc 4, and
+# four compositors were initialising at once. KWin binds its Wayland socket early
+# in startup, so the readiness check accepts it while the compositor still cannot
+# serve a surface; the client maps a window and blocks in poll_schedule_timeout
+# forever. Retrying lands in the identical condition, which is why two retries did
+# not save it.
+#
+# So: at most one slot per two cores. This only ever REDUCES a requested -jN, and
+# a single-core machine still gets one slot.
+if [ "$J" -gt 1 ]; then
+  cores=$(nproc 2>/dev/null || echo 1)
+  max_cpu_jobs=$((cores / 2))
+  [ "$max_cpu_jobs" -lt 1 ] && max_cpu_jobs=1
+  if [ "$J" -gt "$max_cpu_jobs" ]; then
+    echo "==> cpu budget: reducing -j$J to -j$max_cpu_jobs (${cores} core(s); each slot is a compositor AND a client)"
+    J=$max_cpu_jobs
   fi
 fi
 
