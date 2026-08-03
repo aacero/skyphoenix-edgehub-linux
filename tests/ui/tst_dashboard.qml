@@ -2032,6 +2032,12 @@ Item {
             d.closeExpanded()
             d.editMode = false
             root.store().setAppearance("pageCycleSec", 0)
+            // Land on page 0 explicitly. Earlier this happened as a side effect
+            // of advanceCycle() going through goToPage(), which commits the
+            // scroll position - a test must not depend on which navigation path
+            // the product happens to use, so the precondition is set here.
+            d.goToPageExternal(0)
+            tryCompare(d, "currentPageIndex", 0, 3000)
         }
         function cleanup() {
             ld.item.editMode = false

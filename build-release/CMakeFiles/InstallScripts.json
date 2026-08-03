@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/simon/IdeaProjects/XeneonEdge_Linux/build-release/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

@@ -1,0 +1,41 @@
+file(REMOVE_RECURSE
+  "CMakeFiles/xeneon-edge-hub.dir/link.d"
+  "CMakeFiles/xeneon-edge-hub_autogen.dir/AutogenUsed.txt"
+  "CMakeFiles/xeneon-edge-hub_autogen.dir/ParseCache.txt"
+  "xeneon-edge-hub_autogen"
+  "CMakeFiles/xeneon-edge-hub.dir/app/src/autostart.cpp.o"
+  "CMakeFiles/xeneon-edge-hub.dir/app/src/autostart.cpp.o.d"
+  "CMakeFiles/xeneon-edge-hub.dir/app/src/control_server.cpp.o"
+  "CMakeFiles/xeneon-edge-hub.dir/app/src/control_server.cpp.o.d"
+  "CMakeFiles/xeneon-edge-hub.dir/app/src/display_match.cpp.o"
+  "CMakeFiles/xeneon-edge-hub.dir/app/src/display_match.cpp.o.d"
+  "CMakeFiles/xeneon-edge-hub.dir/app/src/main.cpp.o"
+  "CMakeFiles/xeneon-edge-hub.dir/app/src/main.cpp.o.d"
+  "CMakeFiles/xeneon-edge-hub.dir/app/src/mpris_bridge.cpp.o"
+  "CMakeFiles/xeneon-edge-hub.dir/app/src/mpris_bridge.cpp.o.d"
+  "CMakeFiles/xeneon-edge-hub.dir/app/src/mpris_state.cpp.o"
+  "CMakeFiles/xeneon-edge-hub.dir/app/src/mpris_state.cpp.o.d"
+  "CMakeFiles/xeneon-edge-hub.dir/app/src/orientation_sensor.cpp.o"
+  "CMakeFiles/xeneon-edge-hub.dir/app/src/orientation_sensor.cpp.o.d"
+  "CMakeFiles/xeneon-edge-hub.dir/xeneon-edge-hub_autogen/GBFAFXFCVO/qrc_fonts.cpp.o"
+  "CMakeFiles/xeneon-edge-hub.dir/xeneon-edge-hub_autogen/GBFAFXFCVO/qrc_fonts.cpp.o.d"
+  "CMakeFiles/xeneon-edge-hub.dir/xeneon-edge-hub_autogen/GBFAFXFCVO/qrc_icons.cpp.o"
+  "CMakeFiles/xeneon-edge-hub.dir/xeneon-edge-hub_autogen/GBFAFXFCVO/qrc_icons.cpp.o.d"
+  "CMakeFiles/xeneon-edge-hub.dir/xeneon-edge-hub_autogen/GBFAFXFCVO/qrc_wallpapers.cpp.o"
+  "CMakeFiles/xeneon-edge-hub.dir/xeneon-edge-hub_autogen/GBFAFXFCVO/qrc_wallpapers.cpp.o.d"
+  "CMakeFiles/xeneon-edge-hub.dir/xeneon-edge-hub_autogen/UYX5XTB5RZ/qrc_qml.cpp.o"
+  "CMakeFiles/xeneon-edge-hub.dir/xeneon-edge-hub_autogen/UYX5XTB5RZ/qrc_qml.cpp.o.d"
+  "CMakeFiles/xeneon-edge-hub.dir/xeneon-edge-hub_autogen/mocs_compilation.cpp.o"
+  "CMakeFiles/xeneon-edge-hub.dir/xeneon-edge-hub_autogen/mocs_compilation.cpp.o.d"
+  "xeneon-edge-hub"
+  "xeneon-edge-hub.pdb"
+  "xeneon-edge-hub_autogen/GBFAFXFCVO/qrc_fonts.cpp"
+  "xeneon-edge-hub_autogen/GBFAFXFCVO/qrc_icons.cpp"
+  "xeneon-edge-hub_autogen/GBFAFXFCVO/qrc_wallpapers.cpp"
+  "xeneon-edge-hub_autogen/UYX5XTB5RZ/qrc_qml.cpp"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang CXX)
+  include(CMakeFiles/xeneon-edge-hub.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()

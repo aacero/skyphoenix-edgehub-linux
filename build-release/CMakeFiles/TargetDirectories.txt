@@ -1,0 +1,16 @@
+/home/simon/IdeaProjects/XeneonEdge_Linux/build-release/CMakeFiles/xeneon_build_version.dir
+/home/simon/IdeaProjects/XeneonEdge_Linux/build-release/CMakeFiles/rust_core.dir
+/home/simon/IdeaProjects/XeneonEdge_Linux/build-release/CMakeFiles/xeneon-edge-hub.dir
+/home/simon/IdeaProjects/XeneonEdge_Linux/build-release/CMakeFiles/xeneon-edge-manager.dir
+/home/simon/IdeaProjects/XeneonEdge_Linux/build-release/CMakeFiles/package.dir
+/home/simon/IdeaProjects/XeneonEdge_Linux/build-release/CMakeFiles/package_source.dir
+/home/simon/IdeaProjects/XeneonEdge_Linux/build-release/CMakeFiles/edit_cache.dir
+/home/simon/IdeaProjects/XeneonEdge_Linux/build-release/CMakeFiles/rebuild_cache.dir
+/home/simon/IdeaProjects/XeneonEdge_Linux/build-release/CMakeFiles/list_install_components.dir
+/home/simon/IdeaProjects/XeneonEdge_Linux/build-release/CMakeFiles/install.dir
+/home/simon/IdeaProjects/XeneonEdge_Linux/build-release/CMakeFiles/install/local.dir
+/home/simon/IdeaProjects/XeneonEdge_Linux/build-release/CMakeFiles/install/strip.dir
+/home/simon/IdeaProjects/XeneonEdge_Linux/build-release/CMakeFiles/xeneon-edge-hub_autogen_timestamp_deps.dir
+/home/simon/IdeaProjects/XeneonEdge_Linux/build-release/CMakeFiles/xeneon-edge-hub_autogen.dir
+/home/simon/IdeaProjects/XeneonEdge_Linux/build-release/CMakeFiles/xeneon-edge-manager_autogen_timestamp_deps.dir
+/home/simon/IdeaProjects/XeneonEdge_Linux/build-release/CMakeFiles/xeneon-edge-manager_autogen.dir

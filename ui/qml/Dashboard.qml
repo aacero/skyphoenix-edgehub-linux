@@ -91,12 +91,19 @@ Item {
     // Any input anywhere restarts the grace period. Called from the passive
     // pointer/key probes below, which observe without consuming - a probe that
     // stole events would break every control underneath it.
+    // Wall-clock of the last input. HoverHandler fires on every pointer move, so
+    // this must stay cheap: restarting a Timer per event (the first version)
+    // meant thousands of timer restarts for one sweep of the mouse. Writing a
+    // number is free, and the grace period is judged by comparing against it.
+    property double _lastActivityMs: 0
     function noteActivity() {
-        dashboard.cycleIdle = false
-        if (dashboard.pageCycleSec > 0 && !dashboard.cycleSuppressed)
-            cycleIdleTimer.restart()
-        else
+        dashboard._lastActivityMs = Date.now()
+        if (dashboard.cycleIdle) dashboard.cycleIdle = false
+        if (dashboard.pageCycleSec > 0 && !dashboard.cycleSuppressed) {
+            if (!cycleIdleTimer.running) cycleIdleTimer.start()
+        } else {
             cycleIdleTimer.stop()
+        }
     }
 
     function advanceCycle() {
@@ -106,15 +113,36 @@ Item {
         // Not on a cyclable page (it just emptied) - start the rotation from the
         // beginning rather than refusing to move.
         var next = at < 0 ? order[0] : order[(at + 1) % order.length]
-        swipeView.goToPage(next)
+        // Deliberately NOT goToPage(). That path exists for landing on a
+        // JUST-ADDED page: it commits the scroll position with
+        // positionViewAtIndex() and then re-asserts on a 50 ms timer for up to
+        // 2.5 s, to beat a deferred relayout that would otherwise snap the view
+        // back. Committing the position is precisely what removes the slide, so
+        // every cycle arrived as a hard cut; the re-assert churn is what the
+        // panel feels as a stutter once a dwell (measured offscreen: peak CPU
+        // 5% with cycling off vs 15% with it on, same layout, same binary).
+        //
+        // Cycling only ever moves between pages that ALREADY exist, so there is
+        // no relayout race to defend against. Setting currentIndex lets SwipeView
+        // run its own transition - the same one a finger swipe produces.
+        swipeView.currentIndex = next
     }
 
+    // Polls once per dwell rather than being restarted per input event, and
+    // decides on the timestamp: if the last input is still inside the grace
+    // window it simply keeps ticking, so a stream of hover events costs one
+    // number write each instead of a timer restart each.
     Timer {
         id: cycleIdleTimer
         objectName: "cycleIdleTimer"
         interval: Math.max(1, dashboard.pageCycleSec * 1000)
-        repeat: false
-        onTriggered: dashboard.cycleIdle = true
+        repeat: true
+        onTriggered: {
+            if (Date.now() - dashboard._lastActivityMs >= cycleIdleTimer.interval) {
+                dashboard.cycleIdle = true
+                cycleIdleTimer.stop()
+            }
+        }
     }
     Timer {
         id: cycleDwellTimer
