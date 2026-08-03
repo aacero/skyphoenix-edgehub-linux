@@ -318,6 +318,66 @@ Item {
             compare(w.validHours, false, "a 23.5-hour wrap is rejected")
             compare(w.remaining, "Overnight window exceeds 12 hours")
         }
+        // `stateLabel` is the header's whole vocabulary - six phases, one line
+        // each. Two were asserted ("Schedule paused", "Invalid schedule"); the
+        // four a user sees on an ordinary configured day were not. The clock is
+        // driven through nowOverride so each phase is reached deterministically
+        // rather than depending on when the suite happens to run.
+        function test_state_label_names_every_phase_data() {
+            // 2026-08-05 is a Wednesday (day 3); 2026-08-08 is a Saturday.
+            return [
+                { tag: "before",   days: "1,2,3,4,5", at: [2026, 7, 5, 7, 0],
+                  phase: "before",   label: "Starts later" },
+                { tag: "working",  days: "1,2,3,4,5", at: [2026, 7, 5, 12, 0],
+                  phase: "working",  label: "Working" },
+                { tag: "complete", days: "1,2,3,4,5", at: [2026, 7, 5, 19, 0],
+                  phase: "complete", label: "Complete" },
+                // A weekend with a weekdays-only schedule: not paused, not
+                // invalid, simply not a day this schedule runs.
+                { tag: "off-day",  days: "1,2,3,4,5", at: [2026, 7, 8, 12, 0],
+                  phase: "off",      label: "Off day" }
+            ]
+        }
+        function test_state_label_names_every_phase(data) {
+            var w = hEod.item
+            patch({ startHour: 9, endHour: 17, workDays: data.days })
+            w.nowOverride = new Date(data.at[0], data.at[1], data.at[2],
+                                     data.at[3], data.at[4], 0)
+            compare(w.phase, data.phase, data.tag + " is phase " + data.phase)
+            compare(w.stateLabel, data.label,
+                    "and reads as '" + data.label + "'")
+            w.nowOverride = null
+        }
+
+        // The six labels must be distinct: a header that says the same thing in
+        // two different situations tells the user nothing.
+        function test_no_two_phases_share_a_label() {
+            var w = hEod.item
+            var seen = {}
+            var cases = [
+                { days: "1,2,3,4,5", at: [2026, 7, 5, 7, 0] },    // before
+                { days: "1,2,3,4,5", at: [2026, 7, 5, 12, 0] },   // working
+                { days: "1,2,3,4,5", at: [2026, 7, 5, 19, 0] },   // complete
+                { days: "1,2,3,4,5", at: [2026, 7, 8, 12, 0] }    // off day
+            ]
+            for (var i = 0; i < cases.length; i++) {
+                patch({ startHour: 9, endHour: 17, workDays: cases[i].days })
+                var a = cases[i].at
+                w.nowOverride = new Date(a[0], a[1], a[2], a[3], a[4], 0)
+                verify(seen[w.stateLabel] === undefined,
+                       "'" + w.stateLabel + "' is claimed by phase " + w.phase
+                       + " and already by " + seen[w.stateLabel])
+                seen[w.stateLabel] = w.phase
+                w.nowOverride = null
+            }
+            // Plus the two already covered elsewhere.
+            patch({ startHour: 9, endHour: 17, workDays: "" })
+            verify(seen[w.stateLabel] === undefined, "'Schedule paused' is its own label")
+            seen[w.stateLabel] = "no-days"
+            patch({ startHour: 9, endHour: 9, workDays: "1,2,3,4,5" })
+            verify(seen[w.stateLabel] === undefined, "'Invalid schedule' is its own label")
+        }
+
         function test_empty_weekday_selection_is_explicit() {
             var w = hEod.item
             patch({ startHour: 9, endHour: 17, workDays: "" })

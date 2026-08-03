@@ -117,6 +117,47 @@ Item {
         function cfg() { return hRN.storeCtl.settingsFor("test-instance") }
 
         // setText persists and w.current tracks store.revision bumps.
+        // elapsedLabel() is a four-branch ladder and startedLabel() a two-branch
+        // one; between them they are everything the card says about WHEN. Only
+        // one branch was ever named in a test. Driving startedAt directly pins
+        // each without waiting out real minutes.
+        function test_elapsed_label_reads_naturally_at_every_scale_data() {
+            return [
+                { tag: "under-a-minute", secs: 30,          want: "Started just now" },
+                { tag: "one-minute",     secs: 60,          want: "Focused for 1 min" },
+                { tag: "under-an-hour",  secs: 45 * 60,     want: "Focused for 45 min" },
+                { tag: "exactly-an-hour", secs: 60 * 60,    want: "Focused for 1h" },
+                { tag: "hours-and-mins", secs: 2 * 3600 + 20 * 60, want: "Focused for 2h 20m" },
+                // A whole number of hours must not read "2h 0m".
+                { tag: "whole-hours",    secs: 3 * 3600,    want: "Focused for 3h" }
+            ]
+        }
+        function test_elapsed_label_reads_naturally_at_every_scale(data) {
+            var w = hRN.item
+            w.setText("write the report")
+            hRN.storeCtl.patchSettings("test-instance",
+                                       { startedAt: Date.now() - data.secs * 1000 })
+            verify(w.hasFocus, "precondition: a focus is running")
+            compare(w.elapsedLabel(), data.want,
+                    data.secs + "s in reads as '" + data.want + "'")
+        }
+
+        // With nothing running there is no start time to show, and inventing one
+        // (a formatted epoch, or "00:00") would be worse than saying so.
+        function test_started_label_says_not_started_when_nothing_is_running() {
+            var w = hRN.item
+            w.clearFocus()
+            compare(w.startedAt, 0, "precondition: nothing running")
+            compare(w.startedLabel(), "Not started")
+
+            w.setText("write the report")
+            verify(w.startedAt > 0, "starting records a time")
+            var shown = w.startedLabel()
+            verify(shown !== "Not started", "and the label stops saying otherwise")
+            verify(/^\d{2}:\d{2}$/.test(shown),
+                   "showing a wall-clock start time (got '" + shown + "')")
+        }
+
         function test_setText_persists_and_reactive() {
             var w = hRN.item
             w.setText("Finish the report")

@@ -34,6 +34,19 @@ Item {
         return null
     }
 
+    // Resolve a Text by its exact content, so an assertion can name the surface a
+    // setting governs when that surface has no objectName (audit 2026-08-03).
+    function findText(node, exact) {
+        if (!node) return null
+        if (node.text !== undefined && String(node.text) === exact) return node
+        var kids = node.children || []
+        for (var i = 0; i < kids.length; i++) {
+            var found = findText(kids[i], exact)
+            if (found) return found
+        }
+        return null
+    }
+
     WidgetHarness { id: h; anchors.fill: parent; widgetFile: "PackagesWidget.qml" }
     App.WidgetConfigSchema { id: sc }
     App.WidgetCatalog { id: catalog }
@@ -139,6 +152,38 @@ Item {
             set("showDistro", false)
             compare(w.showDistro, false)
             compare(w.status, "", "toggled off -> no name in the header")
+        }
+
+        // Audit 2026-08-03: the header status was covered above, but showDistro
+        // gates THREE surfaces (PackagesWidget.qml:123 header, :158 the shaped
+        // tile's detail card, :287 the expanded distro name). The other two had
+        // no coverage, so the toggle could have stopped governing either of them
+        // unnoticed.
+        function test_showDistro_also_gates_the_card_and_the_expanded_name() {
+            var w = h.item
+            w.distroOverride = fakeDistro(archInfo(1461))
+
+            // Shaped tile: the detail card.
+            h.expanded = false
+            w.sizeClass = "wide"
+            verify(w.shapedTile, "precondition: a shaped tile")
+            set("showDistro", true)
+            var card = findObjectName(w, "packageDetailCard")
+            verify(card !== null, "the detail card exists")
+            verify(card.visible, "the detail card shows while the toggle is on")
+            set("showDistro", false)
+            compare(card.visible, false, "the detail card hides when the toggle is off")
+
+            // Expanded: the large distro name.
+            h.expanded = true
+            set("showDistro", true)
+            var name = findText(w, "Arch Linux")
+            verify(name !== null, "the expanded view names the distro while the toggle is on")
+            verify(name.visible, "and it is visible")
+            set("showDistro", false)
+            compare(name.visible, false,
+                    "the expanded distro name hides when the toggle is off")
+            h.expanded = false
         }
 
         // Defaults must match the schema's `dflt`, or a fresh tile and its config

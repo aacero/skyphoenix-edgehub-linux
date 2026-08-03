@@ -194,6 +194,83 @@ Item {
             w.timeZones = null
         }
 
+        // Both DST disclosures were unasserted strings. This widget can render a
+        // clock face that is an hour wrong for half the year, and these two lines
+        // are the only thing that says so - yet tests asserted the PROPERTIES
+        // (invalidZone, zoneResolvable) and never the sentence, nor that the
+        // sentence is on screen. They are different messages for different
+        // causes and must not be interchangeable.
+        function findNamed(host, name) {
+            var hits = []
+            function walk(n) {
+                if (!n) return
+                if (n.objectName === name) hits.push(n)
+                var kids = n.children
+                for (var i = 0; kids && i < kids.length; i++) walk(kids[i])
+            }
+            walk(host.item)
+            return hits.length ? hits[0] : null
+        }
+
+        function test_a_zone_the_bridge_cannot_resolve_says_daylight_saving_is_not_applied() {
+            var w = h.item
+            // A pure UTC-offset zone: the user picked an offset, not a named
+            // zone, so there is no IANA id to resolve. invalidZone is DEFINED as
+            // `customZone && zoneId.length && !zoneResolvable()`, so an empty
+            // zoneId is the only way to be unresolvable WITHOUT being invalid -
+            // which makes this the one state that reaches the second message.
+            w.timeZones = null
+            h.storeCtl.patchSettings("test-instance", {
+                customZone: true, zoneId: "", utcOffset: 9, zoneLabel: ""
+            })
+            compare(w.invalidZone, false, "precondition: no zone id, so nothing is invalid")
+            compare(w.zoneResolvable(), false, "precondition: and nothing to resolve")
+            var notice = findNamed(h, "analogZoneAccuracyNotice")
+            verify(notice !== null && notice.visible,
+                   "the face admits it is running on a fixed offset")
+            compare(String(notice.text),
+                    "Fixed offset. Daylight-saving changes are not applied.")
+        }
+
+        function test_an_invalid_zone_says_so_rather_than_blaming_daylight_saving() {
+            var w = h.item
+            w.timeZones = ({
+                isValid: function () { return false },
+                offsetSecsAt: function () { return 0 },
+                format: function () { return "" }
+            })
+            h.storeCtl.patchSettings("test-instance", {
+                customZone: true, zoneId: "Mars/Olympus_Mons", utcOffset: 2, zoneLabel: ""
+            })
+            compare(w.invalidZone, true, "precondition: the bridge rejected the id")
+            var notice = findNamed(h, "analogZoneAccuracyNotice")
+            verify(notice !== null && notice.visible, "the face discloses the problem")
+            compare(String(notice.text),
+                    "Unknown IANA zone. Using the fixed offset without daylight saving.",
+                    "an unknown zone is a different problem from a merely unresolvable "
+                    + "one, and the two lines must not be interchangeable")
+            compare(w.status, "Invalid time zone",
+                    "and the header agrees rather than showing a confident clock")
+            w.timeZones = null
+        }
+
+        // A zone the bridge fully resolves is accurate, so claiming otherwise
+        // would be its own defect.
+        function test_a_resolvable_zone_shows_no_accuracy_notice() {
+            var w = h.item
+            w.timeZones = ({ isValid: function (id) { return id === "Asia/Tokyo" },
+                             offsetSecsAt: function () { return 9 * 3600 },
+                             format: function (id, ms, fmt) { return "TOKYO-" + fmt } })
+            h.storeCtl.patchSettings("test-instance", {
+                customZone: true, zoneId: "Asia/Tokyo", zoneLabel: ""
+            })
+            compare(w.zoneResolvable(), true)
+            var notice = findNamed(h, "analogZoneAccuracyNotice")
+            verify(notice === null || !notice.visible,
+                   "a resolvable zone follows daylight saving, so there is nothing to warn about")
+            w.timeZones = null
+        }
+
         function test_invalid_named_zone_is_disclosed() {
             var w = h.item
             w.timeZones = ({

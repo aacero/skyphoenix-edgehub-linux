@@ -78,6 +78,52 @@ Item {
         }
         function cfg() { return hHabit.storeCtl.settingsFor("test-instance") }
 
+        // todayFeedbackShort is the one line the tile shows about TODAY, and it
+        // had zero mentions anywhere under tests/. Four states, in priority
+        // order: paused beats everything, then a rest day, then whether the
+        // check-in has happened. Getting the order wrong (e.g. a paused habit
+        // still nagging "Ready") is a plausible regression with no other signal.
+        function test_today_feedback_covers_every_state_data() {
+            return [
+                // Paused wins even on a scheduled, unchecked day.
+                { tag: "paused", paused: true, cadence: "daily", done: false,
+                  want: "Today: Paused" },
+                // ...and even when the habit is already done.
+                { tag: "paused-beats-done", paused: true, cadence: "daily", done: true,
+                  want: "Today: Paused" },
+                { tag: "rest-day", paused: false, cadence: "custom", done: false,
+                  want: "Today: Rest day" },
+                { tag: "ready", paused: false, cadence: "daily", done: false,
+                  want: "Today: Ready" },
+                { tag: "checked-in", paused: false, cadence: "daily", done: true,
+                  want: "Today: Checked in" }
+            ]
+        }
+        function test_today_feedback_covers_every_state(data) {
+            var w = hHabit.item
+            var patch = { paused: data.paused, cadence: data.cadence }
+            // "custom" with no active days is a day nothing is scheduled on.
+            if (data.cadence === "custom") patch.activeDays = ""
+            patch.checkins = data.done ? [w.key(new Date())] : []
+            hHabit.storeCtl.patchSettings("test-instance", patch)
+            compare(w.paused, data.paused, "precondition: paused=" + data.paused)
+            compare(w.doneToday, data.done, "precondition: doneToday=" + data.done)
+            compare(w.todayFeedbackShort, data.want,
+                    data.tag + " reads as '" + data.want + "'")
+        }
+
+        // A rest day must not be reported as a missed opportunity: the whole
+        // point of a cadence is that some days are meant to be empty.
+        function test_a_rest_day_never_asks_for_a_check_in() {
+            var w = hHabit.item
+            hHabit.storeCtl.patchSettings("test-instance",
+                { paused: false, cadence: "custom", activeDays: "", checkins: [] })
+            compare(w.scheduledToday, false, "precondition: nothing scheduled today")
+            var line = w.todayFeedbackShort
+            verify(line.indexOf("Ready") < 0 && line.indexOf("Checked in") < 0,
+                   "a rest day says neither Ready nor Checked in (got '" + line + "')")
+        }
+
         function test_streak_of_basics() {
             var w = hHabit.item
             compare(w.streakOf([]), 0, "empty list → 0")

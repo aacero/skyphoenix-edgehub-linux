@@ -244,6 +244,71 @@ Item {
             w.requestClearCompleted(); compare(w.items.length, 1); compare(w.clearArmed, false)
         }
 
+        // Timers are resources, not visual children; `data` is the union.
+        function findData(node, pred) {
+            if (!node) return null
+            if (pred(node)) return node
+            var kids = node.data
+            for (var i = 0; kids && i < kids.length; i++) {
+                var hit = findData(kids[i], pred)
+                if (hit) return hit
+            }
+            return null
+        }
+
+        // The two-tap confirm is covered above; its EXPIRY was not. An armed
+        // state that never disarms turns a stray second tap minutes later into a
+        // silent bulk delete - the confirm would still "work", just not mean
+        // anything. The timer is driven with a shortened interval rather than by
+        // waiting out the real one.
+        function test_an_armed_clear_disarms_itself() {
+            var w = hTasks.item
+            setItems([{ text: "done", done: true }, { text: "open", done: false }])
+            var timer = findData(w, function (n) {
+                return n.interval === 4000 && n.triggered !== undefined
+                       && n.running !== undefined
+            })
+            verify(timer !== null, "the arm has a disarm timer at all")
+            verify(timer.interval >= 1500 && timer.interval <= 10000,
+                   "and the confirm window is a deliberate few seconds, not a "
+                   + "flicker or a minute (got " + timer.interval + "ms)")
+
+            w.requestClearCompleted()
+            compare(w.clearArmed, true, "armed")
+            verify(timer.running, "and the disarm clock started")
+
+            timer.interval = 30
+            timer.restart()
+            tryCompare(w, "clearArmed", false, 2000,
+                       "the arm expires on its own rather than waiting forever")
+            compare(w.items.length, 2, "and expiring does NOT delete anything")
+            timer.interval = 4000
+        }
+
+        // The armed state must be visible, not just internal: the button is the
+        // only thing telling the user the next tap is destructive.
+        function test_the_clear_button_says_it_is_armed() {
+            var w = hTasks.item
+            setItems([{ text: "done", done: true }, { text: "open", done: false }])
+            var button = findData(w, function (n) {
+                return n.objectName === "tasksClearCompleted"
+            })
+            verify(button !== null, "the clear control exists when there is something to clear")
+            var idle = String(button.label)
+            verify(idle.indexOf("Clear") >= 0 && idle.indexOf(String(w.doneCount)) >= 0,
+                   "at rest it says what it would clear (got '" + idle + "')")
+
+            w.requestClearCompleted()
+            var armed = String(button.label)
+            verify(armed !== idle, "the label changes once armed")
+            verify(armed.toLowerCase().indexOf("clear") >= 0,
+                   "and still names the action (got '" + armed + "')")
+            verify(armed.toLowerCase().indexOf("again") >= 0
+                   || armed.toLowerCase().indexOf("confirm") >= 0,
+                   "asking for a second, deliberate tap (got '" + armed + "')")
+            w.clearArmed = false
+        }
+
         function test_clear_completed_can_be_undone_once() {
             var w = hTasks.item
             setItems([{ id: "done", text: "done", done: true },

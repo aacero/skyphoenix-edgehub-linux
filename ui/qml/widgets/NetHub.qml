@@ -38,9 +38,10 @@ QtObject {
     // responseText check remains a second parser-boundary guard and a test seam.
     readonly property int maximumTransportResponseBytes: 2097152
     // Qt's QML XMLHttpRequest accepts a `timeout` property but does not emit
-    // `ontimeout` reliably on every supported runtime. Each production request
-    // therefore gets its own QML Timer watchdog. A shared Timer would let one
-    // widget cancel or extend another widget's deadline.
+    // `ontimeout` reliably on every supported runtime. Every request therefore
+    // gets its own QML Timer watchdog. A shared Timer would let one widget
+    // cancel or extend another widget's deadline. Overridable so a test can
+    // drive the deadline deterministically instead of by wall clock.
     property Component _timeoutTimerFactory: Component {
         Timer { repeat: false }
     }
@@ -356,7 +357,15 @@ QtObject {
         }
         try {
             xhr.open(opts.method || "GET", url)
-            if (!mk && !local && xhr.setRequestHeader)
+            // Not gated on `mk`: this header is how a widget's own (tighter)
+            // cap reaches XeneonNetworkAccessManager::responseByteLimit(), and
+            // an absent header silently widens the cap back to the 2 MiB
+            // maximum. Skipping it under an injected factory made the only
+            // line that carries the cap unreachable by every QML test, so a
+            // regression that dropped it would have been invisible on both
+            // sides of the seam - the C++ suite asserts the limit GIVEN the
+            // header, never that anything sends one.
+            if (!local && xhr.setRequestHeader)
                 xhr.setRequestHeader("X-Xeneon-Max-Response-Bytes",
                                      String(maxResponseBytes))
             if (headers && xhr.setRequestHeader)
@@ -366,7 +375,15 @@ QtObject {
             fail("open-failed", false)
             return xhr
         }
-        if (!mk && !settled) {
+        // Not gated on `mk` either. The watchdog is the ONLY defence against a
+        // connection that hangs without the transport ever firing ontimeout,
+        // and the only caller that passes abortRequest=true - so gating it on
+        // "no injected factory" made the whole mechanism (creation, firing,
+        // abort, and clearWatchdog's teardown) unreachable by construction in
+        // the test suite. Measured: deleting the entire block left all 213
+        // tests across the six NetHub-backed suites green. Tests inject
+        // _timeoutTimerFactory or pass a short opts.timeout to drive it.
+        if (!settled) {
             watchdog = hub._timeoutTimerFactory.createObject(hub, {
                 interval: Math.max(1, Number(requestTimeout))
             })

@@ -176,6 +176,12 @@ Item {
             compare(w.events.length, prior, "the last useful agenda remains visible")
         }
 
+        // The widget can emit THREE distinct warnings, all sharing an
+        // "Unsupported" prefix. This case's payload (FREQ=HOURLY;BYMINUTE=30)
+        // fires two of them at once, and asserting only indexOf("Unsupported")
+        // cannot tell which - so either emit site could be deleted and this
+        // still passed. Each is now pinned by name below; this case keeps the
+        // "partial parse still shows the useful events" contract.
         function test_unsupported_recurrence_is_disclosed() {
             var future = Qt.formatDateTime(new Date(Date.now() + 86400000), "yyyyMMdd'T'HHmmss")
             drive(200, "BEGIN:VCALENDAR\nBEGIN:VEVENT\nDTSTART:" + future
@@ -184,6 +190,66 @@ Item {
             verify(h.item.parseWarnings.join(" ").indexOf("Unsupported") >= 0)
             compare(h.item.providerState, "fresh", "partial parsing does not discard useful events")
             compare(h.item.status, "Partial")
+            compare(h.item.events.length, 1, "the event itself is still shown, once")
+        }
+
+        // Each warning names WHAT it could not honour, so a user can act on it.
+        // A bare "Unsupported" would leave them guessing which rule was dropped.
+        function test_each_parse_warning_names_its_own_cause_data() {
+            return [
+                { tag: "recurrence-part",
+                  rrule: "RRULE:FREQ=DAILY;BYSETPOS=2", tzid: "",
+                  want: "Unsupported recurrence rule: BYSETPOS" },
+                // HOURLY, not MONTHLY: MONTHLY and YEARLY ARE supported (they
+                // step by calendar month/year for birthdays and monthly bills),
+                // which the `supportedParts` list above them does not reveal.
+                { tag: "recurrence-frequency",
+                  rrule: "RRULE:FREQ=HOURLY", tzid: "",
+                  want: "Unsupported recurrence frequency: HOURLY" },
+                // The half of the widget's own promise ("reports any unsupported
+                // timezone") that no test had ever triggered: it needs a TZID the
+                // offset table cannot resolve, which no fixture supplied.
+                { tag: "timezone",
+                  rrule: "", tzid: ";TZID=Mars/Olympus",
+                  want: "Unsupported timezone: Mars/Olympus" }
+            ]
+        }
+        function test_each_parse_warning_names_its_own_cause(data) {
+            var future = Qt.formatDateTime(new Date(Date.now() + 86400000), "yyyyMMdd'T'HHmmss")
+            drive(200, "BEGIN:VCALENDAR\nBEGIN:VEVENT\nDTSTART" + data.tzid + ":" + future
+                  + "\nSUMMARY:Thing" + (data.rrule.length ? "\n" + data.rrule : "")
+                  + "\nEND:VEVENT\nEND:VCALENDAR")
+            var joined = h.item.parseWarnings.join(" | ")
+            verify(joined.indexOf(data.want) >= 0,
+                   "expected '" + data.want + "' among [" + joined + "]")
+            compare(h.item.status, "Partial",
+                    "and the header says the agenda is not complete coverage")
+        }
+
+        // The frequencies the widget really does expand must NOT be disclosed as
+        // dropped - a regression routing them into the unsupported branch would
+        // silently degrade every birthday and monthly bill to a single instance
+        // while still rendering something plausible.
+        function test_supported_recurrence_frequencies_are_not_warned_about_data() {
+            return [ { tag: "daily", freq: "DAILY" }, { tag: "weekly", freq: "WEEKLY" },
+                     { tag: "monthly", freq: "MONTHLY" }, { tag: "yearly", freq: "YEARLY" } ]
+        }
+        function test_supported_recurrence_frequencies_are_not_warned_about(data) {
+            var future = Qt.formatDateTime(new Date(Date.now() + 86400000), "yyyyMMdd'T'HHmmss")
+            drive(200, "BEGIN:VCALENDAR\nBEGIN:VEVENT\nDTSTART:" + future
+                  + "\nSUMMARY:Thing\nRRULE:FREQ=" + data.freq + "\nEND:VEVENT\nEND:VCALENDAR")
+            compare(h.item.parseWarnings.length, 0,
+                    data.freq + " is expanded, not dropped: " + h.item.parseWarnings.join(" | "))
+            verify(h.item.events.length >= 1, data.freq + " still yields an upcoming occurrence")
+        }
+
+        // A calendar the widget fully understands must not cry partial.
+        function test_a_fully_supported_calendar_warns_about_nothing() {
+            drive(200, Fx.icsValid())
+            compare(h.item.parseWarnings.length, 0,
+                    "nothing was dropped, so nothing is disclosed: "
+                    + h.item.parseWarnings.join(" | "))
+            verify(h.item.status !== "Partial", "and the header does not say Partial")
         }
 
         function test_empty_calendar_is_no_upcoming_events() {

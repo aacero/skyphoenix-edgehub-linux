@@ -413,6 +413,7 @@ WidgetChrome {
                 showLabels: true
             }
             Text {
+                objectName: "mediaArtworkNotice"
                 visible: w.rich && w.artworkNotice.length > 0
                 Layout.fillWidth: true
                 text: w.artworkNotice
@@ -520,6 +521,7 @@ WidgetChrome {
             showLabels: true
         }
         Text {
+            objectName: "mediaArtworkNoticeExpanded"
             visible: w.artworkNotice.length > 0
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter

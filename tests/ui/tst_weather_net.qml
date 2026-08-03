@@ -83,6 +83,94 @@ Item {
             verify(u.indexOf("precipitation_unit=inch") >= 0, "precipitation units reach the provider")
             verify(u.indexOf("forecast_days=8") >= 0, "7 forecast days → forecast_days=8")
         }
+
+        // The five fields above reach the PROVIDER. Until the fixture carried
+        // them (audit 2026-08-03) nothing checked that they come back out again:
+        // WeatherWidget.qml:246-250 parsed `undefined` in every test, so
+        // humidity/wind/rain stayed NaN and rendered "-".
+        function test_current_conditions_are_parsed_from_the_payload() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { lat: 35.68, lon: 139.69 })
+            w.refresh()
+            lastFake.resolveWith(200, Fx.FORECAST_VALID)
+            compare(w.providerState, "fresh")
+            compare(Math.round(w.humidity), 67, "humidity comes from relative_humidity_2m")
+            compare(w.windSpeed, 12.4, "wind comes from wind_speed_10m")
+            compare(w.precipitation, 1.2, "rain comes from precipitation")
+        }
+
+        // Open-Meteo returns "YYYY-MM-DDTHH:MM"; the widget slices [11,16]. A
+        // provider that changed the format would have produced silent garbage.
+        function test_sunrise_and_sunset_are_sliced_to_local_clock_times() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { lat: 35.68, lon: 139.69 })
+            w.refresh()
+            lastFake.resolveWith(200, Fx.FORECAST_VALID)
+            compare(w.sunrise, "05:12", "the FIRST day's sunrise, as HH:MM")
+            compare(w.sunset, "21:34")
+        }
+
+        // A provider that omits them must not render "undefined".
+        function test_missing_sun_times_are_empty_not_undefined() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { lat: 35.68, lon: 139.69 })
+            w.refresh()
+            lastFake.resolveWith(200, JSON.stringify({
+                current: { temperature_2m: 21.4, apparent_temperature: 19.8,
+                           weather_code: 3 },
+                daily: { time: ["2026-07-13"], weather_code: [3],
+                         temperature_2m_max: [24.1], temperature_2m_min: [12.3] }
+            }))
+            compare(w.providerState, "fresh")
+            compare(w.sunrise, "", "absent sunrise is empty, never the string 'undefined'")
+            compare(w.sunset, "")
+        }
+
+        // The unit settings reach the provider URL (asserted above) AND the
+        // screen. Open-Meteo converts server-side, so the widget only relabels -
+        // which means a wrong symbol mislabels a correct number: "12 km/h" when
+        // the user asked for and received m/s. Nothing asserted windSym or
+        // precipitationSym; "km/h", "m/s" and "in" appeared in no test at all.
+        function test_unit_symbols_reach_the_card_data() {
+            return [
+                { tag: "kmh-default", wind: "kmh", precip: "mm", sym: "km/h", psym: "mm" },
+                { tag: "mph", wind: "mph", precip: "mm", sym: "mph", psym: "mm" },
+                { tag: "ms", wind: "ms", precip: "mm", sym: "m/s", psym: "mm" },
+                { tag: "inch", wind: "kmh", precip: "inch", sym: "km/h", psym: "in" }
+            ]
+        }
+        function test_unit_symbols_reach_the_card(data) {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance",
+                { lat: 35.68, lon: 139.69,
+                  windUnits: data.wind, precipitationUnits: data.precip })
+            w.refresh()
+            lastFake.resolveWith(200, Fx.FORECAST_VALID)
+            compare(w.windSym, data.sym,
+                    data.wind + " must be labelled " + data.sym
+                    + " - the provider already converted the number, so a wrong "
+                    + "symbol mislabels a correct value")
+            compare(w.precipitationSym, data.psym)
+
+            // And it must be the string the user actually sees, not just a
+            // property: the roomy summary composes value + symbol by hand.
+            var texts = []
+            function collect(node) {
+                if (!node) return
+                if (node.text !== undefined && node.visible) texts.push("" + node.text)
+                var kids = node.children || []
+                for (var i = 0; i < kids.length; i++) collect(kids[i])
+            }
+            collect(w)
+            // This harness is not `roomy`, so the standalone weatherConditionSummary
+            // tiles are hidden and the composed detail line is the visible surface.
+            var joined = texts.join(" | ")
+            verify(joined.indexOf("Wind 12 " + data.sym) >= 0,
+                   "the rendered wind reading carries the chosen unit (looked for "
+                   + "'Wind 12 " + data.sym + "' in " + JSON.stringify(joined) + ")")
+            verify(joined.indexOf("Rain 1.2 " + data.psym) >= 0,
+                   "and so does the rendered rain reading")
+        }
     }
 
     TestCase {

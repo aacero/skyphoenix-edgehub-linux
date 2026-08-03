@@ -198,6 +198,33 @@ Item {
             compare(w.scaleMode, "auto")
         }
 
+        // Audit 2026-08-03. showDetails was the weakest of the family: only its
+        // DEFAULT was asserted (test_defaults_when_settings_empty), and no test
+        // ever turned it off. Three Text rows are gated on it - the link/source
+        // line, the session totals and the drops/errors line - so a widget that
+        // stopped honouring it entirely would have shipped green.
+        function test_show_details_toggle_gates_the_detail_rows() {
+            var w = h.item
+            h.expanded = true
+            feedCatalog("ready")
+            compare(w.showDetails, true, "showDetails defaults on")
+            verify(w.rateAvailable, "precondition: the rows need a live rate")
+            var totals = findText("total ↓")
+            var drops = findText("drops ")
+            verify(totals !== null, "the session totals row is present while the toggle is on")
+            verify(drops !== null, "the drops/errors row is present while the toggle is on")
+            verify(totals.visible && drops.visible, "and both are visible")
+
+            h.storeCtl.setSetting("test-instance", "showDetails", false)
+            compare(w.showDetails, false, "the setting reaches the widget")
+            compare(totals.visible, false,
+                    "the session totals row hides when the toggle is off")
+            compare(drops.visible, false,
+                    "the drops/errors row hides when the toggle is off")
+            h.storeCtl.setSetting("test-instance", "showDetails", true)
+            verify(totals.visible && drops.visible, "and both come back")
+        }
+
         function test_showHistory_toggle_is_reactive() {
             var w = h.item
             compare(w.showHistory, true)

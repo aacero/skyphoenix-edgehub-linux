@@ -246,6 +246,69 @@ Item {
             compare(h.item.errText, "Blocked")
         }
 
+        // errorDetails() is the widget's whole "what went wrong, and what do I
+        // do about it" surface: nine reasons, each mapping to a label AND an
+        // actionable help line. Not one of the help strings was asserted
+        // anywhere, and two DIFFERENT reasons share the label "Blocked" - so the
+        // existing label-only assertions cannot tell "this host is not allowed"
+        // from "your credentials need HTTPS", which need opposite user actions
+        // (change the policy vs change the URL). A regression collapsing every
+        // branch into the catch-all would have been invisible.
+        function test_every_failure_reason_gets_its_own_label_and_help_data() {
+            return [
+                { tag: "offline", reason: "offline", label: "Offline",
+                  help: "Turn off Offline mode, then retry." },
+                { tag: "blocked", reason: "blocked", label: "Blocked",
+                  help: "This host is not allowed by the network policy." },
+                { tag: "insecure-auth", reason: "insecure-auth", label: "Blocked",
+                  help: "Bearer credentials require an HTTPS URL." },
+                { tag: "too-large", reason: "response-too-large", label: "Response too large",
+                  help: "Use an endpoint whose JSON response is at most 1 MiB." },
+                { tag: "timeout", reason: "timeout", label: "Timed out",
+                  help: "Check the endpoint and network, then retry." },
+                { tag: "bad-scheme", reason: "unsupported-scheme", label: "Invalid URL",
+                  help: "Use a complete HTTP or HTTPS URL." },
+                // The secret resolver's own reason is passed through verbatim, so
+                // the user reads WHICH credential failed, not a generic message.
+                { tag: "secret", reason: "secret: CI_TOKEN is not set",
+                  label: "Credential unavailable", help: "CI_TOKEN is not set" },
+                // The status code is carried into the label rather than dropped.
+                { tag: "http-status", reason: "http 503", label: "HTTP 503",
+                  help: "The server rejected the request. Check the URL and credentials." },
+                { tag: "unknown", reason: "something new", label: "Unavailable",
+                  help: "Check the URL, network, and endpoint response." }
+            ]
+        }
+        function test_every_failure_reason_gets_its_own_label_and_help(data) {
+            var d = h.item.errorDetails(data.reason)
+            compare(d.label, data.label, data.reason + " is labelled " + data.label)
+            compare(d.help, data.help, data.reason + " tells the user what to do about it")
+        }
+
+        // Two reasons share a label, so the HELP is the only thing that
+        // distinguishes them. Pinned explicitly - it is the pair most likely to
+        // be "simplified" into one branch.
+        function test_the_two_blocked_reasons_are_told_apart_by_their_help() {
+            var policy = h.item.errorDetails("blocked")
+            var auth = h.item.errorDetails("insecure-auth")
+            compare(policy.label, auth.label, "precondition: the labels really are the same")
+            verify(policy.help !== auth.help,
+                   "a host refused by policy and a token refused for plain HTTP are "
+                   + "different problems and must not read identically")
+        }
+
+        // The end-to-end join: a real refusal reaches the same help the mapping
+        // above defines, rather than the widget composing its own message.
+        function test_a_real_insecure_auth_refusal_shows_that_help() {
+            h.storeCtl.patchSettings(iid(), {
+                url: "http://api.example.com/private", authToken: "SECRET"
+            })
+            h.item.refresh()
+            compare(h.item.errText, "Blocked")
+            compare(h.item.errorHelp, "Bearer credentials require an HTTPS URL.",
+                    "the refusal the user actually hits carries the actionable line")
+        }
+
         // ── thresholds → colour ──────────────────────────────────────────────
         function test_threshold_colours() {
             h.storeCtl.patchSettings(iid(), { warnAt: "80", critAt: "95" })

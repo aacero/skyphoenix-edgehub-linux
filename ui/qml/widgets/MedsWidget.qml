@@ -589,6 +589,7 @@ WidgetChrome {
             }
 
             Text {
+                objectName: "medsLimitsNotice"
                 Layout.fillWidth: true
                 visible: w.expanded
                 text: w.recordMeaningText + " " + w.privacyText

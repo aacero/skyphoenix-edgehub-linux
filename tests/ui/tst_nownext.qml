@@ -198,6 +198,74 @@ Item {
             compare(w.meetingUrl(soon), "https://teams.example.com/join")
         }
 
+        // `bufferMin` is the widget's one tunable and it was the least-covered
+        // setting found in the whole audit: its ONLY appearance anywhere under
+        // tests/ was tst_schema_completeness.qml:63 asserting the field exists.
+        // The test above does produce "starts soon", but at the DEFAULT buffer -
+        // so a widget that hardcoded 10 instead of reading cfg.bufferMin passed
+        // every test in the suite.
+        // COVERS: schema:nownext.bufferMin
+        function test_buffer_minutes_setting_moves_the_starts_soon_boundary_data() {
+            return [
+                { tag: "tight-5", buffer: 5 },
+                { tag: "default-10", buffer: 10 },
+                { tag: "wide-30", buffer: 30 },
+                { tag: "max-120", buffer: 120 }
+            ]
+        }
+        function test_buffer_minutes_setting_moves_the_starts_soon_boundary(data) {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { bufferMin: data.buffer })
+            compare(w.bufferMin, data.buffer, "the setting reaches the widget")
+
+            // Exactly ON the boundary is inside the window: the copy says
+            // "starts soon" for anything up to and including the buffer.
+            var onEdge = root.ev("Review", data.buffer, 30)
+            verify(w.whenText(onEdge).indexOf("starts soon") >= 0,
+                   "an event " + data.buffer + " min out is inside a "
+                   + data.buffer + "-minute buffer")
+
+            // One minute past it is not, and must fall back to the delta copy.
+            var pastEdge = root.ev("Review", data.buffer + 1, 30)
+            var t = w.whenText(pastEdge)
+            verify(t.indexOf("starts soon") < 0,
+                   "an event " + (data.buffer + 1) + " min out is outside it (got '"
+                   + t + "')")
+            verify(t.indexOf("in ") >= 0,
+                   "and still says how long until it")
+        }
+
+        // The widget clamps to 0..120 (NowNextWidget.qml:59-60). A stored value
+        // outside that range is not a reason to render nonsense.
+        function test_buffer_minutes_are_clamped_to_a_sane_range_data() {
+            return [
+                { tag: "over-max", stored: 500, effective: 120 },
+                { tag: "negative", stored: -5, effective: 0 },
+                { tag: "at-max", stored: 120, effective: 120 },
+                { tag: "at-min", stored: 0, effective: 0 }
+            ]
+        }
+        function test_buffer_minutes_are_clamped_to_a_sane_range(data) {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { bufferMin: data.stored })
+            compare(w.bufferMin, data.effective,
+                    data.stored + " must clamp to " + data.effective)
+        }
+
+        // A zero buffer means "never tell me something starts soon" - and the
+        // `mins > 0` half of the guard must keep an event starting THIS minute
+        // out of the window too, rather than 0 <= 0 letting it back in.
+        function test_a_zero_buffer_disables_the_starts_soon_copy() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { bufferMin: 0 })
+            compare(w.bufferMin, 0)
+            var imminent = root.ev("Review", 0, 30)
+            verify(w.whenText(imminent).indexOf("starts soon") < 0,
+                   "a zero buffer never produces the starts-soon copy")
+            var oneOut = root.ev("Review", 1, 30)
+            verify(w.whenText(oneOut).indexOf("starts soon") < 0)
+        }
+
         function test_meeting_link_strips_calendar_punctuation() {
             var e = root.ev("Review", 5, 30)
             e.location = "Join at https://meet.example.com/abc)."

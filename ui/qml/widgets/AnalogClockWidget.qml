@@ -264,6 +264,7 @@ WidgetChrome {
                                          Math.min(parent.width * 0.06, theme.fontTitle)); elide: Text.ElideRight
             }
             Text {
+                objectName: "analogZoneAccuracyNotice"
                 visible: w.customZone && !w.zoneResolvable()
                          && (w.showDigital || w.expanded)
                 width: parent.width

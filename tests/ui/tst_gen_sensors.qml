@@ -186,6 +186,51 @@ Item {
             verify(ram !== null && ram.val === 0, "real ram 0% shows the RAM row at 0")
         }
 
+        // Audit 2026-08-03: FIVE of this widget's six thresholds - warnCpu,
+        // warnGpu, warnRam, warnDisk and warnGpuTemp - were never set by any
+        // test. Only warnCpuTemp was. Each drives stateFor() for its row
+        // (SensorsWidget.qml:163-175: warning at the value, critical ten points
+        // above it), so the widget could have ignored any of them and every
+        // existing case would still have passed. One case per threshold would be
+        // five near-identical bodies; this drives all five through one contract.
+        function test_every_row_threshold_drives_its_own_state_data() {
+            return [
+                { tag: "cpu",      key: "warnCpu",     label: "CPU",     metric: "cpu_usage_percent" },
+                { tag: "gpu",      key: "warnGpu",     label: "GPU",     metric: "gpu_usage_percent" },
+                { tag: "ram",      key: "warnRam",     label: "RAM",     metric: "ram_usage_percent" },
+                // disk needs its availability companion, or the row is Unavailable
+                //  and no threshold applies (SensorsWidget.qml:135).
+                { tag: "disk",     key: "warnDisk",    label: "DISK",    metric: "disk_usage_percent",
+                  extra: { disk_metrics_available: true, disk_total_bytes: 512 } },
+                { tag: "gpu_temp", key: "warnGpuTemp", label: "GPU \u00b0", metric: "gpu_temp_celsius" }
+            ]
+        }
+        function test_every_row_threshold_drives_its_own_state(d) {
+            var w = h.item
+            h.storeCtl.setSetting("test-instance", d.key, 60)
+            var m = {}
+            for (var k in (d.extra || {})) m[k] = d.extra[k]
+            m[d.metric] = 55
+            feed(m)
+            var row = rowFor(w, d.label)
+            verify(row !== null, d.tag + " row is present")
+            compare(row.state, "Normal",
+                    d.tag + " below its warn line is Normal (55 < 60)")
+            m[d.metric] = 62
+            feed(m)
+            compare(rowFor(w, d.label).state, "Warning",
+                    d.tag + " at or above its warn line is Warning (62 >= 60)")
+            m[d.metric] = 71
+            feed(m)
+            compare(rowFor(w, d.label).state, "Critical",
+                    d.tag + " ten points above the warn line is Critical (71 >= 70)")
+            // ...and the threshold is genuinely the config value, not a constant:
+            // the same reading changes state when the line moves.
+            h.storeCtl.setSetting("test-instance", d.key, 90)
+            compare(rowFor(w, d.label).state, "Normal",
+                    d.tag + " raising the warn line to 90 returns the same 71 to Normal")
+        }
+
         // ---- temperature warning thresholds are configurable ----
         function test_temp_colour_thresholds() {
             var w = h.item

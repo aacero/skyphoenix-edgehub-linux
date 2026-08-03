@@ -57,6 +57,52 @@ Item {
         when: windowShown
         function init() { tryVerify(function () { return h.ready }, 3000); clearSettings(h) }
 
+        // routineSummaryText is the one line the card shows about today. The
+        // suite located it only to check its font size; its CONTENT - a
+        // three-way ladder - was never asserted, so a rest day could have read
+        // "0 of 3 done" (a nag on a day nothing was scheduled) with nothing to
+        // catch it.
+        function findNamed(name) {
+            var hits = root.findAll(h.item, function (n) {
+                return n.objectName === name
+            }, [])
+            return hits.length ? hits[0] : null
+        }
+
+        function test_summary_says_which_of_the_three_days_this_is_data() {
+            return [
+                { tag: "rest-day", steps: "Meds\nPack bag", days: "",
+                  want: "Rest day, nothing scheduled" },
+                { tag: "partway", steps: "Meds\nPack bag", days: "0,1,2,3,4,5,6",
+                  done: 1, want: "1 of 2 done" },
+                { tag: "none-done", steps: "Meds\nPack bag", days: "0,1,2,3,4,5,6",
+                  done: 0, want: "0 of 2 done" },
+                { tag: "all-done", steps: "Meds\nPack bag", days: "0,1,2,3,4,5,6",
+                  done: 2, want: "All done for today ✓" }
+            ]
+        }
+        function test_summary_says_which_of_the_three_days_this_is(data) {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance",
+                                     { steps: data.steps, activeDays: data.days })
+            for (var i = 0; i < (data.done || 0); i++) w.toggle(w.stepList[i])
+            var summary = findNamed("routineSummaryText")
+            verify(summary !== null, "the card has a summary line")
+            compare(String(summary.text), data.want,
+                    data.tag + " reads as '" + data.want + "'")
+        }
+
+        // A rest day is not a failure to complete anything.
+        function test_a_rest_day_does_not_count_undone_steps() {
+            h.storeCtl.patchSettings("test-instance",
+                                     { steps: "Meds\nPack bag", activeDays: "" })
+            compare(h.item.isActiveToday(), false, "precondition: not scheduled today")
+            var summary = findNamed("routineSummaryText")
+            verify(String(summary.text).indexOf("of 2") < 0,
+                   "it does not report progress against steps that were never due "
+                   + "(got '" + summary.text + "')")
+        }
+
         function test_steps_parse_one_per_line_in_order() {
             h.storeCtl.patchSettings("test-instance", { steps: "Meds\nBrush teeth\nPack bag" })
             compare(h.item.steps, "Meds\nBrush teeth\nPack bag",

@@ -19,7 +19,14 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
 
 # The banned shapes: a marker asserting there is a defect HERE, NOW.
-PATTERN='BUG \(audit|(^|[^A-Za-z])(FIXME|XXX|HACK)([^A-Za-z]|$)|expected to FAIL|expected to fail'
+#
+# Matched case-INSENSITIVELY (-i below). Spelling the case variants out by hand
+# is what let this gate miss `tst_gen_break.qml`'s header - it said "EXPECTED to
+# fail", and the pattern listed only "expected to FAIL" and "expected to fail".
+# A gate that has to enumerate capitalisations will always lose that race.
+# `BUG (audit` and the tag words are deliberately covered by the same -i: a
+# `Fixme` is the same claim as a `FIXME`.
+PATTERN='BUG \(audit|(^|[^A-Za-z])(FIXME|XXX|HACK)([^A-Za-z]|$)|expected to fail'
 
 scanned=0
 hits=""
@@ -27,7 +34,7 @@ for f in tests/ui/tst_*.qml tests/gui/tst_*.qml tests/ui/*.js tests/gui/*.js; do
   [ -f "$f" ] || continue
   scanned=$((scanned + 1))
   # Only comment lines - a test may legitimately assert on a string like "fixme".
-  found=$(grep -nE '^\s*(//|\*)' "$f" | grep -EI "$PATTERN" || true)
+  found=$(grep -nE '^\s*(//|\*)' "$f" | grep -EIi "$PATTERN" || true)
   [ -n "$found" ] && hits="$hits
 $f:
 $found"

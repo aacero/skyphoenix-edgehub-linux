@@ -115,6 +115,17 @@ Item {
                 }
             }
         }
+        // The same bridge, plus the OPTIONAL locale-aware entry point. The widget
+        // only takes that path when the bridge actually offers it
+        // (ClockWidget.qml:127), and the plain fakeTz above does not - which is
+        // why that branch had never executed in a test (audit 2026-08-03).
+        function fakeTzWithLocale(offsetsByZone) {
+            var base = fakeTz(offsetsByZone)
+            base.formatLocale = function (z, ms, fmt, loc) {
+                return "TZL[" + z + "|" + fmt + "|" + loc + "]"
+            }
+            return base
+        }
 
         // The picker offers a curated set of chips (a `segmented` field cannot show
         // ~600 zones), but every value must be a REAL IANA id: a typo would ship a
@@ -139,6 +150,56 @@ Item {
             verify(w.zoneResolvable(), "a zone the bridge knows is resolvable")
             compare(w.formatAt("HH:mm"), "TZ[America/New_York|HH:mm]",
                     "formatting is delegated to the bridge, not done on a shifted local Date")
+            w.timeZones = null
+        }
+
+        // ── localeName reaches formatAt, not just the date pattern ──────────
+        // Audit 2026-08-03: localeName was set by exactly two tests, and both
+        // asserted only dateFmt - the date PATTERN via localeShortDatePattern().
+        // Its three formatting branches in formatAt() (no zone, zone with a
+        // locale-aware bridge, zone without one) had no coverage at all, and
+        // `formatLocale` appeared nowhere outside the widget.
+
+        function test_locale_changes_the_rendered_text_not_only_the_pattern() {
+            var w = h.item
+            var at = new Date(Date.UTC(2026, 6, 20, 12, 0, 0))   // a Monday
+            set("localeName", "en_US")
+            var us = w.formatAt("dddd", at)
+            set("localeName", "de_DE")
+            var de = w.formatAt("dddd", at)
+            verify(us !== de,
+                   "the chosen locale reaches the rendered text (got '" + us
+                   + "' and '" + de + "')")
+            compare(de, at.toLocaleString(Qt.locale("de_DE"), "dddd"),
+                    "and it is the selected locale's own rendering")
+            set("localeName", "")
+            compare(w.formatAt("dddd", at), Qt.formatDateTime(at, "dddd"),
+                    "no locale falls back to the system formatting")
+        }
+
+        function test_custom_zone_with_a_locale_uses_the_locale_aware_bridge() {
+            var w = h.item
+            w.timeZones = fakeTzWithLocale({ "America/New_York": -4 })
+            set("customZone", true); set("zoneId", "America/New_York")
+            set("localeName", "de_DE")
+            compare(w.formatAt("HH:mm"), "TZL[America/New_York|HH:mm|de_DE]",
+                    "a zone AND a locale go to formatLocale, carrying the locale")
+            set("localeName", "")
+            compare(w.formatAt("HH:mm"), "TZ[America/New_York|HH:mm]",
+                    "no locale uses the plain zone formatter")
+            w.timeZones = null
+        }
+
+        function test_zone_locale_falls_back_when_the_bridge_cannot_localise() {
+            var w = h.item
+            // A bridge WITHOUT formatLocale - an older host, or a build that
+            // predates it. The widget must still render the right zone rather
+            // than dropping to a locally-shifted Date.
+            w.timeZones = fakeTz({ "America/New_York": -4 })
+            set("customZone", true); set("zoneId", "America/New_York")
+            set("localeName", "de_DE")
+            compare(w.formatAt("HH:mm"), "TZ[America/New_York|HH:mm]",
+                    "falls back to the plain zone formatter, still via the bridge")
             w.timeZones = null
         }
 

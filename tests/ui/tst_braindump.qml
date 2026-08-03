@@ -81,6 +81,44 @@ Item {
         when: windowShown
         function init() { tryVerify(function () { return h.ready }, 3000); clearSettings(h) }
 
+        // reportSaveFailure() and its message had zero coverage. This is the
+        // widget's data-loss path: the capture did NOT persist, and the notice
+        // is the only thing telling the user to keep the widget open rather than
+        // navigate away and lose the thought. Every persist route funnels through
+        // persistMutation(), so a store that refuses a write exercises all of
+        // them.
+        function test_a_refused_write_says_the_save_failed() {
+            var w = h.item
+            var realStore = w.store
+            var refused = 0
+            w.store = ({
+                patchSettings: function () { refused++; return false },
+                settingsFor: function () { return realStore.settingsFor("test-instance") }
+            })
+            var ok = w.add("a thought worth keeping")
+            compare(ok, false, "the widget reports the failure to its caller")
+            verify(refused > 0, "precondition: the store really was asked")
+            compare(w.actionNotice, "Save failed. Keep this widget open and try again.",
+                    "and tells the user how not to lose it")
+            compare(w.captureNotice, "",
+                    "a failed capture must not also claim it was truncated or evicted")
+            w.store = realStore
+        }
+
+        // A store that throws is the same failure from the user's side.
+        function test_a_throwing_store_is_reported_the_same_way() {
+            var w = h.item
+            var realStore = w.store
+            w.store = ({
+                patchSettings: function () { throw new Error("disk full") },
+                settingsFor: function () { return realStore.settingsFor("test-instance") }
+            })
+            compare(w.add("another thought"), false)
+            compare(w.actionNotice, "Save failed. Keep this widget open and try again.",
+                    "an exception is not a silent success")
+            w.store = realStore
+        }
+
         function test_add_stores_text_and_a_timestamp() {
             var before = Date.now()
             h.item.add("call the dentist")

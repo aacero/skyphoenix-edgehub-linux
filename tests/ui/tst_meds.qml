@@ -448,6 +448,55 @@ Item {
             verify(copy.indexOf("plaintext") >= 0)
             verify(copy.indexOf("medical advice") < 0, "the copy does not imply clinical guidance")
         }
+
+        // The test above pins the WORDS. Nothing pinned that the user ever sees
+        // them: the notice is one Text bound to `visible: w.expanded`, and a
+        // broken binding would remove a medication safety disclaimer silently
+        // while every keyword assertion above still passed. Same shape as the
+        // media artwork notice (finding 10.3) - on a much less forgiving string.
+        function findNamed(host, name) {
+            var hits = root.findAll(host.item, function (n) {
+                return n.objectName === name
+            }, [])
+            return hits.length ? hits[0] : null
+        }
+
+        function test_the_limits_notice_is_actually_on_screen() {
+            // The notice lives on the ACTIVE surface, which is hidden until
+            // there is a schedule to be active about - so a widget with no doses
+            // legitimately shows no caveat. Seed one: the invariant that matters
+            // is "if you are tracking medication, you see the limits".
+            h.storeCtl.patchSettings("test-instance",
+                                     { schedule: "08:00 Vitamin D\n20:30 Magnesium" })
+            var notice = findNamed(h, "medsLimitsNotice")
+            verify(notice !== null, "the expanded view has a limits notice at all")
+            verify(notice.visible, "and it is visible, not merely constructed")
+            verify(notice.width > 0 && notice.height > 0,
+                   "with real geometry rather than a collapsed box")
+
+            // It must be the widget's own strings - a hardcoded duplicate here
+            // would keep passing after the real copy changed.
+            var shown = String(notice.text)
+            verify(shown.indexOf(h.item.recordMeaningText) >= 0,
+                   "the rendered notice contains the record-meaning line verbatim")
+            verify(shown.indexOf(h.item.privacyText) >= 0,
+                   "and the plaintext-storage line verbatim")
+        }
+
+        // Both halves must survive together: dropping either one leaves a
+        // disclaimer that is still plausible but no longer complete.
+        function test_the_limits_notice_states_both_limits_data() {
+            return [
+                { tag: "record-meaning", needle: "cannot confirm a dose was taken" },
+                { tag: "plaintext", needle: "stored locally in plaintext" }
+            ]
+        }
+        function test_the_limits_notice_states_both_limits(data) {
+            h.storeCtl.patchSettings("test-instance", { schedule: "08:00 Vitamin D" })
+            var notice = findNamed(h, "medsLimitsNotice")
+            verify(String(notice.text).indexOf(data.needle) >= 0,
+                   "the on-screen notice still says '" + data.needle + "'")
+        }
     }
 
     // ── Persistence - the point of the widget ────────────────────────────

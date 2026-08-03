@@ -29,6 +29,29 @@ Item {
         }
     }
 
+    // A stand-in for the watchdog's QML Timer, injected through NetHub's
+    // existing `_timeoutTimerFactory` seam. Timers are parented to the hub with
+    // createObject(), and NetHub is a QtObject - it has no `children`/`data` to
+    // count - so a leaked watchdog is otherwise invisible from QML. Recording
+    // start/stop/destruction here makes clearWatchdog()'s teardown observable,
+    // and firing `triggered` by hand makes the timeout deterministic instead of
+    // wall-clock dependent.
+    property int timersStarted: 0
+    property int timersStopped: 0
+    property int timersDestroyed: 0
+    property var lastTimer: null
+    property Component fakeTimerFactory: Component {
+        QtObject {
+            property int interval: 0
+            property bool running: false
+            signal triggered()
+            function start() { running = true; root.timersStarted++ }
+            function stop() { running = false; root.timersStopped++ }
+            Component.onCompleted: root.lastTimer = this
+            Component.onDestruction: root.timersDestroyed++
+        }
+    }
+
     W.NetHub { id: hub }
 
     TestCase {
@@ -36,7 +59,16 @@ Item {
         when: windowShown
 
         property var lastFake: null
+        // Captured before any test swaps in fakeTimerFactory, so the override
+        // cannot leak into the tests that run after it (they share one hub).
+        property var realTimerFactory: null
         function init() {
+            if (realTimerFactory === null) realTimerFactory = hub._timeoutTimerFactory
+            hub._timeoutTimerFactory = realTimerFactory
+            root.timersStarted = 0
+            root.timersStopped = 0
+            root.timersDestroyed = 0
+            root.lastTimer = null
             hub.offline = false
             hub.allowHosts = []
             hub.requests = 0
@@ -458,6 +490,87 @@ Item {
             hub.request({ url: "https://api.example.com/s", onError: function (r) { err = r } })
             lastFake.fireTimeout()
             compare(err, "timeout")
+            verify(!lastFake.aborted,
+                   "the transport's own timeout has already finished the request - "
+                   + "aborting it again is not the watchdog's job")
+        }
+
+        // The case test_timeout_surfaces CANNOT reach: a connection that hangs
+        // without the transport ever firing ontimeout. Only the watchdog settles
+        // it, and it is the only caller passing abortRequest=true. Until the
+        // creation guard dropped `!mk` this whole mechanism was unreachable by
+        // construction - deleting it left all 213 tests in the six NetHub-backed
+        // suites green.
+        // COVERS: fn:NetHub.request, fn:NetHub.fail
+        function test_watchdog_settles_a_request_the_transport_never_finishes() {
+            var err = null
+            var done = false
+            hub.request({ url: "https://api.example.com/s",
+                          timeout: 40,
+                          onDone: function () { done = true },
+                          onError: function (r) { err = r } })
+            var hung = lastFake
+            verify(hung.sent, "the request really was dispatched")
+            compare(err, null, "nothing has timed out yet")
+            tryVerify(function () { return err !== null }, 2000,
+                      "a hung connection must not stay pending forever")
+            compare(err, "timeout")
+            compare(done, false, "a timed-out request never reports success")
+            verify(hung.aborted,
+                   "the watchdog aborts the hung request instead of leaking the socket")
+        }
+
+        // clearWatchdog()'s body had never executed: watchdog was always null
+        // under an injected factory, so the function early-returned and gutting
+        // it entirely changed no result. Asserting only on callbacks does NOT
+        // recover the coverage - `settled` already suppresses a late fire, so a
+        // watchdog that survives settlement is behaviourally silent and leaks
+        // one Timer per request for the hub's lifetime. Measured: with this
+        // test asserting callbacks alone, gutting stop()+destroy() still passed.
+        // COVERS: fn:NetHub.clearWatchdog
+        function test_watchdog_is_torn_down_when_the_request_settles_first() {
+            hub._timeoutTimerFactory = root.fakeTimerFactory
+            var err = null
+            var successes = 0
+            hub.request({ url: "https://api.example.com/s",
+                          timeout: 40,
+                          onDone: function () { successes++ },
+                          onError: function (r) { err = r } })
+            var fake = lastFake
+            var timer = root.lastTimer
+            compare(root.timersStarted, 1, "the request armed a watchdog")
+            verify(timer.running, "and started it")
+
+            fake.resolveWith(200, "body")
+            compare(successes, 1, "the request settled on its own")
+            compare(root.timersStopped, 1, "settling stops the watchdog")
+            verify(!timer.running, "a settled request leaves no armed timer")
+            // destroy() is deferred to the event loop, so the object outlives
+            // the call that requested it by one turn.
+            tryVerify(function () { return root.timersDestroyed === 1 }, 2000,
+                      "the watchdog is destroyed, not merely stopped - otherwise "
+                      + "the hub accumulates one Timer per request")
+            compare(err, null, "a settled request cannot time out afterwards")
+            verify(!fake.aborted, "a successful request is never aborted")
+        }
+
+        // The cap only reaches the enforcing layer through this header:
+        // XeneonNetworkAccessManager::responseByteLimit() widens an absent
+        // header back to the 2 MiB maximum. The C++ suite asserts the limit
+        // GIVEN a header; nothing asserted that anything sends one.
+        // COVERS: fn:NetHub.request
+        function test_response_cap_is_advertised_to_the_transport() {
+            hub.request({ url: "https://api.example.com/s", maxResponseBytes: 4096 })
+            compare(lastFake.headers["X-Xeneon-Max-Response-Bytes"], "4096",
+                    "the widget's own cap is what the transport is told to enforce")
+        }
+
+        // A file:// read has no HTTP layer to carry the header.
+        // COVERS: fn:NetHub.request
+        function test_local_reads_carry_no_transport_header() {
+            hub.request({ url: "file:///tmp/x.json", maxResponseBytes: 4096 })
+            compare(lastFake.headers["X-Xeneon-Max-Response-Bytes"], undefined,
+                    "a local file read has no HTTP header layer")
         }
 
         function test_response_size_is_bounded_before_callback() {

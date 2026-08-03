@@ -353,6 +353,30 @@ Item {
             verify(findText("↑ Write  3.0 MiB/s") !== null)
         }
 
+        // Audit 2026-08-03: showActivity was only ever set to TRUE, so the rows
+        // were proven to appear and never proven to disappear. The whole
+        // diskActivity column is gated on it (DiskWidget.qml:406), and a widget
+        // that ignored the setting would have passed every existing case.
+        function test_show_activity_toggle_hides_the_activity_column() {
+            var w = h.item
+            set("mountPath", "/data")
+            set("showActivity", true)
+            feedMountCatalog(true, true)
+            compare(w.ioAvailable, true, "precondition: live I/O rates")
+            var column = findObject(h, "diskActivity")
+            verify(column !== null, "the activity column exists")
+            verify(column.visible, "the activity column shows while the toggle is on")
+
+            set("showActivity", false)
+            compare(w.showActivity, false, "the setting reaches the widget")
+            compare(column.visible, false,
+                    "the activity column hides when the toggle is off")
+            // The rates themselves must keep being read - the toggle governs the
+            // display, not the sampling.
+            compare(w.ioAvailable, true, "turning the display off does not stop the sampling")
+            compare(w.readRate, 12 * 1048576, "and the rate is still available underneath")
+        }
+
         function test_activity_reports_missing_sample_instead_of_fake_zero() {
             var w = h.item
             set("mountPath", "/data")

@@ -29,6 +29,30 @@ Item {
                  installEpoch: Math.floor(Date.now() / 1000) - (days * 86400) - 60 }
     }
 
+    // Resolve a surface by objectName, or by exact text where the item carries
+    // none, so an assertion can name what a setting governs rather than a
+    // shape-alike (audit 2026-08-03).
+    function findObjectName(node, name) {
+        if (!node) return null
+        if (node.objectName === name) return node
+        var kids = node.children || []
+        for (var i = 0; i < kids.length; i++) {
+            var found = findObjectName(kids[i], name)
+            if (found) return found
+        }
+        return null
+    }
+    function findTextStarting(node, prefix) {
+        if (!node) return null
+        if (node.text !== undefined && String(node.text).indexOf(prefix) === 0) return node
+        var kids = node.children || []
+        for (var i = 0; i < kids.length; i++) {
+            var found = findTextStarting(kids[i], prefix)
+            if (found) return found
+        }
+        return null
+    }
+
     WidgetHarness { id: h; anchors.fill: parent; widgetFile: "SinceInstallWidget.qml" }
     App.WidgetConfigSchema { id: sc }
     App.WidgetCatalog { id: catalog }
@@ -166,6 +190,45 @@ Item {
             set("showDate", false)
             compare(w.showDate, false)
             compare(w.status, "", "toggled off -> no date in the header")
+        }
+
+        // Audit 2026-08-03: showDate gates FOUR surfaces - the accessible summary
+        // (SinceInstallWidget.qml:26), the chrome header status (:139), the rich
+        // tile's systemAgeDetailCard (:172) and the expanded date line (:255).
+        // Only the header had coverage, so the toggle could have stopped
+        // governing any of the other three unnoticed.
+        function test_showDate_also_gates_the_card_summary_and_expanded_line() {
+            var w = h.item
+            w.distroOverride = fakeDistro(agedInfo(500))
+            root.width = 696
+            root.height = 818
+            h.expanded = false
+            wait(0)
+            verify(w.richTile, "precondition: a rich tile")
+
+            set("showDate", true)
+            var card = findObjectName(w, "systemAgeDetailCard")
+            verify(card !== null, "the detail card exists")
+            verify(card.visible, "the detail card shows while the toggle is on")
+            verify(w.Accessible.name.indexOf(w.dateText) >= 0,
+                   "the accessible summary carries the date while the toggle is on")
+
+            set("showDate", false)
+            compare(card.visible, false, "the detail card hides when the toggle is off")
+            compare(w.Accessible.name.indexOf(w.dateText), -1,
+                    "and the accessible summary drops it too - the toggle is not "
+                    + "a visual-only setting")
+
+            // Expanded: the exact date line, which the header cannot show.
+            h.expanded = true
+            set("showDate", true)
+            var line = findTextStarting(w, w.distroName.length ? w.distroName + " · " : "Earliest record ")
+            verify(line !== null, "the expanded date line exists while the toggle is on")
+            verify(line.visible, "and it is visible")
+            set("showDate", false)
+            compare(line.visible, false,
+                    "the expanded date line hides when the toggle is off")
+            h.expanded = false
         }
 
         function test_micro_hides_secondary_date_without_truncation() {

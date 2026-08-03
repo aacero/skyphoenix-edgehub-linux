@@ -51,6 +51,52 @@ Item {
         }
 
         // - Defaults ----------------------------------------------------
+        // The overlay's one-line summary is a three-way ladder around the goal,
+        // and none of its branches were asserted. Exactly-at-goal is the one
+        // that matters most: it is the moment the widget exists for, and it is
+        // also the easiest to lose to an off-by-one (`>` instead of `>=`), which
+        // would leave a user who just hit their goal reading "glasses of water
+        // today" as if nothing had happened.
+        function findTextContaining(node, needle) {
+            if (!node) return null
+            if (node.text !== undefined && String(node.text).indexOf(needle) >= 0
+                    && node.visible)
+                return node
+            var kids = node.children
+            for (var i = 0; kids && i < kids.length; i++) {
+                var hit = findTextContaining(kids[i], needle)
+                if (hit) return hit
+            }
+            return null
+        }
+
+        function test_the_goal_line_reads_differently_at_each_side_of_the_goal_data() {
+            return [
+                { tag: "under",    count: 5, goal: 8, needle: "glasses of water today" },
+                { tag: "at-goal",  count: 8, goal: 8, needle: "Daily goal reached!" },
+                { tag: "over",     count: 10, goal: 8, needle: "Goal exceeded by 2 glasses" }
+            ]
+        }
+        function test_the_goal_line_reads_differently_at_each_side_of_the_goal(data) {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { goal: data.goal })
+            w.set(data.count)
+            compare(w.count, data.count, "precondition: " + data.count + " glasses")
+            compare(w.goal, data.goal)
+            verify(findTextContaining(w, data.needle) !== null,
+                   data.tag + " must show '" + data.needle + "'")
+        }
+
+        // Reaching the goal and passing it are different things to say.
+        function test_reaching_the_goal_is_not_reported_as_exceeding_it() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { goal: 8 })
+            w.set(8)
+            verify(findTextContaining(w, "Daily goal reached!") !== null)
+            verify(findTextContaining(w, "Goal exceeded") === null,
+                   "hitting the goal exactly has not exceeded anything")
+        }
+
         function test_defaults() {
             var w = h.item
             compare(w.goal, 8, "default goal 8")

@@ -488,6 +488,90 @@ instead; the diff should be one PNG and its three manifest fields.
 
 ## Candidates
 
+- **`"Artwork unavailable"` in MediaWidget can never render, and the case it
+  was for is unhandled (audit 2026-08-03).** `MediaWidget.qml:55` reaches that
+  string only when `avail && artUrl && !artworkSource.length` *and*
+  `remoteArtworkBlocked` is false — but those three conjuncts are the definition
+  of `remoteArtworkBlocked` (`:53`). Dead by algebra, which is why no test ever
+  named it.
+
+  The real gap it was presumably meant to cover is live: a `file://` artwork that
+  passes the policy but fails to **load** (deleted, unreadable, corrupt) leaves
+  `artworkSource` non-empty, shows no notice, and draws a silently blank art box.
+  Wiring the rung to the `Image`'s `status === Image.Error` (`artC` / `artE`)
+  makes it both reachable and correct. Small, user-visible, and testable — the
+  artwork policy now has ten cases to extend. See
+  `docs/testing/widget-audit-2026-08-03.md` finding 10.4.
+
+- **Delete the dead `notificationBridge.send` fallback in three widgets
+  (audit 2026-08-03).** `FocusWidget.qml:241`, `BreakWidget.qml:194` and
+  `MedsWidget.qml:297` each fall back to `send()` when the bridge has no
+  `sendPriority()`. There is exactly one real bridge
+  (`app/src/notification_bridge.h`) and it implements `sendPriority`; nothing
+  outside tests assigns the property; both test doubles implement it too. So the
+  `else` is unreachable in production **and** in tests, three times over.
+
+  Unlike a version-skew fallback it cannot become reachable: the QML and the C++
+  bridge ship in one binary from one `qrc`, so there is no older host to degrade
+  to. Either delete all three (and keep the outer `&& .send` guard, which still
+  usefully covers "no bridge injected"), or keep them and give one of the three
+  a double without `sendPriority`. Wants a single decision, not three.
+  Not urgent — dead code, not a defect. See
+  `docs/testing/widget-audit-2026-08-03.md` finding N.5.
+
+- **Auto-cycle through screens (owner-raised 2026-08-03).** *"I am staying on a
+  single screen most of the time, even though I have lots of things on the other
+  screens that would be really nice to see regularly."*
+
+  The suggestion was a fixed rotation with a 15 s ladder up to 120 s. That solves
+  the stated problem, but the problem statement contains a better lever: the
+  screens go unseen **precisely when nobody is touching the panel**. A timer that
+  rotates unconditionally also rotates out from under a hand mid-read, mid-scroll
+  and mid-config, and the fix for that is a pile of pause/resume special cases.
+  Gating on idle removes the whole class instead of handling it.
+
+  Recommended shape, smallest thing that solves it:
+
+  1. **Idle-gated, not unconditional.** Rotation starts after N seconds with no
+     touch/key input and stops on the first interaction, resuming after the idle
+     window passes again. On a desk-side panel this reads as "it shows me things
+     when I am not using it" rather than "it moves while I read".
+  2. **One dwell interval to begin with**, global rather than per-page. Suggested
+     ladder: `off` (default) · 15 s · 30 s · 60 s · 90 s · 120 s · 5 min. The
+     even 15 s steps in the original list (45/75/105) add choice without adding a
+     decision anyone can make; 5 min is worth having for a slow ambient rotation.
+     **Default off** — a display that starts moving by itself after an update is
+     a surprise, and this is sold B2B.
+  3. **Never rotates** in edit mode, with an expanded widget open, with any dialog
+     or the settings sheet open, during the first-run wizard, or on a
+     single-screen layout.
+  4. **Respects the existing motion tokens.** Cross-fade under reduce-motion
+     rather than the swipe transition; the `calm` behaviour profile should
+     probably force it off.
+  5. Skips a screen with nothing on it (an empty page is not worth 60 s).
+
+  The mechanism already exists: `Dashboard.goToPage()` with its hold-timer is
+  exactly the "land on a page and stay there" primitive this needs, so the work
+  is a timer, an idle watcher, the settings, and the suppression rules — not new
+  navigation.
+
+  **The more interesting alternative, if the real want is "show me what matters":**
+  surface a screen when something ON it becomes noteworthy — a threshold crossed,
+  a calendar event imminent, a break due, a countdown expiring — rather than on a
+  clock. The repository already has the vocabulary for this (widget `state` /
+  `Warning` / `Critical`, and a priority-alert GUI suite). That is a much larger
+  piece and a genuine product direction rather than a setting, but it is the one
+  that would make the other screens earn their attention instead of merely taking
+  turns. Worth deciding which of the two is actually wanted before either is
+  built; they are not mutually exclusive, and the idle rotation is the cheap half.
+
+  Open questions for the product owner: default on or off; global dwell or
+  per-page; does the rotation follow page order or a chosen subset; and does it
+  interact with the Manager's live-push (a rotating hub while someone edits the
+  layout from the desktop).
+
+
+
 Unapproved ideas, findings, and out-of-scope proposals land here. Nothing in this
 section is implemented without explicit product-owner approval (scope-control policy).
 

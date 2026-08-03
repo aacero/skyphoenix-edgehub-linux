@@ -10,8 +10,10 @@ import QtTest
 // the ±5m / reset / take-break / pause-resume actions, interval reseeding,
 // accent theming, and the daily-momentum counter.
 //
-// Some assertions target audited bugs and are EXPECTED to fail until the code
-// under test is fixed - those are called out in comments as "REAL BUG".
+// The audited defects this file was written against are all FIXED; the
+// assertions that found them are kept as regression guards, each carrying its
+// own past-tense provenance ("WAS BROKEN … now pinned"). They pass, and a
+// failure here is a regression, not a known bug.
 // ─────────────────────────────────────────────────────────────────────────
 Item {
     id: root
@@ -474,7 +476,7 @@ Item {
             compare(w.running, true, "fresh reminder is auto-running")
             compare(w.due, false, "fresh reminder is not due")
             verify(root.cfg().endEpoch > 0,
-                   "REAL BUG: a running, non-due reminder must have a live endEpoch to count down")
+                   "a running, non-due reminder must have a live endEpoch to count down")
         }
 
         // WAS BROKEN (medium), now pinned. The defect was: BreakWidget never declares `property int tick`, so the
@@ -483,7 +485,7 @@ Item {
         function test_declares_tick_property() {
             var w = h.item
             compare(w.hasOwnProperty("tick"), true,
-                    "REAL BUG: BreakWidget must declare `property int tick` for midnight rollover")
+                    "BreakWidget must declare `property int tick` for midnight rollover")
         }
 
         // WAS BROKEN (medium), now pinned. The defect was: setInterval() unconditionally writes running:true, so
@@ -495,7 +497,7 @@ Item {
             compare(w.running, false, "precondition: paused")
             w.setInterval(w.intervalMin - 5)   // tap −5m
             compare(root.cfg().running, false,
-                    "REAL BUG: −5m/+5m while paused must NOT resume the timer")
+                    "−5m/+5m while paused must NOT resume the timer")
         }
 
         // WAS BROKEN (low), now pinned. The defect was: pausing while a break is due snapshots pausedRemaining from
@@ -508,7 +510,7 @@ Item {
             compare(w.remaining, 0, "remaining is forced to 0 while due")
             w.toggleRun()   // pause while due
             verify(root.cfg().pausedRemaining > 0,
-                   "REAL BUG: pausing while due must not persist pausedRemaining:0")
+                   "pausing while due must not persist pausedRemaining:0")
         }
     }
 

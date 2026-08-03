@@ -10,17 +10,32 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 // ── Open-Meteo forecast payloads (weather) ───────────────────────────────
-// Shape consumed by WeatherWidget.refresh(): current.{temperature_2m,
-// apparent_temperature,weather_code} + daily.{time,weather_code,
-// temperature_2m_max,temperature_2m_min}. Five daily rows → default
-// forecastDays 4 (+1) request; days array of 5, forecast tiles = 4.
+// Must carry EVERY field WeatherWidget.refresh() asks the provider for
+// (WeatherWidget.qml:287-288), not just the ones the headline needs. It used to
+// omit relative_humidity_2m, wind_speed_10m, precipitation and daily
+// sunrise/sunset - five of the requested fields - which left the parse at
+// WeatherWidget.qml:246-250 running against `undefined` in every test: humidity,
+// wind and rain stayed NaN, the whole condition-summary row rendered "-", and
+// windSym/precipitationSym never appeared, so a unit setting could reach the
+// provider URL and never reach the screen (audit 2026-08-03).
+//
+// Five daily rows → default forecastDays 4 (+1) request; days array of 5,
+// forecast tiles = 4. Sunrise/sunset are Open-Meteo's "YYYY-MM-DDTHH:MM", which
+// the widget slices at [11,16] to "HH:MM".
 var FORECAST_VALID = JSON.stringify({
-    current: { temperature_2m: 21.4, apparent_temperature: 19.8, weather_code: 3 },
+    current: {
+        temperature_2m: 21.4, apparent_temperature: 19.8, weather_code: 3,
+        relative_humidity_2m: 67, wind_speed_10m: 12.4, precipitation: 1.2
+    },
     daily: {
         time: ["2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17"],
         weather_code: [3, 61, 0, 80, 95],
         temperature_2m_max: [24.1, 22.6, 26.0, 20.2, 19.5],
-        temperature_2m_min: [12.3, 11.1, 13.5, 10.0, 9.2]
+        temperature_2m_min: [12.3, 11.1, 13.5, 10.0, 9.2],
+        sunrise: ["2026-07-13T05:12", "2026-07-14T05:13", "2026-07-15T05:14",
+                  "2026-07-16T05:15", "2026-07-17T05:16"],
+        sunset: ["2026-07-13T21:34", "2026-07-14T21:33", "2026-07-15T21:32",
+                 "2026-07-16T21:31", "2026-07-17T21:30"]
     }
 });
 
@@ -81,6 +96,14 @@ function makeFakeXHR() {
         method: "", url: "", sent: false, aborted: false,
         readyState: 0, status: 0, responseText: "",
         timeout: 0, ontimeout: null, onreadystatechange: null,
+        // NetHub guards every header write with `xhr.setRequestHeader` before
+        // calling it. Without this method the fake did not fail those writes -
+        // it made the guard false, so the response-cap header and any auth
+        // header were silently skipped for every suite using this fixture
+        // (calendar, weather, nownext, moon, the cal+weather GUI test). A
+        // regression dropping headers would have passed all of them.
+        headers: {},
+        setRequestHeader: function (k, v) { this.headers[k] = v; },
         open: function (m, u) { this.method = m; this.url = u; this.readyState = 1; },
         send: function () { this.sent = true; },
         abort: function () { this.aborted = true; },

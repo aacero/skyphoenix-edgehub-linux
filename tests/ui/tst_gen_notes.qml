@@ -176,6 +176,57 @@ Item {
         when: windowShown
         function init() { tryVerify(function () { return hNotes.ready }, 3000); clearStore(hNotes) }
 
+        // Identical shape to the tasks finding: the two-tap clear is covered, its
+        // EXPIRY is not. NotesWidget's clear destroys the note outright (there
+        // is one note, not a list), so an arm that never expires turns a stray
+        // second tap minutes later into a silent wipe.
+        function findData(node, pred) {
+            if (!node) return null
+            if (pred(node)) return node
+            var kids = node.data
+            for (var i = 0; kids && i < kids.length; i++) {
+                var hit = findData(kids[i], pred)
+                if (hit) return hit
+            }
+            return null
+        }
+
+        function test_an_armed_clear_disarms_itself_without_clearing() {
+            var w = hNotes.item
+            w.save("keep me")
+            var timer = findData(w, function (n) {
+                return n.interval === 4000 && n.running !== undefined
+                       && n.triggered !== undefined
+            })
+            verify(timer !== null, "the arm has a disarm timer")
+            verify(timer.interval >= 1500 && timer.interval <= 10000,
+                   "and a deliberate confirm window (got " + timer.interval + "ms)")
+
+            w.requestClear()
+            compare(w.clearArmed, true, "armed")
+            timer.interval = 30
+            timer.restart()
+            tryCompare(w, "clearArmed", false, 2000, "the arm expires on its own")
+            compare(w.current, "keep me",
+                    "and expiring must NOT clear the note - the user never confirmed")
+            timer.interval = 4000
+        }
+
+        // The label is the only signal that the next tap destroys the note.
+        function test_the_clear_button_says_it_is_armed() {
+            var w = hNotes.item
+            w.save("keep me")
+            var button = findData(w, function (n) {
+                return n.label !== undefined && String(n.label).indexOf("Clear") === 0
+            })
+            verify(button !== null, "found the clear control")
+            compare(String(button.label), "Clear", "at rest it just says Clear")
+            w.requestClear()
+            compare(String(button.label), "Confirm clear",
+                    "armed, it asks for a second deliberate tap")
+            w.clearArmed = false
+        }
+
         function test_default_is_empty() {
             var w = hNotes.item
             compare(w.current, "", "a fresh note is empty")

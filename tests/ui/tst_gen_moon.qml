@@ -124,6 +124,78 @@ Item {
             compare(w.idx, expected, "idx = floor(cyclePos*8+0.5) % 8 for the live cyclePos")
         }
 
+        // The eight phase names are the widget's headline output, and not one of
+        // them appeared anywhere under tests/. The tests above prove `idx` is in
+        // range and matches its own formula - neither says which NAME a given
+        // point in the cycle produces, so a rotated or reordered array would
+        // pass everything: a full moon labelled "New Moon" is exactly the defect
+        // this widget exists to avoid.
+        //
+        // `_cyclePos` is an ordinary (non-readonly) property, so assigning it
+        // severs the live-clock binding and pins the cycle deterministically.
+        function test_each_point_in_the_cycle_gets_its_own_name_data() {
+            return [
+                { tag: "new",             pos: 0.000, name: "New Moon",        illum: 0 },
+                { tag: "waxing-crescent", pos: 0.125, name: "Waxing Crescent", illum: 15 },
+                { tag: "first-quarter",   pos: 0.250, name: "First Quarter",   illum: 50 },
+                { tag: "waxing-gibbous",  pos: 0.375, name: "Waxing Gibbous",  illum: 85 },
+                { tag: "full",            pos: 0.500, name: "Full Moon",       illum: 100 },
+                { tag: "waning-gibbous",  pos: 0.625, name: "Waning Gibbous",  illum: 85 },
+                { tag: "last-quarter",    pos: 0.750, name: "Last Quarter",    illum: 50 },
+                { tag: "waning-crescent", pos: 0.875, name: "Waning Crescent", illum: 15 }
+            ]
+        }
+        function test_each_point_in_the_cycle_gets_its_own_name(data) {
+            var w = hMoon.item
+            w._cyclePos = data.pos
+            compare(w.names[w.idx], data.name,
+                    "cycle position " + data.pos + " is " + data.name)
+            compare(w.illum, data.illum,
+                    data.name + " is " + data.illum + "% illuminated")
+        }
+
+        // The buckets round to the NEAREST eighth, so each name owns a window
+        // either side of its exact point. Off-by-one here would name every phase
+        // one step early or late for most of the month - always plausible, never
+        // right.
+        function test_phase_names_round_to_the_nearest_eighth_data() {
+            return [
+                // The bucket flips at exactly 0.4375 (pos*8 + 0.5 === 4).
+                { tag: "just-before-full", pos: 0.4370, name: "Waxing Gibbous" },
+                { tag: "boundary-to-full", pos: 0.4380, name: "Full Moon" },
+                { tag: "just-after-full",  pos: 0.5620, name: "Full Moon" },
+                { tag: "boundary-off-full", pos: 0.5630, name: "Waning Gibbous" },
+                // The wrap: the last eighth rounds forward into New Moon, not
+                // out of the array.
+                { tag: "wraps-to-new", pos: 0.9500, name: "New Moon" },
+                { tag: "just-before-wrap", pos: 0.9300, name: "Waning Crescent" }
+            ]
+        }
+        function test_phase_names_round_to_the_nearest_eighth(data) {
+            var w = hMoon.item
+            w._cyclePos = data.pos
+            verify(w.idx >= 0 && w.idx <= 7, "the bucket stays inside the array at " + data.pos)
+            compare(w.names[w.idx], data.name, "cycle position " + data.pos + " reads as " + data.name)
+        }
+
+        // Waxing vs waning must agree with the name: a "Waxing Gibbous" while
+        // the widget calls the direction "Waning" is self-contradictory copy.
+        function test_direction_agrees_with_the_phase_name_data() {
+            return [
+                { tag: "waxing-crescent", pos: 0.125, dir: "Waxing" },
+                { tag: "waxing-gibbous",  pos: 0.375, dir: "Waxing" },
+                { tag: "waning-gibbous",  pos: 0.625, dir: "Waning" },
+                { tag: "waning-crescent", pos: 0.875, dir: "Waning" }
+            ]
+        }
+        function test_direction_agrees_with_the_phase_name(data) {
+            var w = hMoon.item
+            w._cyclePos = data.pos
+            compare(w.phaseDirection, data.dir)
+            verify(String(w.names[w.idx]).indexOf(data.dir) === 0,
+                   "the name '" + w.names[w.idx] + "' starts with " + data.dir)
+        }
+
         function test_illum_matches_documented_formula() {
             var w = hMoon.item
             var expected = Math.round((1 - Math.cos(w._cyclePos * 2 * Math.PI)) / 2 * 100)

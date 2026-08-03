@@ -39,6 +39,16 @@ Item {
             return null
         }
     }
+    // Same idea, but the reason is chosen by the test: Test Connection maps each
+    // egress refusal to its own message, and those messages ARE the feature.
+    QtObject {
+        id: reasonHub
+        property string reason: "blocked"
+        function request(options) {
+            options.onError(reasonHub.reason)
+            return null
+        }
+    }
     QtObject {
         id: metricReader
         property int calls: 0
@@ -266,6 +276,35 @@ Item {
             verify(h.item.errText.indexOf("approved metric directories") >= 0)
         }
 
+        // init() injects a fileReader into every test, so _fileReader() never
+        // returned null and the "no native reader here" branch
+        // (KpiWidget.qml:225-229) was unreachable by construction - the double
+        // was too capable. That branch is not hypothetical: its own help text
+        // says "Start this widget in the Hub", i.e. it is what a file-source KPI
+        // shows in the Manager's preview, where there is no MetricFileReader.
+        function test_without_a_native_reader_the_widget_says_so() {
+            h.item.fileReader = null
+            verify(h.item._fileReader() === null,
+                   "precondition: neither an injected reader nor a configBridge "
+                   + "that can read metric files")
+            h.storeCtl.patchSettings(iid(), { source: "file", filePath: "/run/x", jsonPath: "" })
+            compare(h.item.localPathApproved, true, "precondition: the path itself is fine")
+            var before = metricReader.calls
+            h.item.refresh()
+            compare(metricReader.calls, before, "nothing was read")
+            compare(h.item.errText, "Local reader unavailable")
+            verify(h.item.errorHelp.indexOf("Hub") >= 0,
+                   "and the help says where it WILL work, rather than blaming the file")
+        }
+
+        // The reader is selected by capability, not by presence: an object that
+        // is not a metric reader must not be mistaken for one.
+        function test_an_object_without_readMetricFile_is_not_a_reader() {
+            h.item.fileReader = { somethingElse: function () { return 1 } }
+            verify(h.item._fileReader() === null,
+                   "a reader is anything WITH readMetricFile - not anything at all")
+        }
+
         function test_native_file_reader_success_is_applied() {
             h.storeCtl.patchSettings(iid(), { source: "file", filePath: "/run/x", jsonPath: "" })
             metricReader.nextResult = { ok: true, body: "7", error: "", message: "" }
@@ -312,6 +351,51 @@ Item {
             h.item.testConnection()
             verify(h.item.connectionStatus.indexOf("Local file ready") >= 0)
             verify(h.item.connectionStatus.indexOf("Critical") >= 0)
+        }
+
+        // Test Connection is the button a user presses when something is already
+        // wrong, so its failure messages are the whole point of it. Only the two
+        // SUCCESS paths were covered (HTTP 200, Local file ready); every refusal
+        // branch was uncovered, and none of these strings appeared anywhere
+        // under tests/.
+        function test_test_connection_explains_each_refusal_data() {
+            return [
+                { tag: "offline", reason: "offline",
+                  want: "Offline. Turn off Offline mode, then retry." },
+                { tag: "blocked", reason: "blocked",
+                  want: "Blocked by network policy." },
+                { tag: "insecure-auth", reason: "insecure-auth",
+                  want: "Bearer credentials require HTTPS." },
+                { tag: "timeout", reason: "timeout",
+                  want: "Timed out. Check the endpoint, then retry." },
+                // Anything unrecognised is passed through rather than swallowed,
+                // so a new gate reason is readable before anyone maps it.
+                { tag: "unmapped", reason: "response-too-large",
+                  want: "Connection failed: response-too-large" }
+            ]
+        }
+        function test_test_connection_explains_each_refusal(data) {
+            h.item.netHub = reasonHub
+            reasonHub.reason = data.reason
+            h.storeCtl.patchSettings(iid(), { source: "http", url: "https://api/x" })
+            h.item.testConnection()
+            compare(h.item.connectionStatus, data.want, data.reason + " has its own message")
+            compare(h.item.testingConnection, false, "and the test is over, not left spinning")
+            h.item.netHub = null
+        }
+
+        // A file-source KPI pointed outside the approved directories must say so
+        // from the Test button too, not only on refresh.
+        function test_test_connection_refuses_an_unapproved_file_path() {
+            h.storeCtl.patchSettings(iid(), {
+                source: "file", filePath: "/home/user/.ssh/id_ed25519", jsonPath: "" })
+            compare(h.item.localPathApproved, false, "precondition: not an approved path")
+            var before = metricReader.calls
+            h.item.testConnection()
+            compare(metricReader.calls, before, "the native reader is never reached")
+            compare(h.item.connectionStatus,
+                    "Blocked. Choose a metric file under an approved system directory.",
+                    "and the message names the fix, not just the refusal")
         }
 
         function test_failed_refresh_preserves_last_successful_value() {

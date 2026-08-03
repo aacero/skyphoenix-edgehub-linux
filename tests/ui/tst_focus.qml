@@ -212,6 +212,67 @@ Item {
             compare(root.lastPriorityAlert.sourceId, "test-instance")
         }
 
+        // notifyCompletion() is a 2x3 matrix - which phase ENDED decides the
+        // eyebrow, summary and accent; which phase is NEXT decides the body.
+        // Exactly one cell was covered ("work" -> "short"), and it asserted the
+        // title only. A break ending could have announced "FOCUS COMPLETE" and
+        // nothing would have noticed; neither `eyebrow` nor `body` appeared in
+        // any assertion.
+        function test_the_alert_says_which_phase_ended_data() {
+            return [
+                { tag: "work-ended", ended: "work",
+                  eyebrow: "FOCUS COMPLETE", title: "Focus session complete" },
+                { tag: "break-ended", ended: "break",
+                  eyebrow: "BREAK COMPLETE", title: "Break complete" }
+            ]
+        }
+        function test_the_alert_says_which_phase_ended(data) {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { notifyWhenHidden: true })
+            w.foreground = false
+            verify(w.notifyCompletion(data.ended, "short"))
+            compare(root.lastPriorityAlert.eyebrow, data.eyebrow,
+                    data.ended + " ending is announced as " + data.eyebrow)
+            compare(root.lastPriorityAlert.title, data.title)
+        }
+
+        // ...and which phase is coming, which is the part the user acts on.
+        function test_the_alert_says_what_comes_next_data() {
+            return [
+                { tag: "next-work",  next: "work",
+                  body: "Ready for another focus session." },
+                { tag: "next-long",  next: "long",
+                  body: "Your long break is ready." },
+                { tag: "next-short", next: "short",
+                  body: "Your short break is ready." }
+            ]
+        }
+        function test_the_alert_says_what_comes_next(data) {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { notifyWhenHidden: true })
+            w.foreground = false
+            verify(w.notifyCompletion("work", data.next))
+            compare(root.lastPriorityAlert.body, data.body,
+                    "a " + data.next + " phase next reads as: " + data.body)
+            // A long break and a short break are different rewards; saying the
+            // wrong one is worse than saying nothing.
+            verify(String(root.lastPriorityAlert.body).length > 0)
+        }
+
+        // The alert must remain actionable however it was reached.
+        function test_every_completion_alert_can_open_the_timer() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", { notifyWhenHidden: true })
+            w.foreground = false
+            w.notifyCompletion("break", "work")
+            compare(root.lastPriorityAlert.primaryAction, "openWidget")
+            compare(root.lastPriorityAlert.primaryLabel, "Open timer")
+            compare(root.lastPriorityAlert.detail,
+                    "The next phase is ready in your Focus Timer.")
+            compare(root.lastPriorityAlert.widgetType, "focus",
+                    "and it is attributable to the widget that raised it")
+        }
+
         function test_visible_completion_keeps_the_existing_in_widget_feedback() {
             var w = h.item
             h.storeCtl.patchSettings("test-instance", { notifyWhenHidden: true })

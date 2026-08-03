@@ -17,10 +17,11 @@ import "../../ui/qml/widgets" as W
 // be asserted; ConfigField instances are rendered to exercise the real stepper
 // clamp + touch-target sizes.
 //
-// NOTE: several assertions here are EXPECTED to fail - they pin real bugs called
-// out in the audit (eod hour fields have no min/max clamp; countdown accepts
-// impossible dates; catalog.defaults() aliases; stale weather/sensors blurbs).
-// Those failures are the point; do not "fix" the test to make them green.
+// The four defects this file was written against - eod hour fields with no
+// min/max clamp, countdown accepting impossible dates, catalog.defaults()
+// aliasing its own internals, and stale weather/sensors blurbs - are all FIXED.
+// The assertions that found them are kept as regression guards and each carries
+// its own past-tense provenance. They pass; a failure here is a regression.
 // ─────────────────────────────────────────────────────────────────────────
 Item {
     id: root
@@ -156,8 +157,9 @@ Item {
             compare(kpiScale.dflt, "zero")
         }
 
-        // BUG: eod start/end hours are type "hour" with no min/max, so ConfigField
-        // clamps to ±1e9 instead of 0..23 like EndOfDayWidget.setHours does.
+        // FIXED, and this test pins it. The defect was: eod start/end hours were
+        // type "hour" with no min/max, so ConfigField clamped to ±1e9 instead of
+        // 0..23 the way EndOfDayWidget.setHours does.
         function test_eod_hours_declare_0_to_23() {
             var s = sc.schemaFor("eod")
             var start = fieldByKey(s, "startHour")
@@ -236,8 +238,9 @@ Item {
             compare(catalog.title("nope"), "nope", "title falls back to the type")
         }
 
-        // BUG: defaults(type) returns the catalog's live internal object; mutating
-        // the result mutates the catalog (and every future seed).
+        // FIXED, and this test pins it. The defect was: defaults(type) returned the
+        // catalog's live internal object, so mutating the result mutated the catalog
+        // and every future seed with it.
         function test_defaults_returns_fresh_deep_copy() {
             var a = catalog.defaults("tasks")
             verify(a && a.items && a.items.length === 0, "tasks default starts empty")
@@ -248,8 +251,9 @@ Item {
             a.items.length = 0
         }
 
-        // BUG: ensureSettings copies default array/object VALUES by reference, so two
-        // instances seeded from the catalog share ONE items/checkins array.
+        // FIXED, and this test pins it. The defect was: ensureSettings copied default
+        // array/object VALUES by reference, so two instances seeded from the catalog
+        // shared ONE items/checkins array.
         function test_two_seeded_instances_have_distinct_collections() {
             aliasStore.load("blank")
             aliasStore.ensureSettings("tA", catalog.defaults("tasks"))
@@ -344,21 +348,24 @@ Item {
             return ""
         }
 
-        // BUG: sensors About mentions disk, but the catalog _desc omits it.
+        // FIXED, and this test pins it. The defect was: the sensors About text
+        // mentioned disk while the catalog _desc omitted it.
         function test_sensors_desc_mentions_disk() {
             verify(aboutText("sensors").toLowerCase().indexOf("disk") >= 0, "sanity: schema About lists disk")
             verify(catalog.desc("sensors").toLowerCase().indexOf("disk") >= 0,
                    "sensors expanded description should mention the Disk row it renders")
         }
 
-        // BUG: weather _desc hardcodes "4-day forecast" though forecastDays is 3–7.
+        // FIXED, and this test pins it. The defect was: the weather _desc hardcoded
+        // "4-day forecast" although forecastDays ranges 3–7.
         function test_weather_desc_not_hardcoded_to_4_days() {
             verify(catalog.desc("weather").indexOf("4-day") < 0,
                    "weather description must not hardcode a 4-day forecast (it's configurable 3–7)")
         }
 
-        // BUG: weather _desc says "press Set location", but the schema action label
-        // is "Look up this city and set coordinates".
+        // FIXED, and this test pins it. The defect was: the weather _desc said
+        // "press Set location" while the schema's action label read
+        // "Look up this city and set coordinates".
         function test_weather_desc_action_label_matches_schema() {
             var geo = null
             var secs = sc.schemaFor("weather").sections
@@ -422,9 +429,10 @@ Item {
             wait(0)
         }
 
-        // BUG: driving the eod hour stepper down (as the config panel does) is not
-        // clamped to 0, because the schema field declares no min. It falls through
-        // to ConfigField.clamp()'s -1e9 fallback and stores negative hours.
+        // FIXED, and this test pins it. The defect was: driving the eod hour stepper
+        // down (as the config panel does) was not clamped to 0, because the schema
+        // field declared no min - it fell through to ConfigField.clamp()'s -1e9
+        // fallback and stored negative hours.
         function test_hour_stepper_clamps_to_zero() {
             var numberC = findByProp(cfHour, "clamp")
             verify(numberC !== null, "the hour field rendered its numeric stepper")
@@ -609,8 +617,9 @@ Item {
             compare(w.valid, false, "month 13 is rejected")
         }
 
-        // BUG: 2026-02-30 is impossible but new Date(2026,1,30) silently rolls to
-        // Mar 2; the widget reports it as a valid countdown target.
+        // FIXED, and this test pins it. The defect was: 2026-02-30 is impossible, but
+        // new Date(2026,1,30) silently rolls to Mar 2 and the widget reported it as a
+        // valid countdown target.
         function test_impossible_day_is_rejected() {
             var w = hCount.item
             hCount.storeCtl.setSetting("test-instance", "date", "2026-02-30")

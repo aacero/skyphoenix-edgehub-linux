@@ -310,6 +310,63 @@ Item {
             verify(w.leapPolicyText.indexOf("February 28") >= 0)
         }
 
+        // `nextLeap` is the DEFAULT policy and the only one no test drove. It is
+        // also the one that decides whether a February 29 birthday counts down
+        // to the next leap year or quietly to next February - the difference
+        // between a correct four-year wait and a silently wrong one-year wait.
+        function test_feb29_default_policy_waits_for_the_next_leap_year() {
+            var w = hCd.item
+            w.nowMsOverride = new Date(2025, 0, 1, 12, 0, 0).getTime()
+            hCd.storeCtl.patchSettings("test-instance", {
+                repeatYearly: true, date: "2024-02-29",
+                targetHour: 9, targetMinute: 0
+            })
+            compare(w.leapDayPolicy, "nextLeap", "precondition: this is the default")
+            var target = w.nextTarget()
+            compare(target.getFullYear(), 2028, "2025, 2026 and 2027 have no February 29")
+            compare(target.getMonth(), 1)
+            compare(target.getDate(), 29, "and it really is the 29th, not a rolled-over March 1")
+            compare(w.leapPolicyText, "Only occurs in leap years",
+                    "the default says plainly that it will skip years")
+        }
+
+        // The century rule: 2100 is divisible by 4 but is NOT a leap year, and
+        // `new Date(2100, 1, 29)` silently rolls to March 1. A policy that only
+        // checked `year % 4` would land the countdown on the wrong day.
+        function test_feb29_default_policy_skips_a_non_leap_century_year() {
+            var w = hCd.item
+            w.nowMsOverride = new Date(2097, 0, 1, 12, 0, 0).getTime()
+            hCd.storeCtl.patchSettings("test-instance", {
+                repeatYearly: true, date: "2024-02-29",
+                targetHour: 9, targetMinute: 0
+            })
+            var target = w.nextTarget()
+            compare(target.getFullYear(), 2104,
+                    "2100 is divisible by 4 but is not a leap year, so 2104 is next")
+            compare(target.getMonth(), 1)
+            compare(target.getDate(), 29)
+        }
+
+        // The disclosure is only meaningful for a recurring February 29; showing
+        // it for an ordinary date would be noise.
+        function test_leap_policy_text_is_silent_for_dates_it_cannot_affect_data() {
+            return [
+                { tag: "not-recurring", repeat: false, date: "2024-02-29" },
+                { tag: "ordinary-date", repeat: true, date: "2024-03-15" },
+                { tag: "feb-28", repeat: true, date: "2024-02-28" }
+            ]
+        }
+        function test_leap_policy_text_is_silent_for_dates_it_cannot_affect(data) {
+            var w = hCd.item
+            w.nowMsOverride = new Date(2025, 0, 1, 12, 0, 0).getTime()
+            hCd.storeCtl.patchSettings("test-instance", {
+                repeatYearly: data.repeat, date: data.date,
+                targetHour: 9, targetMinute: 0
+            })
+            compare(w.leapPolicyText, "",
+                    data.tag + " is unaffected by the leap-day policy, so it says nothing")
+        }
+
         function test_feb29_policy_can_use_march_1() {
             var w = hCd.item
             w.nowMsOverride = new Date(2025, 0, 1, 12, 0, 0).getTime()
