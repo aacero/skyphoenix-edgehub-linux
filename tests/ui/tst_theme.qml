@@ -706,10 +706,18 @@ Item {
         }
 
         // ── Bundled a11y fonts (E4) ──────────────────────────────────────────
-        // Proof the bundled TTFs ACTUALLY load - status must reach Ready and the
-        // family must resolve to the real name, not silently fall back to a
-        // system font. If the resource path or the qrc wiring breaks, the
-        // status assertion fails first; if the wrong file loads, the name does.
+        // Proof the TTFs ACTUALLY load - status must reach Ready and the family
+        // must resolve to the real name, not silently fall back to a system
+        // font. If the wrong file loads, the name assertion catches it (proven
+        // 2026-08-04 by giving Atkinson's filename Lexend's bytes).
+        //
+        // What this does NOT cover, despite an earlier comment here claiming it
+        // did: the **qrc wiring**. This file imports "../../ui/qml" as a
+        // FILESYSTEM path, so Theme.qml takes the non-qrc branch of `_fontsDir`
+        // and these loaders read assets/fonts/ off disk. Repointing an alias in
+        // assets/fonts.qrc leaves every assertion here green - measured, same
+        // day. The qrc side is covered statically by
+        // scripts/check_bundled_fonts.py instead.
         function test_bundled_fonts_actually_load() {
             tryCompare(theme.hyperlegibleLoader, "status", FontLoader.Ready)
             tryCompare(theme.hyperlegibleBoldLoader, "status", FontLoader.Ready)
@@ -728,18 +736,41 @@ Item {
             compare(theme.fontFamilyLexend, "Lexend")
         }
 
-        // Changing the default look is a product decision - the default MUST
-        // stay the system font stack.
+        // Changing the default look is a product decision (D2, decided
+        // 2026-08-04: Atkinson Hyperlegible, the accessibility-forward pick).
+        // The comment here used to say the default MUST stay the system font
+        // stack, which the body already contradicted - it was left behind when
+        // the default moved.
         function test_font_choice_defaults_to_hyperlegible() {
-            // The shipped default is Atkinson Hyperlegible (accessibility-forward,
-            // decided for the beta). A fresh Theme with no config picks it up, and
-            // fontDisplay resolves to the loaded Atkinson family (falling back to
-            // the literal name if the FontLoader hasn't reported yet).
+            // A fresh Theme with no config picks it up, and fontDisplay resolves
+            // to the LOADED Atkinson family rather than a literal family string.
             var fresh = freshTheme.createObject(root)
             compare(fresh.fontChoice, "hyperlegible")
             compare(fresh.fontDisplay, fresh.fontFamilyHyperlegible)
-            verify(fresh.fontDisplay.toLowerCase().indexOf("atkinson") >= 0
-                   || fresh.fontDisplay.length > 0, "resolves to a real family")
+            // Assert the family by name. This used to be
+            //   indexOf("atkinson") >= 0 || fontDisplay.length > 0
+            // whose right-hand clause is true for ANY non-empty string, so the
+            // whole verify passed for every possible font - it could not fail.
+            compare(fresh.fontDisplay.toLowerCase().indexOf("atkinson") >= 0, true,
+                    "the default resolves to Atkinson, not a fallback face")
+            fresh.destroy()
+        }
+
+        // D1 (decided 2026-08-04: the calm palette). Rust pins the same value -
+        // `config::tests::test_default_config` asserts `theme.mode == "nord"`.
+        // These are two independent literals in two languages that must agree,
+        // and nothing links them, so each side pins its own.
+        function test_default_theme_key_is_the_calm_palette() {
+            compare(theme.defaultThemeKey, "nord",
+                    "a fresh install opens on the calm palette (D1)")
+            // ...and the key must name a theme that actually exists, or every
+            // fresh install falls through applyTheme's default branch.
+            var fresh = freshTheme.createObject(root)
+            fresh.applyTheme(fresh.defaultThemeKey)
+            var calm = fresh.bg
+            fresh.applyTheme("nord")
+            compare(String(fresh.bg), String(calm),
+                    "defaultThemeKey resolves to the real nord palette")
             fresh.destroy()
         }
 

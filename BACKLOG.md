@@ -13,8 +13,53 @@ after the fix shipped). If an entry here disagrees with the code, the code wins.
 
 | # | Decision | Why it blocks | Notes |
 |---|---|---|---|
-| D1 | Calm as the default theme? | Ships in the beta's first impression | Current default: dark |
-| D2 | Default font: system vs Atkinson Hyperlegible | Same | Atkinson is the a11y-forward pick |
+| D1 | ~~Calm as the default theme?~~ | — | **DECIDED 2026-08-04: calm. Already shipped; the row was stale twice over.** See below. |
+| D2 | ~~Default font: system vs Atkinson Hyperlegible~~ | — | **DECIDED 2026-08-04: Atkinson.** Already the default (`Theme.qml:235`) and gated (`tst_theme.qml`). |
+
+**D1/D2, verified 2026-08-04 rather than built.** Simon decided calm + Atkinson;
+the code already did both, so the work was proving it and closing the gaps the
+check turned up. Two things this row asserted were false:
+
+- **"Current default: dark" was wrong.** Both layers default to **`nord`**:
+  `core/src/config.rs:173` (`default_theme_mode()`) and `ui/qml/Theme.qml:362`
+  (`defaultThemeKey`). The Rust test that pins it has said
+  `"shipped default is the calm palette (D1)"` since it was written - the
+  decision had effectively been taken in code and never written back here. The
+  `mode = "dark"` at `config.rs:1847` that looks like a default is a **legacy
+  test fixture**.
+- **"Calm" is not a theme.** There is no `calm` theme mode; `calm` is a
+  per-widget `behaviorProfile` (calm | momentum | celebrate) on Focus and Tasks,
+  defaulting to `custom`. `BACKLOG.md` already recorded this discovery from the
+  auto-cycle work and the D1 row was never reconciled with it. So "calm as the
+  default theme" resolves to **nord, the calm palette** - which is what ships.
+
+Gaps found while verifying, all fixed:
+
+- `Theme.qml`'s `defaultThemeKey` was pinned by **nothing**. Rust pinned its own
+  literal; the QML fallback was free to drift to a different theme, or to a key
+  naming no theme at all. Now pinned by
+  `test_default_theme_key_is_the_calm_palette`, which also applies the key and
+  compares the resulting palette, so a key that resolves to `applyTheme`'s
+  default branch fails.
+- `test_font_choice_defaults_to_hyperlegible` carried an assertion that **could
+  not fail**: `indexOf("atkinson") >= 0 || fontDisplay.length > 0` is true for
+  any non-empty string. Proven by giving Atkinson's filename Lexend's bytes -
+  the old form passed, the fixed form fails.
+- Its comment still read *"the default MUST stay the system font stack"*, left
+  behind when the default moved to Atkinson - the comment contradicted the body
+  it introduced.
+- `test_bundled_fonts_actually_load` claimed it would catch broken **qrc**
+  wiring. It cannot: `tst_theme.qml` imports `"../../ui/qml"` as a filesystem
+  path, so `Theme.qml` takes the non-qrc branch of `_fontsDir` and the loaders
+  read `assets/fonts/` off disk. Repointing an alias in `assets/fonts.qrc` left
+  every assertion green (measured). The claim is corrected in place; the qrc side
+  is covered by `scripts/check_bundled_fonts.py` instead.
+
+**Still open, and a genuine product question rather than a stale row:** whether
+the per-widget `behaviorProfile` should also default to `calm` instead of
+`custom` - i.e. no celebrations, reward points or nudges out of the box. That is
+the other thing "calm by default" could reasonably mean, it is a real behaviour
+change rather than a palette, and it was never asked. Needs Simon.
 | D3 | Lawyer pass on distro theme naming | This is sold B2B | Partly de-risked already: `ui/qml/Theme.qml:334` keeps distro modes **colour-only** - no logos or wordmarks. The naming is the residual exposure. |
 | D4 | ~~Payment provider~~ | **DECIDED: Lemon Squeezy / Gumroad.** Licensing system built (see below). Remaining Simon steps: run `keygen` to arm the issuer key, and create the store product wiring key delivery. |
 
