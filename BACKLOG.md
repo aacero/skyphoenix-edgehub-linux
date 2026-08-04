@@ -9,12 +9,22 @@ Status re-verified 2026-07-17 against the tree, not against these docs - this
 file had already drifted within a day (it still called `--reset` an open decision
 after the fix shipped). If an entry here disagrees with the code, the code wins.
 
-## Blocked on Simon (nothing proceeds without these)
+## ~~Blocked on Simon~~ — ALL FOUR RESOLVED 2026-08-04
+
+**v1.0.0 shipped on 2026-07-28** (signed `.deb`, `.rpm`, `.AppImage`, `.zsync`,
+`SHA256SUMS.asc`), after alpha.1/alpha.2/beta.1/rc.1. The current target is
+**v1.0.1**. Much of this file still uses pre-release language - "RC exit
+criterion", "no release has ever shipped an AppImage" - that was true when
+written and is not true now. **Check an entry against the tree before working
+it**; six were found stale on 2026-08-04 alone. The full list of what still needs
+the product owner is in `docs/agent-memory/SESSION-HANDOFF-2026-08-04.md` §11.
 
 | # | Decision | Why it blocks | Notes |
 |---|---|---|---|
 | D1 | ~~Calm as the default theme?~~ | — | **DECIDED 2026-08-04: calm. Already shipped; the row was stale twice over.** See below. |
 | D2 | ~~Default font: system vs Atkinson Hyperlegible~~ | — | **DECIDED 2026-08-04: Atkinson.** Already the default (`Theme.qml:235`) and gated (`tst_theme.qml`). |
+| D3 | ~~Lawyer pass on distro theme naming~~ | — | **DECIDED 2026-08-04: the naming stays as it is.** Already de-risked by `ui/qml/Theme.qml:334` keeping distro modes **colour-only** - no logos, no wordmarks. |
+| D4 | ~~Payment provider~~ | — | **DECIDED: Lemon Squeezy / Gumroad, and the code half is DONE** - including the `keygen` step this row used to list as outstanding. See below. |
 
 **D1/D2, verified 2026-08-04 rather than built.** Simon decided calm + Atkinson;
 the code already did both, so the work was proving it and closing the gaps the
@@ -60,8 +70,6 @@ the per-widget `behaviorProfile` should also default to `calm` instead of
 `custom` - i.e. no celebrations, reward points or nudges out of the box. That is
 the other thing "calm by default" could reasonably mean, it is a real behaviour
 change rather than a palette, and it was never asked. Needs Simon.
-| D3 | Lawyer pass on distro theme naming | This is sold B2B | Partly de-risked already: `ui/qml/Theme.qml:334` keeps distro modes **colour-only** - no logos or wordmarks. The naming is the residual exposure. |
-| D4 | ~~Payment provider~~ | **DECIDED: Lemon Squeezy / Gumroad.** Licensing system built (see below). Remaining Simon steps: run `keygen` to arm the issuer key, and create the store product wiring key delivery. |
 
 ## Licensing / Pro tier - BUILT 2026-07-17 (see docs/LICENSING.md)
 
@@ -79,12 +87,18 @@ functional; Pro is a low-cost cosmetic "supporter" tier.
 - **Issuer tool:** `tools/license-tool` (keygen + mint) + `scripts/mint-license.sh`;
   crypto correctness gated in CI. NOT shipped in the app.
 
-**Remaining Simon steps (like GPG signing):**
-1. `cargo run --manifest-path tools/license-tool/Cargo.toml -- keygen` once; paste
-   the public key into `core/src/license.rs` (arms verification - until then every
-   key is free), store the private seed in Bitwarden.
-2. Create the Lemon Squeezy / Gumroad product and wire key delivery (mint from the
-   order). Set the price there.
+**Remaining Simon steps — re-checked against the tree 2026-08-04:**
+1. ~~Run `keygen` and paste the public key into `core/src/license.rs`.~~
+   **DONE.** `core/src/license.rs:77` has the zero placeholder commented out and
+   `:78` carries a real `ISSUER_PUBLIC_KEY`; `:739` records that the "still a
+   placeholder" release guard was retired. **Verification is armed** - the old
+   warning here that "until then every key is free" no longer applies.
+2. **STILL OPEN, and the only one left:** create the Lemon Squeezy / Gumroad
+   product and wire key delivery (mint from the order), and set the price. This
+   is an action in an external account, so it **cannot be verified from this
+   repository** - if purchases are not minting keys, this is why.
+   `tools/license-webhook` and `scripts/setup-lemonsqueezy.py` are built and
+   waiting; see `docs/LICENSING.md` §"Selling".
 
 Open (needs Simon's content call, not code): whether to also gate a **premium
 PRESET pack** and **custom user widgets** - the flag infrastructure is the same
@@ -306,13 +320,28 @@ That is the product direction; this was the cheap half. See Candidates.
   it is a copy question, not an engineering one.
 - ~~`Theme.qml:209` `motionRemove` is unused~~ - now driving the Dashboard exit
   fade (`Dashboard.qml:764`) since the W3 exit-fade work landed.
-- **AppImage zsync update path: audited 2026-07-17. It does not work today, and
-  never has.** Still an **RC exit criterion**. What the audit established:
-  - **No release has ever shipped an AppImage or a `.zsync`.** alpha.1 and
-    alpha.2 assets confirm it (`gh release view`). The `zsyncmake` branch in
-    `scripts/release.sh` has therefore never executed. CI builds an AppImage but
-    only uploads it as an expiring workflow artifact; attaching it is a manual
-    `--extra` step nobody has done. **Nothing about this path has ever run.**
+- ~~**AppImage zsync update path: audited 2026-07-17. It does not work today, and
+  never has.**~~ — **LARGELY STALE. Re-checked 2026-08-04.** This was an RC exit
+  criterion and the RC has shipped. What is now true:
+  - **v1.0.0 (2026-07-28) shipped BOTH an AppImage and a `.zsync`** -
+    `xeneon-edge-hub-1.0.0-x86_64.AppImage` (56 MB) and `…AppImage.zsync`
+    (329 KB), plus signed `.deb`/`.rpm` and `SHA256SUMS.asc`. The bullet below
+    saying "no release has ever shipped an AppImage" was true on 2026-07-17 and
+    is not true now.
+  - **`X-AppImage-UpdateInformation` IS embedded**, contrary to the "OPEN (needs
+    a product decision)" bullet below: `packaging/appimage/build-appimage.sh:91`
+    exports `LDAI_UPDATE_INFORMATION=gh-releases-zsync|skyphoenix-it|…|latest|…`
+    and the older `UPDATE_INFORMATION` name alongside it.
+  - **What genuinely remains:** the download-and-patch round trip has still never
+    been exercised end to end. `scripts/check_appimage_update_contract.sh` guards
+    the cross-file invariants offline and is not a substitute. The first real
+    test is whether an installed v1.0.0 AppImage self-updates to v1.0.1 - worth
+    watching on the next release rather than treating as open work now.
+
+  Historical detail from the original audit, kept for provenance:
+  - **No release had shipped an AppImage or a `.zsync`** as of 2026-07-17. The
+    `zsyncmake` branch in `scripts/release.sh` had therefore never executed; CI
+    built an AppImage but uploaded it only as an expiring workflow artifact.
   - FIXED: the artifact was named from `project(... VERSION 0.1.0)`, which
     CMakeLists.txt freezes across commits - every release would have published an
     identically-named `xeneon-edge-hub-0.1.0-x86_64.AppImage`. `release.sh`
