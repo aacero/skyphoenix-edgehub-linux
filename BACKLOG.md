@@ -466,6 +466,39 @@ state is stable by construction rather than by timing. Negative control: droppin
 the `scheduleSuspended` branch from `stateLabel` makes the row fail; reverted,
 16/16 green.
 
+## ~~Known flake: `test_long_copy_reflows_...` measures text before layout settles~~ — FIXED
+
+Opened and closed 2026-08-04. Caught in the act: it failed the `QML Tests +
+Enumerated Requirements` job on PR #23 and **passed on a rerun of the identical
+commit**, so the flake is established rather than inferred. It blocked a PR whose
+diff was `BACKLOG.md` plus `tests/ui/tst_theme.qml` — QML tests run as per-file
+processes, so the change could not reach `tst_gen_countdown.qml` at all.
+
+The assertion measured `contentWidth`/`contentHeight`/`truncated` on a long label
+at `textScale 1.45` in a 278 px tile, immediately after `wait(0)`. Text metrics
+settle on **polish**, not on the next event-loop turn: one yield is enough on an
+idle machine and not always enough on a loaded CI runner. Third of this family
+after the celebration banner and `test_states(outside)` — *a test that asserts a
+moment instead of a settled state races the machine it runs on.*
+
+Notably the same file already had the right pattern: `test_large_day_count_fits_narrow_tile`
+uses `tryVerify` with a bound and a comment that painted glyph width "is not
+deterministic under the offscreen platform across Qt versions". The failing test
+was the odd one out, not the norm.
+
+Fixed by bounding both measurements with `tryVerify` (3 s), then restating the
+individual `verify`s so a genuine overflow still names *which* bound broke.
+`tryVerify` returns the moment the condition holds, so a healthy run pays
+nothing: **101 ms before, 103 ms after**.
+
+Negative control: setting every `wrapMode` in `CountdownWidget.qml` to
+`Text.NoWrap` makes it fail on the new message and take the full 3121 ms timeout
+— so the bound still catches a real overflow rather than merely waiting longer.
+Reverted, 61/61 green.
+
+**Swept for the same shape:** exactly two occurrences repo-wide, both inside this
+one test. Not systemic.
+
 ## Known flake: the nested compositor occasionally never exposes a window
 
 Opened 2026-08-02, on the first CI runs where the GUI suite could complete at all.
@@ -617,15 +650,33 @@ cap, on a PR that touched only the GUI runner script.
   `wcalwx_cal_state_empty.png`: the chrome, the status pill and the empty-state
   copy, with no dates, times or event text at all — deterministic by construction
   rather than by luck.
-- **`preset-health`** — **STILL FRAGILE.** The diff is a break-timer countdown
-  ghosting ("30:00" against a different value), "off hours", and a `09:00 to
-  17:00` schedule line: the widget's own clock. It passed again the following day,
-  so it OSCILLATES around the tolerance rather than decaying monotonically — which
-  is worse than a steady drift, because it will fail on an unrelated PR at
-  unpredictable intervals. There is no clock-free variant of a whole preset screen
-  to re-point at, so the options are a `crop` that excludes the break tile, a
-  per-case threshold with the `variance_reason` the tool already requires, or
-  making the break widget's captured state clock-independent. Product-owner call.
+- ~~**`preset-health`** — **STILL FRAGILE.**~~ — **FIXED, and this entry was
+  stale on arrival.** The diff was a break-timer countdown ghosting ("30:00"
+  against a different value), "off hours", and a `09:00 to 17:00` schedule line:
+  the widget's own clock. It OSCILLATED around the tolerance rather than decaying,
+  which is worse than steady drift because it fails unrelated PRs at unpredictable
+  intervals.
+  The third option listed here — making the break widget's captured state
+  clock-independent — **was implemented in the same PR that filed this entry**
+  (`39f533b`, #13): `tst_gui_shell_wallpaper_presets.qml` parks the reminder
+  before the snap (`running: false, pausedRemaining: 1800`). Neither the `crop`
+  nor the per-case-threshold option was needed, and neither was taken; nothing
+  was weakened.
+  Verified 2026-08-04 at the mechanism rather than by watching runs: with
+  `running:false`, `BreakWidget.stateLabel` returns "Paused" at line 74 **before**
+  it consults `cfg.scheduleSuspended` at line 75, and `remaining` skips its
+  `Date.now()` branch entirely (line 107 requires `running && cfg.endEpoch`),
+  returning the fixed `pausedRemaining`. Both clock paths are bypassed, so the
+  capture is deterministic by construction.
+  **The park depended on a branch ORDER that nothing asserted.** Swap those two
+  lines and "Outside active hours" wins again, the baseline silently becomes
+  clock-dependent, and the flake returns on someone else's PR. The neighbouring
+  `test_running_paused_snoozed_..._are_distinct` cannot catch it — its paused case
+  leaves `scheduleSuspended` false, so both orders agree there (**measured: it
+  passes with the reorder applied**). Now pinned by
+  `tst_gen_break.qml::test_parked_reminder_is_clock_independent`, which asserts
+  the hostile combination (parked AND outside active hours) and a stale
+  `endEpoch`. Two negative controls, both proven red and reverted.
 
 **Note for whoever fixes the next one:** `visual_baselines.py update` rewrites ALL
 fifty baselines, not the one you changed — it re-baselines 49 reviewed artifacts

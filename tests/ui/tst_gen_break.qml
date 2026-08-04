@@ -622,6 +622,47 @@ Item {
             compare(micro.showDetails, false, "the micro timer stays a pure countdown")
         }
 
+        // The reviewed visual baseline `preset-health` renders a Break tile, and
+        // the widget is clock-dependent twice over: `remaining` counts down from
+        // Date.now(), and stateLabel flips to "Outside active hours" by the hour.
+        // tst_gui_shell_wallpaper_presets.qml parks the reminder before the snap
+        // (running:false, pausedRemaining:1800) so the capture measures layout
+        // rather than the hour the suite happened to run - that is what stopped
+        // preset-health oscillating around the rms tolerance and failing
+        // unrelated PRs.
+        //
+        // The park only works because of a BRANCH ORDER: `!running` is tested
+        // BEFORE `cfg.scheduleSuspended`, so "Paused" wins even when the run is
+        // outside active hours. Nothing asserted that order, so reordering the
+        // two lines would silently make the baseline clock-dependent again and
+        // the flake would come back on someone else's PR. The neighbouring
+        // state test cannot catch it: its paused case leaves scheduleSuspended
+        // false, so both orders agree there.
+        function test_parked_reminder_is_clock_independent() {
+            tryVerify(function () { return hBBase.ready }, 3000)
+            var w = hBBase.item
+            w.sizeClass = "compact"
+
+            // Exactly the patch the reviewed capture applies, plus the hostile
+            // case: parked AND outside active hours at the same time.
+            prep(hBBase, { running: false, due: false, snoozed: false,
+                           scheduleSuspended: true, pausedRemaining: 1800 })
+            compare(w.stateLabel, "Paused",
+                    "a parked reminder reads Paused even outside active hours")
+            compare(w.remaining, 1800,
+                    "a parked reminder reads pausedRemaining, never the wall clock")
+
+            // An endEpoch in the past is the shape a real paused-after-running
+            // tile carries. It must not be consulted while parked, or the
+            // capture would drift by however long ago the epoch was.
+            prep(hBBase, { running: false, due: false, snoozed: false,
+                           scheduleSuspended: true, pausedRemaining: 1800,
+                           endEpoch: Date.now() - 600000 })
+            compare(w.remaining, 1800,
+                    "a stale endEpoch does not leak into a parked reminder")
+            compare(w.stateLabel, "Paused", "and the state stays Paused")
+        }
+
         function test_running_paused_snoozed_outside_disabled_and_due_are_distinct() {
             tryVerify(function () { return hBBase.ready }, 3000)
             var w = hBBase.item

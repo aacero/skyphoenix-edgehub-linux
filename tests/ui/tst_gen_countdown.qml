@@ -669,6 +669,20 @@ Item {
             wait(0)
             var microContext = findObject(hCMicro.item, "countdownContext")
             verify(microContext !== null)
+            // Text metrics settle on POLISH, not on the next event-loop turn.
+            // `wait(0)` yields once, which is enough on an idle machine and not
+            // always enough on a loaded CI runner: this exact assertion failed on
+            // CI on 2026-08-04 and passed on a rerun of the identical commit,
+            // blocking an unrelated PR. tryVerify returns the moment it is true,
+            // so a healthy run pays nothing for the bound. Same fix, and the same
+            // reason, as the celebration-banner flake in BACKLOG.md.
+            tryVerify(function () {
+                return !microContext.truncated
+                       && microContext.contentWidth <= microContext.width + 1
+                       && microContext.contentHeight <= microContext.height + 1
+            }, 3000, "the micro event context reflows inside its box")
+            // Restated individually so a genuine overflow names WHICH bound broke
+            // rather than only that the conjunction never came true.
             verify(!microContext.truncated,
                    "the micro event context wraps instead of silently eliding")
             verify(microContext.contentWidth <= microContext.width + 1)
@@ -684,6 +698,15 @@ Item {
             var eventText = findObject(hCTall.item, "countdownEvent")
             var targetText = findObject(hCTall.item, "countdownTarget")
             verify(eventText !== null && targetText !== null)
+            // Same settle bound as the micro tile above - this one additionally
+            // resizes its host (cTallWrap), so the relayout it waits on is
+            // strictly larger than the micro case's.
+            tryVerify(function () {
+                return !eventText.truncated
+                       && eventText.contentHeight <= eventText.height + 1
+                       && !targetText.truncated
+                       && targetText.contentHeight <= targetText.height + 1
+            }, 3000, "the long copy reflows inside the narrow tall tile")
             verify(!eventText.truncated && eventText.contentHeight <= eventText.height + 1,
                    "the long event heading reflows inside the narrow tall tile")
             verify(!targetText.truncated && targetText.contentHeight <= targetText.height + 1,
