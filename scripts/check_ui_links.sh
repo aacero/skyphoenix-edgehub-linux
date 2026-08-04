@@ -37,10 +37,21 @@ LITERAL = re.compile(r'openUrlExternally\s*\(\s*"([^"]*)"\s*\)', re.S)
 ANY_CALL = re.compile(r'openUrlExternally\s*\(', re.S)
 OK_SCHEMES = ("http://", "https://", "mailto:", "file://")
 
-fail = 0
-literals = skipped = 0
-for root in ("ui/qml", "manager/qml"):
+ROOTS = ("ui/qml", "manager/qml")
+
+fail = 0          # a link the UI offers goes nowhere - the gate's day job
+vacuous = 0       # the gate could not see its own subjects - it did no work
+literals = skipped = scanned = 0
+for root in ROOTS:
+    # A root that stops existing must be fatal, not empty. `rglob` on a missing
+    # directory yields nothing and raises nothing, so a rename here would take
+    # the gate silently to zero subjects - see the anti-vacuity floor below.
+    if not pathlib.Path(root).is_dir():
+        print(f"  scan root is missing: {root}/")
+        vacuous = 1
+        continue
     for path in sorted(pathlib.Path(root).rglob("*.qml")):
+        scanned += 1
         src = path.read_text(encoding="utf-8")
         calls = len(ANY_CALL.findall(src))
         found = LITERAL.findall(src)
@@ -57,6 +68,36 @@ if fail:
     print()
     print("FAIL: the UI offers a link that does nothing when clicked.")
     sys.exit(1)
-print(f"OK: {literals} literal UI link(s) name a real scheme "
-      f"({skipped} non-literal call(s) not judged).")
+
+# Anti-vacuity floor. A gate must assert its own subjects exist, or it reports
+# SUCCESS for the state where it did no work - the shape logged six times in
+# BACKLOG.md "Test-integrity debt". This one WAS that shape: renaming the scan
+# roots printed "OK: 0 literal UI link(s)" and exited 0.
+#
+# Reported separately from a dead link: "the gate went blind" and "the UI ships
+# a broken button" need different fixes, so they must not share a message.
+if vacuous or scanned == 0:
+    print()
+    if vacuous:
+        print(f"FAIL: a scan root is unreadable, so this gate is blind to part "
+              f"of the UI ({scanned} .qml file(s) reached).")
+        print("      Fix the root above, or update ROOTS if the tree moved "
+              "deliberately.")
+    else:
+        print("FAIL: this gate scanned ZERO .qml files - it did no work, so "
+              "its OK would")
+        print("      have meant nothing.")
+    sys.exit(1)
+if literals == 0:
+    print(f"FAIL: {scanned} .qml file(s) scanned but ZERO literal "
+          "openUrlExternally() calls were parsed.")
+    print("      The UI ships literal links (the Manager's About pane), so "
+          "zero means the")
+    print("      parser stopped matching, not that the links went away. If "
+          "they genuinely")
+    print("      did, delete this floor deliberately - do not let the gate "
+          "go quiet.")
+    sys.exit(1)
+print(f"OK: {literals} literal UI link(s) across {scanned} .qml file(s) name "
+      f"a real scheme ({skipped} non-literal call(s) not judged).")
 PYEOF

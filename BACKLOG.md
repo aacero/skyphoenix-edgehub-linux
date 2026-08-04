@@ -315,11 +315,35 @@ where it did no work.** Six found, all green for a long time:
 | `qml_coverage.py` | empty matrix scored **100%**; a typo'd source dropped 24 behaviors with no coverage drop | fixed `8b09f9e` |
 | `check_ui_links.sh` | grepped a pattern that was line-wrapped in its own target | fixed on arrival |
 | `check_live_tests.sh`, `check_doc_links.sh` | reported OK on an **empty tree** | fixed `92490f9` |
+| `check_ui_links.sh` (again) | printed its subject count but never floored it - renaming the scan roots gave `OK: 0 literal UI link(s)`, exit 0 | fixed 2026-08-04 |
+| `check_tree_walks.py` | same - a broken `REPO` printed `scanned 0` and still exited 0 | fixed 2026-08-04 |
 
 **The fix is always the same: a gate must assert its own subjects exist.**
 `scripts/check_no_raw_xhr.sh` is the model - it checks "the gate must still own
 exactly one construction site", so it fails rather than going quiet if its pattern
 stops matching. Count subjects; print the count in the OK line; make zero fatal.
+
+**Sweep 2026-08-04 - all 24 `scripts/check_*` gates audited against that rule.**
+Two failed it (above); the rest already floor their subjects, so this sweep is
+done and does not need repeating: `check_no_open_bug_notes.sh` (`scanned -eq 0`),
+`check_widget_icons.sh` (`-n "$types"`), `check_widget_resources.py`
+(`len < 30`), `check_live_tests.sh` / `check_doc_links.sh` / `qml_coverage.py` /
+`check_ci_release_metadata_contract.py` (explicit zero-fatal),
+`check_no_manager_compositor_tests.sh` (`gui_files -eq 0`),
+`check_no_raw_xhr.sh` (owns-one-site), and the release/packaging contracts, which
+assert named files and fail when one is missing.
+
+**Printing the count is not the same as flooring it.** Both failures here already
+printed their subject count in the OK line - a reader could see `0` and it still
+exited 0. The count is for humans; the floor is what makes the gate fail.
+
+**A zero-floor alone is too weak.** `check_tree_walks.py` walks the whole repo,
+so excluding `ui/qml` still left 499 files and 17,264 functions scanned - a
+`scanned == 0` check passes happily while the gate is blind to the exact code it
+exists for. It now asserts each of `ui/qml` and `manager/qml` contributed files,
+*and* that the function regex still matches something. Prefer "my specific
+subjects are present" over "something was scanned"; the four negative controls
+are in the commit body.
 
 Open follow-up: no mechanism forces the fail-on-violation proof for tests outside
 the `_data` trap. Candidate: require new guards to record their evidence (the

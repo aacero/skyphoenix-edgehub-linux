@@ -114,15 +114,23 @@ def axes_used(body: str) -> set[str]:
 
 
 def analyse(path: str):
-    """Return a list of (name, line, axes) for unguarded multi-axis walkers."""
+    """Return (findings, functions_parsed) for one file.
+
+    `functions_parsed` is returned even when there are no findings: it is what
+    proves the parser still sees anything at all. If FUNC_RE stops matching,
+    every file yields zero functions, zero findings, and the gate would report
+    OK - the exact "SUCCESS for the state where it did no work" shape.
+    """
     try:
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
     except (OSError, UnicodeDecodeError):
-        return []
+        return [], 0
 
     findings = []
+    functions = 0
     for name, line, body in extract_function_bodies(text):
+        functions += 1
         # Only recursive walkers matter. Direct self-call, or delegation to a
         # helper that is itself recursive (the `walk -> _walkSeen` pattern).
         recursive = re.search(r"\b" + re.escape(name) + r"\s*\(", body[1:])
@@ -134,7 +142,13 @@ def analyse(path: str):
         if GUARD_RE.search(body):
             continue  # has a visited-set
         findings.append((name, line, sorted(used)))
-    return findings
+    return findings, functions
+
+
+# The gate must reach the code it exists for. A SKIP_DIRS entry or a moved tree
+# could take the walk to zero subjects in the UI while `scanned` stayed large
+# because tests/ is still there - so require each of these to contribute.
+REQUIRED_ROOTS = ("ui/qml", "manager/qml")
 
 
 def main() -> int:
@@ -142,19 +156,44 @@ def main() -> int:
     total_funcs = 0
     scanned = 0
     failures = []
+    per_root = {root: 0 for root in REQUIRED_ROOTS}
 
     for path in sorted(iter_source_files(REPO)):
         scanned += 1
         rel = os.path.relpath(path, REPO)
-        for name, line, used in analyse(path):
+        for root in REQUIRED_ROOTS:
+            if rel.startswith(root + os.sep):
+                per_root[root] += 1
+        found, functions = analyse(path)
+        total_funcs += functions
+        for name, line, used in found:
             failures.append((rel, name, line, used))
-        if verbose:
-            with open(path, encoding="utf-8", errors="ignore") as fh:
-                total_funcs += len(list(extract_function_bodies(fh.read())))
 
-    print(f"check_tree_walks: scanned {scanned} .qml/.js files")
+    print(f"check_tree_walks: scanned {scanned} .qml/.js files, "
+          f"{total_funcs} functions parsed")
     if verbose:
-        print(f"                  {total_funcs} functions parsed")
+        for root, n in per_root.items():
+            print(f"                  {root}: {n} file(s)")
+
+    # Anti-vacuity floor: a gate must assert its own subjects exist, or it
+    # reports SUCCESS for the state where it did no work. See BACKLOG.md
+    # "Test-integrity debt" - this gate WAS that shape (a broken REPO path
+    # printed "scanned 0" and still exited 0).
+    blind = [f"{root}/ contributed no files" for root, n in per_root.items()
+             if n == 0]
+    if scanned == 0:
+        blind.append("no .qml/.js files were walked at all")
+    if total_funcs == 0:
+        blind.append("zero functions parsed - FUNC_RE matches nothing")
+    if blind:
+        print()
+        print("FAIL: this gate cannot see its own subjects, so an OK from it "
+              "would mean nothing:")
+        for reason in blind:
+            print(f"  - {reason}")
+        print("Fix the scan, or update REQUIRED_ROOTS if the tree moved "
+              "deliberately.")
+        return 1
 
     if not failures:
         print("OK: no unmemoised multi-axis scene-graph walkers")
