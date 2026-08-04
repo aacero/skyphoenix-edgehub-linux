@@ -154,6 +154,14 @@ jobs:
         run: bash scripts/check_no_open_bug_notes.sh
       - name: Enforce that UI links go somewhere
         run: bash scripts/check_ui_links.sh
+      # The bundled-face contract spans assets/fonts/*.ttf, assets/fonts.qrc and
+      # Theme.qml's FontLoaders, and nothing compared them. tst_theme.qml checks
+      # the loaders inside xeneon-qmltestrunner, which carries its OWN fonts.qrc
+      # line - so dropping the line from the Hub or Manager target reintroduces
+      # the fontconfig fallback (proportional face in a countdown, jittering on
+      # every digit) with the whole suite still green.
+      - name: Enforce that every Theme.qml-loading app bundles its fonts
+        run: python3 scripts/check_bundled_fonts.py
       - name: Icon lint (every widget type has a bundled, registered icon)
         run: bash scripts/check_widget_icons.sh
       # The Manager is tested against a REAL hub on REAL hardware, never inside

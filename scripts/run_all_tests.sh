@@ -293,6 +293,12 @@ run_suite "Open-defect lint (bugs belong in BACKLOG)" bash "$PROJECT_DIR/scripts
 run_suite "No Manager tests under a compositor" bash "$PROJECT_DIR/scripts/check_no_manager_compositor_tests.sh"
 run_suite "Doc links (files + anchors)" bash "$PROJECT_DIR/scripts/check_doc_links.sh"
 run_suite "UI links (no dead openUrlExternally)" bash "$PROJECT_DIR/scripts/check_ui_links.sh"
+# Bundled fonts. Theme.qml resolves every face through a FontLoader so each
+# machine renders the same glyphs; that spans three files nothing compared.
+# tst_theme.qml proves the loaders are Ready inside the TEST RUNNER, which has
+# its own fonts.qrc line - so the suite would stay green while the shipped Hub
+# and Manager fell back to fontconfig.
+run_suite "Bundled fonts (Theme.qml <-> fonts.qrc <-> targets)" python3 "$PROJECT_DIR/scripts/check_bundled_fonts.py"
 
 # 5c. Icon lint - every widget type needs a bundled, registered picker icon.
 #     The compiled-resource QML suite exercises resolution; this static check

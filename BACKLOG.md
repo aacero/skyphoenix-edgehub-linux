@@ -219,12 +219,31 @@ That is the product direction; this was the cheap half. See Candidates.
   fontconfig, but un-guardable in the default DejaVu-mono suite because the value
   pre-fits by char count - a guard there is inert either way (I wrote one, my
   negative control passed, I removed it). This is the CI font blind spot below.
-- **CI has a font blind spot for this class.** CI installs `fonts-dejavu-core`,
-  which INCLUDES DejaVu Sans Mono, so a `theme.fontMono`-fallback overflow (the
-  gauge bug above) does NOT reproduce in CI - only on a machine whose mono font is
-  absent or wider. A width-fit test that is honest across fonts would need to
-  either force a fallback or assert the structural cap directly rather than glyph
-  width. Worth a decision.
+- ~~**CI has a font blind spot for this class.**~~ - **LARGELY CLOSED, and this
+  entry was stale.** It described `theme.fontMono` resolving through fontconfig,
+  which stopped being true on 2026-08-02: `Theme.qml:175` now resolves it through
+  a **bundled** JetBrains Mono `FontLoader`, and the literal
+  `"JetBrains Mono, monospace"` is only reached if the resource is missing. So
+  the "machine whose mono font is absent" case the entry worried about no longer
+  reaches fontconfig at all, and `tst_theme.qml:791-798` already asserts
+  `monoLoader.status === Ready` and `fontMono === monoLoader.name`.
+  What was genuinely open, found 2026-08-04 while verifying the above: **nothing
+  checked that the shipped apps actually compile the fonts in.** The bundled-face
+  contract spans three files that nothing compared - `assets/fonts/*.ttf`,
+  `assets/fonts.qrc`, and Theme.qml's `FontLoader` sources - and the existing
+  guard runs inside `xeneon-qmltestrunner`, which carries its OWN `fonts.qrc`
+  line in `CMakeLists.txt`. Dropping the line from the Hub or Manager target
+  reintroduces the exact pre-bundling defect **with the entire suite still
+  green**: the guard passes because the HARNESS has the resource, not because the
+  PRODUCT does. Same family as the gates above - a check that verifies its own
+  environment rather than its subject.
+  Now gated by `scripts/check_bundled_fonts.py` (statically, no build), wired
+  into `run_all_tests.sh` and CI. Seven negative controls in the commit body.
+  **Residual, unchanged and still worth a decision:** a width-fit test is still
+  not honest across *arbitrary* faces - the bundled faces make CI and dev agree,
+  which is what the countdown-jitter bug needed, but a user forcing a different
+  family would still be unmeasured. That is now a much smaller hole than the
+  entry claimed.
 - **Wallpaper/theme name collision - it is FIVE names, not three.** Measured
   2026-07-17: the overlap between `Theme.qml`'s modes and `WallpaperCatalog.qml`'s
   items is **aurora, ember, midnight, nebula, sunset**. The W2 audit reported
