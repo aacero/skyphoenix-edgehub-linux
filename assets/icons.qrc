@@ -74,5 +74,6 @@
         <file alias="chart-line-up.svg">icons/chart-line-up.svg</file>
         <file alias="chart-line-down.svg">icons/chart-line-down.svg</file>
         <file alias="buildings.svg">icons/buildings.svg</file>
+        <file alias="systems.svg">icons/systems.svg</file>
     </qresource>
 </RCC>

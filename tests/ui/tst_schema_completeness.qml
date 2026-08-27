@@ -62,6 +62,12 @@ Item {
             verify(field("habit", "paused") !== null, "paused")
             verify(field("nownext", "bufferMin") !== null, "bufferMin")
             verify(field("rightnow", "completionStyle") !== null, "completionStyle")
+            verify(field("systems", "hosts") !== null, "hosts")
+            verify(field("systems", "defaultPort") !== null, "defaultPort")
+            verify(field("systems", "warnCpu") !== null, "warnCpu")
+            verify(field("systems", "warnRam") !== null, "warnRam")
+            verify(field("systems", "warnDisk") !== null, "warnDisk")
+            verify(field("systems", "pollSec") !== null, "pollSec")
         }
     }
 }
