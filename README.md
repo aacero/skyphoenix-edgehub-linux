@@ -92,11 +92,11 @@ The data-connected presets (Developer, Homelab Ops, Trading Desk, Analyst, Enter
 
 ---
 
-## 30 widgets
+## 31 widgets
 
 | Category | Widgets |
 |----------|---------|
-| **System** (8) | CPU load & temp, multi-GPU telemetry for AMD, Intel and NVIDIA where exposed by Linux DRM, Memory, Network throughput, Disk usage, combined Sensors, installed Packages, System Age |
+| **System** (9) | CPU load & temp, multi-GPU telemetry for AMD, Intel and NVIDIA where exposed by Linux DRM, Memory, Network throughput, Disk usage, combined Sensors, installed Packages, System Age, Systems ([Prometheus node_exporter fleet monitoring](docs/widgets/systems.md)) |
 | **Data** (2) | **HTTP / JSON** - poll any endpoint, pull a value out by path, show it as a number, gauge or list · **KPI** - one number that matters, from a URL *or a local file*, with colour-coded thresholds |
 | **Time** (3) | Clock (**real IANA time zones - daylight saving included**), Analog Clock, Moon Phase |
 | **Focus** (10) | Focus Timer (Pomodoro), Tasks, Right Now, Quick Note, Habit Streak, Hydration, Break Reminder, Meds, Braindump, Routine |
