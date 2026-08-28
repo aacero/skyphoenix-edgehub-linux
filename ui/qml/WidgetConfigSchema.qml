@@ -847,6 +847,43 @@ QtObject {
             titleSection("Systems"),
             about("Monitors live CPU, RAM, disk, load average, uptime and network throughput across your Kubuntu systems via prometheus-node-exporter.") ] }
 
+        case "grafana": return { sections: [
+            { title: "Query & Endpoint", cols: 1, fields: [
+                { key: "url", label: "Server URL", type: "text", placeholder: "http://localhost:9090 or http://localhost:3000", dflt: "http://localhost:9090",
+                  help: "Prometheus or Grafana endpoint URL (e.g. http://localhost:9090 for native Prometheus or http://localhost:3000 for Grafana proxy)." },
+                { key: "query", label: "PromQL query", type: "text", placeholder: "node_load1 · rate(node_network_receive_bytes_total[5m])", dflt: "node_load1",
+                  help: "PromQL expression to evaluate across the selected time range." },
+                { key: "authToken", label: "API token", type: "secret", placeholder: "(optional)", dflt: "",
+                  help: "Sent as “Authorization: Bearer …”. Leave blank if unauthenticated. Prefer ${env:GRAFANA_TOKEN} or file:/path/to/token." },
+                { type: "action", actionLabel: "Test query", action: "testConnection",
+                  help: "Evaluates the PromQL expression and validates endpoint connectivity and data points." } ] },
+            { title: "Time Window & Polling", cols: 2, fields: [
+                { key: "rangeSec", label: "Time range", type: "segmented", dflt: 3600, options: [
+                    { value: 300, label: "5m" },
+                    { value: 900, label: "15m" },
+                    { value: 3600, label: "1h" },
+                    { value: 21600, label: "6h" },
+                    { value: 86400, label: "24h" } ] },
+                { key: "pollSec", label: "Refresh every", type: "slider", min: 5, max: 300, step: 5, suffix: " s", dflt: 15 } ] },
+            { title: "Chart Presentation", cols: 1, fields: [
+                { key: "chartType", label: "Chart style", type: "segmented", dflt: "area", options: [
+                    { value: "area", label: "Filled Area" },
+                    { value: "line", label: "Line" } ] },
+                { key: "unit", label: "Unit label", type: "text", placeholder: "% · GB · MB/s · °C · req/s", dflt: "" },
+                { key: "unitScale", label: "Scale format", type: "segmented", dflt: "auto", options: [
+                    { value: "auto", label: "Auto (Bytes/Rates)" },
+                    { value: "fixed2", label: "2 Decimals" },
+                    { value: "percent", label: "Percent %" },
+                    { value: "raw", label: "Raw" } ] },
+                { key: "fillGlow", label: "Glowing area gradient", type: "toggle", dflt: true },
+                { key: "showMinMax", label: "Show Min / Avg / Max badges", type: "toggle", dflt: true } ] },
+            { title: "Thresholds (colour)", cols: 2,
+              desc: "Colour the graph and latest reading amber at “Warn” and red at “Critical”.", fields: [
+                { key: "warnAt", label: "Warn ≥", type: "text", placeholder: "80", dflt: "" },
+                { key: "critAt", label: "Critical ≥", type: "text", placeholder: "95", dflt: "" } ] },
+            titleSection("Grafana / Metrics"),
+            about("Real-time time-series telemetry charts querying Prometheus or Grafana endpoints directly with hardware-accelerated vector rendering and interactive touch scrubbing.") ] }
+
         default: return { sections: [ titleSection(type) ] }
         }
     }

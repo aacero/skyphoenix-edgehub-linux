@@ -68,6 +68,11 @@ Item {
             verify(field("systems", "warnRam") !== null, "warnRam")
             verify(field("systems", "warnDisk") !== null, "warnDisk")
             verify(field("systems", "pollSec") !== null, "pollSec")
+            verify(field("grafana", "url") !== null, "url")
+            verify(field("grafana", "query") !== null, "query")
+            verify(field("grafana", "rangeSec") !== null, "rangeSec")
+            verify(field("grafana", "pollSec") !== null, "pollSec")
+            verify(field("grafana", "chartType") !== null, "chartType")
         }
     }
 }

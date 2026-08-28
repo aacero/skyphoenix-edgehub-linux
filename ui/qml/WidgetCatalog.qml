@@ -143,6 +143,9 @@ QtObject {
         { type: "kpi",      title: "KPI",         category: "Data", source: "qrc:/qml/KpiWidget.qml",
           defaults: { source: "http", url: "", filePath: "", jsonPath: "", label: "", unit: "", pollSec: 60, authToken: "", invert: false, warnAt: "", critAt: "" },
           sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5", "1x2", "1x3"], dflt: "1x1" },
+        { type: "grafana",  title: "Grafana / Metrics", category: "Data", source: "qrc:/qml/GrafanaWidget.qml",
+          defaults: { url: "http://localhost:9090", query: "node_load1", rangeSec: 3600, pollSec: 15, chartType: "area", unit: "", unitScale: "auto", fillGlow: true, showMinMax: true, warnAt: "", critAt: "", authToken: "" },
+          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5", "1x2", "1x3"], dflt: "1x1" },
 
         // Info
         // An agenda grows with height, but maxEvents caps at 12 - enough for two

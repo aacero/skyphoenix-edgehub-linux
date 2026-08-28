@@ -75,5 +75,6 @@
         <file alias="qml/CountdownWidget.qml">qml/widgets/CountdownWidget.qml</file>
         <file alias="qml/EndOfDayWidget.qml">qml/widgets/EndOfDayWidget.qml</file>
         <file alias="qml/SystemsWidget.qml">qml/widgets/SystemsWidget.qml</file>
+        <file alias="qml/GrafanaWidget.qml">qml/widgets/GrafanaWidget.qml</file>
     </qresource>
 </RCC>

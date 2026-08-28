@@ -73,5 +73,6 @@
         <file alias="branding/sky-black.png">../assets/branding/sky-black.png</file>
         <file alias="branding/sky-color.png">../assets/branding/sky-color.png</file>
         <file alias="SystemsWidget.qml">../ui/qml/widgets/SystemsWidget.qml</file>
+        <file alias="GrafanaWidget.qml">../ui/qml/widgets/GrafanaWidget.qml</file>
     </qresource>
 </RCC>
