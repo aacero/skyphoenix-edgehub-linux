@@ -828,6 +828,25 @@ QtObject {
             titleSection("Daily Quote"),
             about("A fresh local quote each day. Every bundled entry carries its source and rights status; Shuffle picks another without network access.") ] }
 
+        case "systems": return { sections: [
+            { title: "Target systems", cols: 1, fields: [
+                { key: "hosts", label: "Hosts / IPs", type: "textarea", placeholder: "localhost:9100\n192.168.1.10:9100\n192.168.1.11:9100", dflt: "localhost:9100",
+                  help: "List of systems running prometheus-node-exporter, one per line or comma-separated. If the port is omitted, the default port below is used." },
+                { key: "defaultPort", label: "Default port", type: "number", min: 1, max: 65535, step: 1, dflt: 9100,
+                  help: "Port used when not specified in the host string (Prometheus node_exporter defaults to 9100)." },
+                { type: "action", actionLabel: "Test connection", action: "testConnection",
+                  help: "Polls each configured host once and reports reachability and status." } ] },
+            { title: "Thresholds (warn at %)", cols: 3,
+              desc: "Colour a system amber when CPU, RAM or disk usage exceeds these levels.", fields: [
+                { key: "warnCpu", label: "CPU ≥", type: "number", min: 1, max: 100, step: 5, dflt: 85 },
+                { key: "warnRam", label: "RAM ≥", type: "number", min: 1, max: 100, step: 5, dflt: 85 },
+                { key: "warnDisk", label: "Disk ≥", type: "number", min: 1, max: 100, step: 5, dflt: 90 } ] },
+            { title: "Polling", cols: 1, fields: [
+                { key: "pollSec", label: "Refresh every", type: "slider", min: 5, max: 300, step: 5, suffix: " s", dflt: 10,
+                  help: "How often to poll each machine's node_exporter metrics." } ] },
+            titleSection("Systems"),
+            about("Monitors live CPU, RAM, disk, load average, uptime and network throughput across your Kubuntu systems via prometheus-node-exporter.") ] }
+
         default: return { sections: [ titleSection(type) ] }
         }
     }

@@ -58,6 +58,9 @@ QtObject {
         { type: "sinceinstall", title: "System Age", category: "System", source: "qrc:/qml/SinceInstallWidget.qml",
           defaults: { ageUnit: "auto", showDate: true },
           sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1"], dflt: "1x1" },
+        { type: "systems",      title: "Systems",    category: "System", source: "qrc:/qml/SystemsWidget.qml",
+          defaults: { hosts: "localhost:9100", defaultPort: 9100, pollSec: 10, warnCpu: 85, warnRam: 85, warnDisk: 90 },
+          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5", "1x2", "1x3"], dflt: "1x1" },
 
         // Time / ambient
         { type: "clock",   title: "Clock",       category: "Time", source: "qrc:/qml/ClockWidget.qml",   defaults: {},
@@ -196,7 +199,8 @@ QtObject {
         "countdown": "Counts the days to a date you choose. Set a label and date below.",
         "eod": "How much of your workday is left. Adjust your start and end hours.",
         "media": "Now Playing - controls Spotify, YouTube Music, or any player on this machine.",
-        "quote": "A fresh bit of motivation each day."
+        "quote": "A fresh bit of motivation each day.",
+        "systems": "Live CPU, memory, disk, load, uptime and network throughput across your systems via Prometheus node_exporter."
     })
 
     // LOSS-001: content and progress that must survive a configuration reset.

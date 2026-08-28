@@ -19,7 +19,8 @@ Item {
         "TasksWidget.qml", "RightNowWidget.qml", "NotesWidget.qml",
         "MediaWidget.qml", "CalendarWidget.qml", "WeatherWidget.qml",
         "QuoteWidget.qml", "HabitWidget.qml", "HydrationWidget.qml",
-        "BreakWidget.qml", "CountdownWidget.qml", "EndOfDayWidget.qml"
+        "BreakWidget.qml", "CountdownWidget.qml", "EndOfDayWidget.qml",
+        "SystemsWidget.qml"
     ]
 
     // Metrics fixtures: nominal, all-zero, saturated, and missing keys.

@@ -14,6 +14,7 @@ Widgets are the building blocks of your dashboard. Each widget displays informat
 - **RAM Usage** - Memory utilization
 - **Disk Usage** - Storage space per mount point
 - **Network Throughput** - Upload/download speeds per interface
+- **Systems Monitor** - Multi-system health, CPU, memory, disk, uptime and network throughput via Prometheus node_exporter
 
 ### Productivity Widgets
 - **Focus Timer** - Countdown/up timer for focus sessions
