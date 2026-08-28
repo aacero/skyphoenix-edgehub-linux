@@ -1183,6 +1183,27 @@ Item {
             compare(bar.visible, true, "Manager can restore the bar live")
         }
 
+        function test_tile_double_tap_opens_expanded_view() {
+            var d = ld.item
+            var s = root.store()
+            var id = s.addTile(0, "clock")
+            var tapMA = null
+            tryVerify(function () {
+                tapMA = root.findPred(d, function (x) {
+                    return x && x.objectName === "tileTapArea-" + id
+                })
+                return tapMA !== null && tapMA.enabled
+            }, 3000, "the tile tap area is present and enabled")
+
+            compare(d.hasExpanded, false, "no widget expanded initially")
+            tapMA.doubleClicked(null)
+            tryCompare(d, "hasExpanded", true, 3000, "double tap opened the expanded detail view")
+            compare(d.expandedId, id, "expanded correct widget id")
+            compare(d.expandedType, "clock", "expanded correct widget type")
+            d.closeExpanded()
+            compare(d.hasExpanded, false, "expanded view closed")
+        }
+
         function test_applyAppearance_pushes_all_keys() {
             var d = ld.item
             var s = root.store()

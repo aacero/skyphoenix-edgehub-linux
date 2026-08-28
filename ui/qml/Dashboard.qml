@@ -1765,8 +1765,32 @@ Item {
                                 // sibling only so `scale: tapMA.pressed` stays valid.
                                 MouseArea {
                                     id: tapMA
+                                    objectName: "tileTapArea-" + cell.tileId
                                     anchors.fill: parent
-                                    enabled: false
+                                    z: 10
+                                    enabled: !dashboard.editMode && !dashboard.hasExpanded
+                                    propagateComposedEvents: true
+                                    onClicked: function(mouse) { mouse.accepted = false }
+                                    onDoubleClicked: function(mouse) {
+                                        dashboard.cfgStatus = ""
+                                        dashboard.expandedId = cell.tileId
+                                        dashboard.expandedType = cell.tileType
+                                    }
+                                }
+
+                                // Double-tap on touchscreen / pointer
+                                TapHandler {
+                                    id: tileDoubleTap
+                                    objectName: "tileDoubleTapHandler-" + cell.tileId
+                                    acceptedDevices: PointerDevice.AllPointerTypes
+                                    grabPermissions: PointerHandler.CanTakeOverFromItems | PointerHandler.Approvals
+                                    gesturePolicy: TapHandler.WithinBounds
+                                    enabled: !dashboard.editMode && !dashboard.hasExpanded
+                                    onDoubleTapped: {
+                                        dashboard.cfgStatus = ""
+                                        dashboard.expandedId = cell.tileId
+                                        dashboard.expandedType = cell.tileType
+                                    }
                                 }
 
                                 WidgetHost {

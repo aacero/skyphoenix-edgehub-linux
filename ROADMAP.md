@@ -53,6 +53,28 @@ localization. None has a committed delivery date.
 See [the historical beta/release gate](docs/BETA_PLAN.md), [distribution status](docs/DISTRIBUTION.md)
 and [the changelog](CHANGELOG.md).
 
+## Future Features Backlog & Candidates
+
+The following features have been proposed for post-1.0 development:
+
+### 1. Alert-Driven Reactive Screen Surfacing
+- Dynamically navigate or highlight a dashboard screen when a monitored node (via Systems widget) triggers a warning/critical threshold (CPU > 95%, disk space low, node unreachable), or when a countdown/calendar event requires urgent attention.
+
+### 2. Quick Actions & Wake-on-LAN (WoL) Tile
+- A dedicated touch control widget with one-tap action macros:
+  - Wake-on-LAN magic packet triggers for offline/sleeping lab nodes.
+  - Home automation webhook triggers.
+  - Quick command / restart triggers.
+
+### 3. DDC/CI Hardware Display Brightness & Sleep Scheduling
+- Hardware brightness control via `ddcutil` / DPMS for the Corsair Xeneon Edge display directly through touch controls or an automated sleep schedule (e.g. dimming late at night or upon workstation lock).
+
+### 4. Docker / Podman / systemd Service Health Monitor
+- Service status tile tracking critical daemon/container states (`active`, `failed`, `restarting`) across the fleet.
+
+### 5. Home Assistant / Local IoT Control Widget
+- Touchscreen control tile connecting directly to local Home Assistant instances for room temperatures, smart lighting, and energy monitoring.
+
 ---
 
-*EdgeHub is an independent product of SKYPhoenix IT and is not affiliated with Corsair.*
+*EdgeHub is an independent open-source project.*
