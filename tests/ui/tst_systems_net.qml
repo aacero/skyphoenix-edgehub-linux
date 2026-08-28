@@ -269,5 +269,51 @@ Item {
             compare(h.item.formatUptime(7200), "2h 0m")
             compare(h.item.formatUptime(90000), "1d 1h")
         }
+
+        // ── 9. Expanded Host Selection Tabs ──────────────────────────────────
+        function test_expanded_host_selection() {
+            var fakes = []
+            h.item.xhrFactory = function () {
+                var f = root.makeFake()
+                fakes.push(f)
+                return f
+            }
+            h.storeCtl.patchSettings(iid(), {
+                hosts: "aframe:9100\ndeerpark:9100\npalatka:9100\nlocalhost:9100",
+                defaultPort: 9100
+            })
+            h.item.refresh()
+            compare(fakes.length, 4)
+            for (var i = 0; i < 4; i++) {
+                fakes[i].resolveWith(200, root.sampleNodeExporterMetrics)
+            }
+
+            compare(h.item.displayNodes.length, 4)
+
+            // Select each host in turn and verify selNode
+            h.item.selectedIndex = 0
+            compare(h.item.selNode.label, "aframe:9100")
+            compare(h.item.selNode.url, "http://aframe:9100/metrics")
+
+            h.item.selectedIndex = 1
+            compare(h.item.selNode.label, "deerpark:9100")
+            compare(h.item.selNode.url, "http://deerpark:9100/metrics")
+
+            h.item.selectedIndex = 2
+            compare(h.item.selNode.label, "palatka:9100")
+            compare(h.item.selNode.url, "http://palatka:9100/metrics")
+
+            h.item.selectedIndex = 3
+            compare(h.item.selNode.label, "localhost:9100")
+            compare(h.item.selNode.url, "http://localhost:9100/metrics")
+        }
+
+        // ── 10. Wide Layout Deck ─────────────────────────────────────────────
+        function test_wide_layout_deck() {
+            h.width = 1200
+            h.height = 400
+            verify(h.item.width > 540, "Widget in wide layout mode")
+            verify(h.item.displayNodes.length > 0, "Display nodes available in deck")
+        }
     }
 }

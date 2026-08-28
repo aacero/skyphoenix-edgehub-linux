@@ -536,67 +536,263 @@ WidgetChrome {
                 anchors.fill: parent
                 spacing: theme.spacingSm
 
-                // Compact summary strip
+                // Top summary strip
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: theme.spacingSm
+                    spacing: theme.spacingMd
 
                     Rectangle {
-                        width: 8; height: 8; radius: 4
+                        width: 10; height: 10; radius: 5
                         color: w.statusColor(w.fleetStatus)
                     }
                     Text {
                         text: w.onlineCount + "/" + w.totalCount + " Systems Online"
-                        color: theme.textSecondary
-                        font.pixelSize: 12
+                        color: theme.textPrimary
+                        font.pixelSize: 14
                         font.family: theme.fontDisplay
-                        font.weight: Font.Medium
+                        font.weight: Font.Bold
                     }
-                    Item { Layout.fillWidth: true }
+
                     Text {
-                        text: "↓" + w.formatRate(w.totalNetRx) + " ↑" + w.formatRate(w.totalNetTx)
-                        color: theme.textTertiary
-                        font.pixelSize: 11
+                        visible: w.width > 500
+                        text: "·  Avg CPU " + w.avgCpu.toFixed(0) + "%  ·  Avg RAM " + w.avgRam.toFixed(0) + "%"
+                        color: theme.textSecondary
+                        font.pixelSize: 13
                         font.family: theme.fontMono
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    Text {
+                        text: "↓ " + w.formatRate(w.totalNetRx) + "  ↑ " + w.formatRate(w.totalNetTx)
+                        color: theme.textTertiary
+                        font.pixelSize: 13
+                        font.family: theme.fontMono
+                        font.weight: Font.DemiBold
                     }
                 }
 
-                // Systems List
+                // Wide Multi-Column Card Deck (when width > 540)
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: theme.spacingSm
+                    visible: w.width > 540
+
+                    Repeater {
+                        model: w.displayNodes
+                        delegate: Rectangle {
+                            id: nodeDeckCard
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            radius: theme.radiusMd
+                            color: theme.cardBackgroundAlt
+                            border.color: (w.selectedIndex === index) ? theme.accent : theme.cardBorder
+                            border.width: (w.selectedIndex === index) ? 2 : 1
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 6
+
+                                // Card Header: Status Dot, Host Label, Uptime
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+
+                                    Rectangle {
+                                        width: 10; height: 10; radius: 5
+                                        color: w.statusColor(modelData.status)
+                                    }
+                                    Text {
+                                        text: modelData.label || "System"
+                                        color: theme.textPrimary
+                                        font.pixelSize: 16
+                                        font.family: theme.fontDisplay
+                                        font.weight: Font.Bold
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                    }
+                                    Text {
+                                        text: modelData.status === "offline"
+                                              ? (modelData.error || "Offline")
+                                              : ("up " + modelData.uptimeStr)
+                                        color: modelData.status === "offline" ? theme.error : theme.textTertiary
+                                        font.pixelSize: 12
+                                        font.family: theme.fontMono
+                                    }
+                                }
+
+                                // Metrics for Online Node
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    spacing: 5
+                                    visible: modelData.status !== "offline"
+
+                                    // CPU Block
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            Text {
+                                                text: "CPU"
+                                                color: theme.textTertiary
+                                                font.pixelSize: 12
+                                                font.family: theme.fontMono
+                                            }
+                                            Item { Layout.fillWidth: true }
+                                            Text {
+                                                text: Math.round(modelData.cpuPercent || 0) + "%"
+                                                color: (modelData.cpuPercent >= w.warnCpu) ? theme.warning : theme.textPrimary
+                                                font.pixelSize: 15
+                                                font.family: theme.fontDisplay
+                                                font.weight: Font.Bold
+                                            }
+                                        }
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            height: 6; radius: 3
+                                            color: theme.cardBorder
+                                            Rectangle {
+                                                width: parent.width * (Math.min(100, Math.max(0, modelData.cpuPercent || 0)) / 100)
+                                                height: parent.height; radius: 3
+                                                color: modelData.cpuPercent >= w.warnCpu ? theme.warning : theme.catSystem
+                                            }
+                                        }
+                                        Text {
+                                            visible: nodeDeckCard.height > 160
+                                            text: (modelData.cpuCores || 1) + " cores · Load " + Number(modelData.load1 || 0).toFixed(2)
+                                            color: theme.textTertiary
+                                            font.pixelSize: 11
+                                            font.family: theme.fontMono
+                                        }
+                                    }
+
+                                    // RAM Block
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            Text {
+                                                text: "RAM"
+                                                color: theme.textTertiary
+                                                font.pixelSize: 12
+                                                font.family: theme.fontMono
+                                            }
+                                            Item { Layout.fillWidth: true }
+                                            Text {
+                                                text: Math.round(modelData.ramPercent || 0) + "%"
+                                                color: (modelData.ramPercent >= w.warnRam) ? theme.warning : theme.textPrimary
+                                                font.pixelSize: 15
+                                                font.family: theme.fontDisplay
+                                                font.weight: Font.Bold
+                                            }
+                                        }
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            height: 6; radius: 3
+                                            color: theme.cardBorder
+                                            Rectangle {
+                                                width: parent.width * (Math.min(100, Math.max(0, modelData.ramPercent || 0)) / 100)
+                                                height: parent.height; radius: 3
+                                                color: modelData.ramPercent >= w.warnRam ? theme.warning : theme.accent2
+                                            }
+                                        }
+                                        Text {
+                                            visible: nodeDeckCard.height > 160
+                                            text: w.formatBytes(modelData.ramUsedBytes) + " / " + w.formatBytes(modelData.ramTotalBytes)
+                                            color: theme.textTertiary
+                                            font.pixelSize: 11
+                                            font.family: theme.fontMono
+                                        }
+                                    }
+
+                                    // Disk & Network Row
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+                                        visible: nodeDeckCard.height > 130
+                                        Text {
+                                            text: "Disk " + Math.round(modelData.diskPercent || 0) + "%"
+                                            color: (modelData.diskPercent >= w.warnDisk) ? theme.warning : theme.textTertiary
+                                            font.pixelSize: 12
+                                            font.family: theme.fontMono
+                                        }
+                                        Item { Layout.fillWidth: true }
+                                        Text {
+                                            text: "↓" + w.formatRate(modelData.netRxRate) + " ↑" + w.formatRate(modelData.netTxRate)
+                                            color: theme.textSecondary
+                                            font.pixelSize: 12
+                                            font.family: theme.fontMono
+                                            font.weight: Font.DemiBold
+                                        }
+                                    }
+                                }
+
+                                // Offline state placeholder inside card
+                                Item {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    visible: modelData.status === "offline"
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: modelData.error || "Host Unreachable"
+                                        color: theme.error
+                                        font.pixelSize: 13
+                                        font.family: theme.fontMono
+                                    }
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: w.selectedIndex = index
+                            }
+                        }
+                    }
+                }
+
+                // Narrow / Vertical List Mode (when width <= 540)
                 ListView {
                     id: tileListView
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
                     spacing: 6
+                    visible: w.width <= 540
                     model: w.displayNodes
                     delegate: Rectangle {
                         width: tileListView.width
-                        height: w.tallish ? 58 : 46
+                        height: w.tallish ? 64 : 52
                         radius: theme.radiusSm
                         color: theme.cardBackgroundAlt
-                        border.color: theme.cardBorder
+                        border.color: (w.selectedIndex === index) ? theme.accent : theme.cardBorder
                         border.width: 1
 
                         ColumnLayout {
                             anchors.fill: parent
-                            anchors.margins: 6
-                            spacing: 2
+                            anchors.margins: 8
+                            spacing: 3
 
                             // Top line: Status dot, Label, Uptime / Error
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: 6
+                                spacing: 8
 
                                 Rectangle {
-                                    width: 8; height: 8; radius: 4
+                                    width: 9; height: 9; radius: 4.5
                                     color: w.statusColor(modelData.status)
                                 }
                                 Text {
                                     text: modelData.label || "System"
                                     color: theme.textPrimary
-                                    font.pixelSize: 13
+                                    font.pixelSize: 15
                                     font.family: theme.fontDisplay
-                                    font.weight: Font.DemiBold
+                                    font.weight: Font.Bold
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true
                                 }
@@ -605,7 +801,7 @@ WidgetChrome {
                                           ? (modelData.error || "Offline")
                                           : ("up " + modelData.uptimeStr)
                                     color: modelData.status === "offline" ? theme.error : theme.textTertiary
-                                    font.pixelSize: 11
+                                    font.pixelSize: 12
                                     font.family: theme.fontMono
                                 }
                             }
@@ -613,7 +809,7 @@ WidgetChrome {
                             // Bottom line: Mini meters for CPU, RAM, Disk
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: 8
+                                spacing: 10
                                 visible: modelData.status !== "offline"
 
                                 // CPU Bar
@@ -623,23 +819,23 @@ WidgetChrome {
                                     Text {
                                         text: "C"
                                         color: theme.textTertiary
-                                        font.pixelSize: 10
+                                        font.pixelSize: 11
                                         font.family: theme.fontMono
                                     }
                                     Rectangle {
                                         Layout.fillWidth: true
-                                        height: 5; radius: 2.5
+                                        height: 6; radius: 3
                                         color: theme.cardBorder
                                         Rectangle {
                                             width: parent.width * (Math.min(100, Math.max(0, modelData.cpuPercent || 0)) / 100)
-                                            height: parent.height; radius: 2.5
+                                            height: parent.height; radius: 3
                                             color: modelData.cpuPercent >= w.warnCpu ? theme.warning : theme.catSystem
                                         }
                                     }
                                     Text {
                                         text: Math.round(modelData.cpuPercent || 0) + "%"
                                         color: theme.textSecondary
-                                        font.pixelSize: 10
+                                        font.pixelSize: 12
                                         font.family: theme.fontMono
                                     }
                                 }
@@ -651,36 +847,42 @@ WidgetChrome {
                                     Text {
                                         text: "M"
                                         color: theme.textTertiary
-                                        font.pixelSize: 10
+                                        font.pixelSize: 11
                                         font.family: theme.fontMono
                                     }
                                     Rectangle {
                                         Layout.fillWidth: true
-                                        height: 5; radius: 2.5
+                                        height: 6; radius: 3
                                         color: theme.cardBorder
                                         Rectangle {
                                             width: parent.width * (Math.min(100, Math.max(0, modelData.ramPercent || 0)) / 100)
-                                            height: parent.height; radius: 2.5
+                                            height: parent.height; radius: 3
                                             color: modelData.ramPercent >= w.warnRam ? theme.warning : theme.accent2
                                         }
                                     }
                                     Text {
                                         text: Math.round(modelData.ramPercent || 0) + "%"
                                         color: theme.textSecondary
-                                        font.pixelSize: 10
+                                        font.pixelSize: 12
                                         font.family: theme.fontMono
                                     }
                                 }
 
                                 // Net rate
                                 Text {
-                                    text: w.formatRate(modelData.netRxRate)
+                                    text: "↓" + w.formatRate(modelData.netRxRate)
                                     color: theme.textTertiary
-                                    font.pixelSize: 10
+                                    font.pixelSize: 11
                                     font.family: theme.fontMono
-                                    visible: w.width > 280
+                                    visible: w.width > 300
                                 }
                             }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: w.selectedIndex = index
                         }
                     }
                 }
@@ -724,14 +926,15 @@ WidgetChrome {
                                 Text {
                                     text: w.onlineCount + " / " + w.totalCount + " ONLINE"
                                     color: theme.textPrimary
-                                    font.pixelSize: 16
+                                    font.pixelSize: 17
                                     font.family: theme.fontDisplay
                                     font.weight: Font.Bold
                                 }
                                 Text {
-                                    text: w.offlineCount > 0 ? (w.offlineCount + " unreachable") : "All healthy"
+                                    text: w.offlineCount > 0 ? (w.offlineCount + " unreachable") : "All systems healthy"
                                     color: w.offlineCount > 0 ? theme.error : theme.textTertiary
-                                    font.pixelSize: 12
+                                    font.pixelSize: 13
+                                    font.family: theme.fontDisplay
                                 }
                             }
                         }
@@ -744,13 +947,13 @@ WidgetChrome {
                             Text {
                                 text: "FLEET AVG CPU"
                                 color: theme.textTertiary
-                                font.pixelSize: 10
+                                font.pixelSize: 11
                                 font.family: theme.fontMono
                             }
                             Text {
                                 text: w.avgCpu.toFixed(1) + "%"
                                 color: w.avgCpu >= w.warnCpu ? theme.warning : theme.textPrimary
-                                font.pixelSize: 18
+                                font.pixelSize: 20
                                 font.family: theme.fontDisplay
                                 font.weight: Font.Bold
                             }
@@ -762,13 +965,13 @@ WidgetChrome {
                             Text {
                                 text: "FLEET AVG RAM"
                                 color: theme.textTertiary
-                                font.pixelSize: 10
+                                font.pixelSize: 11
                                 font.family: theme.fontMono
                             }
                             Text {
                                 text: w.avgRam.toFixed(1) + "%"
                                 color: w.avgRam >= w.warnRam ? theme.warning : theme.textPrimary
-                                font.pixelSize: 18
+                                font.pixelSize: 20
                                 font.family: theme.fontDisplay
                                 font.weight: Font.Bold
                             }
@@ -780,13 +983,13 @@ WidgetChrome {
                             Text {
                                 text: "FLEET BANDWIDTH"
                                 color: theme.textTertiary
-                                font.pixelSize: 10
+                                font.pixelSize: 11
                                 font.family: theme.fontMono
                             }
                             Text {
-                                text: "↓ " + w.formatRate(w.totalNetRx) + "  ↑ " + w.formatRate(w.totalNetTx)
+                                text: "↓ " + w.formatRate(w.totalNetRx) + "   ↑ " + w.formatRate(w.totalNetTx)
                                 color: theme.textPrimary
-                                font.pixelSize: 14
+                                font.pixelSize: 16
                                 font.family: theme.fontMono
                                 font.weight: Font.Bold
                             }
@@ -797,51 +1000,58 @@ WidgetChrome {
                 // 2. Node Selector Tabs
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: theme.spacingSm
+                    spacing: theme.spacingMd
 
                     Text {
                         text: "SELECT SYSTEM:"
                         color: theme.textTertiary
-                        font.pixelSize: 11
+                        font.pixelSize: 12
                         font.family: theme.fontMono
+                        font.weight: Font.Bold
                     }
 
                     ListView {
                         id: nodeTabsList
                         Layout.fillWidth: true
-                        height: 36
+                        height: 44
                         orientation: ListView.Horizontal
-                        spacing: 8
+                        spacing: 10
                         clip: true
                         model: w.displayNodes
                         delegate: Rectangle {
-                            height: 34
-                            width: tabRow.implicitWidth + 24
-                            radius: 17
+                            id: tabDelegateRect
+                            height: 40
+                            width: tabRowInner.implicitWidth + 32
+                            radius: 20
                             color: w.selectedIndex === index ? theme.accent : theme.cardBackgroundAlt
                             border.color: w.selectedIndex === index ? theme.accent : theme.cardBorder
                             border.width: 1
 
-                            RowLayout {
-                                id: tabRow
+                            Row {
+                                id: tabRowInner
                                 anchors.centerIn: parent
-                                spacing: 6
+                                spacing: 8
                                 Rectangle {
-                                    width: 8; height: 8; radius: 4
-                                    color: w.selectedIndex === index ? "#FFFFFF" : w.statusColor(modelData.status)
+                                    width: 10; height: 10; radius: 5
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    color: w.selectedIndex === index ? "#0D1117" : w.statusColor(modelData.status)
                                 }
                                 Text {
                                     text: modelData.label || "System"
+                                    anchors.verticalCenter: parent.verticalCenter
                                     color: w.selectedIndex === index ? "#0D1117" : theme.textPrimary
-                                    font.pixelSize: 12
+                                    font.pixelSize: 15
                                     font.family: theme.fontDisplay
-                                    font.weight: Font.DemiBold
+                                    font.weight: Font.Bold
                                 }
                             }
 
                             MouseArea {
                                 anchors.fill: parent
-                                onClicked: w.selectedIndex = index
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    w.selectedIndex = index
+                                }
                             }
                         }
                     }
@@ -853,10 +1063,12 @@ WidgetChrome {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
 
+                    readonly property var selNode: w.selNode
+
                     ColumnLayout {
                         anchors.fill: parent
                         spacing: theme.spacingMd
-                        visible: w.selNode !== null
+                        visible: deepDivePanel.selNode !== null
 
                         // 4 Primary Metric Cards
                         RowLayout {
@@ -866,7 +1078,7 @@ WidgetChrome {
                             // CPU Gauge Card
                             Rectangle {
                                 Layout.fillWidth: true
-                                height: 130
+                                height: 135
                                 radius: theme.radiusMd
                                 color: theme.cardBackgroundAlt
                                 border.color: theme.cardBorder
@@ -874,28 +1086,28 @@ WidgetChrome {
 
                                 ColumnLayout {
                                     anchors.fill: parent
-                                    anchors.margins: 12
+                                    anchors.margins: 14
                                     spacing: 4
 
                                     Text {
                                         text: "PROCESSOR"
                                         color: theme.textTertiary
-                                        font.pixelSize: 11
+                                        font.pixelSize: 12
                                         font.family: theme.fontMono
                                     }
                                     Text {
-                                        text: Math.round(selNode ? selNode.cpuPercent : 0) + "%"
-                                        color: (selNode && selNode.cpuPercent >= w.warnCpu) ? theme.warning : theme.textPrimary
-                                        font.pixelSize: 28
+                                        text: Math.round(deepDivePanel.selNode ? deepDivePanel.selNode.cpuPercent : 0) + "%"
+                                        color: (deepDivePanel.selNode && deepDivePanel.selNode.cpuPercent >= w.warnCpu) ? theme.warning : theme.textPrimary
+                                        font.pixelSize: 32
                                         font.family: theme.fontDisplay
                                         font.weight: Font.Bold
                                     }
                                     Text {
-                                        text: (selNode ? selNode.cpuCores : 1) + " cores · Load: "
-                                              + (selNode ? Number(selNode.load1 || 0).toFixed(2) : "0.00") + ", "
-                                              + (selNode ? Number(selNode.load5 || 0).toFixed(2) : "0.00")
+                                        text: (deepDivePanel.selNode ? deepDivePanel.selNode.cpuCores : 1) + " cores · Load: "
+                                              + (deepDivePanel.selNode ? Number(deepDivePanel.selNode.load1 || 0).toFixed(2) : "0.00") + ", "
+                                              + (deepDivePanel.selNode ? Number(deepDivePanel.selNode.load5 || 0).toFixed(2) : "0.00")
                                         color: theme.textSecondary
-                                        font.pixelSize: 11
+                                        font.pixelSize: 13
                                         font.family: theme.fontMono
                                     }
                                 }
@@ -904,7 +1116,7 @@ WidgetChrome {
                             // Memory Gauge Card
                             Rectangle {
                                 Layout.fillWidth: true
-                                height: 130
+                                height: 135
                                 radius: theme.radiusMd
                                 color: theme.cardBackgroundAlt
                                 border.color: theme.cardBorder
@@ -912,27 +1124,27 @@ WidgetChrome {
 
                                 ColumnLayout {
                                     anchors.fill: parent
-                                    anchors.margins: 12
+                                    anchors.margins: 14
                                     spacing: 4
 
                                     Text {
                                         text: "MEMORY (RAM)"
                                         color: theme.textTertiary
-                                        font.pixelSize: 11
+                                        font.pixelSize: 12
                                         font.family: theme.fontMono
                                     }
                                     Text {
-                                        text: Math.round(selNode ? selNode.ramPercent : 0) + "%"
-                                        color: (selNode && selNode.ramPercent >= w.warnRam) ? theme.warning : theme.textPrimary
-                                        font.pixelSize: 28
+                                        text: Math.round(deepDivePanel.selNode ? deepDivePanel.selNode.ramPercent : 0) + "%"
+                                        color: (deepDivePanel.selNode && deepDivePanel.selNode.ramPercent >= w.warnRam) ? theme.warning : theme.textPrimary
+                                        font.pixelSize: 32
                                         font.family: theme.fontDisplay
                                         font.weight: Font.Bold
                                     }
                                     Text {
-                                        text: w.formatBytes(selNode ? selNode.ramUsedBytes : 0) + " / "
-                                              + w.formatBytes(selNode ? selNode.ramTotalBytes : 0)
+                                        text: w.formatBytes(deepDivePanel.selNode ? deepDivePanel.selNode.ramUsedBytes : 0) + " / "
+                                              + w.formatBytes(deepDivePanel.selNode ? deepDivePanel.selNode.ramTotalBytes : 0)
                                         color: theme.textSecondary
-                                        font.pixelSize: 11
+                                        font.pixelSize: 13
                                         font.family: theme.fontMono
                                     }
                                 }
@@ -941,7 +1153,7 @@ WidgetChrome {
                             // Disk Gauge Card
                             Rectangle {
                                 Layout.fillWidth: true
-                                height: 130
+                                height: 135
                                 radius: theme.radiusMd
                                 color: theme.cardBackgroundAlt
                                 border.color: theme.cardBorder
@@ -949,27 +1161,27 @@ WidgetChrome {
 
                                 ColumnLayout {
                                     anchors.fill: parent
-                                    anchors.margins: 12
+                                    anchors.margins: 14
                                     spacing: 4
 
                                     Text {
                                         text: "STORAGE (/)"
                                         color: theme.textTertiary
-                                        font.pixelSize: 11
+                                        font.pixelSize: 12
                                         font.family: theme.fontMono
                                     }
                                     Text {
-                                        text: Math.round(selNode ? selNode.diskPercent : 0) + "%"
-                                        color: (selNode && selNode.diskPercent >= w.warnDisk) ? theme.warning : theme.textPrimary
-                                        font.pixelSize: 28
+                                        text: Math.round(deepDivePanel.selNode ? deepDivePanel.selNode.diskPercent : 0) + "%"
+                                        color: (deepDivePanel.selNode && deepDivePanel.selNode.diskPercent >= w.warnDisk) ? theme.warning : theme.textPrimary
+                                        font.pixelSize: 32
                                         font.family: theme.fontDisplay
                                         font.weight: Font.Bold
                                     }
                                     Text {
-                                        text: w.formatBytes(selNode ? selNode.diskUsedBytes : 0) + " / "
-                                              + w.formatBytes(selNode ? selNode.diskTotalBytes : 0)
+                                        text: w.formatBytes(deepDivePanel.selNode ? deepDivePanel.selNode.diskUsedBytes : 0) + " / "
+                                              + w.formatBytes(deepDivePanel.selNode ? deepDivePanel.selNode.diskTotalBytes : 0)
                                         color: theme.textSecondary
-                                        font.pixelSize: 11
+                                        font.pixelSize: 13
                                         font.family: theme.fontMono
                                     }
                                 }
@@ -978,7 +1190,7 @@ WidgetChrome {
                             // Network Bandwidth Card
                             Rectangle {
                                 Layout.fillWidth: true
-                                height: 130
+                                height: 135
                                 radius: theme.radiusMd
                                 color: theme.cardBackgroundAlt
                                 border.color: theme.cardBorder
@@ -986,26 +1198,26 @@ WidgetChrome {
 
                                 ColumnLayout {
                                     anchors.fill: parent
-                                    anchors.margins: 12
+                                    anchors.margins: 14
                                     spacing: 4
 
                                     Text {
                                         text: "NETWORK BANDWIDTH"
                                         color: theme.textTertiary
-                                        font.pixelSize: 11
+                                        font.pixelSize: 12
                                         font.family: theme.fontMono
                                     }
                                     Text {
-                                        text: "↓ " + w.formatRate(selNode ? selNode.netRxRate : 0)
+                                        text: "↓ " + w.formatRate(deepDivePanel.selNode ? deepDivePanel.selNode.netRxRate : 0)
                                         color: theme.textPrimary
-                                        font.pixelSize: 20
+                                        font.pixelSize: 22
                                         font.family: theme.fontMono
                                         font.weight: Font.Bold
                                     }
                                     Text {
-                                        text: "↑ " + w.formatRate(selNode ? selNode.netTxRate : 0)
+                                        text: "↑ " + w.formatRate(deepDivePanel.selNode ? deepDivePanel.selNode.netTxRate : 0)
                                         color: theme.textSecondary
-                                        font.pixelSize: 14
+                                        font.pixelSize: 15
                                         font.family: theme.fontMono
                                     }
                                 }
@@ -1024,40 +1236,55 @@ WidgetChrome {
                             ColumnLayout {
                                 anchors.fill: parent
                                 anchors.margins: theme.spacingMd
-                                spacing: 8
+                                spacing: 10
 
                                 Text {
                                     text: "SYSTEM DETAILS & TELEMETRY"
                                     color: theme.textTertiary
-                                    font.pixelSize: 11
+                                    font.pixelSize: 12
                                     font.family: theme.fontMono
+                                    font.weight: Font.Bold
                                 }
 
                                 GridLayout {
                                     Layout.fillWidth: true
                                     columns: 2
-                                    rowSpacing: 8
-                                    columnSpacing: 24
+                                    rowSpacing: 10
+                                    columnSpacing: 28
 
-                                    Text { text: "Endpoint URL:"; color: theme.textTertiary; font.pixelSize: 13 }
-                                    Text { text: selNode ? selNode.url : ""; color: theme.textPrimary; font.pixelSize: 13; font.family: theme.fontMono }
-
-                                    Text { text: "System Uptime:"; color: theme.textTertiary; font.pixelSize: 13 }
-                                    Text { text: selNode ? selNode.uptimeStr : "-"; color: theme.textPrimary; font.pixelSize: 13; font.family: theme.fontMono }
-
-                                    Text { text: "Load Averages (1m, 5m, 15m):"; color: theme.textTertiary; font.pixelSize: 13 }
+                                    Text { text: "Endpoint URL:"; color: theme.textTertiary; font.pixelSize: 14 }
                                     Text {
-                                        text: selNode ? (Number(selNode.load1 || 0).toFixed(2) + "  "
-                                                         + Number(selNode.load5 || 0).toFixed(2) + "  "
-                                                         + Number(selNode.load15 || 0).toFixed(2)) : "-"
-                                        color: theme.textPrimary; font.pixelSize: 13; font.family: theme.fontMono
+                                        text: deepDivePanel.selNode ? deepDivePanel.selNode.url : ""
+                                        color: theme.textPrimary
+                                        font.pixelSize: 14
+                                        font.family: theme.fontMono
                                     }
 
-                                    Text { text: "Connection Status:"; color: theme.textTertiary; font.pixelSize: 13 }
+                                    Text { text: "System Uptime:"; color: theme.textTertiary; font.pixelSize: 14 }
                                     Text {
-                                        text: selNode ? (selNode.status.toUpperCase() + (selNode.error ? " (" + selNode.error + ")" : "")) : "-"
-                                        color: selNode ? w.statusColor(selNode.status) : theme.textPrimary
-                                        font.pixelSize: 13; font.family: theme.fontDisplay; font.weight: Font.Bold
+                                        text: deepDivePanel.selNode ? deepDivePanel.selNode.uptimeStr : "-"
+                                        color: theme.textPrimary
+                                        font.pixelSize: 14
+                                        font.family: theme.fontMono
+                                    }
+
+                                    Text { text: "Load Averages (1m, 5m, 15m):"; color: theme.textTertiary; font.pixelSize: 14 }
+                                    Text {
+                                        text: deepDivePanel.selNode ? (Number(deepDivePanel.selNode.load1 || 0).toFixed(2) + "   "
+                                                         + Number(deepDivePanel.selNode.load5 || 0).toFixed(2) + "   "
+                                                         + Number(deepDivePanel.selNode.load15 || 0).toFixed(2)) : "-"
+                                        color: theme.textPrimary
+                                        font.pixelSize: 14
+                                        font.family: theme.fontMono
+                                    }
+
+                                    Text { text: "Connection Status:"; color: theme.textTertiary; font.pixelSize: 14 }
+                                    Text {
+                                        text: deepDivePanel.selNode ? (deepDivePanel.selNode.status.toUpperCase() + (deepDivePanel.selNode.error ? " (" + deepDivePanel.selNode.error + ")" : "")) : "-"
+                                        color: deepDivePanel.selNode ? w.statusColor(deepDivePanel.selNode.status) : theme.textPrimary
+                                        font.pixelSize: 14
+                                        font.family: theme.fontDisplay
+                                        font.weight: Font.Bold
                                     }
                                 }
 
@@ -1086,7 +1313,7 @@ WidgetChrome {
                                         Layout.fillWidth: true
                                         text: w.connectionStatus
                                         color: theme.textSecondary
-                                        font.pixelSize: 12
+                                        font.pixelSize: 13
                                         elide: Text.ElideRight
                                     }
                                 }
