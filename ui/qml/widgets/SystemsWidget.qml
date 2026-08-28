@@ -61,18 +61,18 @@ WidgetChrome {
     function normalizeUrl(target, dfltPort) {
         var item = String(target || "").trim()
         if (!item.length) return { label: "", url: "" }
+        var port = dfltPort || 9100
         var url = item
-        var label = item
         if (!/^https?:\/\//i.test(url)) {
             if (url.indexOf(":") === -1) {
-                url = "http://" + url + ":" + (dfltPort || 9100) + "/metrics"
+                url = "http://" + url + ":" + port + "/metrics"
             } else {
                 url = "http://" + url + "/metrics"
             }
         } else if (!/\/metrics$/i.test(url)) {
             url = url.replace(/\/+$/, "") + "/metrics"
         }
-        label = label.replace(/^https?:\/\//i, "").replace(/\/metrics$/i, "").replace(/\/+$/, "")
+        var label = url.replace(/^https?:\/\//i, "").replace(/\/metrics$/i, "").replace(/\/+$/, "")
         return { label: label, url: url }
     }
 
@@ -102,8 +102,11 @@ WidgetChrome {
 
     // Ephemeral store integration
     readonly property var storedNodes: (cfg.sysNodes && Array.isArray(cfg.sysNodes)) ? cfg.sysNodes : []
-    readonly property var displayNodes: localNodes.length > 0 ? localNodes
-                                       : (storedNodes.length > 0 ? storedNodes : initPlaceholderNodes())
+    readonly property var displayNodes: (localNodes && localNodes.length > 0) ? localNodes
+                                       : ((storedNodes && storedNodes.length > 0) ? storedNodes : initPlaceholderNodes())
+    readonly property var selNode: (displayNodes && selectedIndex >= 0 && selectedIndex < displayNodes.length)
+                                   ? displayNodes[selectedIndex]
+                                   : ((displayNodes && displayNodes.length > 0) ? displayNodes[0] : null)
 
     function initPlaceholderNodes() {
         var res = []
@@ -304,8 +307,9 @@ WidgetChrome {
 
         // Clone current state as base
         var stateMap = ({})
-        for (var i = 0; i < w.displayNodes.length; i++) {
-            var n = w.displayNodes[i]
+        var currentNodes = w.displayNodes || []
+        for (var i = 0; i < currentNodes.length; i++) {
+            var n = currentNodes[i]
             if (n && n.url) stateMap[n.url] = n
         }
 
@@ -845,17 +849,14 @@ WidgetChrome {
 
                 // 3. Selected Node Deep-Dive Panel
                 Item {
+                    id: deepDivePanel
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-
-                    readonly property var selNode: (w.selectedIndex >= 0 && w.selectedIndex < w.displayNodes.length)
-                                                   ? w.displayNodes[w.selectedIndex]
-                                                   : (w.displayNodes.length > 0 ? w.displayNodes[0] : null)
 
                     ColumnLayout {
                         anchors.fill: parent
                         spacing: theme.spacingMd
-                        visible: parent.selNode !== null
+                        visible: w.selNode !== null
 
                         // 4 Primary Metric Cards
                         RowLayout {
@@ -1068,15 +1069,16 @@ WidgetChrome {
                                     spacing: theme.spacingMd
 
                                     PillButton {
-                                        text: w.testingConnection ? "Testing..." : "Test Connection"
-                                        iconName: "ui-refresh"
+                                        label: w.testingConnection ? "Testing..." : "Test Connection"
+                                        glyphIcon: "ui-refresh"
                                         onClicked: w.testConnection()
                                     }
 
                                     PillButton {
-                                        text: "Refresh All Now"
-                                        iconName: "ui-refresh"
-                                        accent: true
+                                        label: "Refresh All Now"
+                                        glyphIcon: "ui-refresh"
+                                        primary: true
+                                        tint: theme.accent
                                         onClicked: w.refresh()
                                     }
 

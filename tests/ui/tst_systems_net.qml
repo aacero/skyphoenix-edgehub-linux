@@ -182,10 +182,10 @@ Item {
 
         // ── 4. Threshold Status Transitions ──────────────────────────────────
         function test_threshold_statuses() {
-            compare(h.item.statusColor("online"), h.item.theme.success)
-            compare(h.item.statusColor("warning"), h.item.theme.warning)
-            compare(h.item.statusColor("critical"), h.item.theme.error)
-            compare(h.item.statusColor("offline"), h.item.theme.textTertiary)
+            compare(h.item.statusColor("online"), h.theme.success)
+            compare(h.item.statusColor("warning"), h.theme.warning)
+            compare(h.item.statusColor("critical"), h.theme.error)
+            compare(h.item.statusColor("offline"), h.theme.textTertiary)
         }
 
         // ── 5. Multi-Host Fleet Aggregation ──────────────────────────────────
