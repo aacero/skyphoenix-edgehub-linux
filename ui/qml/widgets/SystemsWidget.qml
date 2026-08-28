@@ -542,33 +542,33 @@ WidgetChrome {
                     spacing: theme.spacingMd
 
                     Rectangle {
-                        width: 10; height: 10; radius: 5
+                        width: 12; height: 12; radius: 6
                         color: w.statusColor(w.fleetStatus)
                     }
                     Text {
                         text: w.onlineCount + "/" + w.totalCount + " Systems Online"
                         color: theme.textPrimary
-                        font.pixelSize: 14
+                        font.pixelSize: 15
                         font.family: theme.fontDisplay
                         font.weight: Font.Bold
                     }
 
                     Text {
                         visible: w.width > 500
-                        text: "·  Avg CPU " + w.avgCpu.toFixed(0) + "%  ·  Avg RAM " + w.avgRam.toFixed(0) + "%"
+                        text: "·   Avg CPU " + w.avgCpu.toFixed(0) + "%   ·   Avg RAM " + w.avgRam.toFixed(0) + "%"
                         color: theme.textSecondary
-                        font.pixelSize: 13
+                        font.pixelSize: 14
                         font.family: theme.fontMono
                     }
 
                     Item { Layout.fillWidth: true }
 
                     Text {
-                        text: "↓ " + w.formatRate(w.totalNetRx) + "  ↑ " + w.formatRate(w.totalNetTx)
+                        text: "↓ " + w.formatRate(w.totalNetRx) + "   ↑ " + w.formatRate(w.totalNetTx)
                         color: theme.textTertiary
-                        font.pixelSize: 13
+                        font.pixelSize: 14
                         font.family: theme.fontMono
-                        font.weight: Font.DemiBold
+                        font.weight: Font.Bold
                     }
                 }
 
@@ -592,8 +592,8 @@ WidgetChrome {
 
                             ColumnLayout {
                                 anchors.fill: parent
-                                anchors.margins: 10
-                                spacing: 6
+                                anchors.margins: nodeDeckCard.height > 300 ? 16 : 10
+                                spacing: nodeDeckCard.height > 300 ? 12 : 6
 
                                 // Card Header: Status Dot, Host Label, Uptime
                                 RowLayout {
@@ -601,13 +601,14 @@ WidgetChrome {
                                     spacing: 8
 
                                     Rectangle {
-                                        width: 10; height: 10; radius: 5
+                                        width: nodeDeckCard.height > 300 ? 12 : 10
+                                        height: width; radius: width / 2
                                         color: w.statusColor(modelData.status)
                                     }
                                     Text {
                                         text: modelData.label || "System"
                                         color: theme.textPrimary
-                                        font.pixelSize: 16
+                                        font.pixelSize: nodeDeckCard.height > 300 ? 22 : 17
                                         font.family: theme.fontDisplay
                                         font.weight: Font.Bold
                                         elide: Text.ElideRight
@@ -618,54 +619,66 @@ WidgetChrome {
                                               ? (modelData.error || "Offline")
                                               : ("up " + modelData.uptimeStr)
                                         color: modelData.status === "offline" ? theme.error : theme.textTertiary
-                                        font.pixelSize: 12
+                                        font.pixelSize: nodeDeckCard.height > 300 ? 13 : 12
                                         font.family: theme.fontMono
+                                        font.weight: Font.Medium
                                     }
+                                }
+
+                                // Separator
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 1
+                                    color: theme.cardBorder
+                                    visible: nodeDeckCard.height > 260
                                 }
 
                                 // Metrics for Online Node
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
-                                    spacing: 5
+                                    spacing: nodeDeckCard.height > 300 ? 10 : 5
                                     visible: modelData.status !== "offline"
 
                                     // CPU Block
                                     ColumnLayout {
                                         Layout.fillWidth: true
-                                        spacing: 2
+                                        spacing: 3
                                         RowLayout {
                                             Layout.fillWidth: true
                                             Text {
-                                                text: "CPU"
+                                                text: "PROCESSOR (CPU)"
                                                 color: theme.textTertiary
                                                 font.pixelSize: 12
                                                 font.family: theme.fontMono
+                                                font.weight: Font.Bold
                                             }
                                             Item { Layout.fillWidth: true }
                                             Text {
                                                 text: Math.round(modelData.cpuPercent || 0) + "%"
                                                 color: (modelData.cpuPercent >= w.warnCpu) ? theme.warning : theme.textPrimary
-                                                font.pixelSize: 15
+                                                font.pixelSize: nodeDeckCard.height > 350 ? 34 : (nodeDeckCard.height > 250 ? 24 : 16)
                                                 font.family: theme.fontDisplay
                                                 font.weight: Font.Bold
                                             }
                                         }
                                         Rectangle {
                                             Layout.fillWidth: true
-                                            height: 6; radius: 3
+                                            height: nodeDeckCard.height > 300 ? 10 : 6
+                                            radius: height / 2
                                             color: theme.cardBorder
                                             Rectangle {
                                                 width: parent.width * (Math.min(100, Math.max(0, modelData.cpuPercent || 0)) / 100)
-                                                height: parent.height; radius: 3
+                                                height: parent.height
+                                                radius: parent.radius
                                                 color: modelData.cpuPercent >= w.warnCpu ? theme.warning : theme.catSystem
                                             }
                                         }
                                         Text {
-                                            visible: nodeDeckCard.height > 160
-                                            text: (modelData.cpuCores || 1) + " cores · Load " + Number(modelData.load1 || 0).toFixed(2)
-                                            color: theme.textTertiary
-                                            font.pixelSize: 11
+                                            visible: nodeDeckCard.height > 200
+                                            text: (modelData.cpuCores || 1) + " Cores  ·  Load: " + Number(modelData.load1 || 0).toFixed(2)
+                                            color: theme.textSecondary
+                                            font.pixelSize: nodeDeckCard.height > 300 ? 13 : 11
                                             font.family: theme.fontMono
                                         }
                                     }
@@ -673,61 +686,109 @@ WidgetChrome {
                                     // RAM Block
                                     ColumnLayout {
                                         Layout.fillWidth: true
-                                        spacing: 2
+                                        spacing: 3
                                         RowLayout {
                                             Layout.fillWidth: true
                                             Text {
-                                                text: "RAM"
+                                                text: "MEMORY (RAM)"
                                                 color: theme.textTertiary
                                                 font.pixelSize: 12
                                                 font.family: theme.fontMono
+                                                font.weight: Font.Bold
                                             }
                                             Item { Layout.fillWidth: true }
                                             Text {
                                                 text: Math.round(modelData.ramPercent || 0) + "%"
                                                 color: (modelData.ramPercent >= w.warnRam) ? theme.warning : theme.textPrimary
-                                                font.pixelSize: 15
+                                                font.pixelSize: nodeDeckCard.height > 350 ? 34 : (nodeDeckCard.height > 250 ? 24 : 16)
                                                 font.family: theme.fontDisplay
                                                 font.weight: Font.Bold
                                             }
                                         }
                                         Rectangle {
                                             Layout.fillWidth: true
-                                            height: 6; radius: 3
+                                            height: nodeDeckCard.height > 300 ? 10 : 6
+                                            radius: height / 2
                                             color: theme.cardBorder
                                             Rectangle {
                                                 width: parent.width * (Math.min(100, Math.max(0, modelData.ramPercent || 0)) / 100)
-                                                height: parent.height; radius: 3
+                                                height: parent.height
+                                                radius: parent.radius
                                                 color: modelData.ramPercent >= w.warnRam ? theme.warning : theme.accent2
                                             }
                                         }
                                         Text {
-                                            visible: nodeDeckCard.height > 160
+                                            visible: nodeDeckCard.height > 200
                                             text: w.formatBytes(modelData.ramUsedBytes) + " / " + w.formatBytes(modelData.ramTotalBytes)
-                                            color: theme.textTertiary
-                                            font.pixelSize: 11
+                                            color: theme.textSecondary
+                                            font.pixelSize: nodeDeckCard.height > 300 ? 13 : 11
                                             font.family: theme.fontMono
                                         }
                                     }
 
-                                    // Disk & Network Row
-                                    RowLayout {
+                                    // Storage (Disk) Block
+                                    ColumnLayout {
                                         Layout.fillWidth: true
-                                        spacing: 6
-                                        visible: nodeDeckCard.height > 130
-                                        Text {
-                                            text: "Disk " + Math.round(modelData.diskPercent || 0) + "%"
-                                            color: (modelData.diskPercent >= w.warnDisk) ? theme.warning : theme.textTertiary
-                                            font.pixelSize: 12
-                                            font.family: theme.fontMono
+                                        spacing: 3
+                                        visible: nodeDeckCard.height > 230
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            Text {
+                                                text: "STORAGE (/)"
+                                                color: theme.textTertiary
+                                                font.pixelSize: 12
+                                                font.family: theme.fontMono
+                                                font.weight: Font.Bold
+                                            }
+                                            Item { Layout.fillWidth: true }
+                                            Text {
+                                                text: Math.round(modelData.diskPercent || 0) + "%"
+                                                color: (modelData.diskPercent >= w.warnDisk) ? theme.warning : theme.textPrimary
+                                                font.pixelSize: nodeDeckCard.height > 350 ? 24 : (nodeDeckCard.height > 250 ? 18 : 14)
+                                                font.family: theme.fontDisplay
+                                                font.weight: Font.Bold
+                                            }
                                         }
-                                        Item { Layout.fillWidth: true }
+                                        Rectangle {
+                                            Layout.fillWidth: true
+                                            height: nodeDeckCard.height > 300 ? 8 : 5
+                                            radius: height / 2
+                                            color: theme.cardBorder
+                                            Rectangle {
+                                                width: parent.width * (Math.min(100, Math.max(0, modelData.diskPercent || 0)) / 100)
+                                                height: parent.height
+                                                radius: parent.radius
+                                                color: modelData.diskPercent >= w.warnDisk ? theme.warning : theme.catStorage
+                                            }
+                                        }
                                         Text {
-                                            text: "↓" + w.formatRate(modelData.netRxRate) + " ↑" + w.formatRate(modelData.netTxRate)
+                                            visible: nodeDeckCard.height > 300
+                                            text: w.formatBytes(modelData.diskUsedBytes) + " / " + w.formatBytes(modelData.diskTotalBytes)
                                             color: theme.textSecondary
                                             font.pixelSize: 12
                                             font.family: theme.fontMono
-                                            font.weight: Font.DemiBold
+                                        }
+                                    }
+
+                                    // Network Throughput Row
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+                                        visible: nodeDeckCard.height > 150
+                                        Text {
+                                            text: "NET:"
+                                            color: theme.textTertiary
+                                            font.pixelSize: 12
+                                            font.family: theme.fontMono
+                                            font.weight: Font.Bold
+                                        }
+                                        Item { Layout.fillWidth: true }
+                                        Text {
+                                            text: "↓ " + w.formatRate(modelData.netRxRate) + "   ↑ " + w.formatRate(modelData.netTxRate)
+                                            color: theme.textPrimary
+                                            font.pixelSize: nodeDeckCard.height > 300 ? 14 : 12
+                                            font.family: theme.fontMono
+                                            font.weight: Font.Bold
                                         }
                                     }
                                 }
@@ -737,12 +798,24 @@ WidgetChrome {
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
                                     visible: modelData.status === "offline"
-                                    Text {
+                                    ColumnLayout {
                                         anchors.centerIn: parent
-                                        text: modelData.error || "Host Unreachable"
-                                        color: theme.error
-                                        font.pixelSize: 13
-                                        font.family: theme.fontMono
+                                        spacing: 8
+                                        Text {
+                                            Layout.alignment: Qt.AlignCenter
+                                            text: "HOST UNREACHABLE"
+                                            color: theme.error
+                                            font.pixelSize: 15
+                                            font.family: theme.fontDisplay
+                                            font.weight: Font.Bold
+                                        }
+                                        Text {
+                                            Layout.alignment: Qt.AlignCenter
+                                            text: modelData.error || "Connection timed out"
+                                            color: theme.textTertiary
+                                            font.pixelSize: 13
+                                            font.family: theme.fontMono
+                                        }
                                     }
                                 }
                             }

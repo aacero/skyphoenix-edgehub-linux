@@ -60,7 +60,7 @@ QtObject {
           sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1"], dflt: "1x1" },
         { type: "systems",      title: "Systems",    category: "System", source: "qrc:/qml/SystemsWidget.qml",
           defaults: { hosts: "localhost:9100", defaultPort: 9100, pollSec: 10, warnCpu: 85, warnRam: 85, warnDisk: 90 },
-          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5", "1x2"], dflt: "1x1" },
+          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5", "1x2", "1x3"], dflt: "1x1" },
 
         // Time / ambient
         { type: "clock",   title: "Clock",       category: "Time", source: "qrc:/qml/ClockWidget.qml",   defaults: {},
