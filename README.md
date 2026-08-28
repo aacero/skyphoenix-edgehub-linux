@@ -1,15 +1,15 @@
-# EdgeHub
+# EdgeHub (Linux)
+
+> **Forked from**: [`https://github.com/skyphoenix-it/skyphoenix-edgehub-linux.git`](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux.git) (Dual-licensed under MIT / Apache 2.0).
+>
+> This repository is an independent open-source fork of the Xeneon Edge Linux Hub with extended capabilities, including multi-host Prometheus system fleet monitoring, real-time Prometheus and Grafana PromQL vector charting, automatic screen cycling, and enhanced touch interaction.
 
 **Leaving Windows behind? Your Edge can come with you.**
 
-EdgeHub by [SKYPhoenix IT](https://skyphoenix-it.com) is a native Linux widget
-dashboard designed for the Corsair Xeneon Edge and selected secondary/portrait
-touchscreens. No browser, Electron, web server, account or telemetry implementation
-is required. Broad display and desktop support remains evidence-gated.
+EdgeHub is a native Linux widget dashboard designed for the Corsair Xeneon Edge and selected secondary/portrait touchscreens. No browser, Electron, web server, account or telemetry implementation is required. Broad display and desktop support remains evidence-gated.
 
-[![CI](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/actions/workflows/ci.yml/badge.svg)](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
-[![Release: v1.0.0](https://img.shields.io/badge/release-v1.0.0-blue.svg)](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/releases/tag/v1.0.0)
+[![Release: v1.0.0](https://img.shields.io/badge/release-v1.0.0-blue.svg)](https://github.com/aacero/skyphoenix-edgehub-linux/releases)
 
 ![EdgeHub running in portrait and landscape beside EdgeHub Manager](docs/marketing-site/assets/release/v1.0.0-beta.1/edgehub-v1.0.0-beta.1-website-hero.png)
 

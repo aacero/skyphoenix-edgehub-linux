@@ -832,24 +832,16 @@ ApplicationWindow {
                 // small beneath - the order Simon asked for. The logo variant follows
                 // the surface it sits on so it stays legible: white on a dark
                 // background, black on a light one, the colour lockup on the neutral
-                // Default chrome. The version lives in the About view.
+                // Sidebar header
                 Text {
                     text: "EdgeHub"; color: m.textPrimary
                     font.family: theme.fontBrand; font.pixelSize: 30; font.bold: true
                     font.letterSpacing: 0.5
                 }
                 Text {
-                    text: "by SKYPhoenix IT"; color: m.textSecondary
+                    text: "Manager"; color: m.textSecondary
                     font.family: theme.fontMono; font.pixelSize: m.fontMinimum; font.letterSpacing: 0.5
-                }
-                Image {
-                    Layout.preferredWidth: 104; Layout.preferredHeight: 44
-                    Layout.topMargin: 6; Layout.bottomMargin: 12
-                    fillMode: Image.PreserveAspectFit; horizontalAlignment: Image.AlignLeft
-                    smooth: true; asynchronous: true; mipmap: true
-                    source: appSettings.chromeTheme === "light" ? "qrc:/manager/branding/sky-black.png"
-                          : appSettings.chromeTheme === "default" ? "qrc:/manager/branding/sky-color.png"
-                          : "qrc:/manager/branding/sky-white.png"
+                    Layout.bottomMargin: 12
                 }
 
                 Repeater {
@@ -2120,17 +2112,9 @@ ApplicationWindow {
                                 font.letterSpacing: 0.5
                             }
                             Text {
-                                text: "by SKYPhoenix IT"; color: m.textSecondary
-                                font.family: theme.fontMono; font.pixelSize: m.fontMinimum; font.letterSpacing: 0.5
-                            }
-                            Image {
-                                Layout.preferredWidth: 150; Layout.preferredHeight: 60
-                                Layout.topMargin: 8
-                                fillMode: Image.PreserveAspectFit; horizontalAlignment: Image.AlignLeft
-                                smooth: true; asynchronous: true; mipmap: true
-                                source: appSettings.chromeTheme === "light" ? "qrc:/manager/branding/sky-black.png"
-                                      : appSettings.chromeTheme === "default" ? "qrc:/manager/branding/sky-color.png"
-                                      : "qrc:/manager/branding/sky-white.png"
+                                text: "Manager"; color: m.textSecondary
+                                font.family: theme.fontMono; font.pixelSize: m.fontSmall; font.letterSpacing: 0.5
+                                Layout.bottomMargin: 8
                             }
                         }
                     }
@@ -2149,6 +2133,31 @@ ApplicationWindow {
                         text: "A native Linux widget dashboard for your second screen."
                         color: m.textPrimary; font.pixelSize: m.fontLabel
                         Layout.fillWidth: true; wrapMode: Text.WordWrap
+                    }
+
+                    // Fork Attribution Card
+                    Rectangle {
+                        Layout.fillWidth: true; Layout.topMargin: 6
+                        radius: m.radius; color: m.panel
+                        border.width: 1; border.color: m.border
+                        implicitHeight: forkCol.implicitHeight + 20
+
+                        ColumnLayout {
+                            id: forkCol
+                            anchors.left: parent.left; anchors.right: parent.right
+                            anchors.top: parent.top; anchors.margins: 10; spacing: 4
+                            Text {
+                                text: "ORIGIN & ATTRIBUTION"
+                                color: m.textSecondary; font.pixelSize: m.fontMinimum
+                                font.family: theme.fontMono; font.bold: true
+                            }
+                            Text {
+                                text: "Forked from: https://github.com/skyphoenix-it/skyphoenix-edgehub-linux.git"
+                                color: m.accent; font.pixelSize: m.fontSmall
+                                font.family: theme.fontMono
+                                Layout.fillWidth: true; elide: Text.ElideRight
+                            }
+                        }
                     }
 
                     // ── Licence card ──
