@@ -73,6 +73,8 @@ Item {
             verify(field("grafana", "rangeSec") !== null, "rangeSec")
             verify(field("grafana", "pollSec") !== null, "pollSec")
             verify(field("grafana", "chartType") !== null, "chartType")
+            verify(field("grafana", "yMin") !== null, "yMin")
+            verify(field("grafana", "yMax") !== null, "yMax")
         }
     }
 }

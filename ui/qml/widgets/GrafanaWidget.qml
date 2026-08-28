@@ -48,6 +48,24 @@ WidgetChrome {
     readonly property bool showMinMax: cfg.showMinMax !== undefined ? Boolean(cfg.showMinMax) : true
     readonly property string warnAtStr: String(cfg.warnAt || "").trim()
     readonly property string critAtStr: String(cfg.critAt || "").trim()
+    readonly property string yMinConfig: cfg.yMin !== undefined ? String(cfg.yMin).trim() : "0"
+    readonly property string yMaxConfig: cfg.yMax !== undefined ? String(cfg.yMax).trim() : ""
+
+    readonly property double effectiveMinVal: {
+        if (yMinConfig === "auto") return minVal
+        var parsed = parseFloat(yMinConfig)
+        if (!isNaN(parsed)) return Math.min(parsed, minVal)
+        return Math.min(0, minVal)
+    }
+
+    readonly property double effectiveMaxVal: {
+        if (unitScale === "percent" && (!yMaxConfig.length || yMaxConfig === "auto")) {
+            return Math.max(100, maxVal)
+        }
+        var parsed = parseFloat(yMaxConfig)
+        if (!isNaN(parsed)) return Math.max(parsed, maxVal)
+        return maxVal > effectiveMinVal ? maxVal : (effectiveMinVal + 1.0)
+    }
 
     // Ephemeral state
     property var dataPoints: []
@@ -442,13 +460,13 @@ WidgetChrome {
                         if (cw <= 0 || ch <= 0 || w.dataPoints.length < 2) return
 
                         var pts = w.dataPoints
-                        var minV = w.minVal
-                        var maxV = w.maxVal
+                        var minV = w.effectiveMinVal
+                        var maxV = w.effectiveMaxVal
                         var span = maxV - minV
                         if (span <= 0.0001) span = 1.0
 
-                        var padTop = w.expanded ? 12 : 6
-                        var padBot = w.expanded ? 12 : 6
+                        var padTop = w.expanded ? 14 : 8
+                        var padBot = w.expanded ? 14 : 8
                         var drawH = ch - padTop - padBot
 
                         // Horizontal baseline guides
@@ -463,11 +481,24 @@ WidgetChrome {
                         ctx.lineTo(cw, padTop + drawH)
                         ctx.stroke()
 
+                        // Y-axis guide labels
+                        ctx.font = (w.expanded ? "10px " : "9px ") + theme.fontMono
+                        ctx.fillStyle = "rgba(255, 255, 255, 0.35)"
+                        ctx.textAlign = "left"
+                        ctx.textBaseline = "bottom"
+                        ctx.fillText(w.formatValue(maxV), 4, padTop - 1)
+                        ctx.textBaseline = "middle"
+                        ctx.fillText(w.formatValue(minV + span / 2), 4, padTop + drawH / 2)
+                        ctx.textBaseline = "top"
+                        ctx.fillText(w.formatValue(minV), 4, padTop + drawH + 1)
+
                         // Calculate points on canvas
                         var coords = []
                         for (var i = 0; i < pts.length; i++) {
                             var px = (i / (pts.length - 1)) * cw
-                            var py = padTop + drawH - ((pts[i].v - minV) / span) * drawH
+                            var norm = (pts[i].v - minV) / span
+                            var clampedNorm = Math.max(0, Math.min(1.0, norm))
+                            var py = padTop + drawH - (clampedNorm * drawH)
                             coords.push({ x: px, y: py, v: pts[i].v, t: pts[i].t })
                         }
 

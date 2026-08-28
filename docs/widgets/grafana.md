@@ -29,6 +29,8 @@ All network queries are routed through the Hub's safe [`NetHub`](../architecture
 | **Chart style** | Segmented | `Filled Area` | Chart visualization (`Filled Area` or `Line`). |
 | **Unit label** | Text | `""` | Custom unit suffix (`%`, `GB`, `MB/s`, `°C`, etc.). |
 | **Scale format** | Segmented | `Auto` | Auto bytes/rates scaling, percent, 2 decimals, or raw. |
+| **Min Y (baseline)** | Text | `0` | Lower bound of the Y-axis. Default is `0` (zero-baseline). Set to `auto` to tightly fit to minimum recorded data. |
+| **Max Y (ceiling)** | Text | `""` | Upper bound of the Y-axis. E.g. set to `4.0` or `8.0` for CPU load across fleet nodes. Leave blank for automatic ceiling. |
 | **Glowing area gradient** | Toggle | `true` | Enables vertical gradient area glow under the curve. |
 | **Show Min / Avg / Max badges**| Toggle | `true` | Renders statistical summary pills on wide and expanded tiles. |
 | **Warn ≥ / Critical ≥** | Text | `""` | Threshold trigger values for warning and critical color alerts. |

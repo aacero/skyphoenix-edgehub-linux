@@ -176,5 +176,34 @@ Item {
             widget.scrubNormalizedX = 0.5
             compare(widget.scrubNormalizedX, 0.5, "scrub normalized x set")
         }
+
+        function test_y_axis_scaling_and_bounds() {
+            var widget = w()
+            var fakeMatrix = JSON.stringify({
+                status: "success",
+                data: {
+                    result: [{
+                        metric: {},
+                        values: [
+                            [ 1000, "0.15" ],
+                            [ 2000, "0.25" ]
+                        ]
+                    }]
+                }
+            })
+            widget.parsePrometheusMatrix(fakeMatrix)
+
+            // Default zero-baseline anchors min at 0
+            compare(widget.effectiveMinVal, 0.0, "default zero baseline")
+            compare(widget.effectiveMaxVal, 0.25, "effective max reflects recorded data")
+
+            // Custom Max Y ceiling (e.g. 4.0 for a 4-core machine)
+            h.storeCtl.patchSettings(iid(), { yMax: "4.0" })
+            compare(widget.effectiveMaxVal, 4.0, "custom yMax respected")
+
+            // Auto min Y
+            h.storeCtl.patchSettings(iid(), { yMin: "auto", yMax: "" })
+            compare(widget.effectiveMinVal, 0.15, "auto yMin hugs lowest data point")
+        }
     }
 }

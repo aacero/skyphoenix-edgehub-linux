@@ -877,6 +877,12 @@ QtObject {
                     { value: "raw", label: "Raw" } ] },
                 { key: "fillGlow", label: "Glowing area gradient", type: "toggle", dflt: true },
                 { key: "showMinMax", label: "Show Min / Avg / Max badges", type: "toggle", dflt: true } ] },
+            { title: "Y-Axis Scale", cols: 2,
+              desc: "Set fixed minimum or maximum bounds so multiple graphs share a consistent scale. Leave blank for auto-scaling.", fields: [
+                { key: "yMin", label: "Min Y (baseline)", type: "text", placeholder: "0 or auto", dflt: "0",
+                  help: "Lower bound of the Y-axis. Default is 0. Set to 'auto' to tightly fit to minimum recorded data." },
+                { key: "yMax", label: "Max Y (ceiling)", type: "text", placeholder: "auto or number (e.g. 4.0)", dflt: "",
+                  help: "Upper bound of the Y-axis. Leave blank for automatic peak ceiling based on data peaks." } ] },
             { title: "Thresholds (colour)", cols: 2,
               desc: "Colour the graph and latest reading amber at “Warn” and red at “Critical”.", fields: [
                 { key: "warnAt", label: "Warn ≥", type: "text", placeholder: "80", dflt: "" },
