@@ -637,19 +637,19 @@ WidgetChrome {
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
-                                    spacing: nodeDeckCard.height > 300 ? 10 : 5
+                                    spacing: nodeDeckCard.height > 300 ? 12 : 6
                                     visible: modelData.status !== "offline"
 
                                     // CPU Block
                                     ColumnLayout {
                                         Layout.fillWidth: true
-                                        spacing: 3
+                                        spacing: 4
                                         RowLayout {
                                             Layout.fillWidth: true
                                             Text {
                                                 text: "PROCESSOR (CPU)"
-                                                color: theme.textTertiary
-                                                font.pixelSize: 12
+                                                color: theme.textSecondary
+                                                font.pixelSize: nodeDeckCard.height > 300 ? 14 : 12
                                                 font.family: theme.fontMono
                                                 font.weight: Font.Bold
                                             }
@@ -657,7 +657,7 @@ WidgetChrome {
                                             Text {
                                                 text: Math.round(modelData.cpuPercent || 0) + "%"
                                                 color: (modelData.cpuPercent >= w.warnCpu) ? theme.warning : theme.textPrimary
-                                                font.pixelSize: nodeDeckCard.height > 350 ? 34 : (nodeDeckCard.height > 250 ? 24 : 16)
+                                                font.pixelSize: nodeDeckCard.height > 350 ? 36 : (nodeDeckCard.height > 250 ? 26 : 18)
                                                 font.family: theme.fontDisplay
                                                 font.weight: Font.Bold
                                             }
@@ -676,23 +676,24 @@ WidgetChrome {
                                         }
                                         Text {
                                             visible: nodeDeckCard.height > 200
-                                            text: (modelData.cpuCores || 1) + " Cores  ·  Load: " + Number(modelData.load1 || 0).toFixed(2)
-                                            color: theme.textSecondary
-                                            font.pixelSize: nodeDeckCard.height > 300 ? 13 : 11
+                                            text: (modelData.cpuCores || 1) + " Cores  ·  Load: " + Number(modelData.load1 || 0).toFixed(2) + ", " + Number(modelData.load5 || 0).toFixed(2)
+                                            color: theme.textPrimary
+                                            font.pixelSize: nodeDeckCard.height > 300 ? 14 : 12
                                             font.family: theme.fontMono
+                                            font.weight: Font.Medium
                                         }
                                     }
 
                                     // RAM Block
                                     ColumnLayout {
                                         Layout.fillWidth: true
-                                        spacing: 3
+                                        spacing: 4
                                         RowLayout {
                                             Layout.fillWidth: true
                                             Text {
                                                 text: "MEMORY (RAM)"
-                                                color: theme.textTertiary
-                                                font.pixelSize: 12
+                                                color: theme.textSecondary
+                                                font.pixelSize: nodeDeckCard.height > 300 ? 14 : 12
                                                 font.family: theme.fontMono
                                                 font.weight: Font.Bold
                                             }
@@ -700,7 +701,7 @@ WidgetChrome {
                                             Text {
                                                 text: Math.round(modelData.ramPercent || 0) + "%"
                                                 color: (modelData.ramPercent >= w.warnRam) ? theme.warning : theme.textPrimary
-                                                font.pixelSize: nodeDeckCard.height > 350 ? 34 : (nodeDeckCard.height > 250 ? 24 : 16)
+                                                font.pixelSize: nodeDeckCard.height > 350 ? 36 : (nodeDeckCard.height > 250 ? 26 : 18)
                                                 font.family: theme.fontDisplay
                                                 font.weight: Font.Bold
                                             }
@@ -719,24 +720,25 @@ WidgetChrome {
                                         }
                                         Text {
                                             visible: nodeDeckCard.height > 200
-                                            text: w.formatBytes(modelData.ramUsedBytes) + " / " + w.formatBytes(modelData.ramTotalBytes)
-                                            color: theme.textSecondary
-                                            font.pixelSize: nodeDeckCard.height > 300 ? 13 : 11
+                                            text: w.formatBytes(modelData.ramUsedBytes) + " used / " + w.formatBytes(modelData.ramTotalBytes) + " total"
+                                            color: theme.textPrimary
+                                            font.pixelSize: nodeDeckCard.height > 300 ? 14 : 12
                                             font.family: theme.fontMono
+                                            font.weight: Font.Medium
                                         }
                                     }
 
                                     // Storage (Disk) Block
                                     ColumnLayout {
                                         Layout.fillWidth: true
-                                        spacing: 3
+                                        spacing: 4
                                         visible: nodeDeckCard.height > 230
                                         RowLayout {
                                             Layout.fillWidth: true
                                             Text {
                                                 text: "STORAGE (/)"
-                                                color: theme.textTertiary
-                                                font.pixelSize: 12
+                                                color: theme.textSecondary
+                                                font.pixelSize: nodeDeckCard.height > 300 ? 14 : 12
                                                 font.family: theme.fontMono
                                                 font.weight: Font.Bold
                                             }
@@ -744,7 +746,7 @@ WidgetChrome {
                                             Text {
                                                 text: Math.round(modelData.diskPercent || 0) + "%"
                                                 color: (modelData.diskPercent >= w.warnDisk) ? theme.warning : theme.textPrimary
-                                                font.pixelSize: nodeDeckCard.height > 350 ? 24 : (nodeDeckCard.height > 250 ? 18 : 14)
+                                                font.pixelSize: nodeDeckCard.height > 350 ? 26 : (nodeDeckCard.height > 250 ? 20 : 15)
                                                 font.family: theme.fontDisplay
                                                 font.weight: Font.Bold
                                             }
@@ -758,27 +760,28 @@ WidgetChrome {
                                                 width: parent.width * (Math.min(100, Math.max(0, modelData.diskPercent || 0)) / 100)
                                                 height: parent.height
                                                 radius: parent.radius
-                                                color: modelData.diskPercent >= w.warnDisk ? theme.warning : theme.catStorage
+                                                color: modelData.diskPercent >= w.warnDisk ? theme.warning : theme.catServices
                                             }
                                         }
                                         Text {
-                                            visible: nodeDeckCard.height > 300
-                                            text: w.formatBytes(modelData.diskUsedBytes) + " / " + w.formatBytes(modelData.diskTotalBytes)
-                                            color: theme.textSecondary
-                                            font.pixelSize: 12
+                                            visible: nodeDeckCard.height > 280
+                                            text: w.formatBytes(modelData.diskUsedBytes) + " used / " + w.formatBytes(modelData.diskTotalBytes) + " total"
+                                            color: theme.textPrimary
+                                            font.pixelSize: nodeDeckCard.height > 300 ? 14 : 12
                                             font.family: theme.fontMono
+                                            font.weight: Font.Medium
                                         }
                                     }
 
                                     // Network Throughput Row
                                     RowLayout {
                                         Layout.fillWidth: true
-                                        spacing: 6
+                                        spacing: 8
                                         visible: nodeDeckCard.height > 150
                                         Text {
-                                            text: "NET:"
-                                            color: theme.textTertiary
-                                            font.pixelSize: 12
+                                            text: "BANDWIDTH:"
+                                            color: theme.textSecondary
+                                            font.pixelSize: nodeDeckCard.height > 300 ? 14 : 12
                                             font.family: theme.fontMono
                                             font.weight: Font.Bold
                                         }
@@ -786,7 +789,7 @@ WidgetChrome {
                                         Text {
                                             text: "↓ " + w.formatRate(modelData.netRxRate) + "   ↑ " + w.formatRate(modelData.netTxRate)
                                             color: theme.textPrimary
-                                            font.pixelSize: nodeDeckCard.height > 300 ? 14 : 12
+                                            font.pixelSize: nodeDeckCard.height > 300 ? 16 : 13
                                             font.family: theme.fontMono
                                             font.weight: Font.Bold
                                         }
@@ -805,15 +808,15 @@ WidgetChrome {
                                             Layout.alignment: Qt.AlignCenter
                                             text: "HOST UNREACHABLE"
                                             color: theme.error
-                                            font.pixelSize: 15
+                                            font.pixelSize: 16
                                             font.family: theme.fontDisplay
                                             font.weight: Font.Bold
                                         }
                                         Text {
                                             Layout.alignment: Qt.AlignCenter
                                             text: modelData.error || "Connection timed out"
-                                            color: theme.textTertiary
-                                            font.pixelSize: 13
+                                            color: theme.textSecondary
+                                            font.pixelSize: 14
                                             font.family: theme.fontMono
                                         }
                                     }
