@@ -164,6 +164,7 @@ makes no formal performance or long-duration stability claim.
   Compact, Comfortable, Large, and Extra large choices plus bundled Atkinson
   Hyperlegible and Lexend typefaces.
 - **Standard or Immersive Hub controls.** Immersive mode removes the Hub navigation bar and gives that space back to widgets while keeping each widget's own configuration available. Manager can restore Standard mode at any time.
+- **Idle Screen Cycling.** Automatically rotates through configured pages when idle with configurable rotation intervals (15s, 30s, 1m, 1.5m, 2m, 5m), pausing automatically during user touch or interaction.
 - **Edit mode** to add, remove, move and resize tiles across multiple pages, with schema-driven per-widget configuration.
 - **First-run wizard**, on-device **Settings**, and a **Diagnostics** screen.
 
