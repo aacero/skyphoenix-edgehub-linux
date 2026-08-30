@@ -2160,94 +2160,15 @@ ApplicationWindow {
                         }
                     }
 
-                    // ── Licence card ──
-                    // Free by default; Pro when a valid key is stored. Everything
-                    // functional is free - Pro unlocks the premium theme/preset
-                    // packs and custom user widgets. "expired" is worded as
-                    // renew-not-broken (the signature was genuine).
-                    Rectangle {
-                        Layout.fillWidth: true; Layout.topMargin: 8
-                        radius: m.radius; color: m.panel
-                        border.width: 1
-                        border.color: win.isPro ? m.accent : m.border
-                        implicitHeight: licCol.implicitHeight + 32
-                        ColumnLayout {
-                            id: licCol
-                            anchors.left: parent.left; anchors.right: parent.right
-                            anchors.top: parent.top; anchors.margins: 16; spacing: 8
-                            RowLayout {
-                                Layout.fillWidth: true; spacing: 10
-                                AppIcon {
-                                    name: win.isPro ? "ui-check" : "ui-settings"
-                                    size: 22; color: win.isPro ? m.accent : m.textSecondary
-                                    Layout.alignment: Qt.AlignVCenter
-                                }
-                                ColumnLayout {
-                                    spacing: 1; Layout.fillWidth: true
-                                    Text {
-                                        text: win.isPro ? "Xeneon Edge Pro"
-                                            : win.licStatus.state === "expired" ? "Pro licence expired"
-                                            : "Free tier"
-                                        color: m.textPrimary; font.pixelSize: 17; font.bold: true
-                                    }
-                                    Text {
-                                        text: win.isPro
-                                              ? ("Thank you" + (win.licStatus.issuedTo
-                                                   ? ", " + win.licStatus.issuedTo : "") + " - premium unlocked.")
-                                            : win.licStatus.state === "expired"
-                                              ? "Renew to keep the premium extras. Your dashboards keep working."
-                                            // ACCURATE, not aspirational: the ONLY thing the licence
-                                            // gates is 9 themes (4 Premium + 5 Inspired). Preset screens
-                                            // and user widgets are NOT gated - UserWidgetCatalog does no
-                                            // licence check and PresetCatalog has no pro flag. Promising
-                                            // those here is exactly what makes a buyer feel misled once
-                                            // they find they already had them.
-                                            : "Everything works. Pro adds 9 extra themes and supports development."
-                                        color: m.textSecondary; font.pixelSize: m.fontMinimum
-                                        Layout.fillWidth: true; wrapMode: Text.WordWrap
-                                    }
-                                }
-                            }
-                            RowLayout {
-                                Layout.fillWidth: true; spacing: 8
-                                MButton {
-                                    text: win.isPro ? "Manage licence" : "Activate Pro"
-                                    iconName: "ui-settings"
-                                    onClicked: licenseDialog.open()
-                                }
-                                MButton {
-                                    visible: !win.isPro
-                                    text: "Get Pro"; iconName: "ui-display"
-                                    onClicked: Qt.openUrlExternally(
-                                        "https://github.com/skyphoenix-it/skyphoenix-edgehub-linux#pro")
-                                }
-                                Item { Layout.fillWidth: true }
-                            }
-                        }
-                    }
-
                     // Links.
                     RowLayout {
-                        Layout.fillWidth: true; Layout.topMargin: 6; spacing: 8
+                        Layout.fillWidth: true; Layout.topMargin: 8; spacing: 8
                         MButton {
-                            text: "Website"; iconName: "ui-display"
-                            onClicked: Qt.openUrlExternally("https://www.skyphoenix-it.com")
-                        }
-                        MButton {
-                            text: "GitHub"; iconName: "ui-settings"
-                            // The same URL the PKGBUILD, the metainfo and SECURITY.md
-                            // already ship. It was "#" - a button that silently did
-                            // nothing, which is worse than no button: the user clicks
-                            // it, gets no browser and no error, and concludes the app
-                            // is broken rather than the link.
+                            text: "GitHub Repository"; iconName: "ui-settings"
                             onClicked: Qt.openUrlExternally(
-                                "https://github.com/skyphoenix-it/skyphoenix-edgehub-linux")
+                                "https://github.com/aacero/skyphoenix-edgehub-linux")
                         }
                         Item { Layout.fillWidth: true }
-                    }
-                    Text {
-                        text: "www.skyphoenix-it.com"
-                        color: m.textSecondary; font.pixelSize: m.fontMinimum; font.family: theme.fontMono
                     }
 
                     // ── Diagnostics (for support) ──
