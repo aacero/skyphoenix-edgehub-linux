@@ -253,7 +253,7 @@ public:
         }
         // The hub needs a moment to come up and listen; nudge the connection a few
         // times so the "connected" state (and Stop button) appears promptly.
-        for (int delay : {300, 700, 1200, 2000})
+        for (int delay : {200, 500, 900, 1400, 2100, 3000, 4200, 6000})
             QTimer::singleShot(delay, this, [this] { tryConnectHub(); });
         return true;
         // GCOVR_EXCL_STOP
@@ -1172,6 +1172,12 @@ private:
     static QString hubBinaryPath() {
         const QString local = QCoreApplication::applicationDirPath() + "/xeneon-edge-hub";
         if (QFile::exists(local)) return local;
+        const QString found = QStandardPaths::findExecutable(QStringLiteral("xeneon-edge-hub"));
+        if (!found.isEmpty()) return found;
+        if (QFile::exists(QStringLiteral("/usr/local/bin/xeneon-edge-hub")))
+            return QStringLiteral("/usr/local/bin/xeneon-edge-hub");
+        if (QFile::exists(QStringLiteral("/usr/bin/xeneon-edge-hub")))
+            return QStringLiteral("/usr/bin/xeneon-edge-hub");
         return QStringLiteral("xeneon-edge-hub");   // resolved via PATH by QProcess
     }
     void markSelfWrite() {
@@ -1226,8 +1232,13 @@ private:
             reloadAfterHubDisconnect();
     }
     void tryConnectHub() {
-        if (m_sock->state() == QLocalSocket::UnconnectedState)
+        if (m_sock->state() == QLocalSocket::UnconnectedState) {
             m_sock->connectToServer(xeneon::controlSocketPath());
+        } else if (m_sock->state() != QLocalSocket::ConnectedState
+                   && m_sock->state() != QLocalSocket::ConnectingState) {
+            m_sock->abort();
+            m_sock->connectToServer(xeneon::controlSocketPath());
+        }
     }
     void writeMsg(const QJsonObject& o) {
         m_sock->write(QJsonDocument(o).toJson(QJsonDocument::Compact));

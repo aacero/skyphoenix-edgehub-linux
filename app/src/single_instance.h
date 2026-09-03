@@ -26,12 +26,13 @@ inline QString instanceLockPath(const QString& appKey) {
 // Returns an owned, HELD lock on success (keep it alive for the process lifetime);
 // returns nullptr when this process should exit because another live instance
 // already holds it. In grabMode it never blocks (QA/headless captures may run
-// alongside a real instance).
-inline std::unique_ptr<QLockFile> acquireSingleInstance(const QString& appKey, bool grabMode) {
+// alongside a real instance). A brief timeout (default 1500ms) prevents an
+// instantaneous exit if an old instance is in the middle of shutting down.
+inline std::unique_ptr<QLockFile> acquireSingleInstance(const QString& appKey, bool grabMode, int timeoutMs = 1500) {
     auto lock = std::make_unique<QLockFile>(instanceLockPath(appKey));
     if (grabMode)
         return lock;                    // never block QA/headless captures
-    if (lock->tryLock(0))
+    if (lock->tryLock(timeoutMs))
         return lock;                    // acquired - we are the only instance
     return nullptr;                     // another live instance holds it
 }

@@ -569,7 +569,7 @@ ApplicationWindow {
     // Transient "Starting hub…" feedback: set when the user hits Start, cleared
     // when the hub connects (see the backend Connections) or a safety timeout.
     property bool hubStarting: false
-    Timer { id: hubStartTimeout; interval: 8000; repeat: false
+    Timer { id: hubStartTimeout; interval: 12000; repeat: false
         onTriggered: win.hubStarting = false }
 
     function currentPageName() {

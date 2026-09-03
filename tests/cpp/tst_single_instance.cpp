@@ -26,7 +26,7 @@ private slots:
         const QString key = QStringLiteral("unittest-block");
         auto first = xeneon::acquireSingleInstance(key, false);
         QVERIFY(first);                 // acquired
-        auto second = xeneon::acquireSingleInstance(key, false);
+        auto second = xeneon::acquireSingleInstance(key, false, 0);
         QVERIFY(!second);               // blocked while first holds it
         first.reset();                  // release (unlocks on destruction)
         auto third = xeneon::acquireSingleInstance(key, false);
