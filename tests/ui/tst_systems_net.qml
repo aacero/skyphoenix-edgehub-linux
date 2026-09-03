@@ -122,6 +122,18 @@ Item {
             var n3 = h.item.normalizeUrl("http://myserver:9200/metrics", 9100)
             compare(n3.url, "http://myserver:9200/metrics")
             compare(n3.label, "myserver:9200")
+
+            var n4 = h.item.normalizeUrl("[::1]", 9100)
+            compare(n4.url, "http://[::1]:9100/metrics")
+            compare(n4.label, "[::1]:9100")
+
+            var n5 = h.item.normalizeUrl("[2001:db8::1]:9101", 9100)
+            compare(n5.url, "http://[2001:db8::1]:9101/metrics")
+            compare(n5.label, "[2001:db8::1]:9101")
+
+            var n6 = h.item.normalizeUrl("::1", 9100)
+            compare(n6.url, "http://[::1]:9100/metrics")
+            compare(n6.label, "[::1]:9100")
         }
 
         // ── 2. Prometheus Parser ─────────────────────────────────────────────
@@ -314,6 +326,58 @@ Item {
             h.height = 400
             verify(h.item.width > 540, "Widget in wide layout mode")
             verify(h.item.displayNodes.length > 0, "Display nodes available in deck")
+        }
+
+        // ── 11. Overlapping Refresh Generation Protection ───────────────────
+        function test_overlapping_refresh_generation() {
+            var fakes = []
+            h.item.xhrFactory = function () {
+                var f = root.makeFake()
+                fakes.push(f)
+                return f
+            }
+            h.storeCtl.patchSettings(iid(), { hosts: "node-race:9100", defaultPort: 9100, pollSec: 10 })
+
+            // Start first poll (generation 1)
+            h.item.nowMsOverride = 1700200000000
+            h.item.refresh()
+            compare(fakes.length, 1, "first poll dispatched")
+            var fake1 = fakes[0]
+
+            // Before fake1 resolves, start second poll (generation 2)
+            h.item.nowMsOverride = 1700200005000
+            h.item.refresh()
+            compare(fakes.length, 2, "second poll dispatched")
+            var fake2 = fakes[1]
+
+            // Resolve fake2 with online metrics
+            fake2.resolveWith(200, root.sampleNodeExporterMetrics)
+            compare(h.item.displayNodes.length, 1)
+            compare(h.item.displayNodes[0].status, "online", "generation 2 marked online")
+            verify(h.item.displayNodes[0].latencyMs >= 0, "latency recorded")
+
+            // Stale fake1 completes later with error; must be discarded by generation check
+            fake1.resolveWith(500, "Internal Server Error")
+            compare(h.item.displayNodes[0].status, "online", "stale generation 1 error ignored")
+        }
+
+        // ── 12. Test Connection Callback Settling ───────────────────────────
+        function test_test_connection_settles_accurately() {
+            var activeFake = null
+            h.item.xhrFactory = function () {
+                activeFake = root.makeFake()
+                return activeFake
+            }
+            h.storeCtl.patchSettings(iid(), { hosts: "node-test:9100", defaultPort: 9100 })
+
+            h.item.testConnection()
+            verify(h.item.testingConnection, "testingConnection is active while in flight")
+            verify(activeFake !== null, "request sent")
+
+            // Once resolved, testingConnection clears and connectionStatus reports immediately
+            activeFake.resolveWith(200, root.sampleNodeExporterMetrics)
+            verify(!h.item.testingConnection, "testingConnection cleared immediately upon settling")
+            compare(h.item.connectionStatus, "1/1 systems reachable", "status updated accurately")
         }
     }
 }

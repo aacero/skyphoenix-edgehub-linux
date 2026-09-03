@@ -64,7 +64,22 @@ WidgetChrome {
         var port = dfltPort || 9100
         var url = item
         if (!/^https?:\/\//i.test(url)) {
-            if (url.indexOf(":") === -1) {
+            if (url.startsWith("[")) {
+                var closeBracket = url.indexOf("]")
+                if (closeBracket !== -1) {
+                    var afterBracket = url.substring(closeBracket + 1)
+                    if (!/^:\d+/.test(afterBracket)) {
+                        url = "http://" + url.substring(0, closeBracket + 1) + ":" + port + "/metrics"
+                    } else {
+                        url = "http://" + url.replace(/\/+$/, "") + "/metrics"
+                    }
+                } else {
+                    url = "http://" + url + ":" + port + "/metrics"
+                }
+            } else if ((url.match(/:/g) || []).length >= 2) {
+                // Bare unbracketed IPv6 literal
+                url = "http://[" + url + "]:" + port + "/metrics"
+            } else if (url.indexOf(":") === -1) {
                 url = "http://" + url + ":" + port + "/metrics"
             } else {
                 url = "http://" + url + "/metrics"
@@ -93,6 +108,7 @@ WidgetChrome {
     // ── Internal polling & parsing state ─────────────────────────────────────
     property var _prevSamples: ({})
     property var _activeXhrs: []
+    property int _pollGeneration: 0
     property var localNodes: []
     property string lastGlobalError: ""
     property double lastSuccessAt: 0
@@ -295,13 +311,14 @@ WidgetChrome {
         if (w.active && w.configuredList.length > 0) w.refresh()
     }
 
-    function refresh() {
+    function refresh(onComplete) {
         if (w.configuredList.length === 0) {
             w.localNodes = []
+            if (typeof onComplete === "function") onComplete()
             return
         }
+        var currentGen = ++w._pollGeneration
         var targets = w.configuredList
-        var updatedNodes = []
         var pending = targets.length
         var nowMs = currentMs()
 
@@ -316,10 +333,13 @@ WidgetChrome {
         for (var t = 0; t < targets.length; t++) {
             (function (target) {
                 var prevSample = w._prevSamples[target.url] || null
+                var startReqMs = currentMs()
                 _hub().request({
                     url: target.url,
                     xhrFactory: w.xhrFactory,
                     onDone: function (status, body) {
+                        if (currentGen !== w._pollGeneration) return
+                        var latencyMs = Math.max(0, currentMs() - startReqMs)
                         if (status >= 200 && status < 300) {
                             var parsed = parseNodeExporter(body)
                             var elapsedSec = prevSample ? Math.max(0.1, (nowMs - prevSample.timeMs) / 1000) : 0
@@ -367,6 +387,7 @@ WidgetChrome {
                                 status: nodeStatus,
                                 error: "",
                                 lastSeenMs: nowMs,
+                                latencyMs: latencyMs,
                                 cpuPercent: cpuPct,
                                 cpuCores: parsed.cpuCores,
                                 load1: parsed.load1,
@@ -391,6 +412,7 @@ WidgetChrome {
                                 status: "offline",
                                 error: "HTTP " + status,
                                 lastSeenMs: stateMap[target.url] ? stateMap[target.url].lastSeenMs : 0,
+                                latencyMs: latencyMs,
                                 cpuPercent: 0, cpuCores: 1, load1: 0, load5: 0, load15: 0,
                                 ramPercent: 0, ramUsedBytes: 0, ramTotalBytes: 0,
                                 diskPercent: 0, diskUsedBytes: 0, diskTotalBytes: 0,
@@ -400,12 +422,15 @@ WidgetChrome {
                         finalizeOne()
                     },
                     onError: function (reason) {
+                        if (currentGen !== w._pollGeneration) return
+                        var latencyMs = Math.max(0, currentMs() - startReqMs)
                         stateMap[target.url] = {
                             label: target.label,
                             url: target.url,
                             status: "offline",
                             error: reason || "Offline",
                             lastSeenMs: stateMap[target.url] ? stateMap[target.url].lastSeenMs : 0,
+                            latencyMs: latencyMs,
                             cpuPercent: 0, cpuCores: 1, load1: 0, load5: 0, load15: 0,
                             ramPercent: 0, ramUsedBytes: 0, ramTotalBytes: 0,
                             diskPercent: 0, diskUsedBytes: 0, diskTotalBytes: 0,
@@ -418,6 +443,7 @@ WidgetChrome {
         }
 
         function finalizeOne() {
+            if (currentGen !== w._pollGeneration) return
             pending--
             if (pending <= 0) {
                 var merged = []
@@ -426,6 +452,7 @@ WidgetChrome {
                 }
                 w.localNodes = merged
                 _commitEphemeral(merged)
+                if (typeof onComplete === "function") onComplete()
             }
         }
     }
@@ -442,14 +469,10 @@ WidgetChrome {
     function testConnection() {
         w.testingConnection = true
         w.connectionStatus = "Testing reachability of " + w.configuredList.length + " target(s)..."
-        w.refresh()
-        var checkTimer = Qt.createQmlObject('import QtQuick; Timer { interval: 1500; repeat: false }', w)
-        checkTimer.triggered.connect(function () {
+        w.refresh(function () {
             w.testingConnection = false
             w.connectionStatus = w.onlineCount + "/" + w.totalCount + " systems reachable"
-            checkTimer.destroy()
         })
-        checkTimer.start()
     }
 
     // ── Content View Hierarchy ───────────────────────────────────────────────
@@ -1361,6 +1384,14 @@ WidgetChrome {
                                         font.pixelSize: 14
                                         font.family: theme.fontDisplay
                                         font.weight: Font.Bold
+                                    }
+
+                                    Text { text: "Connection Latency:"; color: theme.textTertiary; font.pixelSize: 14 }
+                                    Text {
+                                        text: deepDivePanel.selNode ? (deepDivePanel.selNode.latencyMs !== undefined && deepDivePanel.selNode.latencyMs >= 0 ? (deepDivePanel.selNode.latencyMs + " ms") : "-") : "-"
+                                        color: theme.textPrimary
+                                        font.pixelSize: 14
+                                        font.family: theme.fontMono
                                     }
                                 }
 

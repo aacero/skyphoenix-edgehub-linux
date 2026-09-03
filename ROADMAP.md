@@ -3,7 +3,7 @@
 **Last updated:** 2026-07-28
 **Public baseline:** `v1.0.0`
 **Release target:** `v1.0.1`
-**Development status:** stable 1.0 maintenance on `master`
+**Development status:** stable 1.0 maintenance on `main`
 
 Version 1.0.0 is the latest published milestone. Its supported download channels
 are the AppImage, Ubuntu 26.04 DEB, and Fedora 43 RPM attached to the signed
