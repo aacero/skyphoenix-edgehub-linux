@@ -318,6 +318,14 @@ Item {
             h.item.selectedIndex = 3
             compare(h.item.selNode.label, "localhost:9100")
             compare(h.item.selNode.url, "http://localhost:9100/metrics")
+
+            // Selection syncs to ephemeral storage
+            compare(h.storeCtl.settingsFor(iid()).sysSelected, 3, "sysSelected saved in ephemeral store")
+
+            // External change to sysSelected updates widget selectedIndex
+            h.storeCtl.patchSettings(iid(), { sysSelected: 1 })
+            compare(h.item.selectedIndex, 1, "external sysSelected change reflected in selectedIndex")
+            compare(h.item.selNode.label, "deerpark:9100")
         }
 
         // ── 10. Wide Layout Deck ─────────────────────────────────────────────
@@ -378,6 +386,27 @@ Item {
             activeFake.resolveWith(200, root.sampleNodeExporterMetrics)
             verify(!h.item.testingConnection, "testingConnection cleared immediately upon settling")
             compare(h.item.connectionStatus, "1/1 systems reachable", "status updated accurately")
+        }
+
+        // ── 13. Cold Start InstanceId Protection ────────────────────────────
+        function test_cold_start_instance_id_protection() {
+            var fakes = []
+            h.item.xhrFactory = function () {
+                var f = root.makeFake()
+                fakes.push(f)
+                return f
+            }
+            // If instanceId is cleared/unbound, configuredList is empty and refresh does not query
+            var oldId = h.item.instanceId
+            h.item.instanceId = ""
+            compare(h.item.hostsRaw, "", "hostsRaw is empty when instanceId is unset")
+            compare(h.item.configuredList.length, 0, "configuredList is empty without instanceId")
+            h.item.refresh()
+            compare(fakes.length, 0, "no refresh requests dispatched without instanceId")
+
+            // Restoring instanceId restores configuredList
+            h.item.instanceId = oldId
+            verify(h.item.configuredList.length > 0, "configuredList restored with instanceId")
         }
     }
 }

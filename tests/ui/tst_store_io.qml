@@ -59,6 +59,7 @@ Item {
             verify(store._isEphemeralKey("quoteManualDay"), "quote shuffle day is ephemeral")
             verify(store._isEphemeralKey("peakRx"), "peakRx is ephemeral")
             verify(store._isEphemeralKey("peakTx"), "peakTx is ephemeral")
+            verify(store._isEphemeralKey("sysSelected"), "sysSelected is ephemeral")
             verify(!store._isEphemeralKey("title"), "title is persisted")
             verify(!store._isEphemeralKey("warnTemp"), "warnTemp is persisted")
             verify(!store._isEphemeralKey("accent"), "accent is persisted")

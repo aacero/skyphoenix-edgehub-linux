@@ -48,7 +48,11 @@ WidgetChrome {
         var _ = store ? store.revision : 0
         return (store && instanceId) ? JSON.parse(JSON.stringify(store.settingsFor(instanceId))) : ({})
     }
-    readonly property string hostsRaw: cfg.hosts !== undefined ? String(cfg.hosts) : "localhost:9100"
+    readonly property string hostsRaw: {
+        if (cfg && cfg.hosts !== undefined) return String(cfg.hosts)
+        if (instanceId) return "localhost:9100"
+        return ""
+    }
     readonly property int defaultPort: cfg.defaultPort !== undefined ? Number(cfg.defaultPort) : 9100
     readonly property int pollSec: cfg.pollSec !== undefined ? Math.max(5, Number(cfg.pollSec)) : 10
     readonly property real warnCpu: Number(cfg.warnCpu !== undefined ? cfg.warnCpu : 85)
@@ -115,6 +119,25 @@ WidgetChrome {
     property string connectionStatus: ""
     property bool testingConnection: false
     property int selectedIndex: 0
+    property bool _syncingSelected: false
+
+    onCfgChanged: {
+        if (cfg && cfg.sysSelected !== undefined && Number(cfg.sysSelected) >= 0) {
+            var idx = Number(cfg.sysSelected)
+            if (idx !== w.selectedIndex) {
+                w._syncingSelected = true
+                w.selectedIndex = idx
+                w._syncingSelected = false
+            }
+        }
+    }
+
+    onSelectedIndexChanged: {
+        if (w._syncingSelected) return
+        if (store && instanceId && w.selectedIndex >= 0) {
+            store.patchSettings(instanceId, { sysSelected: w.selectedIndex })
+        }
+    }
 
     // Ephemeral store integration
     readonly property var storedNodes: (cfg.sysNodes && Array.isArray(cfg.sysNodes)) ? cfg.sysNodes : []
@@ -299,20 +322,24 @@ WidgetChrome {
         id: pollTimer
         interval: w.pollSec * 1000
         repeat: true
-        running: w.active && w.configuredList.length > 0
+        running: w.active && w.instanceId && w.configuredList.length > 0
         onTriggered: w.refresh()
     }
 
     Component.onCompleted: {
-        if (w.active && w.configuredList.length > 0) w.refresh()
+        if (w.active && w.instanceId && w.configuredList.length > 0) w.refresh()
+    }
+
+    onInstanceIdChanged: {
+        if (w.active && w.instanceId && w.configuredList.length > 0) w.refresh()
     }
 
     onConfiguredListChanged: {
-        if (w.active && w.configuredList.length > 0) w.refresh()
+        if (w.active && w.instanceId && w.configuredList.length > 0) w.refresh()
     }
 
     function refresh(onComplete) {
-        if (w.configuredList.length === 0) {
+        if (!w.instanceId || w.configuredList.length === 0) {
             w.localNodes = []
             if (typeof onComplete === "function") onComplete()
             return

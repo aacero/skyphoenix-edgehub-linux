@@ -90,7 +90,8 @@ Item {
         "peakRx": true, "peakTx": true,
         "httpVal": true, "httpText": true, "httpErr": true, "httpList": true, "httpAt": true,
         "quoteManualIdx": true, "quotePinnedText": true, "quoteManualDay": true,
-        "sysNodes": true, "sysSummary": true, "sysAt": true, "sysErr": true })
+        "sysNodes": true, "sysSummary": true, "sysAt": true, "sysErr": true,
+        "sysSelected": true })
     function _isEphemeralKey(k) { return store._ephemeralKeys[k] === true }
 
     // Deep copy of the document with all ephemeral runtime keys removed - the exact
