@@ -123,6 +123,7 @@ build-install/
 captures/
 
 # agent framework
+AGY.resume
 agent-framework/runs/
 .claude/settings.local.json
 .kimi-code/local.toml
