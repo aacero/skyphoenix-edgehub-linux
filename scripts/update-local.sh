@@ -420,4 +420,8 @@ if [ -S "$RUNTIME_SOCK" ]; then
 else
     echo "==> Hub is running; control socket is not visible yet." >&2
 fi
+if command -v omarchy >/dev/null 2>&1 && [ -d /usr/share/omarchy ]; then
+    echo "==> Refreshing Omarchy shell menu"
+    OMARCHY_PATH="/usr/share/omarchy" omarchy menu refresh >/dev/null 2>&1 || true
+fi
 echo "==> Done: $INSTALLED_NAME $INSTALLED_VER"

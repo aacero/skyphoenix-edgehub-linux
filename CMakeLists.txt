@@ -43,6 +43,26 @@ endif()
 string(REGEX REPLACE "^v" "" XENEON_GIT_VERSION "${XENEON_GIT_VERSION}")
 message(STATUS "Xeneon configure/package version: ${XENEON_GIT_VERSION}")
 
+# --- Platform detection: Omarchy Linux ---
+set(XENEON_IS_OMARCHY FALSE)
+if(EXISTS "/etc/os-release")
+    file(READ "/etc/os-release" _xeneon_os_release)
+    if(_xeneon_os_release MATCHES "(^|\n)ID=[\"]?omarchy[\"]?"
+       OR (_xeneon_os_release MATCHES "ID_LIKE=.*arch.*" AND EXISTS "/usr/share/omarchy"))
+        set(XENEON_IS_OMARCHY TRUE)
+    endif()
+elseif(EXISTS "/usr/share/omarchy")
+    set(XENEON_IS_OMARCHY TRUE)
+endif()
+
+if(XENEON_IS_OMARCHY)
+    message(STATUS "EdgeHub: Omarchy Linux detected")
+    if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+        set(CMAKE_INSTALL_PREFIX "/usr" CACHE PATH "Install path prefix" FORCE)
+        message(STATUS "EdgeHub: Defaulted CMAKE_INSTALL_PREFIX to /usr for Omarchy")
+    endif()
+endif()
+
 # Build-time identity must follow more than HEAD. A tracked-file edit changes
 # `git describe --dirty` without touching a ref, and linked worktrees expose
 # `.git` as a pointer file rather than a directory. Run the canonical Git query
@@ -365,6 +385,49 @@ install(FILES packaging/debian/copyright
 # absolute path, e.g. -DUDEV_RULES_DIR=/etc/udev/rules.d.
 set(UDEV_RULES_DIR "lib/udev/rules.d" CACHE PATH "udev rules dir (relative to prefix, or absolute)")
 install(FILES packaging/udev/99-xeneon-edge.rules DESTINATION "${UDEV_RULES_DIR}" OPTIONAL)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Post-install triggers: update desktop database and icon cache on live system installs.
+# Strictly bypassed when DESTDIR is set (e.g. during CPack or makepkg packaging).
+# ─────────────────────────────────────────────────────────────────────────────
+install(CODE [[
+    if(NOT DEFINED ENV{DESTDIR} OR "$ENV{DESTDIR}" STREQUAL "")
+        find_program(_UPDATE_DESKTOP_DB update-desktop-database)
+        if(_UPDATE_DESKTOP_DB)
+            message(STATUS "Updating desktop database in ${CMAKE_INSTALL_PREFIX}/share/applications...")
+            execute_process(COMMAND "${_UPDATE_DESKTOP_DB}" -q "${CMAKE_INSTALL_PREFIX}/share/applications"
+                            ERROR_QUIET)
+        endif()
+
+        find_program(_GTK_UPDATE_ICON_CACHE gtk-update-icon-cache)
+        if(_GTK_UPDATE_ICON_CACHE)
+            message(STATUS "Updating icon cache in ${CMAKE_INSTALL_PREFIX}/share/icons/hicolor...")
+            execute_process(COMMAND "${_GTK_UPDATE_ICON_CACHE}" -q -t -f "${CMAKE_INSTALL_PREFIX}/share/icons/hicolor"
+                            ERROR_QUIET)
+        endif()
+
+        # If Omarchy is detected, signal the live desktop shell to refresh its app index
+        if(EXISTS "/usr/share/omarchy")
+            find_program(_OMARCHY_BIN omarchy)
+            if(_OMARCHY_BIN)
+                message(STATUS "Omarchy detected: refreshing application menu...")
+                if(DEFINED ENV{SUDO_USER} AND NOT "$ENV{SUDO_USER}" STREQUAL "" AND NOT "$ENV{SUDO_USER}" STREQUAL "root")
+                    execute_process(
+                        COMMAND sh -c "user=\"$1\"; uid=$(id -u \"$user\" 2>/dev/null); sudo -u \"$user\" env OMARCHY_PATH=/usr/share/omarchy XDG_RUNTIME_DIR=\"/run/user/$uid\" \"$2\" menu refresh" _ "$ENV{SUDO_USER}" "${_OMARCHY_BIN}"
+                        ERROR_QUIET
+                        TIMEOUT 5
+                    )
+                else()
+                    execute_process(
+                        COMMAND env OMARCHY_PATH=/usr/share/omarchy "${_OMARCHY_BIN}" menu refresh
+                        ERROR_QUIET
+                        TIMEOUT 5
+                    )
+                endif()
+            endif()
+        endif()
+    endif()
+]])
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CPack: generate distro packages from the install rules above.
