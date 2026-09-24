@@ -32,7 +32,10 @@ CMAKE_BIN="$(command -v cmake 2>/dev/null || true)"
 }
 
 IMPORTS=(-import ui/qml -import ui/qml/widgets -import manager/qml -import tests/ui)
-export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
+# Force offscreen platform by default so desktop environment variables
+# (such as QT_QPA_PLATFORM=wayland;xcb on Wayland desktops) do not cause 100+
+# test windows to pop up on the user's physical display.
+export QT_QPA_PLATFORM="${XENEON_QT_QPA_PLATFORM:-offscreen}"
 
 # Both shipped binaries pin the Controls style (app/src/main.cpp:271 and
 # manager/src/main.cpp:116 call QQuickStyle::setStyle("Fusion")). Without this
