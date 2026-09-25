@@ -518,6 +518,103 @@ Item {
             compare(f.text, "", "and the field is cleared, ready for the next thought")
             compare(hc.storeCtl.settingsFor("test-instance").entries[0].text, "buy\nnow", "persisted")
         }
+
+        function test_tile_entry_tap_reveals_edit_and_delete_actions() {
+            hc.storeCtl.setSetting("test-instance", "entries", [
+                { id: "tile-1", text: "thought to edit", at: Date.now() }
+            ])
+            wait(50)
+            var w = hc.item
+            compare(w.entries.length, 1)
+
+            var edits = root.findAll(w, function(n) {
+                return String(n.objectName) === "braindumpEdit-tile-1"
+            }, [])
+            var removes = root.findAll(w, function(n) {
+                return String(n.objectName) === "braindumpRemove-tile-1"
+            }, [])
+            compare(edits.length, 1)
+            compare(removes.length, 1)
+            compare(edits[0].parent.visible, false, "actions hidden before selection")
+
+            var viewport = root.findAll(w, function(n) {
+                return String(n.objectName) === "braindumpThoughtViewport-0"
+            }, [])[0]
+            verify(viewport !== null, "viewport found")
+            mouseClick(viewport, viewport.width / 2, viewport.height / 2)
+            wait(50)
+
+            compare(w.selectedId, "tile-1", "entry is selected")
+            compare(edits[0].parent.visible, true, "actions revealed after click")
+
+            mouseClick(viewport, viewport.width / 2, viewport.height / 2)
+            wait(50)
+            compare(w.selectedId, "", "entry deselected on second tap")
+            compare(edits[0].parent.visible, false, "actions hidden again")
+        }
+
+        function test_tile_entry_inline_edit_and_save() {
+            hc.storeCtl.setSetting("test-instance", "entries", [
+                { id: "tile-edit", text: "original text", at: Date.now() }
+            ])
+            wait(50)
+            var w = hc.item
+            var viewport = root.findAll(w, function(n) {
+                return String(n.objectName) === "braindumpThoughtViewport-0"
+            }, [])[0]
+            mouseClick(viewport, viewport.width / 2, viewport.height / 2)
+            wait(50)
+            compare(w.selectedId, "tile-edit")
+
+            var editBtn = root.findAll(w, function(n) {
+                return String(n.objectName) === "braindumpEdit-tile-edit"
+            }, [])[0]
+            verify(editBtn !== null && editBtn.parent.visible)
+
+            mouseClick(editBtn, editBtn.width / 2, editBtn.height / 2)
+            wait(50)
+            compare(w.editingIndex, 0, "entered edit mode")
+
+            var editor = root.findAll(w, function(n) {
+                return String(n.objectName) === "braindumpEditor-tile-edit"
+            }, [])[0]
+            verify(editor !== null && editor.visible, "inline editor is visible")
+            verify(editor.activeFocus, "editor automatically gained active focus")
+
+            editor.text = "updated on tile"
+            keyClick(Qt.Key_Return)
+            wait(50)
+
+            compare(w.editingIndex, -1, "edit mode finished")
+            compare(w.selectedId, "", "selection cleared after edit")
+            compare(w.entries[0].text, "updated on tile")
+            compare(hc.storeCtl.settingsFor("test-instance").entries[0].text, "updated on tile")
+        }
+
+        function test_tile_entry_delete_via_trash_icon() {
+            hc.storeCtl.setSetting("test-instance", "entries", [
+                { id: "tile-del", text: "thought to delete", at: Date.now() }
+            ])
+            wait(50)
+            var w = hc.item
+            var viewport = root.findAll(w, function(n) {
+                return String(n.objectName) === "braindumpThoughtViewport-0"
+            }, [])[0]
+            mouseClick(viewport, viewport.width / 2, viewport.height / 2)
+            wait(50)
+
+            var removeBtn = root.findAll(w, function(n) {
+                return String(n.objectName) === "braindumpRemove-tile-del"
+            }, [])[0]
+            verify(removeBtn !== null && removeBtn.parent.visible)
+
+            mouseClick(removeBtn, removeBtn.width / 2, removeBtn.height / 2)
+            wait(50)
+
+            compare(w.entries.length, 0, "thought was removed from the tile")
+            compare(w.selectedId, "", "selection cleared")
+            compare(hc.storeCtl.settingsFor("test-instance").entries.length, 0)
+        }
     }
 
     TestCase {

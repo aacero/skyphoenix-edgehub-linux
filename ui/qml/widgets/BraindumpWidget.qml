@@ -70,6 +70,7 @@ WidgetChrome {
     readonly property int maxEntryLength: 500
     property string editingId: ""
     property string editingText: ""
+    property string selectedId: ""
     readonly property var undoSnapshot:
         Array.isArray(cfg.undoEntries)
         ? { entries: cfg.undoEntries,
@@ -164,6 +165,7 @@ WidgetChrome {
 
     function add(text) {
         if (!store) return false
+        w.selectedId = ""
         var t = (text || "").trim()
         if (!t.length) return true
         // Newest first: the thing you just captured must be the thing you see,
@@ -196,6 +198,7 @@ WidgetChrome {
         var a = w.entriesWithIds()
         a.splice(i, 1)
         w.editingId = ""
+        w.selectedId = ""
         w.persistMutation(a, "Restore removed thought", "Thought removed")
     }
     function requestClearAll() {
@@ -208,6 +211,7 @@ WidgetChrome {
             return
         }
         w.clearArmed = false
+        w.selectedId = ""
         w.persistMutation([], "Restore cleared thoughts", "Queue cleared")
     }
     function clearAll() { requestClearAll() }
@@ -230,6 +234,7 @@ WidgetChrome {
         if (t === String(old.text || "")) {
             w.editingId = ""
             w.editingText = ""
+            w.selectedId = ""
             return true
         }
         a[w.editingIndex] = { id: old.id, text: t, at: old.at }
@@ -237,11 +242,13 @@ WidgetChrome {
             return false
         w.editingId = ""
         w.editingText = ""
+        w.selectedId = ""
         return true
     }
     function cancelEdit() {
         w.editingId = ""
         w.editingText = ""
+        w.selectedId = ""
         w.actionNotice = "Edit cancelled"
         noticeTimer.restart()
         return true
@@ -315,6 +322,7 @@ WidgetChrome {
     // lifecycle path so close, shutdown, and external-layout preflight share the
     // same persistence contract.
     onExpandedChanged: {
+        w.selectedId = ""
         if (!w.expanded)
             w.flush()
     }
@@ -365,153 +373,202 @@ WidgetChrome {
                     Math.max(0, w.entries.length - visibleCapacity)
                 // Newest-first, so an add showing you the new row at the top is
                 // correct - unlike TasksWidget, which restores scroll.
-                delegate: RowLayout {
+                delegate: Item {
                     id: entryRow
                     required property int index
                     required property var modelData
                     readonly property bool editingThis:
                         w.editingIndex === entryRow.index
+                    readonly property bool selectedThis:
+                        w.selectedId === w.entryId(modelData, index)
+                    readonly property bool showActions:
+                        w.expanded || editingThis || selectedThis
                     objectName: "braindumpEntry-" + w.entryId(modelData, index)
                     width: ListView.view ? ListView.view.width : 0
                     height: w.rowH
-                    spacing: theme.spacingSm
                     // ListView may retain delegates just beyond its clipped
                     // viewport. Do not paint or expose those recycled rows until
                     // they actually intersect the visible queue.
                     visible: y + height > list.contentY
                              && y < list.contentY + list.height
 
-                    Text {
-                        objectName: "braindumpStamp-" + entryRow.index
-                        visible: w.showTimes
-                        text: w.stampOf(entryRow.modelData)
-                        color: theme.textPrimary
-                        opacity: 0.72
-                        font.family: theme.fontMono
-                        font.pixelSize: Math.round(w.stampFont)
-                        Layout.minimumWidth: Math.ceil(implicitWidth) + 1
-                        Layout.preferredWidth: Layout.minimumWidth
-                        Layout.alignment: Qt.AlignVCenter
-                        horizontalAlignment: Text.AlignRight
-                        wrapMode: Text.NoWrap
-                    }
-                    Flickable {
-                        id: thoughtViewport
-                        objectName: "braindumpThoughtViewport-" + entryRow.index
-                        Layout.fillWidth: true; Layout.fillHeight: true
-                        visible: w.editingIndex !== entryRow.index
-                        clip: true
-                        contentWidth: width
-                        contentHeight: Math.max(height, thoughtText.implicitHeight)
-                        flickableDirection: Flickable.VerticalFlick
-                        interactive: contentHeight > height + 1
-                        boundsBehavior: Flickable.StopAtBounds
+                    activeFocusOnTab: !w.expanded && !entryRow.editingThis
+                    Accessible.role: Accessible.ListItem
+                    Accessible.name: (entryRow.modelData && entryRow.modelData.text ? entryRow.modelData.text : "Thought")
+                                     + (entryRow.selectedThis ? " (selected)" : "")
+                    Accessible.onPressAction: entryRow.toggleSelect()
+                    Keys.onSpacePressed: entryRow.toggleSelect()
+                    Keys.onReturnPressed: entryRow.toggleSelect()
 
-                        ScrollBar.vertical: ScrollBar {
-                            id: thoughtScrollBar
-                            policy: thoughtViewport.contentHeight
-                                    > thoughtViewport.height + 1
-                                    ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+                    function toggleSelect() {
+                        if (w.editingIndex >= 0) {
+                            if (w.editingIndex === entryRow.index) return
+                            if (!w.commitEdit(w.editingText)) return
                         }
+                        var myId = w.entryId(modelData, index)
+                        w.selectedId = (w.selectedId === myId) ? "" : myId
+                    }
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 8
+                        color: entryRow.editingThis || entryRow.selectedThis
+                               ? Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.12)
+                               : "transparent"
+                        border.width: entryRow.editingThis || entryRow.selectedThis ? 1 : 0
+                        border.color: Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.35)
+                    }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: (entryRow.editingThis || entryRow.selectedThis) ? 4 : 0
+                        anchors.rightMargin: (entryRow.editingThis || entryRow.selectedThis) ? 4 : 0
+                        spacing: theme.spacingSm
 
                         Text {
-                            id: thoughtText
-                            objectName: "braindumpThought-" + entryRow.index
-                            // Reserve a stable overlay gutter. Binding width to
-                            // ScrollBar.visible creates a content-height cycle:
-                            // wrapping decides whether the bar is visible while
-                            // visibility would change the wrapping width.
-                            width: Math.max(1, thoughtViewport.width
-                                            - theme.spacingSm)
-                            height: Math.max(thoughtViewport.height, implicitHeight)
-                            verticalAlignment: implicitHeight <= thoughtViewport.height
-                                               ? Text.AlignVCenter : Text.AlignTop
-                            text: entryRow.modelData
-                                  && entryRow.modelData.text !== undefined
-                                  ? entryRow.modelData.text : ""
+                            objectName: "braindumpStamp-" + entryRow.index
+                            visible: w.showTimes
+                            text: w.stampOf(entryRow.modelData)
                             color: theme.textPrimary
-                            wrapMode: Text.Wrap
-                            font.pixelSize: Math.round(w.rowFont)
+                            opacity: 0.72
+                            font.family: theme.fontMono
+                            font.pixelSize: Math.round(w.stampFont)
+                            Layout.minimumWidth: Math.ceil(implicitWidth) + 1
+                            Layout.preferredWidth: Layout.minimumWidth
+                            Layout.alignment: Qt.AlignVCenter
+                            horizontalAlignment: Text.AlignRight
+                            wrapMode: Text.NoWrap
+
+                            TapHandler {
+                                cursorShape: Qt.PointingHandCursor
+                                onTapped: entryRow.toggleSelect()
+                            }
                         }
-                    }
-                    TextField {
-                        objectName: "braindumpEditor-" + w.entryId(entryRow.modelData,
-                                                                   entryRow.index)
-                        Layout.fillWidth: true; Layout.fillHeight: true
-                        visible: w.editingIndex === entryRow.index
-                        text: visible ? w.editingText : ""
-                        maximumLength: w.maxEntryLength
-                        color: theme.textPrimary
-                        font.pixelSize: Math.round(w.rowFont)
-                        selectByMouse: true
-                        onTextEdited: w.editingText = text
-                        onAccepted: w.commitEdit(text)
-                        Keys.onEscapePressed: w.cancelEdit()
-                    }
-                    // Removal is expanded-only: on a small tile the ✕ would sit a
-                    // thumb-width from the text and this list is meant to be added
-                    // to in a hurry. Clearing is a deliberate act, so it needs room.
-                    RowLayout {
-                        visible: w.expanded
-                        spacing: 0
-                        Rectangle {
-                            objectName: "braindumpEdit-" + w.entryId(entryRow.modelData,
-                                                                     entryRow.index)
-                            Layout.preferredWidth: theme.touchTertiary; Layout.fillHeight: true
-                            radius: 8
-                            color: editMA.pressed ? Qt.rgba(w.effAccent.r, w.effAccent.g,
-                                                            w.effAccent.b, 0.18) : "transparent"
-                            border.width: 1
-                            border.color: theme.cardBorder
-                            activeFocusOnTab: true
-                            Accessible.role: Accessible.Button
-                            Accessible.name: (entryRow.editingThis ? "Save" : "Edit")
-                                             + " thought " + (entryRow.index + 1)
-                            Accessible.onPressAction: w.saveOrBeginEdit(entryRow.index)
-                            Keys.onSpacePressed: w.saveOrBeginEdit(entryRow.index)
-                            Keys.onReturnPressed: w.saveOrBeginEdit(entryRow.index)
-                            AppIcon {
-                                anchors.centerIn: parent
-                                name: entryRow.editingThis ? "ui-check" : "ui-edit"; size: 20
+                        Flickable {
+                            id: thoughtViewport
+                            objectName: "braindumpThoughtViewport-" + entryRow.index
+                            Layout.fillWidth: true; Layout.fillHeight: true
+                            visible: w.editingIndex !== entryRow.index
+                            clip: true
+                            contentWidth: width
+                            contentHeight: Math.max(height, thoughtText.implicitHeight)
+                            flickableDirection: Flickable.VerticalFlick
+                            interactive: contentHeight > height + 1
+                            boundsBehavior: Flickable.StopAtBounds
+
+                            TapHandler {
+                                cursorShape: Qt.PointingHandCursor
+                                onTapped: entryRow.toggleSelect()
+                            }
+
+                            ScrollBar.vertical: ScrollBar {
+                                id: thoughtScrollBar
+                                policy: thoughtViewport.contentHeight
+                                        > thoughtViewport.height + 1
+                                        ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
+                            }
+
+                            Text {
+                                id: thoughtText
+                                objectName: "braindumpThought-" + entryRow.index
+                                // Reserve a stable overlay gutter. Binding width to
+                                // ScrollBar.visible creates a content-height cycle:
+                                // wrapping decides whether the bar is visible while
+                                // visibility would change the wrapping width.
+                                width: Math.max(1, thoughtViewport.width
+                                                - theme.spacingSm)
+                                height: Math.max(thoughtViewport.height, implicitHeight)
+                                verticalAlignment: implicitHeight <= thoughtViewport.height
+                                                   ? Text.AlignVCenter : Text.AlignTop
+                                text: entryRow.modelData
+                                      && entryRow.modelData.text !== undefined
+                                      ? entryRow.modelData.text : ""
                                 color: theme.textPrimary
-                            }
-                            MouseArea {
-                                id: editMA
-                                anchors.fill: parent
-                                onClicked: w.saveOrBeginEdit(entryRow.index)
+                                wrapMode: Text.Wrap
+                                font.pixelSize: Math.round(w.rowFont)
                             }
                         }
-                        Rectangle {
-                            objectName: "braindumpRemove-" + w.entryId(entryRow.modelData,
+                        TextField {
+                            objectName: "braindumpEditor-" + w.entryId(entryRow.modelData,
                                                                        entryRow.index)
-                            Layout.preferredWidth: theme.touchTertiary; Layout.fillHeight: true
-                            radius: 8
-                            color: rmMA.pressed
-                                   ? (entryRow.editingThis
-                                      ? Qt.rgba(w.effAccent.r, w.effAccent.g,
-                                                w.effAccent.b, 0.18)
-                                      : Qt.rgba(theme.error.r, theme.error.g,
-                                                theme.error.b, 0.16))
-                                   : "transparent"
-                            border.width: 1
-                            border.color: theme.cardBorder
-                            activeFocusOnTab: true
-                            Accessible.role: Accessible.Button
-                            Accessible.name: (entryRow.editingThis ? "Cancel edit for"
-                                             : "Remove") + " thought "
-                                             + (entryRow.index + 1)
-                            Accessible.onPressAction: w.cancelOrRemove(entryRow.index)
-                            Keys.onSpacePressed: w.cancelOrRemove(entryRow.index)
-                            Keys.onReturnPressed: w.cancelOrRemove(entryRow.index)
-                            AppIcon {
-                                anchors.centerIn: parent
-                                name: entryRow.editingThis ? "ui-close" : "ui-trash"; size: 20
-                                color: theme.textPrimary
+                            Layout.fillWidth: true; Layout.fillHeight: true
+                            visible: w.editingIndex === entryRow.index
+                            text: visible ? w.editingText : ""
+                            maximumLength: w.maxEntryLength
+                            color: theme.textPrimary
+                            font.pixelSize: Math.round(w.rowFont)
+                            selectByMouse: true
+                            onVisibleChanged: if (visible) forceActiveFocus()
+                            onTextEdited: w.editingText = text
+                            onAccepted: w.commitEdit(text)
+                            Keys.onEscapePressed: w.cancelEdit()
+                        }
+                        // Actions: in expanded mode, always visible. On a compact
+                        // tile, revealed by tapping an entry so viewing space is
+                        // maximized and accidental deletes while scrolling are prevented.
+                        RowLayout {
+                            id: entryActions
+                            visible: entryRow.showActions
+                            spacing: 0
+                            Rectangle {
+                                objectName: "braindumpEdit-" + w.entryId(entryRow.modelData,
+                                                                         entryRow.index)
+                                Layout.preferredWidth: theme.touchTertiary; Layout.fillHeight: true
+                                radius: 8
+                                color: editMA.pressed ? Qt.rgba(w.effAccent.r, w.effAccent.g,
+                                                                w.effAccent.b, 0.18) : "transparent"
+                                border.width: 1
+                                border.color: theme.cardBorder
+                                activeFocusOnTab: true
+                                Accessible.role: Accessible.Button
+                                Accessible.name: (entryRow.editingThis ? "Save" : "Edit")
+                                                 + " thought " + (entryRow.index + 1)
+                                Accessible.onPressAction: w.saveOrBeginEdit(entryRow.index)
+                                Keys.onSpacePressed: w.saveOrBeginEdit(entryRow.index)
+                                Keys.onReturnPressed: w.saveOrBeginEdit(entryRow.index)
+                                AppIcon {
+                                    anchors.centerIn: parent
+                                    name: entryRow.editingThis ? "ui-check" : "ui-edit"; size: 20
+                                    color: theme.textPrimary
+                                }
+                                MouseArea {
+                                    id: editMA
+                                    anchors.fill: parent
+                                    onClicked: w.saveOrBeginEdit(entryRow.index)
+                                }
                             }
-                            MouseArea {
-                                id: rmMA
-                                anchors.fill: parent
-                                onClicked: w.cancelOrRemove(entryRow.index)
+                            Rectangle {
+                                objectName: "braindumpRemove-" + w.entryId(entryRow.modelData,
+                                                                           entryRow.index)
+                                Layout.preferredWidth: theme.touchTertiary; Layout.fillHeight: true
+                                radius: 8
+                                color: rmMA.pressed
+                                       ? (entryRow.editingThis
+                                          ? Qt.rgba(w.effAccent.r, w.effAccent.g,
+                                                    w.effAccent.b, 0.18)
+                                          : Qt.rgba(theme.error.r, theme.error.g,
+                                                    theme.error.b, 0.16))
+                                       : "transparent"
+                                border.width: 1
+                                border.color: theme.cardBorder
+                                activeFocusOnTab: true
+                                Accessible.role: Accessible.Button
+                                Accessible.name: (entryRow.editingThis ? "Cancel edit for"
+                                                 : "Remove") + " thought "
+                                                 + (entryRow.index + 1)
+                                Accessible.onPressAction: w.cancelOrRemove(entryRow.index)
+                                Keys.onSpacePressed: w.cancelOrRemove(entryRow.index)
+                                Keys.onReturnPressed: w.cancelOrRemove(entryRow.index)
+                                AppIcon {
+                                    anchors.centerIn: parent
+                                    name: entryRow.editingThis ? "ui-close" : "ui-trash"; size: 20
+                                    color: theme.textPrimary
+                                }
+                                MouseArea {
+                                    id: rmMA
+                                    anchors.fill: parent
+                                    onClicked: w.cancelOrRemove(entryRow.index)
+                                }
                             }
                         }
                     }
@@ -600,6 +657,7 @@ WidgetChrome {
                                           ? w.effAccent : theme.cardBorder
                             border.width: 1
                         }
+                        onActiveFocusChanged: if (activeFocus && w.selectedId.length) w.selectedId = ""
                         onTextChanged: {
                             if (text.length > w.maxEntryLength) {
                                 var keepCursor = Math.min(cursorPosition,
@@ -625,7 +683,10 @@ WidgetChrome {
                 }
                 PillButton {
                     label: w.expanded ? "Add" : ""; glyph: "＋"; primary: true; tint: w.effAccent
-                    onClicked: w.commitCapture()
+                    onClicked: {
+                        if (w.selectedId.length) w.selectedId = ""
+                        w.commitCapture()
+                    }
                 }
             }
 
