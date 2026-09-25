@@ -556,6 +556,7 @@ WidgetChrome {
         ColumnLayout {
             objectName: "braindumpCaptureColumn"
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
             Layout.maximumWidth: w.horiz ? w.width * 0.42 : Number.POSITIVE_INFINITY
             Layout.alignment: w.horiz ? Qt.AlignVCenter : Qt.AlignBottom
             spacing: theme.spacingSm
@@ -569,6 +570,7 @@ WidgetChrome {
                     id: captureViewport
                     objectName: "braindumpCaptureViewport"
                     Layout.fillWidth: true
+                    Layout.minimumWidth: theme.fontMinimum * 3
                     Layout.fillHeight: true
                     Layout.minimumHeight: theme.touchSecondary
                     Layout.maximumHeight: w.expanded ? 112 : 80
@@ -581,6 +583,7 @@ WidgetChrome {
                     TextArea {
                         id: input
                         objectName: "braindumpCaptureField"
+                        implicitWidth: 100
                         width: captureViewport.availableWidth
                         height: Math.max(captureViewport.availableHeight,
                                          contentHeight + topPadding + bottomPadding)

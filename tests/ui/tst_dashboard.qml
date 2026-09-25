@@ -1204,6 +1204,47 @@ Item {
             compare(d.hasExpanded, false, "expanded view closed")
         }
 
+        function test_braindump_tile_in_place_input_and_add() {
+            var d = ld.item
+            var s = root.store()
+            d.applyExternalState(root.makeDoc([ { id: "bd1", type: "braindump", size: "1x1" } ]))
+            d.goToPageExternal(0)
+            tryCompare(d, "currentPageIndex", 0, 3000)
+            var pItem = null
+            var field = null
+            var addBtn = null
+            tryVerify(function () {
+                pItem = root.pageItem()
+                if (!pItem) return false
+                if (Math.abs(pItem.mapToItem(d, 0, 0).x - 12) > 2) return false
+                field = root.findPred(pItem, function (x) {
+                    return x && x.objectName === "braindumpCaptureField"
+                })
+                addBtn = root.findPred(pItem, function (x) {
+                    return x && x.glyph === "＋" && x.visible
+                })
+                return field !== null && field.visible && field.width > 50 && addBtn !== null
+            }, 3000, "the braindump capture field and add button are visible on the settled active page")
+            verify(addBtn !== null, "addBtn is present and visible")
+
+            // Verify clicking the field directly on the tile grants active focus
+            compare(field.activeFocus, false, "field does not have focus initially")
+            mouseClick(field, field.width / 2, field.height / 2)
+            tryCompare(field, "activeFocus", true, 2000, "clicking field grants active focus")
+
+            // Type text into the field and click the add button directly on the tile
+            field.text = "Tile capture thought"
+            mouseClick(addBtn, addBtn.width / 2, addBtn.height / 2)
+
+            // Verify the entry was committed and persisted to store
+            tryVerify(function () {
+                var settings = s.settingsFor("bd1")
+                return settings && settings.entries && settings.entries.length === 1
+                    && settings.entries[0].text === "Tile capture thought"
+            }, 3000, "thought was committed and saved to store via in-place tile button click")
+            compare(field.text, "", "capture field was cleared after commit")
+        }
+
         function test_applyAppearance_pushes_all_keys() {
             var d = ld.item
             var s = root.store()

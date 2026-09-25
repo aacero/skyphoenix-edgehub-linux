@@ -1767,7 +1767,6 @@ Item {
                                     id: tapMA
                                     objectName: "tileTapArea-" + cell.tileId
                                     anchors.fill: parent
-                                    z: 10
                                     enabled: !dashboard.editMode && !dashboard.hasExpanded
                                     propagateComposedEvents: true
                                     onClicked: function(mouse) { mouse.accepted = false }
@@ -1795,6 +1794,7 @@ Item {
 
                                 WidgetHost {
                                     id: tileLd
+                                    z: 1
                                     anchors.fill: parent
                                     property string wId: cell.tileId
                                     property string wType: cell.tileType
