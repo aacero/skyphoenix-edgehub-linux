@@ -51,6 +51,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="1.1.0" date="2026-09-25" type="stable">
+      <description>
+        <p>Feature release with Moon high-density preview support, Braindump quick actions, Prometheus fleet configuration, Grafana charting controls, and idle screen cycling.</p>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-07-27" type="stable">
       <description>
         <p>Stable release with true Hub layout and appearance previews, live orientation reflection, touch-friendly editing, preset guidance, and hardened local synchronization.</p>

@@ -5,7 +5,7 @@ This file inventories non-development Rust dependencies reachable from
 core/Cargo.lock for target x86_64-unknown-linux-gnu. These crates contribute to, or are
 linked into, the Hub and Manager through libxeneon_core.a.
 
-Cargo.lock SHA-256: 1cf7d7bc7aacd0963b2e522b723fe6794cc31f892662993fcda70bf688ff36a7
+Cargo.lock SHA-256: 945dd6c0e03275c260531cfd5a37f1ef2f1f81df2886bdbcab9180fe9c8b4e31
 Package count: 71
 Notice hashes identify the exact upstream bytes. Rendered copies
 normalize line endings and trailing horizontal whitespace only.

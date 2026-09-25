@@ -1,13 +1,13 @@
 # EdgeHub roadmap
 
-**Last updated:** 2026-07-28
+**Last updated:** 2026-09-25
 **Public baseline:** `v1.0.0`
-**Release target:** `v1.0.1`
-**Development status:** stable 1.0 maintenance on `main`
+**Release target:** `v1.1.0`
+**Development status:** stable 1.1 release candidate on `main`
 
 Version 1.0.0 is the latest published milestone. Its supported download channels
 are the AppImage, Ubuntu 26.04 DEB, and Fedora 43 RPM attached to the signed
-GitHub release. Work on `master` targets `v1.0.1`, for which
+GitHub release. Work on `main` targets `v1.1.0`, for which
 publication is not certified and no release claim is made yet.
 
 ## Current implementation

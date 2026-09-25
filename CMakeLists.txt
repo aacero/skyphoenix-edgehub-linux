@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(XeneonEdgeLinuxHub VERSION 1.0.0 LANGUAGES CXX)
+project(XeneonEdgeLinuxHub VERSION 1.1.0 LANGUAGES CXX)
 
 # --- Build version string (git-derived, overridable) ---
 # A checkout derives a distinguishing string from Git. A `git archive` source

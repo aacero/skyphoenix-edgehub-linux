@@ -120,7 +120,7 @@ def read_public_version(readme: str) -> str:
     match = re.search(
         rf"The latest published release is\s+"
         rf"\*\*\[({VERSION_PATTERN})\]"
-        rf"\(https://github\.com/skyphoenix-it/skyphoenix-edgehub-linux/"
+        rf"\(https://github\.com/(?:skyphoenix-it|aacero)/skyphoenix-edgehub-linux/"
         rf"releases/tag/({VERSION_PATTERN})\)\*\*\.",
         readme,
     )
@@ -134,7 +134,7 @@ def read_public_version(readme: str) -> str:
 def read_badge_version(readme: str) -> str:
     matches = re.findall(
         rf"\[!\[Release: ({VERSION_PATTERN})\]\([^)]*\)\]"
-        rf"\(https://github\.com/skyphoenix-it/skyphoenix-edgehub-linux/"
+        rf"\(https://github\.com/(?:skyphoenix-it|aacero)/skyphoenix-edgehub-linux/"
         rf"releases/tag/({VERSION_PATTERN})\)",
         readme,
     )

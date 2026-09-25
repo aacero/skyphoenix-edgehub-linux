@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-25
+
+### Added
+
+- Moon phase widget surfaces rich lunar metrics on 2x2 and wider tiles,
+  including moonrise/moonset times, lunar age in days, phase percentage, and
+  upcoming full and new moon dates.
+- Moon phase widget inherits latitude and longitude coordinates automatically
+  from dashboard weather settings with an optional manual coordinate override.
+- Braindump widget supports in-place text entry, direct item editing on compact
+  tiles, and one-tap deletion via a trashcan icon without opening settings.
+- Native Grafana and Prometheus PromQL time-series vector chart widget with
+  customizable Y-axis bounds, optional zero-baseline anchoring, and grid labels.
+- Systems fleet monitor widget tracking multiple remote Prometheus
+  node_exporter hosts with IPv6 parsing, latency tracking, and hot switching.
+- Automatic idle screen cycling with configurable intervals and smooth transitions.
+- Double-tap and double-click shortcuts to open the expanded detail view on any
+  widget tile.
+- Native Omarchy desktop environment detection and system menu shortcut integration.
+
+### Fixed
+
+- Eliminated startup race conditions and socket lock contention on hub restart.
+- Fixed cold-start fallback and host-selection synchronization in Systems widget.
+- Bundled Inter and JetBrains Mono fonts for consistent cross-platform typography.
+- Hardened offscreen UI test execution when run from active graphical desktop sessions.
+
 ## [1.0.0] - 2026-07-28
 
 ### Added
@@ -208,7 +235,9 @@ display matching, and the CI/coverage gates.
 
 | Version | Date | Description |
 |---------|------|-------------|
-| Unreleased | - | Stable-candidate hardening after beta.1 |
+| Unreleased | - | Maintenance |
+| 1.1.0 | 2026-09-25 | Moon density, Braindump quick edit/delete, Prometheus fleet monitor, Grafana vector chart, idle screen cycle |
+| 1.0.0 | 2026-07-28 | Stable release: per-size widgets, Manager previews, persistent alerts, hardened recovery |
 | 1.0.0-beta.1 | 2026-07-21 | Hub/Manager integration, hardware lifecycle, widget fidelity and release hardening |
 | 1.0.0-alpha.2 | 2026-07-16 | First signed release tag |
 | 1.0.0-alpha.1 | 2026-07 | Initial alpha |

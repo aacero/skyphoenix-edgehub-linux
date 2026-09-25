@@ -98,7 +98,7 @@ python3 "$REPO/scripts/generate_rust_third_party_notices.py" \
 python3 "$REPO/scripts/generate_debian_copyright.py" \
   --check "$REPO/packaging/debian/copyright"
 printf '%s  %s\n' \
-  4c2f5f3e5235433bc3ee9cf53409f2b24ca8cd2b60ab8b2489f77812e07baa2c \
+  6452680cafbc12a17989e43cc3cd14a96c6360c6c0ee2114baf64087a357b801 \
   "$REPO/packaging/aur/THIRD_PARTY_NOTICES-RUST.txt" |
   sha256sum --check --strict
 echo "  ok  generated Rust and Debian legal records are current"
@@ -172,7 +172,7 @@ done
 echo "  ok  distro and documentation workflows self-trigger on every build input"
 
 grep -Fq \
-  'find_package(Qt6 6.5 REQUIRED COMPONENTS Core Gui Quick Qml DBus Network Svg QuickControls2)' \
+  'find_package(Qt6 6.9 REQUIRED COMPONENTS Core Gui Quick Qml DBus Network Svg QuickControls2)' \
   "$REPO/CMakeLists.txt"
 grep -Fq 'libqt6svg6, qt6-wayland' "$REPO/CMakeLists.txt"
 grep -Fq 'qt6-qtsvg, qt6-qtwayland' \
