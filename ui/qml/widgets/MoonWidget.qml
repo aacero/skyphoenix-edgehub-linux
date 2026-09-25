@@ -46,16 +46,44 @@ WidgetChrome {
     }
     readonly property string hemisphere: cfg.hemisphere === "south" ? "south" : "north"
     readonly property bool showAccuracyNote: cfg.showAccuracyNote !== undefined ? cfg.showAccuracyNote : true
-    readonly property bool showLocalEvents: cfg.showLocalEvents !== undefined ? cfg.showLocalEvents : false
+
+    // Fallback location inherited from any configured widget in the store (e.g. Weather)
+    readonly property var _fallbackLocation: {
+        var _ = store ? store.revision : 0
+        if (!store || !store.document || !store.document.settings) return null
+        var s = store.document.settings
+        for (var k in s) {
+            if (k === w.instanceId) continue
+            var item = s[k]
+            if (item && item.lat !== undefined && item.lat !== null
+                     && item.lon !== undefined && item.lon !== null) {
+                var lt = Number(item.lat), ln = Number(item.lon)
+                if (isFinite(lt) && isFinite(ln) && lt >= -90 && lt <= 90 && ln >= -180 && ln <= 180) {
+                    return { lat: lt, lon: ln, place: item.place || "" }
+                }
+            }
+        }
+        return null
+    }
+
     readonly property string locationMode: cfg.locationMode === "manual" ? "manual" : "search"
-    readonly property real lat: cfg.lat !== undefined && cfg.lat !== null
-                                && ("" + cfg.lat).trim().length ? Number(cfg.lat) : NaN
-    readonly property real lon: cfg.lon !== undefined && cfg.lon !== null
-                                && ("" + cfg.lon).trim().length ? Number(cfg.lon) : NaN
-    readonly property string place: cfg.place || ""
+    readonly property real lat: {
+        if (cfg.lat !== undefined && cfg.lat !== null && ("" + cfg.lat).trim().length)
+            return Number(cfg.lat)
+        return _fallbackLocation ? _fallbackLocation.lat : NaN
+    }
+    readonly property real lon: {
+        if (cfg.lon !== undefined && cfg.lon !== null && ("" + cfg.lon).trim().length)
+            return Number(cfg.lon)
+        return _fallbackLocation ? _fallbackLocation.lon : NaN
+    }
+    readonly property string place: cfg.place ? cfg.place : (_fallbackLocation ? _fallbackLocation.place : "")
     readonly property bool locationConfigured: isFinite(w.lat) && isFinite(w.lon)
                                                && w.lat >= -90 && w.lat <= 90
                                                && w.lon >= -180 && w.lon <= 180
+    readonly property bool showLocalEvents: cfg.showLocalEvents !== undefined
+        ? cfg.showLocalEvents
+        : w.locationConfigured
 
     readonly property var names: ["New Moon", "Waxing Crescent", "First Quarter", "Waxing Gibbous",
                                   "Full Moon", "Waning Gibbous", "Last Quarter", "Waning Crescent"]
@@ -225,13 +253,13 @@ WidgetChrome {
     // deliberately retain their richer composition even when one axis is short.
     readonly property bool compactDetail: sizeClass !== "full"
                                           && Math.min(width, height) < 480
-    // Has this instance got room to spare? The overlay is a size CLASS ("full",
-    // injected by Dashboard alongside expanded), not a mode - so it belongs in
-    // this predicate rather than in a `w.expanded ?` branch scattered across the
-    // file. `large` is unreachable for the sizes this type declares (0.5x0.5,
-    // 0.5x1, 1x0.5, 1x1) but is kept so a forced class degrades sanely.
+    // Has this instance got room to spare? Baseline (1x1 / 2x2 units), tall,
+    // large, and full overlays have room for rich details.
     readonly property bool roomy: tallish || sizeClass === "full"
-                                 || width * height > 700000
+                                 || (!micro && (width * height > 450000 || Math.min(width, height) >= 480))
+    // Side-by-side two-column layout for wide tiles or roomy tiles that are wider than tall.
+    readonly property bool twoColumn: horiz || (roomy && width > height * 1.15 && sizeClass !== "full")
+
     // The glyph scales to its box (line box ≈ pixelSize * 1.3), clamped per
     // class so it reads as a moon, not a wall.
     //
@@ -243,10 +271,11 @@ WidgetChrome {
     // neither. Dropping the branch entirely lets "full" fall through to the same
     // two-axis term every other non-wide class uses; no tile class changes.
     readonly property real glyphPx: micro ? Math.min(width * 0.64, height * 0.68, 220)
-        : horiz ? Math.min(width * (roomy ? 0.24 : 0.30),
-                           height * (roomy ? 0.60 : 0.55), roomy ? 260 : 170)
+        : twoColumn ? Math.min(width * (roomy ? 0.28 : 0.30),
+                               height * (roomy ? 0.55 : 0.55), roomy ? 260 : 170)
         : tallish ? Math.min(width * (compactDetail ? 0.54 : 0.68),
                              height * (compactDetail ? 0.30 : 0.45), 260)
+        : (roomy && sizeClass !== "full") ? Math.min(width * 0.38, height * 0.30, 240)
         : Math.min(width * 0.50, height * 0.44, 300)
     // Illumination context: the sizes that have room add the lunar age. (`|| expanded`
     // dropped - `roomy` already covers sizeClass "full", which is what the overlay
@@ -279,11 +308,11 @@ WidgetChrome {
         objectName: "moonLayout"
         anchors.centerIn: parent
         width: parent.width
-        columns: w.horiz ? 2 : 1
+        columns: w.twoColumn ? 2 : 1
         // Air is room, not mode: 14 was "the overlay" and 2 "not the overlay",
         // so a 0.5x1 tall tile carrying the same glyph + name + illumination +
         // dates stack as the overlay got the cramped 2.
-        rowSpacing: w.compactDetail ? theme.spacingXs : (w.roomy ? 14 : 2)
+        rowSpacing: w.compactDetail ? theme.spacingXs : (w.roomy ? 12 : 2)
         columnSpacing: w.compactDetail ? theme.spacingSm : theme.spacingLg
 
         Canvas {
@@ -371,7 +400,7 @@ WidgetChrome {
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignVCenter
             spacing: w.compactDetail ? theme.spacingXs
-                                     : (w.roomy ? 14 : 4)
+                                     : (w.roomy ? (w.twoColumn ? 6 : 10) : 4)
 
             // fillWidth (not maximumWidth): a non-fill Text caps the nested
             // column's own stretch, which pinned the whole block to the left.
@@ -402,8 +431,8 @@ WidgetChrome {
                 Layout.alignment: Qt.AlignHCenter
                 Layout.fillWidth: w.compactDetail
                 visible: w.roomy
-                spacing: w.compactDetail ? theme.spacingSm : theme.spacingXl
-                Layout.topMargin: w.compactDetail ? 0 : theme.spacingSm
+                spacing: w.compactDetail ? theme.spacingSm : (w.twoColumn ? theme.spacingMd : theme.spacingXl)
+                Layout.topMargin: (w.compactDetail || w.twoColumn) ? 0 : theme.spacingSm
                 ColumnLayout {
                     Layout.fillWidth: w.compactDetail
                     spacing: 1
@@ -463,7 +492,8 @@ WidgetChrome {
                 // narrow projection; roomy cards can show both without clipping.
                 visible: w.roomy && (!w.compactDetail || !w.showLocalEvents)
                 Layout.alignment: Qt.AlignHCenter
-                Layout.preferredWidth: Math.min(moonLay.width * 0.76, 420)
+                Layout.preferredWidth: Math.min(
+                    (w.twoColumn ? (parent ? parent.width * 0.94 : 420) : moonLay.width * 0.76), 420)
                 spacing: theme.spacingXs
                 Text {
                     Layout.fillWidth: true
@@ -500,8 +530,10 @@ WidgetChrome {
                 visible: w.roomy && w.showLocalEvents
                 Layout.alignment: Qt.AlignHCenter
                 Layout.preferredWidth: Math.min(
-                    moonLay.width * (w.compactDetail ? 0.96 : 0.86), 520)
-                Layout.preferredHeight: localEventColumn.implicitHeight + theme.spacingMd * 2
+                    (w.twoColumn ? (parent ? parent.width * 0.96 : 500)
+                                 : moonLay.width * (w.compactDetail ? 0.96 : 0.86)), 520)
+                Layout.preferredHeight: localEventColumn.implicitHeight
+                                        + (w.compactDetail ? theme.spacingSm : theme.spacingMd) * 2
                 radius: theme.radiusMd
                 color: theme.cardBackgroundAlt
                 border.width: 1

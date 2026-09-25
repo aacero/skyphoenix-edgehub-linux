@@ -733,13 +733,13 @@ Item {
             verify(G.looksRendered(img), "content rendered")
             var upcoming = G.byObjName(wh.item, "moonUpcomingDates")
             verify(upcoming !== null, "upcoming phase dates exist")
-            var rich = row.cls === "tall" || row.w * row.h > 700000
+            var rich = row.cls === "tall" || row.w * row.h > 450000 || Math.min(row.w, row.h) >= 480
             compare(upcoming.visible, rich,
-                    "tall and 1x1.5 tiles earn next-new and next-full dates")
+                    "baseline 1x1, tall and 1x1.5 tiles earn next-new and next-full dates")
             var cycle = G.byObjName(wh.item, "moonCyclePosition")
             verify(cycle !== null, "lunar-cycle timeline exists")
             compare(cycle.visible, rich,
-                    "tall and 1x1.5 tiles visualize position within the lunar cycle")
+                    "baseline 1x1, tall and 1x1.5 tiles visualize position within the lunar cycle")
         }
 
         function test_moon_cf_hemisphere_data() {

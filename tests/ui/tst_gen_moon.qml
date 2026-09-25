@@ -393,6 +393,21 @@ Item {
                    "time basis is disclosed instead of implying the remote timezone")
         }
 
+        function test_location_inherited_from_store_when_instance_has_none() {
+            clearSettings(hMoon)
+            hMoon.storeCtl.patchSettings("weather-instance", {
+                lat: 48.2082, lon: 16.3738, place: "Vienna, AT"
+            })
+            wait(16)
+            var w = hMoon.item
+            compare(w.locationConfigured, true, "location is inherited from store")
+            compare(w.place, "Vienna, AT", "place name is inherited from store")
+            compare(w.showLocalEvents, true, "local events auto-enable when location is configured")
+            hMoon.storeCtl.setSetting("weather-instance", "lat", null)
+            hMoon.storeCtl.setSetting("weather-instance", "lon", null)
+            clearSettings(hMoon)
+        }
+
         function test_cycle_and_local_events_share_the_density_slot_intentionally() {
             var w = hMoon.item
             var cycle = findByObjectName(w, "moonCyclePosition")
@@ -602,7 +617,7 @@ Item {
             verify(w.glyphPx > 58, "and it scales past the old 58px cap")
         }
 
-        // 1x1 - glyph + name + illumination, still headerless.
+        // 1x1 - glyph + name + illumination, now with rich details (days old + next dates).
         function test_baseline_earns_name_and_illumination() {
             tryVerify(function () { return hBase.ready }, 3000)
             var w = hBase.item
@@ -611,9 +626,9 @@ Item {
             var name = findByText(w, w.names[w.idx])
             verify(name !== null && name.visible, "the phase name is shown")
             verify(w.illumLine.indexOf("% illuminated") > 0, "the baseline adds the illumination line")
-            verify(w.illumLine.indexOf("days old") < 0, "but not the age (that needs more room)")
-            var next = findByText(w, "NEXT NEW")
-            verify(next === null || !next.visible, "next new/full stays behind tall/overlay")
+            verify(w.illumLine.indexOf("days old") > 0, "the baseline adds the lunar age")
+            var next = findByObjectName(w, "moonNextNewLabel")
+            verify(next !== null && next.visible, "the baseline shows next new/full dates")
         }
 
         // wide - glyph beside the name/illumination/age column (both projections).
@@ -687,7 +702,19 @@ Item {
                   font: "system", scale: 1.45, profile: "long" },
                 { tag: "portrait-1x1.5-empty-system-text1.45-output1.25",
                   width: 557, height: 982, sizeClass: "tall",
-                  font: "system", scale: 1.45, profile: "maximum" }
+                  font: "system", scale: 1.45, profile: "maximum" },
+                { tag: "portrait-1x1-nominal-system-text1-output1",
+                  width: 696, height: 818, sizeClass: "compact",
+                  font: "system", scale: 1.0, profile: "nominal" },
+                { tag: "portrait-1x1-saturated-lexend-text1.3-output1",
+                  width: 696, height: 818, sizeClass: "compact",
+                  font: "lexend", scale: 1.3, profile: "long" },
+                { tag: "landscape-1x1-nominal-system-text1-output1",
+                  width: 846, height: 612, sizeClass: "compact",
+                  font: "system", scale: 1.0, profile: "nominal" },
+                { tag: "landscape-1x1-saturated-lexend-text1.3-output1",
+                  width: 846, height: 612, sizeClass: "compact",
+                  font: "lexend", scale: 1.3, profile: "long" }
             ]
         }
 
@@ -757,14 +784,14 @@ Item {
         // expanded:false, so a surviving `w.expanded ? …` is pinned to its
         // else-value and cannot follow the box at all.
         function test_sizing_follows_the_room_while_the_mode_is_held_fixed() {
-            tryVerify(function () { return hTall.ready && hBase.ready }, 3000)
-            var tall = hTall.item; tall.sizeClass = "tall"
+            tryVerify(function () { return hBase.ready && hMicro.ready }, 3000)
             var base = hBase.item; base.sizeClass = "compact"
+            var micro = hMicro.item; micro.sizeClass = "compact"
             wait(16)
-            compare(tall.expanded, false, "precondition: neither host is the overlay")
-            compare(base.expanded, false, "…including the roomy one")
-            compare(tall.roomy, true, "…and 'tall' is the roomy class")
-            compare(base.roomy, false, "…while the baseline third is not")
+            compare(base.expanded, false, "precondition: neither host is the overlay")
+            compare(micro.expanded, false, "…including the micro one")
+            compare(base.roomy, true, "…and baseline 696x840 is roomy")
+            compare(micro.roomy, false, "…while the micro tile is not")
 
             // Read the spacings off the LIVE layout items, not the properties
             // that feed them: a GridLayout that ignored the binding and kept a
@@ -774,11 +801,11 @@ Item {
                     return n.hasOwnProperty("rowSpacing")
                            && n.hasOwnProperty("columnSpacing") }, [])[0]
             }
-            var tg = grid(hTall), bg = grid(hBase)
-            verify(tg && bg, "both grids resolve")
-            verify(tg.rowSpacing > bg.rowSpacing,
-                   "a tall tile gets more air between the glyph and its readout ("
-                   + tg.rowSpacing + " vs " + bg.rowSpacing + ")")
+            var bg = grid(hBase), mg = grid(hMicro)
+            verify(bg && mg, "both grids resolve")
+            verify(bg.rowSpacing > mg.rowSpacing,
+                   "a roomy tile gets more air between the glyph and its readout ("
+                   + bg.rowSpacing + " vs " + mg.rowSpacing + ")")
         }
 
         // The overlay is a size class like any other, and its box is the one it is
