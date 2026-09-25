@@ -151,6 +151,9 @@ shopt -s nullglob
 packages=("$PKGDIR"/xeneon-edge-hub-*.pkg.tar.zst)
 fresh_packages=()
 for candidate in "${packages[@]}"; do
+    case "$candidate" in
+        *-debug-*) continue ;;
+    esac
     if [ -f "$candidate" ] && [ ! -L "$candidate" ] &&
        [ "$candidate" -nt "$BUILD_MARKER" ]; then
         fresh_packages+=("$candidate")
@@ -334,7 +337,7 @@ if manager_running || hub_running; then
 fi
 
 echo "==> Installing with pacman while both product processes are stopped"
-if ! sudo -n pacman -U -- "$PKG"; then
+if ! sudo -n pacman -U --overwrite '*' -- "$PKG"; then
     echo "!! pacman failed. Hub and Manager remain stopped; inspect the package transaction before restarting them." >&2
     exit 1
 fi

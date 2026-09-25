@@ -21,6 +21,7 @@ makedepends=('cmake' 'rust' 'git')
 install="$pkgname.install"
 source=()
 sha256sums=()
+options=('!debug')
 
 # update-local.sh copies this recipe into a disposable makepkg directory so
 # makepkg's mandatory pkgver rewrite cannot dirty the tracked checkout. Direct
