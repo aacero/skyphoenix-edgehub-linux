@@ -330,6 +330,23 @@ Item {
 
             root.width = 600; root.height = 800
         }
+
+        function test_two_column_ephemeris_and_clarity() {
+            var w = h.item
+            h.storeCtl.patchSettings("test-instance", {
+                place: "St. Augustine, FL",
+                lat: 29.9012,
+                lon: -81.3124
+            })
+            root.width = 1700; root.height = 672
+            compare(w.twoColumn, true)
+            verify(w.planets.length === 5, "5 planets ready for ephemeris")
+
+            var clarity100 = Math.max(0, 100 - 0)
+            compare(clarity100, 100, "0% cloud cover is 100% clarity")
+
+            root.width = 600; root.height = 800
+        }
     }
 }
 

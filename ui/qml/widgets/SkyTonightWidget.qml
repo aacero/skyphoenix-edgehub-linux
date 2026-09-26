@@ -782,15 +782,25 @@ WidgetChrome {
                     RowLayout {
                         Layout.fillWidth: true
                         Text {
-                            text: "☁️ TONIGHT'S OBSERVING WINDOW (8 PM – 2 AM)"
+                            text: "🔭 OBSERVING WINDOW (8 PM – 2 AM)"
                             font.pixelSize: theme.fontMinimum
                             font.bold: true
                             color: theme.textSecondary
+                        }
+                        Text {
+                            text: "· Sky Clarity"
+                            font.pixelSize: theme.fontMinimum - 1
+                            color: theme.textSecondary
+                            visible: w.twoColumn
                             Layout.fillWidth: true
                         }
                         Text {
-                            visible: w.twoColumn && w.bestWindow !== null
-                            text: w.bestWindow ? ("★ Clearest: " + w.bestWindow.label + " (" + w.bestWindow.cloud + "%)") : ""
+                            visible: w.bestWindow !== null
+                            text: w.bestWindow
+                                ? (w.bestWindow.cloud <= 10
+                                    ? ("★ Optimal: " + w.bestWindow.label + " (Clear)")
+                                    : ("★ Best: " + w.bestWindow.label + " (" + w.bestWindow.cloud + "% cloud)"))
+                                : ""
                             font.pixelSize: theme.fontMinimum
                             font.bold: true
                             color: w.accentColor
@@ -808,13 +818,15 @@ WidgetChrome {
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
-                                spacing: 2
+                                spacing: 3
 
                                 Text {
-                                    text: modelData.cloud + "%"
+                                    text: modelData.cloud <= 5 ? "Clear" : (modelData.cloud + "%")
                                     font.pixelSize: theme.fontMinimum - 1
                                     font.bold: (w.bestWindow && modelData.hr === w.bestWindow.hr)
-                                    color: (w.bestWindow && modelData.hr === w.bestWindow.hr) ? w.accentColor : theme.textSecondary
+                                    color: (modelData.cloud <= 20)
+                                        ? w.accentColor
+                                        : ((w.bestWindow && modelData.hr === w.bestWindow.hr) ? theme.textPrimary : theme.textSecondary)
                                     Layout.alignment: Qt.AlignHCenter
                                 }
 
@@ -822,15 +834,40 @@ WidgetChrome {
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
 
+                                    // Full-height subtle background track
                                     Rectangle {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: Math.max(0, (parent.width - barWidth) / 2)
+                                        anchors.rightMargin: Math.max(0, (parent.width - barWidth) / 2)
+                                        readonly property real barWidth: Math.max(12, Math.min(parent.width * 0.55, 32))
+                                        radius: 4
+                                        color: Qt.rgba(1, 1, 1, 0.06)
+                                        border.color: (w.bestWindow && modelData.hr === w.bestWindow.hr)
+                                            ? Qt.rgba(w.accentColor.r, w.accentColor.g, w.accentColor.b, 0.3)
+                                            : "transparent"
+                                        border.width: 1
+                                    }
+
+                                    // Observing Clarity bar: 100% height when clear (0% cloud)
+                                    Rectangle {
+                                        readonly property real barWidth: Math.max(12, Math.min(parent.width * 0.55, 32))
+                                        readonly property int clarity: Math.max(0, 100 - modelData.cloud)
                                         anchors.bottom: parent.bottom
                                         anchors.horizontalCenter: parent.horizontalCenter
-                                        width: Math.max(10, Math.min(parent.width * 0.6, 28))
-                                        height: Math.max(4, parent.height * (modelData.cloud / 100))
-                                        radius: 3
-                                        color: (w.bestWindow && modelData.hr === w.bestWindow.hr)
-                                            ? w.accentColor
-                                            : Qt.rgba(theme.catInfo.r, theme.catInfo.g, theme.catInfo.b, 0.45)
+                                        width: barWidth
+                                        height: Math.max(8, parent.height * (clarity / 100))
+                                        radius: 4
+                                        color: {
+                                            if (clarity >= 80) {
+                                                return (w.bestWindow && modelData.hr === w.bestWindow.hr)
+                                                    ? w.accentColor
+                                                    : Qt.rgba(theme.catInfo.r, theme.catInfo.g, theme.catInfo.b, 0.85)
+                                            } else if (clarity >= 45) {
+                                                return Qt.rgba(theme.catInfo.r, theme.catInfo.g, theme.catInfo.b, 0.5)
+                                            } else {
+                                                return Qt.rgba(theme.textSecondary.r, theme.textSecondary.g, theme.textSecondary.b, 0.35)
+                                            }
+                                        }
                                     }
                                 }
 
@@ -931,7 +968,131 @@ WidgetChrome {
                         }
                     }
 
+                    // ── 2-Column Mode: 5 Full-Width Ephemeris Rows ──────────
+                    ColumnLayout {
+                        visible: w.twoColumn
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        spacing: 4
+
+                        Repeater {
+                            model: w.planets
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                Layout.minimumHeight: 32
+                                radius: theme.radiusSm
+                                color: Qt.rgba(1, 1, 1, 0.035)
+                                border.color: (modelData.status.indexOf("Up all night") >= 0 || modelData.status.indexOf("Evening") >= 0)
+                                    ? Qt.rgba(w.accentColor.r, w.accentColor.g, w.accentColor.b, 0.28)
+                                    : "transparent"
+                                border.width: 1
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: theme.spacingSm + 4
+                                    anchors.rightMargin: theme.spacingSm + 4
+                                    spacing: theme.spacingSm
+
+                                    // Planet symbol & Name
+                                    RowLayout {
+                                        spacing: 8
+                                        Layout.preferredWidth: 110
+
+                                        Text {
+                                            text: modelData.symbol
+                                            font.pixelSize: 18
+                                            font.bold: true
+                                            color: (modelData.status.indexOf("Up all night") >= 0 || modelData.status.indexOf("Evening") >= 0)
+                                                ? w.accentColor : theme.textPrimary
+                                        }
+
+                                        Text {
+                                            text: modelData.name
+                                            font.bold: true
+                                            font.pixelSize: theme.fontLabel
+                                            color: theme.textPrimary
+                                        }
+                                    }
+
+                                    // Status pill badge
+                                    Rectangle {
+                                        radius: 4
+                                        color: (modelData.status.indexOf("Up all night") >= 0 || modelData.status.indexOf("Evening") >= 0)
+                                            ? Qt.rgba(w.accentColor.r, w.accentColor.g, w.accentColor.b, 0.18)
+                                            : Qt.rgba(1, 1, 1, 0.06)
+                                        border.color: (modelData.status.indexOf("Up all night") >= 0 || modelData.status.indexOf("Evening") >= 0)
+                                            ? Qt.rgba(w.accentColor.r, w.accentColor.g, w.accentColor.b, 0.4)
+                                            : "transparent"
+                                        border.width: 1
+                                        implicitHeight: 22
+                                        implicitWidth: statusTxt.implicitWidth + 14
+
+                                        Text {
+                                            id: statusTxt
+                                            anchors.centerIn: parent
+                                            text: modelData.status
+                                            font.pixelSize: theme.fontMinimum
+                                            font.bold: (modelData.status.indexOf("Up all night") >= 0 || modelData.status.indexOf("Evening") >= 0)
+                                            color: (modelData.status.indexOf("Up all night") >= 0 || modelData.status.indexOf("Evening") >= 0)
+                                                ? w.accentColor : theme.textSecondary
+                                        }
+                                    }
+
+                                    Item { Layout.fillWidth: true }
+
+                                    // Rise & Set times
+                                    RowLayout {
+                                        spacing: theme.spacingSm
+
+                                        RowLayout {
+                                            spacing: 3
+                                            visible: modelData.rise !== null
+                                            Text {
+                                                text: "Rise"
+                                                font.pixelSize: theme.fontCaption
+                                                color: theme.textSecondary
+                                            }
+                                            Text {
+                                                text: modelData.rise ? w.formatTime(modelData.rise) : ""
+                                                font.pixelSize: theme.fontCaption
+                                                font.bold: true
+                                                color: theme.textPrimary
+                                            }
+                                        }
+
+                                        Text {
+                                            visible: modelData.rise !== null && modelData.set !== null
+                                            text: "·"
+                                            font.pixelSize: theme.fontCaption
+                                            color: theme.textSecondary
+                                        }
+
+                                        RowLayout {
+                                            spacing: 3
+                                            visible: modelData.set !== null
+                                            Text {
+                                                text: "Set"
+                                                font.pixelSize: theme.fontCaption
+                                                color: theme.textSecondary
+                                            }
+                                            Text {
+                                                text: modelData.set ? w.formatTime(modelData.set) : ""
+                                                font.pixelSize: theme.fontCaption
+                                                font.bold: true
+                                                color: theme.textPrimary
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ── Single-Column Compact Mode: Horizontal 5-Planet Row ──
                     RowLayout {
+                        visible: !w.twoColumn
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         spacing: theme.spacingSm
@@ -962,9 +1123,7 @@ WidgetChrome {
                                 }
 
                                 Text {
-                                    text: w.roomy
-                                        ? modelData.status
-                                        : (modelData.rise ? ("R " + w.formatTime(modelData.rise)) : "—")
+                                    text: modelData.status
                                     font.pixelSize: theme.fontMinimum - 1
                                     color: (modelData.status.indexOf("Up all night") >= 0 || modelData.status.indexOf("Evening") >= 0)
                                         ? w.accentColor : theme.textSecondary
@@ -972,7 +1131,7 @@ WidgetChrome {
                                 }
 
                                 Text {
-                                    visible: w.roomy && modelData.set !== null
+                                    visible: modelData.set !== null
                                     text: "Set " + w.formatTime(modelData.set)
                                     font.pixelSize: theme.fontMinimum - 2
                                     color: theme.textSecondary
