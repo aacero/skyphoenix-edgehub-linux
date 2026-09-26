@@ -35,15 +35,58 @@ explicit `--reset-wizard` opens only a windowed recovery wizard on primary.
 
 ---
 
-### Touch input not working
+### Touch input not working or landing on wrong monitor
 
-**Symptom:** Dashboard visible but touchscreen doesn't respond.
+**Symptom:**
+- Dashboard is visible on the Edge, but touching the panel does not respond.
+- Touching the Edge clicks into windows or buttons on the **primary or focused monitor** instead of interacting with the Edge.
 
-**Checks:**
-1. Verify touch device is detected: `libinput list-devices`
-2. Check touchscreen is mapped to correct display in desktop settings.
-3. In KDE: System Settings → Input Devices → Touchscreen → Map to output.
-4. In GNOME: Settings → Displays → Touchscreen mapping.
+**Cause:**
+The Corsair Xeneon Edge connects video and touch digitizer (`wch.cn TouchScreen`, USB ID `27c0:0859`) as separate physical interfaces. On Linux multi-monitor systems, if the compositor (Wayland) or X11 server does not have an explicit mapping binding the USB touch digitizer to the video output, touch events are routed to the primary monitor or focused window.
+
+> [!NOTE]
+> Physical hardware verification of this mapping was conducted on **Hyprland** (Wayland). Instructions for KDE Plasma, GNOME, Sway, and X11 are provided as best-effort reference. Use at your own risk.
+
+**Fixes:**
+
+- **Hyprland (Wayland):**
+  - Find your Edge output name (`hyprctl monitors`) and touch device name (`hyprctl devices`, typically `wch.cn-touchscreen-1`).
+  - In `hyprland.conf`:
+    ```ini
+    device {
+        name = wch.cn-touchscreen-1
+        output = <EDGE_OUTPUT>
+    }
+    ```
+  - In Lua config (`hyprland.lua` / `input.lua`):
+    ```lua
+    hl.config({ input = { touchdevice = { output = "<EDGE_OUTPUT>" } } })
+    hl.device({ name = "wch.cn-touchscreen-1", output = "<EDGE_OUTPUT>" })
+    ```
+
+- **KDE Plasma (Wayland):**
+  1. Open **System Settings** → **Input Devices** → **Touchscreen** (or **Input & Output** → **Touchscreen**).
+  2. Select `wch.cn TouchScreen` and set **Map to output** / **Map to screen** to the Corsair Xeneon Edge display.
+
+- **GNOME (Wayland):**
+  1. Open **Settings** → **Displays** → **Touchscreen mapping**.
+  2. Associate the digitizer with the Edge display.
+
+- **Sway / wlroots (Wayland):**
+  1. Run `swaymsg -t get_inputs` to find the touch identifier.
+  2. Add to `~/.config/sway/config`:
+     ```
+     input "27c0:0859:wch.cn_TouchScreen" map_to_output <EDGE_OUTPUT>
+     ```
+
+- **X11 (Xorg):**
+  1. Find the touch device: `xinput list` (find `wch.cn TouchScreen`).
+  2. Find the output name: `xrandr --query`.
+  3. Map the device:
+     ```sh
+     xinput map-to-output "wch.cn TouchScreen" <EDGE_OUTPUT>
+     ```
+  4. Add this command to `~/.xprofile`, `~/.xinitrc`, or desktop session autostart.
 
 ---
 

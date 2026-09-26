@@ -336,6 +336,72 @@ is documented in the
 
 ---
 
+## Touchscreen Setup (Wayland & X11)
+
+In multi-monitor Linux setups, secondary touchscreens require compositor or display server configuration to map the USB touch digitizer directly to the monitor output.
+
+Without this mapping, touching the Edge may land on your **primary monitor** or click into whichever window is currently active. This is because the video output and the internal USB touch controller (`wch.cn TouchScreen`, USB ID `27c0:0859`) are two distinct hardware devices.
+
+> [!NOTE]
+> **Testing Scope & Disclaimer:** Physical hardware verification of this touchscreen mapping was performed on **Hyprland** (Wayland). Instructions for KDE Plasma, GNOME, Sway, and X11 are provided as best-effort community guidance. Modifying display server and input configurations is done at your own risk.
+
+### Wayland Compositors
+
+#### Hyprland
+Find your Edge monitor output name (`hyprctl monitors`) and touch device name (`hyprctl devices`, typically `wch.cn-touchscreen-1`):
+
+- **Lua config (`hyprland.lua` / `input.lua`)**:
+  ```lua
+  hl.config({
+    input = {
+      touchdevice = {
+        output = "DVI-I-1", -- Replace with your Edge output name
+      },
+    },
+  })
+  hl.device({
+    name = "wch.cn-touchscreen-1",
+    output = "DVI-I-1",
+  })
+  ```
+- **Standard config (`hyprland.conf`)**:
+  ```ini
+  device {
+      name = wch.cn-touchscreen-1
+      output = DVI-I-1   # Replace with your Edge output name
+  }
+  ```
+
+#### KDE Plasma (Wayland)
+1. Open **System Settings** → **Input Devices** → **Touchscreen** (or **Input & Output** → **Touchscreen**).
+2. Select **wch.cn TouchScreen** from the device list.
+3. Under **Map to screen** / **Output**, select the Corsair Xeneon Edge display.
+
+#### GNOME (Wayland)
+1. Open **Settings** → **Displays**.
+2. If multiple monitors and touchscreens are detected, use the **Touchscreen mapping** setting to assign the digitizer to the Edge panel.
+
+#### Sway / wlroots
+1. Identify your touch input identifier with `swaymsg -t get_inputs`.
+2. In `~/.config/sway/config`:
+   ```
+   input "27c0:0859:wch.cn_TouchScreen" map_to_output <OUTPUT_NAME>
+   ```
+
+### X11 (Xorg)
+
+On X11, use `xinput` and `xrandr` to bind the input matrix to the display:
+
+1. List input devices: `xinput list` (find `wch.cn TouchScreen`).
+2. List display outputs: `xrandr --query` (identify the Edge output, e.g. `DP-1` or `HDMI-1`).
+3. Map the touchscreen to the output:
+   ```sh
+   xinput map-to-output "wch.cn TouchScreen" <OUTPUT_NAME>
+   ```
+4. **Persist across sessions:** Add the command above to your `~/.xprofile`, `~/.xinitrc`, or desktop session autostart script.
+
+---
+
 ## Build from source
 
 ### Prerequisites
