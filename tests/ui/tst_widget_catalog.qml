@@ -165,7 +165,7 @@ Item {
             for (var i = 0; i < catalog.items.length; i++)
                 if (catalog.items[i].sizes.indexOf("1x3") >= 0) full.push(catalog.items[i].type)
             full.sort()
-            compare(full.join(","), "kpi,notes,tasks",
+            compare(full.join(","), "kpi,notes,systems,tasks",
                     "only genuinely unbounded/billboard content declares the full screen")
         }
 
