@@ -76,5 +76,6 @@
         <file alias="buildings.svg">icons/buildings.svg</file>
         <file alias="systems.svg">icons/systems.svg</file>
         <file alias="grafana.svg">icons/grafana.svg</file>
+        <file alias="skytonight.svg">icons/skytonight.svg</file>
     </qresource>
 </RCC>

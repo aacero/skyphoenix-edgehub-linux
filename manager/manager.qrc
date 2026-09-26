@@ -71,6 +71,7 @@
         <file alias="EndOfDayWidget.qml">../ui/qml/widgets/EndOfDayWidget.qml</file>
         <file alias="SystemsWidget.qml">../ui/qml/widgets/SystemsWidget.qml</file>
         <file alias="GrafanaWidget.qml">../ui/qml/widgets/GrafanaWidget.qml</file>
+        <file alias="SkyTonightWidget.qml">../ui/qml/widgets/SkyTonightWidget.qml</file>
     </qresource>
     <qresource prefix="/">
         <file alias="images/moon_photo.png">../ui/images/moon_photo.png</file>

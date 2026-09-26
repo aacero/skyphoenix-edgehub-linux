@@ -60,7 +60,7 @@ QtObject {
           sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1"], dflt: "1x1" },
         { type: "systems",      title: "Systems",    category: "System", source: "qrc:/qml/SystemsWidget.qml",
           defaults: { hosts: "localhost:9100", defaultPort: 9100, pollSec: 10, warnCpu: 85, warnRam: 85, warnDisk: 90 },
-          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5", "1x2", "1x3"], dflt: "1x1" },
+          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5", "1x2"], dflt: "1x1" },
 
         // Time / ambient
         { type: "clock",   title: "Clock",       category: "Time", source: "qrc:/qml/ClockWidget.qml",   defaults: {},
@@ -145,9 +145,13 @@ QtObject {
           sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5", "1x2", "1x3"], dflt: "1x1" },
         { type: "grafana",  title: "Grafana / Metrics", category: "Data", source: "qrc:/qml/GrafanaWidget.qml",
           defaults: { url: "http://localhost:9090", query: "node_load1", rangeSec: 3600, pollSec: 15, chartType: "area", unit: "", unitScale: "auto", fillGlow: true, showMinMax: true, warnAt: "", critAt: "", authToken: "" },
-          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5", "1x2", "1x3"], dflt: "1x1" },
+          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5", "1x2"], dflt: "1x1" },
 
         // Info
+        // Tonight's observing conditions, dark-sky window, cloud cover, and moon phase.
+        { type: "skytonight", title: "The Sky Tonight", category: "Info", source: "qrc:/qml/SkyTonightWidget.qml",
+          defaults: { locationMode: "search", place: "", lat: 0, lon: 0, showTwilights: true, showClouds: true, showHourlyBar: true, showMoon: true, showPlanets: true },
+          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5", "1x2"], dflt: "1x1" },
         // An agenda grows with height, but maxEvents caps at 12 - enough for two
         // thirds, not the whole screen. Not 1/12: "Up next" + the event rows.
         { type: "calendar", title: "Calendar",    category: "Info", source: "qrc:/qml/CalendarWidget.qml",  defaults: { url: "" },
@@ -203,7 +207,9 @@ QtObject {
         "eod": "How much of your workday is left. Adjust your start and end hours.",
         "media": "Now Playing - controls Spotify, YouTube Music, or any player on this machine.",
         "quote": "A fresh bit of motivation each day.",
-        "systems": "Live CPU, memory, disk, load, uptime and network throughput across your systems via Prometheus node_exporter."
+        "systems": "Live CPU, memory, disk, load, uptime and network throughput across your systems via Prometheus node_exporter.",
+        "grafana": "Real-time time-series telemetry charts querying Prometheus or Grafana endpoints directly with hardware-accelerated vector rendering and interactive touch scrubbing.",
+        "skytonight": "Tonight's observing forecast, twilight dark-sky window, cloud cover, and moon phase for stargazers."
     })
 
     // LOSS-001: content and progress that must survive a configuration reset.

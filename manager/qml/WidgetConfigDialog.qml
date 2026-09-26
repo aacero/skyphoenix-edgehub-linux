@@ -424,7 +424,7 @@ Dialog {
                         && dlg.previewItem.connectionStatus.length)
                     return dlg.previewItem.connectionStatus
                 if (dlg.actionStatus.length) return dlg.actionStatus
-                return (dlg.wType === "weather" || dlg.wType === "moon") ? dlg.geoStatus : ""
+                return (dlg.wType === "weather" || dlg.wType === "moon" || dlg.wType === "skytonight") ? dlg.geoStatus : ""
             }
             onActionRequested: (a) => dlg.doAction(a)
         }

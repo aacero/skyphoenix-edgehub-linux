@@ -485,6 +485,35 @@ QtObject {
             titleSection("Weather"),
             about("Current conditions, humidity, wind, precipitation, sunrise, sunset and a multi-day forecast from Open-Meteo. A location is required before any request is sent. Tile and overlay share one volatile provider result.") ] }
 
+        case "skytonight": return { sections: [
+            { title: "Location", cols: 1, fields: [
+                { key: "locationMode", label: "Location setup", type: "segmented", dflt: "search", options: [
+                    { value: "search", label: "Search city" },
+                    { value: "manual", label: "Manual coordinates" } ],
+                  help: "Leave empty to inherit location automatically from your Weather or Moon widget." },
+                { key: "place", label: "Place name", type: "text", placeholder: "e.g. St. Augustine, FL or London", dflt: "",
+                  visibleWhen: { key: "locationMode", equals: "search", dflt: "search" } },
+                { type: "action", actionLabel: "Look up coordinates", action: "geocode",
+                  visibleWhen: { key: "locationMode", equals: "search", dflt: "search" } } ] },
+            { title: "Manual coordinates", cols: 2, fields: [
+                { key: "lat", label: "Latitude", type: "number", min: -90, max: 90, step: 0.01, dflt: 0,
+                  visibleWhen: { key: "locationMode", equals: "manual", dflt: "search" } },
+                { key: "lon", label: "Longitude", type: "number", min: -180, max: 180, step: 0.01, dflt: 0,
+                  visibleWhen: { key: "locationMode", equals: "manual", dflt: "search" } } ] },
+            { title: "Display", cols: 1, fields: [
+                { key: "showTwilights", label: "Show twilight & dark-sky timeline", type: "toggle", dflt: true,
+                  help: "Displays sunset, dusk, and astronomical twilight dark-sky window." },
+                { key: "showClouds", label: "Show cloud cover forecast", type: "toggle", dflt: true,
+                  help: "Displays tonight's average cloud cover, verdict, and clearest hour." },
+                { key: "showHourlyBar", label: "Show hourly observing window chart", type: "toggle", dflt: true,
+                  help: "Displays an hourly cloud timeline from dusk through the night." },
+                { key: "showMoon", label: "Show moon phase & illumination", type: "toggle", dflt: true,
+                  help: "Displays current moon phase, illumination percentage, and lunar age." },
+                { key: "showPlanets", label: "Show naked-eye planet rise & set times", type: "toggle", dflt: true,
+                  help: "Displays rise and set times for Mercury, Venus, Mars, Jupiter, and Saturn." } ] },
+            titleSection("The Sky Tonight"),
+            about("Tonight's observing forecast, twilight dark-sky window, cloud cover, and moon phase for stargazers. Hourly cloud data comes from Open-Meteo; solar twilights and moon phases are computed locally.") ] }
+
         case "focus": return { sections: [
             { title: "Custom lengths", cols: 2, desc: "Used when you pick the “Custom” preset on the timer.", fields: [
                 { key: "workMin", label: "Focus", type: "number", min: 1, max: 180, step: 1, suffix: " min", dflt: 25,
