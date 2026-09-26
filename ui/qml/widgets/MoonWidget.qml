@@ -275,8 +275,8 @@ WidgetChrome {
     // large, and full overlays have room for rich details.
     readonly property bool roomy: tallish || sizeClass === "full"
                                  || (!micro && (width * height > 450000 || Math.min(width, height) >= 480))
-    // Side-by-side two-column layout for wide tiles or roomy tiles that are wider than tall.
-    readonly property bool twoColumn: horiz || (roomy && width > height * 1.15 && sizeClass !== "full")
+    // Side-by-side two-column layout for wide tiles or extreme aspect banners.
+    readonly property bool twoColumn: horiz || (roomy && width > height * 1.85 && sizeClass !== "full")
 
     // The glyph scales to its box (line box ≈ pixelSize * 1.3), clamped per
     // class so it reads as a moon, not a wall.
@@ -293,7 +293,7 @@ WidgetChrome {
                                height * (roomy ? 0.55 : 0.55), roomy ? 260 : 170)
         : tallish ? Math.min(width * (compactDetail ? 0.54 : 0.68),
                              height * (compactDetail ? 0.30 : 0.45), 260)
-        : (roomy && sizeClass !== "full") ? Math.min(width * 0.38, height * 0.30, 240)
+        : (roomy && sizeClass !== "full") ? Math.min(width * 0.46, height * (w.showLocalEvents ? 0.34 : 0.44), 300)
         : Math.min(width * 0.50, height * 0.44, 300)
     // Illumination context: the sizes that have room add the lunar age. (`|| expanded`
     // dropped - `roomy` already covers sizeClass "full", which is what the overlay
@@ -330,7 +330,7 @@ WidgetChrome {
         // Air is room, not mode: 14 was "the overlay" and 2 "not the overlay",
         // so a 0.5x1 tall tile carrying the same glyph + name + illumination +
         // dates stack as the overlay got the cramped 2.
-        rowSpacing: w.compactDetail ? theme.spacingXs : (w.roomy ? 12 : 2)
+        rowSpacing: w.compactDetail ? theme.spacingXs : (w.roomy ? (w.showLocalEvents ? 6 : 12) : 2)
         columnSpacing: w.compactDetail ? theme.spacingSm : theme.spacingLg
 
         Canvas {
@@ -461,7 +461,7 @@ WidgetChrome {
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignVCenter
             spacing: w.compactDetail ? theme.spacingXs
-                                     : (w.roomy ? (w.twoColumn ? 6 : 10) : 4)
+                                     : (w.roomy ? (w.twoColumn ? 6 : (w.showLocalEvents ? 4 : 10)) : 4)
 
             // fillWidth (not maximumWidth): a non-fill Text caps the nested
             // column's own stretch, which pinned the whole block to the left.

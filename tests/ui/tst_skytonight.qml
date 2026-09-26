@@ -305,4 +305,31 @@ Item {
             verify(w.moon.glyph.length > 0, "renders moon glyph in micro view")
         }
     }
+
+    // ── 6. Responsive Two-Column Layout ─────────────────────────────────────
+    TestCase {
+        name: "SkyTonightResponsiveLayout"
+        when: windowShown
+
+        function init() {
+            tryVerify(function () { return h.ready }, 3000)
+        }
+
+        function test_two_column_activation() {
+            var w = h.item
+            compare(w.twoColumn, false, "600x800 is single column")
+
+            root.width = 1700; root.height = 672
+            compare(w.twoColumn, true, "1700x672 activates balanced 2-column layout")
+
+            root.width = 850; root.height = 672
+            compare(w.twoColumn, true, "850x672 activates balanced 2-column layout")
+
+            root.width = 400; root.height = 672
+            compare(w.twoColumn, false, "400x672 falls back to single-column layout")
+
+            root.width = 600; root.height = 800
+        }
+    }
 }
+

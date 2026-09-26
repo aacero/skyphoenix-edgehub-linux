@@ -76,6 +76,7 @@ WidgetChrome {
     readonly property bool wideTile: width > 500 && height < 340
     readonly property bool tallTile: height > 400 && width < 460
     readonly property bool roomy: expanded || (width * height > 280000)
+    readonly property bool twoColumn: !micro && width >= 720 && height >= 380
 
     // ── Current Reference Time ──────────────────────────────────────────────
     function currentDate() {
@@ -616,218 +617,69 @@ WidgetChrome {
             }
         }
 
-        // ── Observing Verdict Hero Card ─────────────────────────────────────
-        Rectangle {
-            id: heroCard
-            visible: !w.micro && w.showClouds
-            Layout.fillWidth: true
-            Layout.preferredHeight: w.roomy ? 86 : 64
-            radius: theme.radiusSm
-            color: theme.cardBackgroundAlt
-            border.color: Qt.rgba(w.verdictAccent.r, w.verdictAccent.g, w.verdictAccent.b, 0.35)
-            border.width: 1
-
-            RowLayout {
+        // ── Card Components ─────────────────────────────────────────────────
+        Component {
+            id: heroCardComp
+            Rectangle {
+                id: heroCard
                 anchors.fill: parent
-                anchors.margins: theme.spacingSm
-                spacing: theme.spacingSm
+                radius: theme.radiusSm
+                color: theme.cardBackgroundAlt
+                border.color: Qt.rgba(w.verdictAccent.r, w.verdictAccent.g, w.verdictAccent.b, 0.35)
+                border.width: 1
 
-                Text {
-                    id: heroEmojiText
-                    text: w.verdictEmoji
-                    font.pixelSize: w.roomy ? 40 : 32
-                    Layout.alignment: Qt.AlignVCenter
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    Layout.alignment: Qt.AlignVCenter
-                    spacing: 2
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: theme.spacingSm
+                    spacing: theme.spacingSm
 
                     Text {
-                        id: heroTitle
-                        text: w.verdict
-                        font.bold: true
-                        font.pixelSize: w.roomy ? theme.fontTitle : theme.fontLabel
-                        color: theme.textPrimary
-                        elide: Text.ElideRight
-                        Layout.fillWidth: true
+                        id: heroEmojiText
+                        text: w.verdictEmoji
+                        font.pixelSize: w.roomy ? 40 : 32
+                        Layout.alignment: Qt.AlignVCenter
                     }
 
-                    RowLayout {
-                        spacing: theme.spacingSm
-                        visible: w.cloudLoaded
-
-                        Rectangle {
-                            Layout.preferredHeight: 18
-                            Layout.preferredWidth: avgText.implicitWidth + 8
-                            radius: 4
-                            color: Qt.rgba(theme.textSecondary.r, theme.textSecondary.g, theme.textSecondary.b, 0.15)
-                            Text {
-                                id: avgText
-                                anchors.centerIn: parent
-                                text: "~" + w.avgCloud + "% avg cover"
-                                font.pixelSize: theme.fontMinimum
-                                color: theme.textSecondary
-                            }
-                        }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignVCenter
+                        spacing: 2
 
                         Text {
-                            visible: w.bestWindow !== null
-                            text: w.bestWindow ? ("Clearest at " + w.bestWindow.label + " (" + w.bestWindow.cloud + "%)") : ""
-                            font.pixelSize: theme.fontMinimum
-                            color: w.verdictAccent
+                            id: heroTitle
+                            text: w.verdict
+                            font.bold: true
+                            font.pixelSize: w.roomy ? theme.fontTitle : theme.fontLabel
+                            color: theme.textPrimary
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                         }
-                    }
-                }
-            }
-        }
 
-        // ── Twilight & Solar Timeline ───────────────────────────────────────
-        Rectangle {
-            id: twilightCard
-            visible: !w.micro && w.showTwilights && w.sunEvents !== null
-            Layout.fillWidth: true
-            Layout.preferredHeight: w.roomy ? 72 : 56
-            radius: theme.radiusSm
-            color: theme.cardBackgroundAlt
-            border.color: theme.cardBorder
-            border.width: 1
+                        RowLayout {
+                            spacing: theme.spacingSm
+                            visible: w.cloudLoaded
 
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: theme.spacingSm
-                spacing: 4
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    Text {
-                        text: "☀️ TWILIGHT & DARK SKY"
-                        font.pixelSize: theme.fontMinimum
-                        font.bold: true
-                        color: theme.textSecondary
-                        Layout.fillWidth: true
-                    }
-                    Text {
-                        text: w.sunEvents ? ("Dark Sky: " + w.formatTime(w.sunEvents.astroDusk) + " – " + w.formatTime(w.sunEvents.astroDawn)) : ""
-                        font.pixelSize: theme.fontMinimum
-                        font.bold: true
-                        color: w.isDarkSkyNow ? w.accentColor : theme.textPrimary
-                    }
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: theme.spacingSm
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 0
-                        Text { text: "Sunset"; font.pixelSize: theme.fontMinimum - 1; color: theme.textSecondary }
-                        Text { text: w.sunEvents ? w.formatTime(w.sunEvents.sunset) : "—"; font.pixelSize: theme.fontLabel; font.bold: true; color: theme.textPrimary }
-                    }
-
-                    ColumnLayout {
-                        visible: w.roomy
-                        Layout.fillWidth: true
-                        spacing: 0
-                        Text { text: "Civil Dusk"; font.pixelSize: theme.fontMinimum - 1; color: theme.textSecondary }
-                        Text { text: w.sunEvents ? w.formatTime(w.sunEvents.civilDusk) : "—"; font.pixelSize: theme.fontLabel; font.bold: true; color: theme.textPrimary }
-                    }
-
-                    ColumnLayout {
-                        visible: w.roomy
-                        Layout.fillWidth: true
-                        spacing: 0
-                        Text { text: "Nautical"; font.pixelSize: theme.fontMinimum - 1; color: theme.textSecondary }
-                        Text { text: w.sunEvents ? w.formatTime(w.sunEvents.nauticalDusk) : "—"; font.pixelSize: theme.fontLabel; font.bold: true; color: theme.textPrimary }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 0
-                        Text { text: "Astro Dusk (Dark)"; font.pixelSize: theme.fontMinimum - 1; color: w.accentColor }
-                        Text { text: w.sunEvents ? w.formatTime(w.sunEvents.astroDusk) : "—"; font.pixelSize: theme.fontLabel; font.bold: true; color: w.accentColor }
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 0
-                        Text { text: "Sunrise"; font.pixelSize: theme.fontMinimum - 1; color: theme.textSecondary }
-                        Text { text: w.sunEvents ? w.formatTime(w.sunEvents.sunrise) : "—"; font.pixelSize: theme.fontLabel; font.bold: true; color: theme.textPrimary }
-                    }
-                }
-            }
-        }
-
-        // ── Hourly Cloud Cover Bar Chart (8 PM - 2 AM) ──────────────────────
-        Rectangle {
-            id: chartCard
-            visible: !w.micro && w.showHourlyBar && w.hourlyWindow.length > 0 && (w.roomy || w.tallTile)
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            Layout.minimumHeight: 68
-            radius: theme.radiusSm
-            color: theme.cardBackgroundAlt
-            border.color: theme.cardBorder
-            border.width: 1
-
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: theme.spacingSm
-                spacing: 4
-
-                Text {
-                    text: "☁️ TONIGHT'S OBSERVING WINDOW (8 PM – 2 AM)"
-                    font.pixelSize: theme.fontMinimum
-                    font.bold: true
-                    color: theme.textSecondary
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    spacing: 6
-
-                    Repeater {
-                        model: w.hourlyWindow
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            Layout.fillHeight: true
-                            spacing: 2
-
-                            Text {
-                                text: modelData.cloud + "%"
-                                font.pixelSize: theme.fontMinimum - 1
-                                color: (w.bestWindow && modelData.hr === w.bestWindow.hr) ? w.accentColor : theme.textSecondary
-                                Layout.alignment: Qt.AlignHCenter
-                            }
-
-                            Item {
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-
-                                Rectangle {
-                                    anchors.bottom: parent.bottom
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                    width: Math.max(10, Math.min(parent.width * 0.6, 28))
-                                    height: Math.max(4, parent.height * (modelData.cloud / 100))
-                                    radius: 3
-                                    color: (w.bestWindow && modelData.hr === w.bestWindow.hr)
-                                        ? w.accentColor
-                                        : Qt.rgba(theme.catInfo.r, theme.catInfo.g, theme.catInfo.b, 0.45)
+                            Rectangle {
+                                Layout.preferredHeight: 18
+                                Layout.preferredWidth: avgText.implicitWidth + 8
+                                radius: 4
+                                color: Qt.rgba(theme.textSecondary.r, theme.textSecondary.g, theme.textSecondary.b, 0.15)
+                                Text {
+                                    id: avgText
+                                    anchors.centerIn: parent
+                                    text: "~" + w.avgCloud + "% avg cover"
+                                    font.pixelSize: theme.fontMinimum
+                                    color: theme.textSecondary
                                 }
                             }
 
                             Text {
-                                text: modelData.label
-                                font.pixelSize: theme.fontMinimum - 1
-                                font.bold: (w.bestWindow && modelData.hr === w.bestWindow.hr)
-                                color: (w.bestWindow && modelData.hr === w.bestWindow.hr) ? theme.textPrimary : theme.textSecondary
-                                Layout.alignment: Qt.AlignHCenter
+                                visible: w.bestWindow !== null
+                                text: w.bestWindow ? ("Clearest at " + w.bestWindow.label + " (" + w.bestWindow.cloud + "%)") : ""
+                                font.pixelSize: theme.fontMinimum
+                                color: w.verdictAccent
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
                             }
                         }
                     }
@@ -835,138 +687,418 @@ WidgetChrome {
             }
         }
 
-        // ── Moon Status Card ────────────────────────────────────────────────
-        Rectangle {
-            id: moonCard
-            visible: !w.micro && w.showMoon
-            Layout.fillWidth: true
-            Layout.preferredHeight: w.roomy ? 56 : 44
-            radius: theme.radiusSm
-            color: theme.cardBackgroundAlt
-            border.color: theme.cardBorder
-            border.width: 1
-
-            RowLayout {
+        Component {
+            id: twilightCardComp
+            Rectangle {
+                id: twilightCard
                 anchors.fill: parent
-                anchors.margins: theme.spacingSm
-                spacing: theme.spacingSm
-
-                Text {
-                    text: w.moon.glyph
-                    font.pixelSize: w.roomy ? 32 : 24
-                    Layout.alignment: Qt.AlignVCenter
-                }
+                radius: theme.radiusSm
+                color: theme.cardBackgroundAlt
+                border.color: theme.cardBorder
+                border.width: 1
 
                 ColumnLayout {
-                    Layout.fillWidth: true
-                    Layout.alignment: Qt.AlignVCenter
-                    spacing: 1
+                    anchors.fill: parent
+                    anchors.margins: theme.spacingSm
+                    spacing: 4
 
                     RowLayout {
-                        spacing: theme.spacingSm
+                        Layout.fillWidth: true
                         Text {
-                            text: w.moon.name
+                            text: "☀️ TWILIGHT & DARK SKY"
+                            font.pixelSize: theme.fontMinimum
                             font.bold: true
-                            font.pixelSize: theme.fontLabel
-                            color: theme.textPrimary
+                            color: theme.textSecondary
+                            Layout.fillWidth: true
                         }
                         Text {
-                            text: "· " + w.moon.illum + "% illuminated"
-                            font.pixelSize: theme.fontLabel
+                            text: w.sunEvents ? ("Dark Sky: " + w.formatTime(w.sunEvents.astroDusk) + " – " + w.formatTime(w.sunEvents.astroDawn)) : ""
+                            font.pixelSize: theme.fontMinimum
+                            font.bold: true
+                            color: w.isDarkSkyNow ? w.accentColor : theme.textPrimary
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: theme.spacingSm
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+                            Text { text: "Sunset"; font.pixelSize: theme.fontMinimum - 1; color: theme.textSecondary }
+                            Text { text: w.sunEvents ? w.formatTime(w.sunEvents.sunset) : "—"; font.pixelSize: theme.fontLabel; font.bold: true; color: theme.textPrimary }
+                        }
+
+                        ColumnLayout {
+                            visible: w.roomy
+                            Layout.fillWidth: true
+                            spacing: 0
+                            Text { text: "Civil Dusk"; font.pixelSize: theme.fontMinimum - 1; color: theme.textSecondary }
+                            Text { text: w.sunEvents ? w.formatTime(w.sunEvents.civilDusk) : "—"; font.pixelSize: theme.fontLabel; font.bold: true; color: theme.textPrimary }
+                        }
+
+                        ColumnLayout {
+                            visible: w.roomy
+                            Layout.fillWidth: true
+                            spacing: 0
+                            Text { text: "Nautical"; font.pixelSize: theme.fontMinimum - 1; color: theme.textSecondary }
+                            Text { text: w.sunEvents ? w.formatTime(w.sunEvents.nauticalDusk) : "—"; font.pixelSize: theme.fontLabel; font.bold: true; color: theme.textPrimary }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+                            Text { text: "Astro Dusk (Dark)"; font.pixelSize: theme.fontMinimum - 1; color: w.accentColor }
+                            Text { text: w.sunEvents ? w.formatTime(w.sunEvents.astroDusk) : "—"; font.pixelSize: theme.fontLabel; font.bold: true; color: w.accentColor }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+                            Text { text: "Sunrise"; font.pixelSize: theme.fontMinimum - 1; color: theme.textSecondary }
+                            Text { text: w.sunEvents ? w.formatTime(w.sunEvents.sunrise) : "—"; font.pixelSize: theme.fontLabel; font.bold: true; color: theme.textPrimary }
+                        }
+                    }
+                }
+            }
+        }
+
+        Component {
+            id: chartCardComp
+            Rectangle {
+                id: chartCard
+                anchors.fill: parent
+                radius: theme.radiusSm
+                color: theme.cardBackgroundAlt
+                border.color: theme.cardBorder
+                border.width: 1
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: theme.spacingSm
+                    spacing: 4
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: "☁️ TONIGHT'S OBSERVING WINDOW (8 PM – 2 AM)"
+                            font.pixelSize: theme.fontMinimum
+                            font.bold: true
+                            color: theme.textSecondary
+                            Layout.fillWidth: true
+                        }
+                        Text {
+                            visible: w.twoColumn && w.bestWindow !== null
+                            text: w.bestWindow ? ("★ Clearest: " + w.bestWindow.label + " (" + w.bestWindow.cloud + "%)") : ""
+                            font.pixelSize: theme.fontMinimum
+                            font.bold: true
+                            color: w.accentColor
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        spacing: 6
+
+                        Repeater {
+                            model: w.hourlyWindow
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                spacing: 2
+
+                                Text {
+                                    text: modelData.cloud + "%"
+                                    font.pixelSize: theme.fontMinimum - 1
+                                    font.bold: (w.bestWindow && modelData.hr === w.bestWindow.hr)
+                                    color: (w.bestWindow && modelData.hr === w.bestWindow.hr) ? w.accentColor : theme.textSecondary
+                                    Layout.alignment: Qt.AlignHCenter
+                                }
+
+                                Item {
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+
+                                    Rectangle {
+                                        anchors.bottom: parent.bottom
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        width: Math.max(10, Math.min(parent.width * 0.6, 28))
+                                        height: Math.max(4, parent.height * (modelData.cloud / 100))
+                                        radius: 3
+                                        color: (w.bestWindow && modelData.hr === w.bestWindow.hr)
+                                            ? w.accentColor
+                                            : Qt.rgba(theme.catInfo.r, theme.catInfo.g, theme.catInfo.b, 0.45)
+                                    }
+                                }
+
+                                Text {
+                                    text: modelData.label
+                                    font.pixelSize: theme.fontMinimum - 1
+                                    font.bold: (w.bestWindow && modelData.hr === w.bestWindow.hr)
+                                    color: (w.bestWindow && modelData.hr === w.bestWindow.hr) ? theme.textPrimary : theme.textSecondary
+                                    Layout.alignment: Qt.AlignHCenter
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Component {
+            id: moonCardComp
+            Rectangle {
+                id: moonCard
+                anchors.fill: parent
+                radius: theme.radiusSm
+                color: theme.cardBackgroundAlt
+                border.color: theme.cardBorder
+                border.width: 1
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.margins: theme.spacingSm
+                    spacing: theme.spacingSm
+
+                    Text {
+                        text: w.moon.glyph
+                        font.pixelSize: w.roomy ? 32 : 24
+                        Layout.alignment: Qt.AlignVCenter
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignVCenter
+                        spacing: 1
+
+                        RowLayout {
+                            spacing: theme.spacingSm
+                            Text {
+                                text: w.moon.name
+                                font.bold: true
+                                font.pixelSize: theme.fontLabel
+                                color: theme.textPrimary
+                            }
+                            Text {
+                                text: "· " + w.moon.illum + "% illuminated"
+                                font.pixelSize: theme.fontLabel
+                                color: theme.textSecondary
+                            }
+                        }
+
+                        Text {
+                            text: "Lunar age ~" + w.moon.age.toFixed(1) + " days (" + (w.moon.cyclePos < 0.5 ? "Waxing" : "Waning") + ")"
+                            font.pixelSize: theme.fontMinimum
                             color: theme.textSecondary
                         }
                     }
+                }
+            }
+        }
 
-                    Text {
-                        text: "Lunar age ~" + w.moon.age.toFixed(1) + " days (" + (w.moon.cyclePos < 0.5 ? "Waxing" : "Waning") + ")"
-                        font.pixelSize: theme.fontMinimum
-                        color: theme.textSecondary
+        Component {
+            id: planetsCardComp
+            Rectangle {
+                id: planetsCard
+                anchors.fill: parent
+                radius: theme.radiusSm
+                color: theme.cardBackgroundAlt
+                border.color: theme.cardBorder
+                border.width: 1
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: theme.spacingSm
+                    spacing: 4
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: "🪐 NAKED-EYE PLANETS"
+                            font.pixelSize: theme.fontMinimum
+                            font.bold: true
+                            color: theme.textSecondary
+                            Layout.fillWidth: true
+                        }
+                        Text {
+                            text: "Rise & Set Tonight"
+                            font.pixelSize: theme.fontMinimum - 1
+                            color: theme.textSecondary
+                            visible: w.roomy
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        spacing: theme.spacingSm
+
+                        Repeater {
+                            model: w.planets
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                spacing: 1
+
+                                RowLayout {
+                                    spacing: 2
+                                    Text {
+                                        text: modelData.symbol
+                                        font.bold: true
+                                        font.pixelSize: theme.fontLabel
+                                        color: theme.textPrimary
+                                    }
+                                    Text {
+                                        text: modelData.name
+                                        font.bold: true
+                                        font.pixelSize: theme.fontCaption
+                                        color: theme.textPrimary
+                                        elide: Text.ElideRight
+                                    }
+                                }
+
+                                Text {
+                                    text: w.roomy
+                                        ? modelData.status
+                                        : (modelData.rise ? ("R " + w.formatTime(modelData.rise)) : "—")
+                                    font.pixelSize: theme.fontMinimum - 1
+                                    color: (modelData.status.indexOf("Up all night") >= 0 || modelData.status.indexOf("Evening") >= 0)
+                                        ? w.accentColor : theme.textSecondary
+                                    elide: Text.ElideRight
+                                }
+
+                                Text {
+                                    visible: w.roomy && modelData.set !== null
+                                    text: "Set " + w.formatTime(modelData.set)
+                                    font.pixelSize: theme.fontMinimum - 2
+                                    color: theme.textSecondary
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
 
-        // ── Naked-Eye Planets Card ──────────────────────────────────────────
-        Rectangle {
-            id: planetsCard
-            visible: !w.micro && w.showPlanets && w.planets.length > 0
+        // ── 2-Column Balanced Cards Layout (wide / roomy tiles) ─────────────
+        RowLayout {
+            id: cardsTwoCol
+            visible: !w.micro && w.twoColumn
             Layout.fillWidth: true
-            Layout.preferredHeight: w.roomy ? 72 : 56
-            radius: theme.radiusSm
-            color: theme.cardBackgroundAlt
-            border.color: theme.cardBorder
-            border.width: 1
+            Layout.fillHeight: true
+            spacing: theme.spacingSm
 
+            // Left Column: Weather & Observing Window
             ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: theme.spacingSm
-                spacing: 4
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.preferredWidth: 1
+                spacing: theme.spacingSm
 
-                RowLayout {
+                Loader {
+                    active: cardsTwoCol.visible && w.showClouds
+                    visible: w.showClouds
+                    sourceComponent: heroCardComp
                     Layout.fillWidth: true
-                    Text {
-                        text: "🪐 NAKED-EYE PLANETS"
-                        font.pixelSize: theme.fontMinimum
-                        font.bold: true
-                        color: theme.textSecondary
-                        Layout.fillWidth: true
-                    }
-                    Text {
-                        text: "Rise & Set Tonight"
-                        font.pixelSize: theme.fontMinimum - 1
-                        color: theme.textSecondary
-                        visible: w.roomy
-                    }
+                    Layout.preferredHeight: w.roomy ? 88 : 72
                 }
 
-                RowLayout {
+                Loader {
+                    active: cardsTwoCol.visible && w.showHourlyBar && w.hourlyWindow.length > 0
+                    visible: w.showHourlyBar && w.hourlyWindow.length > 0
+                    sourceComponent: chartCardComp
                     Layout.fillWidth: true
-                    spacing: theme.spacingSm
-
-                    Repeater {
-                        model: w.planets
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 1
-
-                            RowLayout {
-                                spacing: 2
-                                Text {
-                                    text: modelData.symbol
-                                    font.bold: true
-                                    font.pixelSize: theme.fontLabel
-                                    color: theme.textPrimary
-                                }
-                                Text {
-                                    text: modelData.name
-                                    font.bold: true
-                                    font.pixelSize: theme.fontCaption
-                                    color: theme.textPrimary
-                                    elide: Text.ElideRight
-                                }
-                            }
-
-                            Text {
-                                text: w.roomy
-                                    ? modelData.status
-                                    : (modelData.rise ? ("R " + w.formatTime(modelData.rise)) : "—")
-                                font.pixelSize: theme.fontMinimum - 1
-                                color: (modelData.status.indexOf("Up all night") >= 0 || modelData.status.indexOf("Evening") >= 0)
-                                    ? w.accentColor : theme.textSecondary
-                                elide: Text.ElideRight
-                            }
-
-                            Text {
-                                visible: w.roomy && modelData.set !== null
-                                text: "Set " + w.formatTime(modelData.set)
-                                font.pixelSize: theme.fontMinimum - 2
-                                color: theme.textSecondary
-                                elide: Text.ElideRight
-                            }
-                        }
-                    }
+                    Layout.fillHeight: true
+                    Layout.minimumHeight: 120
                 }
+            }
+
+            // Right Column: Celestial Bodies & Twilights
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.preferredWidth: 1
+                spacing: theme.spacingSm
+
+                Loader {
+                    active: cardsTwoCol.visible && w.showTwilights && w.sunEvents !== null
+                    visible: w.showTwilights && w.sunEvents !== null
+                    sourceComponent: twilightCardComp
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: w.roomy ? 80 : 64
+                }
+
+                Loader {
+                    active: cardsTwoCol.visible && w.showMoon
+                    visible: w.showMoon
+                    sourceComponent: moonCardComp
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: w.roomy ? 64 : 48
+                }
+
+                Loader {
+                    active: cardsTwoCol.visible && w.showPlanets && w.planets.length > 0
+                    visible: w.showPlanets && w.planets.length > 0
+                    sourceComponent: planetsCardComp
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.minimumHeight: 80
+                }
+            }
+        }
+
+        // ── Single-Column Layout (compact, narrow, or portrait tiles) ────────
+        ColumnLayout {
+            id: cardsSingleCol
+            visible: !w.micro && !w.twoColumn
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: theme.spacingSm
+
+            Loader {
+                active: cardsSingleCol.visible && w.showClouds
+                visible: w.showClouds
+                sourceComponent: heroCardComp
+                Layout.fillWidth: true
+                Layout.preferredHeight: w.roomy ? 86 : 64
+            }
+
+            Loader {
+                active: cardsSingleCol.visible && w.showTwilights && w.sunEvents !== null
+                visible: w.showTwilights && w.sunEvents !== null
+                sourceComponent: twilightCardComp
+                Layout.fillWidth: true
+                Layout.preferredHeight: w.roomy ? 72 : 56
+            }
+
+            Loader {
+                active: cardsSingleCol.visible && w.showHourlyBar && w.hourlyWindow.length > 0 && (w.roomy || w.tallTile)
+                visible: w.showHourlyBar && w.hourlyWindow.length > 0 && (w.roomy || w.tallTile)
+                sourceComponent: chartCardComp
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.min(180, Math.max(90, parent.height * 0.28))
+                Layout.fillHeight: true
+            }
+
+            Loader {
+                active: cardsSingleCol.visible && w.showMoon
+                visible: w.showMoon
+                sourceComponent: moonCardComp
+                Layout.fillWidth: true
+                Layout.preferredHeight: w.roomy ? 56 : 44
+            }
+
+            Loader {
+                active: cardsSingleCol.visible && w.showPlanets && w.planets.length > 0
+                visible: w.showPlanets && w.planets.length > 0
+                sourceComponent: planetsCardComp
+                Layout.fillWidth: true
+                Layout.preferredHeight: w.roomy ? 72 : 56
             }
         }
 
