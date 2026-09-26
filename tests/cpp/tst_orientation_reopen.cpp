@@ -47,11 +47,11 @@ private slots:
         QVERIFY(s.active());
         QVERIFY(!s.retryActiveForTest());
 
-        // A valid orientation notification: report id 0x01, header 0x11, byte[7]=0x03
-        // (upright portrait → content rotation 0).
+        // A valid orientation notification: report id 0x01, header 0x11, byte[7]=0x00
+        // (horizontal desktop mount → content rotation 0).
         QSignalSpy spy(&s, &OrientationSensor::rotationChanged);
         unsigned char report[64] = {0};
-        report[0] = 0x01; report[1] = 0x11; report[7] = 0x03;
+        report[0] = 0x01; report[1] = 0x11; report[7] = 0x00;
         QCOMPARE(::write(wfd, report, sizeof(report)), ssize_t(sizeof(report)));
 
         QTRY_VERIFY_WITH_TIMEOUT(spy.count() >= 1, 3000);
@@ -92,7 +92,7 @@ private slots:
 
         // (b) Wrong header: full length but header byte != 0x11 → skipped.
         unsigned char badHdr[64] = {0};
-        badHdr[0] = 0x01; badHdr[1] = 0x22; badHdr[7] = 0x02;   // 0x02 → 90° if honored
+        badHdr[0] = 0x01; badHdr[1] = 0x22; badHdr[7] = 0x03;   // 0x03 → 90° if honored
         QCOMPARE(::write(wfd, badHdr, sizeof(badHdr)), ssize_t(sizeof(badHdr)));
         QTest::qWait(50);
         QCOMPARE(spy.count(), 0);
@@ -101,7 +101,7 @@ private slots:
         // (c) A valid report now DOES emit (proves the reader kept running past the
         // malformed ones rather than stalling).
         unsigned char good[64] = {0};
-        good[0] = 0x01; good[1] = 0x11; good[7] = 0x03;   // upright portrait → 0°
+        good[0] = 0x01; good[1] = 0x11; good[7] = 0x00;   // horizontal desktop mount → 0°
         QCOMPARE(::write(wfd, good, sizeof(good)), ssize_t(sizeof(good)));
         QTRY_VERIFY_WITH_TIMEOUT(spy.count() >= 1, 3000);
         QCOMPARE(s.rotation(), 0);
@@ -129,7 +129,7 @@ private slots:
             QVERIFY(s.openForTest(fifo));
             QSignalSpy spy(&s, &OrientationSensor::rotationChanged);
             unsigned char report[64] = {0};
-            report[0] = 0x01; report[1] = 0x11; report[7] = 0x02;   // 0x02 → 90°
+            report[0] = 0x01; report[1] = 0x11; report[7] = 0x03;   // 0x03 → 90°
             QCOMPARE(::write(wfd, report, sizeof(report)), ssize_t(sizeof(report)));
             QTRY_VERIFY_WITH_TIMEOUT(spy.count() >= 1, 3000);
             QCOMPARE(s.rotation(), 90);
@@ -230,7 +230,7 @@ private slots:
         unsigned char report[64] = {0};
         report[0] = 0x01;
         report[1] = 0x11;
-        report[7] = 0x00;
+        report[7] = 0x01;
         QCOMPARE(::write(wfd, report, sizeof(report)), ssize_t(sizeof(report)));
 
         QTRY_VERIFY_WITH_TIMEOUT(s.hasDeviceReadingForTest(), 1000);

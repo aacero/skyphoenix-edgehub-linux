@@ -57,16 +57,16 @@ Item {
         store.revision   // re-evaluate when the orientation mode changes
         var mode = (typeof store !== "undefined" && store && store.appearance)
                    ? (store.appearance().orientation || "auto") : "auto"
-        if (mode === "portrait") return 0
-        if (mode === "landscape") return 90
-        if (mode === "inverted-portrait") return 180
-        if (mode === "inverted-landscape") return 270
+        if (mode === "landscape") return 0
+        if (mode === "portrait") return 90
+        if (mode === "inverted-landscape") return 180
+        if (mode === "inverted-portrait") return 270
         var r = (typeof backend !== "undefined" && backend && backend.hubRotation !== undefined)
                 ? backend.hubRotation : -1
-        return r === 0 || r === 90 || r === 180 || r === 270 ? r : 90
+        return r === 0 || r === 90 || r === 180 || r === 270 ? r : 0
     }
     readonly property bool landscape:
-        effectiveRotation === 90 || effectiveRotation === 270
+        effectiveRotation === 0 || effectiveRotation === 180
 
     // Reflow is semantic and therefore immediate: widgets must switch to the same
     // size classes as the Hub as soon as its orientation changes. Only the drawn

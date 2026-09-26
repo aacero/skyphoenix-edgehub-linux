@@ -83,10 +83,9 @@ Item {
             compare(c.status, Component.Ready, "main.qml compiles: " + c.errorString())
             win = c.createObject(root)
             verify(win !== null, "main.qml instantiated")
-            // Force LANDSCAPE - drives contentRotation=90 and the contentRoot
-            // width/height swap (the failing host on device).
+            // Force LANDSCAPE - on a 2560x720 panel, unrotated (0°).
             win.orientationMode = "landscape"
-            compare(win.contentRotation, 90, "shell is in the landscape (swapped) orientation")
+            compare(win.contentRotation, 0, "shell is in the landscape orientation")
             // main.qml resolves its initial page relative to itself, so the REAL
             // Dashboard now loads under qmltestrunner too. Do not push a second one:
             // StackView.find() would correctly find the older page while this test

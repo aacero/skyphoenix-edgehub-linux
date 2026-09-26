@@ -278,13 +278,13 @@ Item {
             compare(c.landscape, true,
                     "unknown Hub telemetry uses the Hub's landscape-first fallback")
             backend.hubRotation = 0
-            compare(c.landscape, false, "a reported portrait rotation is mirrored")
+            compare(c.landscape, true, "a reported landscape rotation (0°) is mirrored")
             backend.hubRotation = 90
-            compare(c.landscape, true, "a reported landscape rotation is mirrored")
+            compare(c.landscape, false, "a reported portrait rotation (90°) is mirrored")
             backend.hubRotation = 180
-            compare(c.landscape, false, "inverted portrait remains portrait-shaped")
+            compare(c.landscape, true, "inverted landscape (180°) remains landscape-shaped")
             backend.hubRotation = 270
-            compare(c.landscape, true, "inverted landscape remains landscape-shaped")
+            compare(c.landscape, false, "inverted portrait (270°) remains portrait-shaped")
         }
 
         function test_orientation_reflows_immediately_while_the_device_turns_smoothly() {

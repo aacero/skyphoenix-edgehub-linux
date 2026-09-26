@@ -10,7 +10,7 @@ class QSocketNotifier;
 // OrientationSensor - reads the Corsair Xeneon Edge's orientation from its vendor
 // HID pipe (/dev/hidrawN, vendor 1b1c product 1d0d). The Edge pushes an unsolicited
 // 64-byte report whenever the panel is rotated; byte 7 carries the orientation:
-//   0x03 = portrait (upright)   0x00 = +90° CW    0x01 = 180°   0x02 = -90° CW
+//   0x00 = landscape (horizontal)   0x03 = +90° CW (portrait)   0x02 = 180°   0x01 = -90° CW (270°)
 // which we map to the content rotation (degrees, clockwise) that keeps the UI
 // upright. Requires read access to the hidraw node (see the 99-xeneon-edge udev
 // rule); if the node is missing or unreadable the sensor simply stays inactive.
@@ -29,7 +29,7 @@ public:
     int rotation() const { return m_rotation; }
 
     // Map an orientation byte (report[7]) to a content rotation, or -1 if unknown.
-    //   0x03→0, 0x00→270, 0x01→180, 0x02→90, else→-1
+    //   0x00→0, 0x03→90, 0x02→180, 0x01→270, else→-1
     // Public + static so it can be unit-tested without opening a hidraw node.
     static int byteToRotation(unsigned char b);
 

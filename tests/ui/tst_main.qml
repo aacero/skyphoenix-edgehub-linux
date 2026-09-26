@@ -235,15 +235,21 @@ Item {
         // ── contentRotation (fixed modes) ─────────────────────────────────────
         function test_content_rotation_fixed_modes_data() {
             return [
-                { tag: "portrait",           mode: "portrait",           rot: 0 },
-                { tag: "landscape",          mode: "landscape",          rot: 90 },
-                { tag: "inverted-portrait",  mode: "inverted-portrait",  rot: 180 },
-                { tag: "inverted-landscape", mode: "inverted-landscape", rot: 270 },
+                { tag: "portrait-portwin",   w: 300, h: 500, mode: "portrait",           rot: 0 },
+                { tag: "landscape-portwin",  w: 300, h: 500, mode: "landscape",          rot: 90 },
+                { tag: "inv-port-portwin",   w: 300, h: 500, mode: "inverted-portrait",  rot: 180 },
+                { tag: "inv-land-portwin",   w: 300, h: 500, mode: "inverted-landscape", rot: 270 },
+                { tag: "landscape-landwin",  w: 500, h: 300, mode: "landscape",          rot: 0 },
+                { tag: "portrait-landwin",   w: 500, h: 300, mode: "portrait",           rot: 90 },
+                { tag: "inv-land-landwin",   w: 500, h: 300, mode: "inverted-landscape", rot: 180 },
+                { tag: "inv-port-landwin",   w: 500, h: 300, mode: "inverted-portrait",  rot: 270 },
             ]
         }
         function test_content_rotation_fixed_modes(d) {
+            win.width = d.w
+            win.height = d.h
             win.orientationMode = d.mode
-            compare(win.contentRotation, d.rot, d.mode + " → " + d.rot + "°")
+            compare(win.contentRotation, d.rot, d.mode + " on " + d.w + "x" + d.h + " → " + d.rot + "°")
         }
 
         // Auto mode ignores manual rotation and follows the (debounced) sensor.
@@ -318,6 +324,7 @@ Item {
             var cr = findPred(win.contentItem, function (n) {
                 return n && typeof n.swapped === "boolean" })
             verify(cr !== null, "found contentRoot (the reorient-fx target)")
+            win.width = 300; win.height = 500
             win.reduceMotion = false
             win.orientationMode = "portrait"          // settle at a known upright state
             tryVerify(function () { return cr.scale === 1 && cr.opacity === 1 }, 3000,
@@ -332,6 +339,7 @@ Item {
             var cr = findPred(win.contentItem, function (n) {
                 return n && typeof n.swapped === "boolean" })
             verify(cr !== null, "found contentRoot")
+            win.width = 300; win.height = 500
             win.reduceMotion = false
             win.orientationMode = "portrait"
             tryCompare(cr, "rotation", 0, 2000)

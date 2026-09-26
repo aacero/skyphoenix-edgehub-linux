@@ -324,21 +324,30 @@ ApplicationWindow {
         onTriggered: root._stableSensorRotation = root.sensorRotation
     }
     property string orientationMode: "auto"
+    readonly property bool windowIsLandscape: root.width >= root.height
     readonly property int contentRotation: {
-        switch (orientationMode) {
-        case "portrait": return 0
-        case "landscape": return 90
-        case "inverted-portrait": return 180
-        case "inverted-landscape": return 270
-        // Auto: follow the sensor once it has reported. Until then (first boot on a
-        // panel that answers no startup GET_REPORT, before any physical rotation),
-        // default to LANDSCAPE - the Edge's primary orientation - rather than sitting
-        // in portrait. Derived from the window aspect so it's correct whether the OS
-        // exposes the panel as portrait (720x2560 → rotate 90 to landscape) or already
-        // landscape (2560x720 → 0). The sensor overrides this the moment it reports,
-        // and the last real orientation is remembered across runs (OrientationSensor).
-        default: return _stableSensorRotation >= 0 ? _stableSensorRotation
-                                                   : (root.height > root.width ? 90 : 0)
+        if (windowIsLandscape) {
+            switch (orientationMode) {
+            case "landscape": return 0
+            case "portrait": return 90
+            case "inverted-landscape": return 180
+            case "inverted-portrait": return 270
+            // Auto: follow the sensor once it has reported. Until then (first boot on a
+            // panel that answers no startup GET_REPORT, before any physical rotation),
+            // default to LANDSCAPE - the Edge's primary orientation (0° unrotated on a
+            // native 2560x720 panel).
+            default: return _stableSensorRotation >= 0 ? _stableSensorRotation : 0
+            }
+        } else {
+            switch (orientationMode) {
+            case "portrait": return 0
+            case "landscape": return 90
+            case "inverted-portrait": return 180
+            case "inverted-landscape": return 270
+            // On a portrait-oriented window (e.g. 720x2560), rotating 90° produces
+            // the swapped 2560x720 landscape aspect.
+            default: return _stableSensorRotation >= 0 ? _stableSensorRotation : 90
+            }
         }
     }
 

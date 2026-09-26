@@ -67,14 +67,16 @@ QString OrientationSensor::findEdgeHidraw() {
 int OrientationSensor::byteToRotation(unsigned char b) {
     // Content rotation (clockwise degrees) that keeps the UI upright for each
     // physical orientation the Edge reports. Calibrated ON-DEVICE:
-    //   0x03 upright portrait → 0°, 0x01 inverted portrait → 180° (both verified
-    //   upright); the two landscapes needed swapping (they came out inverted at
-    //   90/270): 0x00 (+90°CW) → 270°, 0x02 (-90°CW) → 90°.
+    // The panel is natively 2560x720 landscape:
+    //   0x00 horizontal (normal desktop mount) → 0°
+    //   0x03 upright portrait (+90° CW)       → 90°
+    //   0x02 inverted horizontal (180°)       → 180°
+    //   0x01 inverted portrait (-90° / 270°)  → 270°
     switch (b) {
-    case 0x03: return 0;
-    case 0x00: return 270;
-    case 0x01: return 180;
-    case 0x02: return 90;
+    case 0x00: return 0;
+    case 0x03: return 90;
+    case 0x02: return 180;
+    case 0x01: return 270;
     default:   return -1;
     }
 }
