@@ -46,6 +46,24 @@ WidgetChrome {
     }
     readonly property string hemisphere: cfg.hemisphere === "south" ? "south" : "north"
     readonly property bool showAccuracyNote: cfg.showAccuracyNote !== undefined ? cfg.showAccuracyNote : true
+    readonly property bool showPhaseName: cfg.showPhaseName !== undefined ? cfg.showPhaseName : true
+    readonly property bool showIllumination: cfg.showIllumination !== undefined ? cfg.showIllumination : true
+    readonly property bool showUpcomingDates: cfg.showUpcomingDates !== undefined ? cfg.showUpcomingDates : true
+    readonly property bool showCyclePosition: cfg.showCyclePosition !== undefined ? cfg.showCyclePosition : true
+    readonly property string moonStyle: cfg.moonStyle === "vector" ? "vector" : "realistic"
+
+    readonly property string moonImageSource: {
+        var probe = "qrc:/images/moon_photo.png"
+        return Qt.resolvedUrl(probe).toString() === probe
+            ? probe
+            : Qt.resolvedUrl("../../images/moon_photo.png").toString()
+    }
+
+    readonly property bool hasVisibleInfo: showPhaseName || showIllumination
+        || (roomy && showUpcomingDates)
+        || (roomy && showCyclePosition && (!compactDetail || !showLocalEvents))
+        || (roomy && showLocalEvents)
+        || (roomy && showAccuracyNote)
 
     // Fallback location inherited from any configured widget in the store (e.g. Weather)
     readonly property var _fallbackLocation: {
@@ -308,7 +326,7 @@ WidgetChrome {
         objectName: "moonLayout"
         anchors.centerIn: parent
         width: parent.width
-        columns: w.twoColumn ? 2 : 1
+        columns: (w.twoColumn && w.hasVisibleInfo) ? 2 : 1
         // Air is room, not mode: 14 was "the overlay" and 2 "not the overlay",
         // so a 0.5x1 tall tile carrying the same glyph + name + illumination +
         // dates stack as the overlay got the cramped 2.
@@ -320,12 +338,21 @@ WidgetChrome {
             objectName: "moonDisc"
             readonly property bool mirrored: w.hemisphere === "south"
             readonly property real phase: w._cyclePos
+            readonly property string moonStyle: w.moonStyle
+            readonly property string imageSource: w.moonImageSource
+            property bool imageReady: false
             Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
             Layout.preferredWidth: Math.max(theme.fontMinimum * 3, w.glyphPx)
             Layout.preferredHeight: Layout.preferredWidth
             Accessible.role: Accessible.StaticText
             Accessible.name: w.names[w.idx] + ", " + w.illum + " percent illuminated, "
                              + w.phaseDirection + ". Approximate geocentric phase."
+
+            onImageLoaded: {
+                imageReady = true
+                requestPaint()
+            }
+
             onPaint: {
                 var ctx = getContext("2d")
                 var cx = width / 2
@@ -339,15 +366,28 @@ WidgetChrome {
                     ctx.scale(-1, 1)
                     cx = width - cx
                 }
-                ctx.fillStyle = theme.cardBackgroundAlt
+
+                // Base circular disc
+                ctx.save()
                 ctx.beginPath()
                 ctx.arc(cx, cy, radius, 0, Math.PI * 2)
-                ctx.fill()
+                ctx.clip()
+
+                ctx.fillStyle = theme.cardBackgroundAlt
+                ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2)
+
+                var isImg = (moonStyle === "realistic") && isImageLoaded(imageSource)
+                if (isImg) {
+                    ctx.save()
+                    ctx.globalAlpha = 0.15
+                    ctx.drawImage(imageSource, cx - radius, cy - radius, radius * 2, radius * 2)
+                    ctx.restore()
+                }
 
                 var phase = Math.max(0, Math.min(1, w._cyclePos))
                 var k = 1.333333
                 if (phase > 0.001 && phase < 0.999) {
-                    ctx.fillStyle = theme.textPrimary
+                    ctx.save()
                     ctx.beginPath()
                     ctx.moveTo(cx, cy - radius)
                     if (phase <= 0.5) {
@@ -368,10 +408,23 @@ WidgetChrome {
                                           cx, cy - radius)
                     }
                     ctx.closePath()
-                    ctx.fill()
+                    ctx.clip()
+
+                    if (isImg) {
+                        ctx.drawImage(imageSource, cx - radius, cy - radius, radius * 2, radius * 2)
+                    } else {
+                        ctx.fillStyle = theme.textPrimary
+                        ctx.fill()
+                    }
+                    ctx.restore()
                 } else if (phase >= 0.999) {
-                    ctx.fillStyle = theme.cardBackgroundAlt
+                    if (!isImg) {
+                        ctx.fillStyle = theme.cardBackgroundAlt
+                    }
                 }
+
+                ctx.restore() // restore base circular clip
+
                 ctx.strokeStyle = w.effAccent
                 ctx.lineWidth = Math.max(3, radius * 0.035)
                 ctx.beginPath()
@@ -383,6 +436,11 @@ WidgetChrome {
             onHeightChanged: requestPaint()
             onPhaseChanged: requestPaint()
             onMirroredChanged: requestPaint()
+            onMoonStyleChanged: requestPaint()
+            onImageSourceChanged: {
+                if (imageSource) loadImage(imageSource)
+                requestPaint()
+            }
             Connections {
                 target: w
                 function onEffAccentChanged() { moonDisc.requestPaint() }
@@ -392,11 +450,14 @@ WidgetChrome {
                 function onTextPrimaryChanged() { moonDisc.requestPaint() }
                 function onCardBackgroundAltChanged() { moonDisc.requestPaint() }
             }
-            Component.onCompleted: requestPaint()
+            Component.onCompleted: {
+                if (imageSource) loadImage(imageSource)
+                requestPaint()
+            }
         }
 
         ColumnLayout {
-            visible: !w.micro
+            visible: !w.micro && w.hasVisibleInfo
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignVCenter
             spacing: w.compactDetail ? theme.spacingXs
@@ -406,6 +467,7 @@ WidgetChrome {
             // column's own stretch, which pinned the whole block to the left.
             Text {
                 objectName: "moonPhaseName"
+                visible: w.showPhaseName
                 Layout.fillWidth: true; text: w.names[w.idx]
                 horizontalAlignment: Text.AlignHCenter
                 elide: Text.ElideRight; fontSizeMode: Text.HorizontalFit
@@ -415,6 +477,7 @@ WidgetChrome {
                 color: w.effAccent }
             Text {
                 objectName: "moonIllumination"
+                visible: w.showIllumination
                 Layout.fillWidth: true
                 horizontalAlignment: Text.AlignHCenter
                 elide: Text.ElideRight; fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum
@@ -430,7 +493,7 @@ WidgetChrome {
                 objectName: "moonUpcomingDates"
                 Layout.alignment: Qt.AlignHCenter
                 Layout.fillWidth: w.compactDetail
-                visible: w.roomy
+                visible: w.roomy && w.showUpcomingDates
                 spacing: w.compactDetail ? theme.spacingSm : (w.twoColumn ? theme.spacingMd : theme.spacingXl)
                 Layout.topMargin: (w.compactDetail || w.twoColumn) ? 0 : theme.spacingSm
                 ColumnLayout {
@@ -490,7 +553,7 @@ WidgetChrome {
                 // visualization, including the narrow half-screen projections.
                 // The opt-in local-events panel owns the same density slot on a
                 // narrow projection; roomy cards can show both without clipping.
-                visible: w.roomy && (!w.compactDetail || !w.showLocalEvents)
+                visible: w.roomy && w.showCyclePosition && (!w.compactDetail || !w.showLocalEvents)
                 Layout.alignment: Qt.AlignHCenter
                 Layout.preferredWidth: Math.min(
                     (w.twoColumn ? (parent ? parent.width * 0.94 : 420) : moonLay.width * 0.76), 420)

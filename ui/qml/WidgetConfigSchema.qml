@@ -270,6 +270,19 @@ QtObject {
             about("A responsive analog world clock. Effective Reduce Motion removes the moving second hand even when it is enabled here.") ] }
 
         case "moon": return { sections: [
+            { title: "Display", cols: 1, fields: [
+                { key: "moonStyle", label: "Moon appearance", type: "segmented", dflt: "realistic", options: [
+                    { value: "realistic", label: "Realistic photo" },
+                    { value: "vector", label: "Vector graphic" } ],
+                  help: "Choose between high-resolution lunar photography and classic graphic rendering." },
+                { key: "showPhaseName", label: "Show phase name", type: "toggle", dflt: true,
+                  help: "Displays the name of the current moon phase." },
+                { key: "showIllumination", label: "Show illumination", type: "toggle", dflt: true,
+                  help: "Displays percentage illuminated and lunar age." },
+                { key: "showUpcomingDates", label: "Show upcoming phase dates", type: "toggle", dflt: true,
+                  help: "Shows dates for the next new and full moon in larger layouts." },
+                { key: "showCyclePosition", label: "Show lunar cycle bar", type: "toggle", dflt: true,
+                  help: "Displays the progress bar through the 29.5-day synodic cycle." } ] },
             { title: "Location", cols: 1, fields: [
                 { key: "hemisphere", label: "Hemisphere", type: "segmented", dflt: "north",
                   help: "Flips the illuminated side to match your sky.", options: [

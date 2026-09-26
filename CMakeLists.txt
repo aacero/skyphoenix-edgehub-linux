@@ -371,6 +371,7 @@ install(FILES LICENSE LICENSE-MIT LICENSE-APACHE
         assets/fonts/LICENSE-OFL-Inter.txt
         assets/fonts/LICENSE-OFL-JetBrainsMono.txt
         assets/fonts/LICENSE-OFL-Lexend.txt
+        ui/images/LICENSE-CC-BY-SA-FullMoon2010.txt
         DESTINATION share/licenses/xeneon-edge-hub)
 # Debian Policy expects the installed package copyright record at this exact
 # location. It is useful in every native payload, so install the same

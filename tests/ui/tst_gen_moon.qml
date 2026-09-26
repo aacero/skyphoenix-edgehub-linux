@@ -920,5 +920,157 @@ Item {
             verify(fieldByKey(s, "accent") !== null, "universal accent field present")
             verify(fieldByKey(s, "cardBackdrop") !== null, "universal card-backdrop field present")
         }
+
+        function test_display_fields_in_schema() {
+            var ms = fieldByKey(schema(), "moonStyle")
+            verify(ms !== null, "moonStyle field present")
+            compare(ms.type, "segmented")
+            compare(ms.dflt, "realistic")
+            var styles = ms.options.map(function(o) { return o.value })
+            verify(styles.indexOf("realistic") >= 0 && styles.indexOf("vector") >= 0,
+                   "moonStyle provides realistic and vector options")
+
+            var pn = fieldByKey(schema(), "showPhaseName")
+            verify(pn !== null && pn.type === "toggle" && pn.dflt === true,
+                   "showPhaseName toggle defaults to true")
+
+            var il = fieldByKey(schema(), "showIllumination")
+            verify(il !== null && il.type === "toggle" && il.dflt === true,
+                   "showIllumination toggle defaults to true")
+
+            var ud = fieldByKey(schema(), "showUpcomingDates")
+            verify(ud !== null && ud.type === "toggle" && ud.dflt === true,
+                   "showUpcomingDates toggle defaults to true")
+
+            var cp = fieldByKey(schema(), "showCyclePosition")
+            verify(cp !== null && cp.type === "toggle" && cp.dflt === true,
+                   "showCyclePosition toggle defaults to true")
+        }
+    }
+
+    // ── Field selection and realistic image masking ─────────────────────────
+    TestCase {
+        name: "MoonDisplayFieldsAndStyle"
+        when: windowShown
+
+        function init() {
+            tryVerify(function () { return hMoon.ready }, 3000)
+            clearSettings(hMoon)
+        }
+
+        function test_default_all_fields_visible() {
+            var w = hMoon.item
+            compare(w.showPhaseName, true, "showPhaseName defaults to true")
+            compare(w.showIllumination, true, "showIllumination defaults to true")
+            compare(w.showUpcomingDates, true, "showUpcomingDates defaults to true")
+            compare(w.showCyclePosition, true, "showCyclePosition defaults to true")
+            compare(w.moonStyle, "realistic", "moonStyle defaults to realistic")
+            compare(w.hasVisibleInfo, true, "hasVisibleInfo is true by default")
+
+            var name = findByObjectName(w, "moonPhaseName")
+            verify(name !== null && name.visible, "phase name visible by default")
+            var illum = findByObjectName(w, "moonIllumination")
+            verify(illum !== null && illum.visible, "illumination visible by default")
+            var dates = findByObjectName(w, "moonUpcomingDates")
+            verify(dates !== null && dates.visible, "upcoming dates visible by default in roomy overlay")
+            var cycle = findByObjectName(w, "moonCyclePosition")
+            verify(cycle !== null && cycle.visible, "cycle bar visible by default in roomy overlay")
+        }
+
+        function test_toggle_phase_name_live() {
+            var w = hMoon.item
+            var name = findByObjectName(w, "moonPhaseName")
+            verify(name.visible, "initially visible")
+
+            hMoon.storeCtl.setSetting("test-instance", "showPhaseName", false)
+            compare(w.showPhaseName, false, "setting updated")
+            compare(name.visible, false, "phase name hidden when configured off")
+
+            hMoon.storeCtl.setSetting("test-instance", "showPhaseName", true)
+            compare(w.showPhaseName, true, "setting restored")
+            compare(name.visible, true, "phase name visible again")
+        }
+
+        function test_toggle_illumination_live() {
+            var w = hMoon.item
+            var illum = findByObjectName(w, "moonIllumination")
+            verify(illum.visible, "initially visible")
+
+            hMoon.storeCtl.setSetting("test-instance", "showIllumination", false)
+            compare(w.showIllumination, false, "setting updated")
+            compare(illum.visible, false, "illumination line hidden when configured off")
+
+            hMoon.storeCtl.setSetting("test-instance", "showIllumination", true)
+            compare(w.showIllumination, true, "setting restored")
+            compare(illum.visible, true, "illumination line visible again")
+        }
+
+        function test_toggle_upcoming_dates_live() {
+            var w = hMoon.item
+            var dates = findByObjectName(w, "moonUpcomingDates")
+            verify(dates.visible, "initially visible")
+
+            hMoon.storeCtl.setSetting("test-instance", "showUpcomingDates", false)
+            compare(w.showUpcomingDates, false, "setting updated")
+            compare(dates.visible, false, "upcoming dates hidden when configured off")
+
+            hMoon.storeCtl.setSetting("test-instance", "showUpcomingDates", true)
+            compare(w.showUpcomingDates, true, "setting restored")
+            compare(dates.visible, true, "upcoming dates visible again")
+        }
+
+        function test_toggle_cycle_position_live() {
+            var w = hMoon.item
+            var cycle = findByObjectName(w, "moonCyclePosition")
+            verify(cycle.visible, "initially visible")
+
+            hMoon.storeCtl.setSetting("test-instance", "showCyclePosition", false)
+            compare(w.showCyclePosition, false, "setting updated")
+            compare(cycle.visible, false, "cycle bar hidden when configured off")
+
+            hMoon.storeCtl.setSetting("test-instance", "showCyclePosition", true)
+            compare(w.showCyclePosition, true, "setting restored")
+            compare(cycle.visible, true, "cycle bar visible again")
+        }
+
+        function test_all_info_fields_disabled_hides_info_column() {
+            var w = hMoon.item
+            hMoon.storeCtl.patchSettings("test-instance", {
+                showPhaseName: false,
+                showIllumination: false,
+                showUpcomingDates: false,
+                showCyclePosition: false,
+                showAccuracyNote: false,
+                showLocalEvents: false
+            })
+            compare(w.hasVisibleInfo, false, "hasVisibleInfo is false when all info fields disabled")
+            var d = disc(hMoon)
+            verify(d !== null && d.visible, "moon disc remains visible as sole focal element")
+        }
+
+        function test_moon_style_realistic_vs_vector() {
+            var w = hMoon.item
+            var d = disc(hMoon)
+            compare(w.moonStyle, "realistic", "defaults to realistic")
+            compare(d.moonStyle, "realistic", "disc receives realistic style")
+
+            hMoon.storeCtl.setSetting("test-instance", "moonStyle", "vector")
+            compare(w.moonStyle, "vector", "setting updated to vector")
+            compare(d.moonStyle, "vector", "disc receives vector style")
+
+            hMoon.storeCtl.setSetting("test-instance", "moonStyle", "realistic")
+            compare(w.moonStyle, "realistic", "restored to realistic")
+            compare(d.moonStyle, "realistic", "disc restored to realistic")
+        }
+
+        function test_moon_image_source_and_loading() {
+            var w = hMoon.item
+            var d = disc(hMoon)
+            verify(w.moonImageSource.length > 0, "moonImageSource resolves to non-empty URI")
+            verify(w.moonImageSource.indexOf("moon_photo.png") >= 0,
+                   "moonImageSource points to bundled moon_photo.png asset")
+            tryVerify(function () { return d.isImageLoaded(w.moonImageSource) }, 3000,
+                      "high-resolution lunar photo loads successfully into Canvas")
+        }
     }
 }

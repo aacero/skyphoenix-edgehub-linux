@@ -1,0 +1,13 @@
+Asset: Full Moon photograph (moon_photo.png)
+Source: Wikimedia Commons / Wikipedia (File:FullMoon2010.jpg)
+URL: https://commons.wikimedia.org/wiki/File:FullMoon2010.jpg
+Author: Gregory H. Revera
+Date: 2010-10-22
+License: Creative Commons Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0)
+License Deed: https://creativecommons.org/licenses/by-sa/3.0/
+Legal Code: https://creativecommons.org/licenses/by-sa/3.0/legalcode
+
+Modifications:
+The original 2580x2452 photograph was cropped square around the lunar disc,
+a smooth circular transparency mask was applied to isolate the celestial body,
+and the image was resized to 512x512 pixels for display in Xeneon Edge Hub.
