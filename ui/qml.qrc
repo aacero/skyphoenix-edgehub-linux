@@ -78,6 +78,7 @@
         <file alias="qml/GrafanaWidget.qml">qml/widgets/GrafanaWidget.qml</file>
         <file alias="qml/SkyTonightWidget.qml">qml/widgets/SkyTonightWidget.qml</file>
         <file alias="qml/QuickActionsWidget.qml">qml/widgets/QuickActionsWidget.qml</file>
+        <file alias="qml/HumbleBooksWidget.qml">qml/widgets/HumbleBooksWidget.qml</file>
 
         <!-- Assets -->
         <file alias="images/moon_photo.png">images/moon_photo.png</file>

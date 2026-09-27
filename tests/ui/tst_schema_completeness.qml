@@ -75,6 +75,8 @@ Item {
             verify(field("grafana", "chartType") !== null, "chartType")
             verify(field("grafana", "yMin") !== null, "yMin")
             verify(field("grafana", "yMax") !== null, "yMax")
+            verify(field("humblebooks", "category") !== null, "category")
+            verify(field("humblebooks", "pollHours") !== null, "pollHours")
         }
     }
 }

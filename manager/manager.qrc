@@ -73,6 +73,7 @@
         <file alias="GrafanaWidget.qml">../ui/qml/widgets/GrafanaWidget.qml</file>
         <file alias="SkyTonightWidget.qml">../ui/qml/widgets/SkyTonightWidget.qml</file>
         <file alias="QuickActionsWidget.qml">../ui/qml/widgets/QuickActionsWidget.qml</file>
+        <file alias="HumbleBooksWidget.qml">../ui/qml/widgets/HumbleBooksWidget.qml</file>
     </qresource>
     <qresource prefix="/">
         <file alias="images/moon_photo.png">../ui/images/moon_photo.png</file>

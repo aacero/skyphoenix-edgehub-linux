@@ -943,6 +943,29 @@ QtObject {
             titleSection("Quick Actions"),
             about("Tactile macro buttons to broadcast Wake-on-LAN packets, check host reachability via Ping, spawn interactive SSH/Mosh terminal sessions, and trigger automation commands.") ] }
 
+        case "humblebooks": return { sections: [
+            { title: "Display", cols: 1, fields: [
+                { key: "category", label: "Default category", type: "select", dflt: "all", options: [
+                    { value: "all", label: "All bundles" },
+                    { value: "tech", label: "Tech books" },
+                    { value: "comics", label: "Comics & graphic novels" },
+                    { value: "sf", label: "Sci-Fi & fantasy" },
+                    { value: "cookbooks", label: "Cookbooks & culinary" },
+                    { value: "other", label: "Other (RPGs, game dev & misc)" } ],
+                  help: "Filters which bundles are initially shown. You can also tap category pills directly on the widget." },
+                { key: "pollHours", label: "Check for new bundles every", type: "select", dflt: 2, options: [
+                    { value: 1, label: "1 hour" },
+                    { value: 2, label: "2 hours" },
+                    { value: 4, label: "4 hours" },
+                    { value: 6, label: "6 hours" },
+                    { value: 12, label: "12 hours" },
+                    { value: 24, label: "24 hours" } ],
+                  help: "Humble Bundle releases new bundles periodically on weekdays. Caches and shares data across widget instances." } ] },
+            titleSection("Humble Books"),
+            about("Monitors active book, comic, sci-fi, and cookbook bundles on Humble Bundle. "
+                  + "Parses bundle metadata directly without trackers or personal credentials. "
+                  + "Tap any bundle card to view details or visit the bundle.") ] }
+
         default: return { sections: [ titleSection(type) ] }
         }
     }

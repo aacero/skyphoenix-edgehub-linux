@@ -175,7 +175,11 @@ QtObject {
           sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5"], dflt: "1x1" },
         // One quote, capped at 4 lines collapsed.
         { type: "quote",    title: "Daily Quote", category: "Info", source: "qrc:/qml/QuoteWidget.qml",    defaults: { category: "focus", customText: "" },
-          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1"], dflt: "1x1" }
+          sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1"], dflt: "1x1" },
+        // Humble Bundle book bundle monitor with category filters (Tech, Comics, SF, Cookbooks, Other)
+        { type: "humblebooks", title: "Humble Books", category: "Info", source: "qrc:/qml/HumbleBooksWidget.qml",
+          defaults: { category: "all", pollHours: 2 },
+          sizes: ["0.5x1", "1x0.5", "1x1", "1x1.5", "1x2"], dflt: "1x1" }
     ]
 
     // One-line descriptions shown in the expanded (full-screen) view header.
@@ -213,7 +217,8 @@ QtObject {
         "systems": "Live CPU, memory, disk, load, uptime and network throughput across your systems via Prometheus node_exporter.",
         "grafana": "Real-time time-series telemetry charts querying Prometheus or Grafana endpoints directly with hardware-accelerated vector rendering and interactive touch scrubbing.",
         "skytonight": "Tonight's observing forecast, twilight dark-sky window, cloud cover, and moon phase for stargazers.",
-        "quickactions": "Tactile touch macros to broadcast Wake-on-LAN packets, launch background commands, and trigger webhooks."
+        "quickactions": "Tactile touch macros to broadcast Wake-on-LAN packets, launch background commands, and trigger webhooks.",
+        "humblebooks": "Active book bundles on Humble Bundle with live countdowns, covers, tier prices, and category filters (Tech, Comics, SF, Cookbooks, Other)."
     })
 
     // LOSS-001: content and progress that must survive a configuration reset.
