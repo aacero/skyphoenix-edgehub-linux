@@ -1,4 +1,6 @@
 import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
 import QtTest
 import "../../ui/qml" as App
 import "../../ui/qml/widgets" as W
@@ -6,9 +8,9 @@ import "../../ui/qml/widgets" as W
 // ─────────────────────────────────────────────────────────────────────────
 // tst_quickactions - QuickActionsWidget unit and boundary test suite.
 //
-// Asserts default actions, Wake-on-LAN magic packet triggering via bridge,
-// command execution via bridge, webhook triggering via NetHub, status banners,
-// and inline expanded action editing/deletion.
+// Asserts host card model, Ping latency checks via bridge, interactive SSH
+// and Mosh command execution via bridge, inline host editing/deletion,
+// status banners, and backward-compatible action dispatch.
 // ─────────────────────────────────────────────────────────────────────────
 Item {
     id: root
@@ -120,139 +122,125 @@ Item {
             h.expanded = false
         }
 
-        function test_default_actions_loaded() {
+        function test_default_hosts_loaded() {
             var w = h.item
             verify(w !== null, "widget instantiated")
-            compare(w.actions.length, 4, "default 4 homelab actions loaded")
-            compare(w.actions[0].id, "wol-aframe")
-            compare(w.actions[0].target, "00:11:22:33:44:55")
-            compare(w.actions[1].id, "wol-deerpark")
-            compare(w.actions[2].id, "wol-palatka")
-            compare(w.actions[3].id, "wol-pelican")
+            compare(w.hosts.length, 4, "default 4 homelab hosts loaded")
+            compare(w.hosts[0].label, "palatka")
+            compare(w.hosts[0].host, "10.0.0.227")
+            compare(w.hosts[1].label, "deerpark")
+            compare(w.hosts[1].host, "10.0.0.88")
+            compare(w.hosts[2].label, "bframe")
+            compare(w.hosts[2].host, "100.69.69.10")
+            compare(w.hosts[2].user, "acero")
+            compare(w.hosts[3].label, "aframe")
+            compare(w.hosts[3].host, "10.0.0.50")
         }
 
-        function test_wol_action_success() {
+        function test_ping_host_card_success() {
             var w = h.item
-            w.triggerAction(w.actions[0])
+            mockBridge.pingReturnOk = true
+            mockBridge.pingReturnLatency = 0.42
 
-            compare(mockBridge.wolCallCount, 1, "sendWakeOnLan called")
-            compare(mockBridge.lastMac, "00:11:22:33:44:55", "correct target MAC passed")
-            compare(mockBridge.lastBroadcast, "255.255.255.255", "default broadcast passed")
+            w.pingHost(w.hosts[0])
 
-            var st = w.actionStates["wol-aframe"]
+            compare(mockBridge.pingCallCount, 1, "pingHost called")
+            compare(mockBridge.lastPingHost, "10.0.0.227", "target host passed to bridge")
+
+            var st = w.actionStates["host-palatka"]
             verify(st !== undefined, "state object exists")
             compare(st.status, "ok", "state is ok")
-            verify(w.lastNotice.indexOf("Magic packet broadcast to 00:11:22:33:44:55") >= 0, "notice banner text")
+            compare(st.latency, "0.4 ms", "latency formatted")
+            verify(w.lastNotice.indexOf("10.0.0.227 is reachable") >= 0, "notice banner text")
             compare(w.lastNoticeColor, h.theme.success, "notice color is success")
         }
 
-        function test_wol_action_invalid_mac_error() {
+        function test_ping_host_card_failure() {
             var w = h.item
-            mockBridge.wolReturnCode = -1
+            mockBridge.pingReturnOk = false
+            mockBridge.pingReturnError = "Host unreachable"
 
-            w.triggerAction(w.actions[1])
+            w.pingHost(w.hosts[1])
 
-            compare(mockBridge.wolCallCount, 1)
-            var st = w.actionStates["wol-deerpark"]
+            compare(mockBridge.pingCallCount, 1)
+            var st = w.actionStates["host-deerpark"]
             compare(st.status, "error", "state marked as error")
-            verify(w.lastNotice.indexOf("WoL failed: invalid MAC") >= 0, "invalid MAC failure reported")
+            compare(st.detail, "Host unreachable")
+            verify(w.lastNotice.indexOf("is Host unreachable") >= 0, "failure notice")
             compare(w.lastNoticeColor, h.theme.error, "notice color is error")
         }
 
-        function test_wol_action_socket_error() {
+        function test_ssh_host_card_launch() {
             var w = h.item
-            mockBridge.wolReturnCode = -2
-
-            w.triggerAction(w.actions[2])
-
-            compare(mockBridge.wolCallCount, 1)
-            var st = w.actionStates["wol-palatka"]
-            compare(st.status, "error", "state marked as error")
-            verify(w.lastNotice.indexOf("WoL failed: socket error") >= 0, "socket error failure reported")
-            compare(w.lastNoticeColor, h.theme.error, "notice color is error")
-        }
-
-        function test_command_action_success() {
-            var w = h.item
-            var cmdAction = { id: "test-cmd", label: "Backup", type: "command", target: "/opt/backup.sh" }
-
-            w.triggerAction(cmdAction)
+            w.launchSsh(w.hosts[0])
 
             compare(mockBridge.cmdCallCount, 1, "executeCommand called")
-            compare(mockBridge.lastCommand, "/opt/backup.sh", "command passed to bridge")
-            var st = w.actionStates["test-cmd"]
-            compare(st.status, "ok", "state marked as ok")
-            verify(w.lastNotice.indexOf("Command launched: /opt/backup.sh") >= 0, "notice reflects command")
-            compare(w.lastNoticeColor, h.theme.success, "notice color is success")
+            verify(mockBridge.lastCommand.indexOf("ssh 10.0.0.227") >= 0, "ssh command constructed")
+
+            var st = w.actionStates["host-palatka"]
+            compare(st.status, "ok")
+            compare(st.terminalType, "SSH")
+            verify(w.lastNotice.indexOf("Launched SSH terminal for 10.0.0.227") >= 0)
+            compare(w.lastNoticeColor, h.theme.success)
         }
 
-        function test_command_action_failure() {
+        function test_mosh_host_card_launch_with_user() {
             var w = h.item
-            mockBridge.cmdReturnCode = false
-            var cmdAction = { id: "test-cmd-fail", label: "Fail", type: "command", target: "bad-cmd" }
-
-            w.triggerAction(cmdAction)
+            w.launchMosh(w.hosts[2]) // bframe has user "acero" and host "100.69.69.10"
 
             compare(mockBridge.cmdCallCount, 1)
-            var st = w.actionStates["test-cmd-fail"]
-            compare(st.status, "error", "state marked as error")
-            verify(w.lastNotice.indexOf("Command failed to launch") >= 0, "command failure notice")
-            compare(w.lastNoticeColor, h.theme.error, "notice color is error")
+            verify(mockBridge.lastCommand.indexOf("mosh acero@100.69.69.10") >= 0, "mosh with user@host constructed")
+
+            var st = w.actionStates["host-bframe"]
+            compare(st.status, "ok")
+            compare(st.terminalType, "MOSH")
+            verify(w.lastNotice.indexOf("Launched MOSH terminal for acero@100.69.69.10") >= 0)
+            compare(w.lastNoticeColor, h.theme.success)
         }
 
-        function test_webhook_action_success() {
-            var w = h.item
-            var hookAction = { id: "test-hook", label: "Lamp On", type: "webhook", target: "http://ha:8123/api/webhook/lamp_on" }
-
-            w.triggerAction(hookAction)
-
-            compare(mockNetHub.requestCallCount, 1, "netHub request called")
-            compare(mockNetHub.lastUrl, "http://ha:8123/api/webhook/lamp_on", "target URL passed")
-            compare(mockNetHub.lastOptions.method, "POST", "POST method used")
-            var st = w.actionStates["test-hook"]
-            compare(st.status, "ok", "state marked as ok")
-            verify(w.lastNotice.indexOf("Webhook triggered successfully") >= 0, "notice reflects webhook success")
-            compare(w.lastNoticeColor, h.theme.success, "notice color is success")
-        }
-
-        function test_webhook_action_failure() {
-            var w = h.item
-            mockNetHub.returnOk = false
-            mockNetHub.returnStatus = 502
-            var hookAction = { id: "test-hook-err", label: "Lamp Off", type: "webhook", target: "http://ha:8123/api/webhook/lamp_off" }
-
-            w.triggerAction(hookAction)
-
-            compare(mockNetHub.requestCallCount, 1)
-            var st = w.actionStates["test-hook-err"]
-            compare(st.status, "error", "state marked as error")
-            verify(w.lastNotice.indexOf("Webhook error: 502") >= 0, "status code in notice")
-            compare(w.lastNoticeColor, h.theme.error, "notice color is error")
-        }
-
-        function test_inline_add_and_delete() {
+        function test_inline_add_and_delete_host() {
             var w = h.item
             h.expanded = true
 
             w.startAdd()
             compare(w.isAdding, true, "isAdding set")
-            compare(w.editType, "wol", "default editType is wol")
 
-            w.editLabel = "Living Room"
-            w.editType = "webhook"
-            w.editTarget = "http://ha:8123/api/webhook/lr"
+            w.editLabel = "Pelican"
+            w.editHost = "10.0.0.200"
+            w.editUser = "acero"
             w.commitEdit()
 
             compare(w.isAdding, false, "isAdding reset after commit")
-            compare(w.actions.length, 5, "action appended")
-            var added = w.actions[4]
-            compare(added.label, "Living Room")
-            compare(added.type, "webhook")
-            compare(added.target, "http://ha:8123/api/webhook/lr")
+            compare(w.hosts.length, 5, "host appended")
+            var added = w.hosts[4]
+            compare(added.label, "Pelican")
+            compare(added.host, "10.0.0.200")
+            compare(added.user, "acero")
 
             // Test deletion
-            w.deleteAction(added.id)
-            compare(w.actions.length, 4, "action removed after delete")
+            w.deleteHost(added.id)
+            compare(w.hosts.length, 4, "host removed after delete")
+        }
+
+        function test_inline_edit_host() {
+            var w = h.item
+            h.expanded = true
+
+            var first = w.hosts[0]
+            compare(first.id, "host-palatka")
+            w.startEdit(first)
+
+            compare(w.isAdding, false)
+            compare(w.editId, "host-palatka")
+            compare(w.editLabel, "palatka")
+            compare(w.editHost, "10.0.0.227")
+
+            // Update IP address
+            w.editHost = "10.0.0.230"
+            w.commitEdit()
+
+            compare(w.hosts[0].host, "10.0.0.230", "host updated in place")
+            compare(w.hosts.length, 4, "count unchanged")
         }
 
         function test_cancel_add() {
@@ -264,16 +252,21 @@ Item {
             compare(w.editLabel, "", "editLabel cleared")
         }
 
-        function test_custom_actions_via_store() {
+        function test_hosts_text_serialization_and_parsing() {
             var w = h.item
-            var custom = [
-                { id: "c1", label: "Custom 1", type: "wol", target: "11:22:33:44:55:66" }
-            ]
-            h.storeCtl.setSetting("test-instance", "actions", custom)
+            var rawText = "palatka | 10.0.0.227\ndeerpark | 10.0.0.88\nbframe | 100.69.69.10 | acero"
+            h.storeCtl.setSetting("test-instance", "actionsText", rawText)
 
-            compare(w.actions.length, 1, "custom actions list applied from store")
-            compare(w.actions[0].id, "c1")
-            compare(w.actions[0].label, "Custom 1")
+            compare(w.hosts.length, 3, "parsed 3 hosts from actionsText")
+            compare(w.hosts[0].label, "palatka")
+            compare(w.hosts[0].host, "10.0.0.227")
+
+            compare(w.hosts[1].label, "deerpark")
+            compare(w.hosts[1].host, "10.0.0.88")
+
+            compare(w.hosts[2].label, "bframe")
+            compare(w.hosts[2].host, "100.69.69.10")
+            compare(w.hosts[2].user, "acero")
         }
 
         function test_status_banner_setting() {
@@ -283,96 +276,37 @@ Item {
             compare(w.showStatusBanner, false, "updates to false from store")
         }
 
-        function test_ping_action_success() {
+        // Backward compatibility for triggers
+        function test_backward_compat_wol_trigger() {
             var w = h.item
-            mockBridge.pingReturnOk = true
-            mockBridge.pingReturnLatency = 0.42
-            var act = { id: "p-test", label: "Ping Test", type: "ping", target: "127.0.0.1" }
-            w.triggerAction(act)
+            var wolAct = { id: "wol-old", label: "Wake Old", type: "wol", target: "00:11:22:33:44:55", broadcast: "10.0.0.255" }
+            w.triggerAction(wolAct)
 
-            compare(mockBridge.pingCallCount, 1)
-            compare(mockBridge.lastPingHost, "127.0.0.1")
-            var st = w.actionStates["p-test"]
-            compare(st.status, "ok")
-            compare(st.detail, "0.4 ms")
-            verify(w.lastNotice.indexOf("is reachable") >= 0)
-            compare(w.lastNoticeColor, h.theme.success)
+            compare(mockBridge.wolCallCount, 1)
+            compare(mockBridge.lastMac, "00:11:22:33:44:55")
+            compare(mockBridge.lastBroadcast, "10.0.0.255")
+            compare(w.actionStates["wol-old"].status, "ok")
+            verify(w.lastNotice.indexOf("Magic packet broadcast") >= 0)
         }
 
-        function test_ping_action_failure() {
+        function test_backward_compat_command_trigger() {
             var w = h.item
-            mockBridge.pingReturnOk = false
-            mockBridge.pingReturnError = "Host unreachable"
-            var act = { id: "p-fail", label: "Ping Bad", type: "ping", target: "192.0.2.1" }
-            w.triggerAction(act)
-
-            compare(mockBridge.pingCallCount, 1)
-            var st = w.actionStates["p-fail"]
-            compare(st.status, "error")
-            compare(st.detail, "Host unreachable")
-            verify(w.lastNotice.indexOf("is Host unreachable") >= 0)
-            compare(w.lastNoticeColor, h.theme.error)
-        }
-
-        function test_ssh_and_mosh_action_triggers() {
-            var w = h.item
-            var sshAct = { id: "ssh-node", label: "SSH Node", type: "ssh", target: "deerpark" }
-            w.triggerAction(sshAct)
+            var cmdAct = { id: "cmd-old", label: "Run Old", type: "command", target: "/opt/backup.sh" }
+            w.triggerAction(cmdAct)
 
             compare(mockBridge.cmdCallCount, 1)
-            verify(mockBridge.lastCommand.indexOf("ssh deerpark") >= 0)
-            compare(w.actionStates["ssh-node"].status, "ok")
-            verify(w.lastNotice.indexOf("Launched SSH terminal") >= 0)
-
-            var moshAct = { id: "mosh-node", label: "Mosh Node", type: "mosh", target: "palatka" }
-            w.triggerAction(moshAct)
-
-            compare(mockBridge.cmdCallCount, 2)
-            verify(mockBridge.lastCommand.indexOf("mosh palatka") >= 0)
-            compare(w.actionStates["mosh-node"].status, "ok")
-            verify(w.lastNotice.indexOf("Launched MOSH terminal") >= 0)
+            compare(mockBridge.lastCommand, "/opt/backup.sh")
+            compare(w.actionStates["cmd-old"].status, "ok")
         }
 
-        function test_inline_edit_action() {
+        function test_backward_compat_webhook_trigger() {
             var w = h.item
-            h.expanded = true
+            var hookAct = { id: "hook-old", label: "Hook Old", type: "webhook", target: "http://ha:8123/api/test" }
+            w.triggerAction(hookAct)
 
-            // Edit the first default action (wol-aframe)
-            var first = w.actions[0]
-            compare(first.id, "wol-aframe")
-            w.startEdit(first)
-
-            compare(w.isAdding, false)
-            compare(w.editId, "wol-aframe")
-            compare(w.editLabel, "Wake aframe")
-            compare(w.editType, "wol")
-            compare(w.editTarget, "00:11:22:33:44:55")
-
-            // Update MAC address
-            w.editTarget = "AA:BB:CC:DD:EE:FF"
-            w.commitEdit()
-
-            compare(w.actions[0].target, "AA:BB:CC:DD:EE:FF", "target updated in place")
-            compare(w.actions.length, 4, "count unchanged")
-        }
-
-        function test_actions_text_serialization_and_parsing() {
-            var w = h.item
-            var rawText = "Wake aframe | wol | 11:22:33:44:55:66\nPing deerpark | ping | deerpark.local\nSSH pelican | ssh | pelican"
-            h.storeCtl.setSetting("test-instance", "actionsText", rawText)
-
-            compare(w.actions.length, 3, "parsed 3 actions from actionsText")
-            compare(w.actions[0].label, "Wake aframe")
-            compare(w.actions[0].type, "wol")
-            compare(w.actions[0].target, "11:22:33:44:55:66")
-
-            compare(w.actions[1].label, "Ping deerpark")
-            compare(w.actions[1].type, "ping")
-            compare(w.actions[1].target, "deerpark.local")
-
-            compare(w.actions[2].label, "SSH pelican")
-            compare(w.actions[2].type, "ssh")
-            compare(w.actions[2].target, "pelican")
+            compare(mockNetHub.requestCallCount, 1)
+            compare(mockNetHub.lastUrl, "http://ha:8123/api/test")
+            compare(w.actionStates["hook-old"].status, "ok")
         }
     }
 }

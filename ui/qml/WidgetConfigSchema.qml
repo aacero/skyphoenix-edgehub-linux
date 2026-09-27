@@ -872,8 +872,9 @@ QtObject {
 
         case "systems": return { sections: [
             { title: "Target systems", cols: 1, fields: [
-                { key: "hosts", label: "Hosts / IPs", type: "textarea", placeholder: "localhost:9100\n192.168.1.10:9100\n192.168.1.11:9100", dflt: "localhost:9100",
-                  help: "List of systems running prometheus-node-exporter, one per line or comma-separated. If the port is omitted, the default port below is used." },
+                { key: "hosts", label: "Hosts / IPs", type: "textarea",
+                  placeholder: "palatka | 10.0.0.227:9100 | 38:ca:84:39:6c:9e | 10.0.0.255\ndeerpark | 10.0.0.88:9100 | 40:a8:f0:a7:e9:9c\nlocalhost:9100", dflt: "localhost:9100",
+                  help: "List of systems running prometheus-node-exporter, one per line. Supports optional pipe syntax: Label | Host[:Port] | MAC Address | Broadcast IP. When a MAC address is provided, offline systems can be woken via Wake-on-LAN directly from the widget." },
                 { key: "defaultPort", label: "Default port", type: "number", min: 1, max: 65535, step: 1, dflt: 9100,
                   help: "Port used when not specified in the host string (Prometheus node_exporter defaults to 9100)." },
                 { type: "action", actionLabel: "Test connection", action: "testConnection",
@@ -933,15 +934,15 @@ QtObject {
             about("Real-time time-series telemetry charts querying Prometheus or Grafana endpoints directly with hardware-accelerated vector rendering and interactive touch scrubbing.") ] }
 
         case "quickactions": return { sections: [
-            { title: "Macro Actions", cols: 1, fields: [
-                { key: "actionsText", label: "Actions List", type: "textarea",
-                  placeholder: "Wake aframe | wol | 00:11:22:33:44:55\nWake deerpark | wol | 00:11:22:33:44:56\nPing deerpark | ping | deerpark.local\nSSH to deerpark | ssh | deerpark\nMosh to palatka | mosh | palatka",
-                  help: "List of macro buttons (one per line): Label | Type (wol/ping/ssh/mosh/command/webhook) | Target | Broadcast IP (optional for wol). Editing this updates the macro buttons live on the Edge." } ] },
+            { title: "Host Systems", cols: 1, fields: [
+                { key: "actionsText", label: "Systems List", type: "textarea",
+                  placeholder: "palatka | 10.0.0.227\ndeerpark | 10.0.0.88\nbframe | 100.69.69.10 | acero\naframe | 10.0.0.50",
+                  help: "List of systems (one per line): Label | Host / IP | SSH User (optional). Each host card provides instant tactile buttons for Ping (with live latency), SSH terminal, and Mosh session." } ] },
             { title: "Presentation", cols: 1, fields: [
                 { key: "showStatusBanner", label: "Show result notice banner", type: "toggle", dflt: true,
                   help: "Displays a temporary confirmation or error banner at the bottom of the card after triggering an action." } ] },
             titleSection("Quick Actions"),
-            about("Tactile macro buttons to broadcast Wake-on-LAN packets, check host reachability via Ping, spawn interactive SSH/Mosh terminal sessions, and trigger automation commands.") ] }
+            about("Host-centric macro cards providing instant Ping latency checks, and direct SSH and Mosh interactive terminal sessions.") ] }
 
         case "humblebooks": return { sections: [
             { title: "Display", cols: 1, fields: [

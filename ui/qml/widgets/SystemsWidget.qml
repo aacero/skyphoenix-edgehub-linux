@@ -30,6 +30,118 @@ WidgetChrome {
     property var priorityAlerts: null
     property var _critTracker: ({})
 
+    // Bridge for system commands and Wake-on-LAN
+    property var bridgeOverride: null
+    readonly property var bridge: {
+        if (bridgeOverride) return bridgeOverride
+        if (typeof configBridge !== "undefined" && configBridge) return configBridge
+        if (store && store.configBridge) return store.configBridge
+        return null
+    }
+
+    property var _wolStates: ({})
+    property var _pingStates: ({})
+
+    function wakeNode(node) {
+        if (!node) return
+        var key = node.url || node.label || ""
+        if (!node.mac) {
+            console.warn("Systems: no MAC address configured for " + (node.label || "system"))
+            return
+        }
+        var copy = JSON.parse(JSON.stringify(w._wolStates))
+        copy[key] = { status: "sending", time: Date.now() }
+        w._wolStates = copy
+
+        var res = -1
+        if (w.bridge && typeof w.bridge.sendWakeOnLan === "function") {
+            res = w.bridge.sendWakeOnLan(node.mac, node.broadcast || "255.255.255.255")
+        } else {
+            console.warn("Systems: bridge.sendWakeOnLan unavailable")
+        }
+
+        var update = JSON.parse(JSON.stringify(w._wolStates))
+        if (res === 0) {
+            update[key] = { status: "ok", time: Date.now(), detail: "Packet sent" }
+        } else {
+            update[key] = { status: "error", time: Date.now(), detail: "Send failed" }
+        }
+        w._wolStates = update
+    }
+
+    function pingNode(node) {
+        if (!node) return
+        var host = (node.label || "").trim()
+        if (node.url) {
+            var m = node.url.match(/^https?:\/\/([^:\/]+)/i)
+            if (m && m[1]) host = m[1].replace(/^\[|\]$/g, "")
+        }
+        if (!host.length) return
+        var key = node.url || node.label || ""
+        var copy = JSON.parse(JSON.stringify(w._pingStates))
+        copy[key] = { status: "pinging", time: Date.now() }
+        w._pingStates = copy
+
+        var res = { ok: false, error: "Unavailable", latencyMs: -1 }
+        if (w.bridge && typeof w.bridge.pingHost === "function") {
+            res = w.bridge.pingHost(host, 2)
+        }
+        var update = JSON.parse(JSON.stringify(w._pingStates))
+        if (res && res.ok) {
+            var lat = (res.latencyMs >= 0) ? (res.latencyMs.toFixed(1) + " ms") : "ok"
+            update[key] = { status: "ok", time: Date.now(), detail: lat }
+        } else {
+            update[key] = { status: "error", time: Date.now(), detail: (res && res.error) ? res.error : "unreachable" }
+        }
+        w._pingStates = update
+    }
+
+    function launchSshNode(node) {
+        if (!node) return
+        var host = (node.label || "").trim()
+        if (node.url) {
+            var m = node.url.match(/^https?:\/\/([^:\/]+)/i)
+            if (m && m[1]) host = m[1].replace(/^\[|\]$/g, "")
+        }
+        if (!host.length) return
+        var launchCmd = "for t in \"$TERMINAL\" foot alacritty kitty ghostty konsole gnome-terminal xterm; do "
+                      + "if command -v \"$t\" >/dev/null 2>&1; then "
+                      + "exec \"$t\" -e ssh " + host + "; "
+                      + "fi; done"
+        if (w.bridge && typeof w.bridge.executeCommand === "function") {
+            w.bridge.executeCommand(launchCmd)
+        }
+    }
+
+    Timer {
+        id: wolResetTimer
+        interval: 4000
+        repeat: true
+        running: Object.keys(w._wolStates).length > 0 || Object.keys(w._pingStates).length > 0
+        onTriggered: {
+            var now = Date.now()
+            var copyW = JSON.parse(JSON.stringify(w._wolStates))
+            var changedW = false
+            for (var kw in copyW) {
+                if (now - (copyW[kw].time || 0) > 4000) {
+                    delete copyW[kw]
+                    changedW = true
+                }
+            }
+            if (changedW) w._wolStates = copyW
+
+            var copyP = JSON.parse(JSON.stringify(w._pingStates))
+            var changedP = false
+            for (var kp in copyP) {
+                if (now - (copyP[kp].time || 0) > 6000) {
+                    delete copyP[kp]
+                    changedP = true
+                }
+            }
+            if (changedP) w._pingStates = copyP
+        }
+    }
+
     title: "Systems"
     iconName: "systems"
     accentColor: theme.catSystem
@@ -68,9 +180,46 @@ WidgetChrome {
     // ── Host parsing ─────────────────────────────────────────────────────────
     function normalizeUrl(target, dfltPort) {
         var item = String(target || "").trim()
-        if (!item.length) return { label: "", url: "" }
+        if (!item.length) return { label: "", url: "", mac: "", broadcast: "255.255.255.255" }
         var port = dfltPort || 9100
         var url = item
+        var customLabel = ""
+        var mac = ""
+        var broadcast = "255.255.255.255"
+
+        // Handle pipe-separated configuration:
+        // Format A: label | host[:port] | mac | broadcast
+        // Format B: host[:port] | mac | broadcast
+        // Format C: label | host[:port] | mac
+        // Format D: label | host[:port]
+        if (item.indexOf("|") >= 0) {
+            var parts = item.split("|").map(function(s) { return s.trim() })
+            if (parts.length >= 4) {
+                customLabel = parts[0]
+                url = parts[1]
+                mac = parts[2]
+                broadcast = parts[3] || "255.255.255.255"
+            } else if (parts.length === 3) {
+                if (/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(parts[1])) {
+                    url = parts[0]
+                    mac = parts[1]
+                    broadcast = parts[2] || "255.255.255.255"
+                } else {
+                    customLabel = parts[0]
+                    url = parts[1]
+                    mac = parts[2]
+                }
+            } else if (parts.length === 2) {
+                if (/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(parts[1])) {
+                    url = parts[0]
+                    mac = parts[1]
+                } else {
+                    customLabel = parts[0]
+                    url = parts[1]
+                }
+            }
+        }
+
         if (!/^https?:\/\//i.test(url)) {
             if (url.startsWith("[")) {
                 var closeBracket = url.indexOf("]")
@@ -95,8 +244,8 @@ WidgetChrome {
         } else if (!/\/metrics$/i.test(url)) {
             url = url.replace(/\/+$/, "") + "/metrics"
         }
-        var label = url.replace(/^https?:\/\//i, "").replace(/\/metrics$/i, "").replace(/\/+$/, "")
-        return { label: label, url: url }
+        var label = customLabel || url.replace(/^https?:\/\//i, "").replace(/\/metrics$/i, "").replace(/\/+$/, "")
+        return { label: label, url: url, mac: mac, broadcast: broadcast }
     }
 
     readonly property var configuredList: {
@@ -157,6 +306,8 @@ WidgetChrome {
             res.push({
                 label: configuredList[i].label,
                 url: configuredList[i].url,
+                mac: configuredList[i].mac || "",
+                broadcast: configuredList[i].broadcast || "255.255.255.255",
                 status: "offline",
                 error: "Waiting for poll",
                 lastSeenMs: 0,
@@ -415,6 +566,8 @@ WidgetChrome {
                             stateMap[target.url] = {
                                 label: target.label,
                                 url: target.url,
+                                mac: target.mac || "",
+                                broadcast: target.broadcast || "255.255.255.255",
                                 status: nodeStatus,
                                 error: "",
                                 lastSeenMs: nowMs,
@@ -440,6 +593,8 @@ WidgetChrome {
                             stateMap[target.url] = {
                                 label: target.label,
                                 url: target.url,
+                                mac: target.mac || "",
+                                broadcast: target.broadcast || "255.255.255.255",
                                 status: "offline",
                                 error: "HTTP " + status,
                                 lastSeenMs: stateMap[target.url] ? stateMap[target.url].lastSeenMs : 0,
@@ -458,6 +613,8 @@ WidgetChrome {
                         stateMap[target.url] = {
                             label: target.label,
                             url: target.url,
+                            mac: target.mac || "",
+                            broadcast: target.broadcast || "255.255.255.255",
                             status: "offline",
                             error: reason || "Offline",
                             lastSeenMs: stateMap[target.url] ? stateMap[target.url].lastSeenMs : 0,
@@ -922,7 +1079,7 @@ WidgetChrome {
                                     visible: modelData.status === "offline"
                                     ColumnLayout {
                                         anchors.centerIn: parent
-                                        spacing: 8
+                                        spacing: 10
                                         Text {
                                             Layout.alignment: Qt.AlignCenter
                                             text: "HOST UNREACHABLE"
@@ -935,8 +1092,46 @@ WidgetChrome {
                                             Layout.alignment: Qt.AlignCenter
                                             text: modelData.error || "Connection timed out"
                                             color: theme.textSecondary
-                                            font.pixelSize: 14
+                                            font.pixelSize: 13
                                             font.family: theme.fontMono
+                                        }
+                                        Rectangle {
+                                            Layout.alignment: Qt.AlignCenter
+                                            visible: !!modelData.mac
+                                            implicitWidth: Math.max(130, deckWakeTxt.implicitWidth + 28)
+                                            implicitHeight: 44
+                                            radius: theme.radiusSm
+                                            z: 2
+                                            property var wolSt: w._wolStates[modelData.url || modelData.label] || ({})
+                                            color: wolSt.status === "sending" ? theme.warning
+                                                   : (wolSt.status === "ok" ? theme.catSystem
+                                                   : (deckWakeMa.containsMouse ? theme.accentHover : theme.accent))
+                                            RowLayout {
+                                                anchors.centerIn: parent
+                                                spacing: 6
+                                                AppIcon {
+                                                    name: "hard-drives"
+                                                    size: 16
+                                                    color: "#FFFFFF"
+                                                }
+                                                Text {
+                                                    id: deckWakeTxt
+                                                    text: parent.parent.wolSt.status === "sending" ? "Waking..."
+                                                          : (parent.parent.wolSt.status === "ok" ? "Packet Sent ✓"
+                                                          : "Wake (WOL)")
+                                                    color: "#FFFFFF"
+                                                    font.pixelSize: 13
+                                                    font.family: theme.fontDisplay
+                                                    font.weight: Font.Bold
+                                                }
+                                            }
+                                            MouseArea {
+                                                id: deckWakeMa
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: w.wakeNode(modelData)
+                                            }
                                         }
                                     }
                                 }
@@ -973,7 +1168,7 @@ WidgetChrome {
                             anchors.margins: 8
                             spacing: 3
 
-                            // Top line: Status dot, Label, Uptime / Error
+                            // Top line: Status dot, Label, Uptime / Error / Wake
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: 8
@@ -991,13 +1186,45 @@ WidgetChrome {
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true
                                 }
-                                Text {
-                                    text: modelData.status === "offline"
-                                          ? (modelData.error || "Offline")
-                                          : ("up " + modelData.uptimeStr)
-                                    color: modelData.status === "offline" ? theme.error : theme.textTertiary
-                                    font.pixelSize: 12
-                                    font.family: theme.fontMono
+                                RowLayout {
+                                    spacing: 6
+                                    Text {
+                                        text: modelData.status === "offline"
+                                              ? (modelData.error || "Offline")
+                                              : ("up " + modelData.uptimeStr)
+                                        color: modelData.status === "offline" ? theme.error : theme.textTertiary
+                                        font.pixelSize: 12
+                                        font.family: theme.fontMono
+                                    }
+                                    Rectangle {
+                                        visible: modelData.status === "offline" && !!modelData.mac
+                                        implicitWidth: listWakeTxt.implicitWidth + 16
+                                        implicitHeight: 28
+                                        radius: 14
+                                        z: 2
+                                        property var wolSt: w._wolStates[modelData.url || modelData.label] || ({})
+                                        color: wolSt.status === "sending" ? theme.warning
+                                               : (wolSt.status === "ok" ? theme.catSystem
+                                               : (listWakeMa.containsMouse ? theme.accentHover : theme.accent))
+                                        Text {
+                                            id: listWakeTxt
+                                            anchors.centerIn: parent
+                                            text: parent.wolSt.status === "sending" ? "Waking..."
+                                                  : (parent.wolSt.status === "ok" ? "Sent ✓"
+                                                  : "⚡ Wake")
+                                            font.pixelSize: 11
+                                            font.family: theme.fontDisplay
+                                            font.weight: Font.Bold
+                                            color: "#FFFFFF"
+                                        }
+                                        MouseArea {
+                                            id: listWakeMa
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: w.wakeNode(modelData)
+                                        }
+                                    }
                                 }
                             }
 
@@ -1264,6 +1491,140 @@ WidgetChrome {
                         anchors.fill: parent
                         spacing: theme.spacingMd
                         visible: deepDivePanel.selNode !== null
+
+                        // System Info & Actions Bar
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 48
+                            radius: theme.radiusSm
+                            color: theme.cardBackgroundAlt
+                            border.color: theme.cardBorder
+                            border.width: 1
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 12
+                                anchors.rightMargin: 12
+                                spacing: 10
+
+                                Rectangle {
+                                    width: 10; height: 10; radius: 5
+                                    color: w.statusColor(deepDivePanel.selNode ? deepDivePanel.selNode.status : "offline")
+                                }
+
+                                Text {
+                                    text: deepDivePanel.selNode ? deepDivePanel.selNode.label : "System"
+                                    color: theme.textPrimary
+                                    font.pixelSize: 15
+                                    font.family: theme.fontDisplay
+                                    font.weight: Font.Bold
+                                }
+
+                                Text {
+                                    text: deepDivePanel.selNode && deepDivePanel.selNode.mac
+                                          ? ("MAC: " + deepDivePanel.selNode.mac)
+                                          : (deepDivePanel.selNode ? deepDivePanel.selNode.url : "")
+                                    color: theme.textTertiary
+                                    font.pixelSize: 12
+                                    font.family: theme.fontMono
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+
+                                // Ping Button
+                                Rectangle {
+                                    implicitWidth: pingBtnTxt.implicitWidth + 20
+                                    implicitHeight: 34
+                                    radius: 6
+                                    property var pingSt: (deepDivePanel.selNode && w._pingStates[deepDivePanel.selNode.url || deepDivePanel.selNode.label]) || ({})
+                                    color: pingSt.status === "pinging" ? theme.warning
+                                           : (pingSt.status === "ok" ? theme.catSystem
+                                           : (pingMa.containsMouse ? theme.cardBackgroundHover : theme.cardBorder))
+                                    RowLayout {
+                                        anchors.centerIn: parent
+                                        spacing: 6
+                                        AppIcon { name: "heartbeat"; size: 14; color: theme.textPrimary }
+                                        Text {
+                                            id: pingBtnTxt
+                                            text: parent.parent.pingSt.status === "pinging" ? "Pinging..."
+                                                  : (parent.parent.pingSt.status === "ok" ? ("✓ " + parent.parent.pingSt.detail)
+                                                  : "Ping")
+                                            font.pixelSize: 12
+                                            font.weight: Font.DemiBold
+                                            color: theme.textPrimary
+                                        }
+                                    }
+                                    MouseArea {
+                                        id: pingMa
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: w.pingNode(deepDivePanel.selNode)
+                                    }
+                                }
+
+                                // SSH Button
+                                Rectangle {
+                                    implicitWidth: sshBtnTxt.implicitWidth + 20
+                                    implicitHeight: 34
+                                    radius: 6
+                                    color: sshMa.containsMouse ? theme.cardBackgroundHover : theme.cardBorder
+                                    RowLayout {
+                                        anchors.centerIn: parent
+                                        spacing: 6
+                                        AppIcon { name: "code"; size: 14; color: theme.textPrimary }
+                                        Text {
+                                            id: sshBtnTxt
+                                            text: "SSH"
+                                            font.pixelSize: 12
+                                            font.weight: Font.DemiBold
+                                            color: theme.textPrimary
+                                        }
+                                    }
+                                    MouseArea {
+                                        id: sshMa
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: w.launchSshNode(deepDivePanel.selNode)
+                                    }
+                                }
+
+                                // Wake (WOL) Button
+                                Rectangle {
+                                    visible: deepDivePanel.selNode && !!deepDivePanel.selNode.mac
+                                    implicitWidth: deepWakeTxt.implicitWidth + 22
+                                    implicitHeight: 34
+                                    radius: 6
+                                    property var wolSt: (deepDivePanel.selNode && w._wolStates[deepDivePanel.selNode.url || deepDivePanel.selNode.label]) || ({})
+                                    color: wolSt.status === "sending" ? theme.warning
+                                           : (wolSt.status === "ok" ? theme.catSystem
+                                           : (deepWakeMa.containsMouse ? theme.accentHover : theme.accent))
+                                    RowLayout {
+                                        anchors.centerIn: parent
+                                        spacing: 6
+                                        AppIcon { name: "hard-drives"; size: 14; color: "#FFFFFF" }
+                                        Text {
+                                            id: deepWakeTxt
+                                            text: parent.parent.wolSt.status === "sending" ? "Waking..."
+                                                  : (parent.parent.wolSt.status === "ok" ? "Packet Sent ✓"
+                                                  : "⚡ Wake (WOL)")
+                                            font.pixelSize: 12
+                                            font.family: theme.fontDisplay
+                                            font.weight: Font.Bold
+                                            color: "#FFFFFF"
+                                        }
+                                    }
+                                    MouseArea {
+                                        id: deepWakeMa
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: w.wakeNode(deepDivePanel.selNode)
+                                    }
+                                }
+                            }
+                        }
 
                         // 4 Primary Metric Cards
                         RowLayout {

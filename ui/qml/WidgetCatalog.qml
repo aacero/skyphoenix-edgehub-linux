@@ -217,7 +217,7 @@ QtObject {
         "systems": "Live CPU, memory, disk, load, uptime and network throughput across your systems via Prometheus node_exporter.",
         "grafana": "Real-time time-series telemetry charts querying Prometheus or Grafana endpoints directly with hardware-accelerated vector rendering and interactive touch scrubbing.",
         "skytonight": "Tonight's observing forecast, twilight dark-sky window, cloud cover, and moon phase for stargazers.",
-        "quickactions": "Tactile touch macros to broadcast Wake-on-LAN packets, launch background commands, and trigger webhooks.",
+        "quickactions": "Host action cards with live Ping latency checks and instant one-tap SSH and Mosh interactive terminal sessions.",
         "humblebooks": "Active book bundles on Humble Bundle with live countdowns, covers, tier prices, and category filters (Tech, Comics, SF, Cookbooks, Other)."
     })
 

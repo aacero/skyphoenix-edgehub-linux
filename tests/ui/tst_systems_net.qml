@@ -91,6 +91,63 @@ Item {
         h.storeCtl._touchSettings()
     }
 
+    QtObject {
+        id: mockBridge
+        property string lastMac: ""
+        property string lastBroadcast: ""
+        property int wolCallCount: 0
+        property int wolReturnCode: 0
+
+        property string lastCommand: ""
+        property int cmdCallCount: 0
+        property bool cmdReturnCode: true
+
+        property string lastPingHost: ""
+        property int pingCallCount: 0
+        property bool pingReturnOk: true
+        property double pingReturnLatency: 0.5
+        property string pingReturnError: ""
+
+        function sendWakeOnLan(mac, bcast) {
+            lastMac = mac
+            lastBroadcast = bcast
+            wolCallCount++
+            return wolReturnCode
+        }
+
+        function executeCommand(cmd) {
+            lastCommand = cmd
+            cmdCallCount++
+            return cmdReturnCode
+        }
+
+        function pingHost(host, timeout) {
+            lastPingHost = host
+            pingCallCount++
+            return {
+                host: host,
+                ok: pingReturnOk,
+                latencyMs: pingReturnLatency,
+                error: pingReturnError
+            }
+        }
+
+        function reset() {
+            lastMac = ""
+            lastBroadcast = ""
+            wolCallCount = 0
+            wolReturnCode = 0
+            lastCommand = ""
+            cmdCallCount = 0
+            cmdReturnCode = true
+            lastPingHost = ""
+            pingCallCount = 0
+            pingReturnOk = true
+            pingReturnLatency = 0.5
+            pingReturnError = ""
+        }
+    }
+
     TestCase {
         name: "SystemsNet"
         when: windowShown
@@ -101,6 +158,8 @@ Item {
             clearSettings()
             h.active = false
             lastFakes = {}
+            mockBridge.reset()
+            h.item.bridgeOverride = mockBridge
             h.item.nowMsOverride = 1700100000000
             h.item.netHub = null
             h.item.xhrFactory = function () {
@@ -134,6 +193,65 @@ Item {
             var n6 = h.item.normalizeUrl("::1", 9100)
             compare(n6.url, "http://[::1]:9100/metrics")
             compare(n6.label, "[::1]:9100")
+
+            // Pipe delimited formats with MAC and custom label
+            var p1 = h.item.normalizeUrl("palatka | 10.0.0.227:9100 | 38:ca:84:39:6c:9e | 10.0.0.255", 9100)
+            compare(p1.label, "palatka")
+            compare(p1.url, "http://10.0.0.227:9100/metrics")
+            compare(p1.mac, "38:ca:84:39:6c:9e")
+            compare(p1.broadcast, "10.0.0.255")
+
+            var p2 = h.item.normalizeUrl("deerpark | 10.0.0.88:9100 | 40:a8:f0:a7:e9:9c", 9100)
+            compare(p2.label, "deerpark")
+            compare(p2.url, "http://10.0.0.88:9100/metrics")
+            compare(p2.mac, "40:a8:f0:a7:e9:9c")
+            compare(p2.broadcast, "255.255.255.255")
+
+            var p3 = h.item.normalizeUrl("10.0.0.50:9100 | 00:11:22:33:44:55 | 10.0.0.255", 9100)
+            compare(p3.url, "http://10.0.0.50:9100/metrics")
+            compare(p3.mac, "00:11:22:33:44:55")
+            compare(p3.broadcast, "10.0.0.255")
+
+            var p4 = h.item.normalizeUrl("myhost | 192.168.1.100", 9100)
+            compare(p4.label, "myhost")
+            compare(p4.url, "http://192.168.1.100:9100/metrics")
+        }
+
+        // ── 1b. WoL, Ping and SSH Dispatch ──────────────────────────────────
+        function test_wol_and_tools_dispatch() {
+            var nodeWithMac = {
+                label: "palatka",
+                url: "http://10.0.0.227:9100/metrics",
+                mac: "38:ca:84:39:6c:9e",
+                broadcast: "10.0.0.255",
+                status: "offline"
+            }
+
+            // Test Wake-on-LAN dispatch
+            mockBridge.wolReturnCode = 0
+            h.item.wakeNode(nodeWithMac)
+            compare(mockBridge.wolCallCount, 1)
+            compare(mockBridge.lastMac, "38:ca:84:39:6c:9e")
+            compare(mockBridge.lastBroadcast, "10.0.0.255")
+            var wolSt = h.item._wolStates[nodeWithMac.url]
+            verify(wolSt !== undefined)
+            compare(wolSt.status, "ok")
+
+            // Test Ping dispatch
+            mockBridge.pingReturnOk = true
+            mockBridge.pingReturnLatency = 1.4
+            h.item.pingNode(nodeWithMac)
+            compare(mockBridge.pingCallCount, 1)
+            compare(mockBridge.lastPingHost, "10.0.0.227")
+            var pingSt = h.item._pingStates[nodeWithMac.url]
+            verify(pingSt !== undefined)
+            compare(pingSt.status, "ok")
+            compare(pingSt.detail, "1.4 ms")
+
+            // Test SSH dispatch
+            h.item.launchSshNode(nodeWithMac)
+            compare(mockBridge.cmdCallCount, 1)
+            verify(mockBridge.lastCommand.indexOf("ssh 10.0.0.227") >= 0)
         }
 
         // ── 2. Prometheus Parser ─────────────────────────────────────────────
