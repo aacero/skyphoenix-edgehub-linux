@@ -383,6 +383,32 @@ That is the product direction; this was the cheap half. See Candidates.
   overwrites. AGENTS.md's "re-run to regenerate" advice was corrected - it was the
   footgun's instruction manual.
 
+## v1.1.1 Planned Work (Active Scope)
+
+- **⚡ Quick Actions & Wake-on-LAN (WoL) Widget**:
+  - Dedicated touch macro tile with configurable action buttons.
+  - Send Wake-on-LAN (WoL) UDP magic packets to wake sleeping homelab nodes (`aframe`, `deerpark`, `palatka`, `pelican`).
+  - Configurable action triggers: Wake-on-LAN (MAC address), local shell script execution, and HTTP webhook actions.
+  - Tactile touch feedback and execution status indicators.
+
+- **🚨 Reactive 'Alert-Driven' Screen Surfacing**:
+  - Enable EdgeHub to dynamically switch to (or visually badge/pulse) a dashboard screen when an urgent condition occurs:
+    - A host in the Systems fleet drops offline or crosses a warning/critical threshold (CPU/RAM/Disk).
+    - A countdown timer expires or a break reminder triggers.
+    - A calendar event starts in < 5 minutes.
+  - Integrates with the existing widget `state` / alert vocabulary and user-configurable auto-cycle settings.
+
+- **Continuous Widget Refinements**:
+  - Iterative improvements based on real daily desktop usage.
+  - *(Completed in 1.1.0/1.1.1 cycle)*:
+    - Moon widget: Centered layout with enlarged ~295px lunar disc and stacked info on 1x1 tiles.
+    - The Sky Tonight: Responsive 2-column layout with hourly Sky Clarity bars and 5-planet ephemeris rows.
+    - Systems widget: Full-screen `1x3` panoramic layout support across 2560px.
+    - Orientation calibration: Synchronized landscape 2560x720 panel detection and rotation handling.
+
+- **Future Exploration: Home Assistant / Local IoT Control Widget**:
+  - Direct integration with local Home Assistant instances for room climate, power metrics, and smart lighting toggles.
+
 ## Test-integrity debt (opened 2026-07-16)
 
 Three tests were found that had **never executed**: QtTest silently treats
