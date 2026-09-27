@@ -241,6 +241,32 @@ WidgetChrome {
         resetNoticeTimer.restart()
     }
 
+    // Constructs an execution command that automatically places spawned windows
+    // onto a monitor other than the Xeneon Edge (if another monitor exists).
+    // If the Edge is the only display, it launches directly on the Edge.
+    function buildTargetedCommand(innerCmd, isTerminal) {
+        var prelude =
+            "if command -v hyprctl >/dev/null 2>&1; then "
+          + "  TARGET_MON=$(hyprctl monitors 2>/dev/null | awk '/^Monitor / { cur=$2; mons[n++] = cur } /at 0x0/ { origin = cur } tolower($0) ~ /(xeneon|edge)/ { edge[cur] = 1 } END { if (origin && !edge[origin]) { print origin; exit } for (i=0; i<n; i++) { m = mons[i]; if (!edge[m]) { print m; exit } } }'); "
+          + "  if [ -n \"$TARGET_MON\" ]; then "
+          + "    hyprctl dispatch \"hl.dsp.focus({ monitor = \\\"$TARGET_MON\\\" })\" >/dev/null 2>&1 || hyprctl dispatch focusmonitor \"$TARGET_MON\" >/dev/null 2>&1 || true; "
+          + "    sleep 0.05; "
+          + "  fi; "
+          + "elif command -v swaymsg >/dev/null 2>&1; then "
+          + "  TARGET_OUT=$(swaymsg -t get_outputs 2>/dev/null | awk '/\"name\":/ { gsub(/[\" ,]/, \"\", $2); cur=$2; outs[n++] = cur } tolower($0) ~ /(xeneon|edge)/ { edge[cur] = 1 } END { for (i=0; i<n; i++) { o = outs[i]; if (!edge[o]) { print o; exit } } }'); "
+          + "  if [ -n \"$TARGET_OUT\" ]; then swaymsg focus output \"$TARGET_OUT\" >/dev/null 2>&1 || true; fi; "
+          + "fi; "
+
+        if (isTerminal) {
+            return prelude
+                 + "for t in \"$TERMINAL\" foot alacritty kitty ghostty konsole gnome-terminal xterm; do "
+                 + "if command -v \"$t\" >/dev/null 2>&1; then "
+                 + "exec \"$t\" -e " + innerCmd + "; "
+                 + "fi; done"
+        }
+        return prelude + innerCmd
+    }
+
     function launchSsh(item) {
         if (!item) return
         var host = typeof item === "string" ? item.trim() : (item.host || item.target || "").trim()
@@ -257,10 +283,7 @@ WidgetChrome {
         }
 
         var targetStr = user.length > 0 ? (user + "@" + host) : host
-        var launchCmd = "for t in \"$TERMINAL\" foot alacritty kitty ghostty konsole gnome-terminal xterm; do "
-                      + "if command -v \"$t\" >/dev/null 2>&1; then "
-                      + "exec \"$t\" -e ssh " + targetStr + "; "
-                      + "fi; done"
+        var launchCmd = buildTargetedCommand("ssh " + targetStr, true)
 
         var copy = JSON.parse(JSON.stringify(w.actionStates))
         copy[hostId] = { status: "launching", time: Date.now() }
@@ -300,10 +323,7 @@ WidgetChrome {
         }
 
         var targetStr = user.length > 0 ? (user + "@" + host) : host
-        var launchCmd = "for t in \"$TERMINAL\" foot alacritty kitty ghostty konsole gnome-terminal xterm; do "
-                      + "if command -v \"$t\" >/dev/null 2>&1; then "
-                      + "exec \"$t\" -e mosh " + targetStr + "; "
-                      + "fi; done"
+        var launchCmd = buildTargetedCommand("mosh " + targetStr, true)
 
         var copy = JSON.parse(JSON.stringify(w.actionStates))
         copy[hostId] = { status: "launching", time: Date.now() }

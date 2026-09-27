@@ -97,6 +97,41 @@ WidgetChrome {
         w._pingStates = update
     }
 
+    // Constructs an execution command that automatically places spawned windows
+    // onto a monitor other than the Xeneon Edge (if another monitor exists).
+    // If the Edge is the only display, it launches directly on the Edge.
+    function buildTargetedCommand(innerCmd, isTerminal) {
+        var prelude =
+            "if command -v hyprctl >/dev/null 2>&1; then "
+          + "  TARGET_MON=$(hyprctl monitors 2>/dev/null | awk '/^Monitor / { cur=$2; mons[n++] = cur } /at 0x0/ { origin = cur } tolower($0) ~ /(xeneon|edge)/ { edge[cur] = 1 } END { if (origin && !edge[origin]) { print origin; exit } for (i=0; i<n; i++) { m = mons[i]; if (!edge[m]) { print m; exit } } }'); "
+          + "  if [ -n \"$TARGET_MON\" ]; then "
+          + "    hyprctl dispatch \"hl.dsp.focus({ monitor = \\\"$TARGET_MON\\\" })\" >/dev/null 2>&1 || hyprctl dispatch focusmonitor \"$TARGET_MON\" >/dev/null 2>&1 || true; "
+          + "    sleep 0.05; "
+          + "  fi; "
+          + "elif command -v swaymsg >/dev/null 2>&1; then "
+          + "  TARGET_OUT=$(swaymsg -t get_outputs 2>/dev/null | awk '/\"name\":/ { gsub(/[\" ,]/, \"\", $2); cur=$2; outs[n++] = cur } tolower($0) ~ /(xeneon|edge)/ { edge[cur] = 1 } END { for (i=0; i<n; i++) { o = outs[i]; if (!edge[o]) { print o; exit } } }'); "
+          + "  if [ -n \"$TARGET_OUT\" ]; then swaymsg focus output \"$TARGET_OUT\" >/dev/null 2>&1 || true; fi; "
+          + "fi; "
+
+        if (isTerminal) {
+            return prelude
+                 + "for t in \"$TERMINAL\" foot alacritty kitty ghostty konsole gnome-terminal xterm; do "
+                 + "if command -v \"$t\" >/dev/null 2>&1; then "
+                 + "exec \"$t\" -e " + innerCmd + "; "
+                 + "fi; done"
+        }
+        return prelude + innerCmd
+    }
+
+    function formatMac(raw) {
+        if (!raw) return ""
+        var s = String(raw).trim().toLowerCase().replace(/-/g, ":")
+        if (/^[0-9a-f]{12}$/.test(s)) {
+            s = s.match(/.{1,2}/g).join(":")
+        }
+        return s
+    }
+
     function launchSshNode(node) {
         if (!node) return
         var host = (node.label || "").trim()
@@ -105,10 +140,7 @@ WidgetChrome {
             if (m && m[1]) host = m[1].replace(/^\[|\]$/g, "")
         }
         if (!host.length) return
-        var launchCmd = "for t in \"$TERMINAL\" foot alacritty kitty ghostty konsole gnome-terminal xterm; do "
-                      + "if command -v \"$t\" >/dev/null 2>&1; then "
-                      + "exec \"$t\" -e ssh " + host + "; "
-                      + "fi; done"
+        var launchCmd = buildTargetedCommand("ssh " + host, true)
         if (w.bridge && typeof w.bridge.executeCommand === "function") {
             w.bridge.executeCommand(launchCmd)
         }
@@ -132,7 +164,7 @@ WidgetChrome {
         if (!node) return
         var targetLabel = (node.label || "").trim()
         var targetUrl = (node.url || "").trim()
-        var cleanMac = (newMac || "").trim()
+        var cleanMac = formatMac(newMac)
 
         var lines = w.hostsRaw.split(/[\n,;]+/)
         var updatedLines = []
@@ -1729,7 +1761,7 @@ WidgetChrome {
                                             id: macInputBox
                                             Layout.preferredWidth: 180
                                             Layout.preferredHeight: 34
-                                            placeholderText: "xx:xx:xx:xx:xx:xx"
+                                            placeholderText: "38:ca:84:39:6c:9e"
                                             text: w.editMacInput
                                             onTextChanged: w.editMacInput = text
                                             color: theme.textPrimary
@@ -1787,6 +1819,45 @@ WidgetChrome {
                                                 hoverEnabled: true
                                                 cursorShape: Qt.PointingHandCursor
                                                 onClicked: w.cancelEditMac()
+                                            }
+                                        }
+
+                                        // MAC Format Breadcrumb & Live Validation Indicator
+                                        Rectangle {
+                                            implicitHeight: 28
+                                            implicitWidth: macBreadcrumbTxt.implicitWidth + 18
+                                            radius: 4
+                                            property bool isInputValid: {
+                                                var clean = w.editMacInput.trim()
+                                                if (!clean.length) return false
+                                                return /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(clean) || /^[0-9A-Fa-f]{12}$/.test(clean)
+                                            }
+                                            color: isInputValid ? Qt.rgba(theme.success.r, theme.success.g, theme.success.b, 0.15)
+                                                   : (w.editMacInput.trim().length > 0 ? Qt.rgba(theme.warning.r, theme.warning.g, theme.warning.b, 0.15)
+                                                   : Qt.rgba(theme.textPrimary.r, theme.textPrimary.g, theme.textPrimary.b, 0.08))
+                                            border.color: isInputValid ? theme.success
+                                                          : (w.editMacInput.trim().length > 0 ? theme.warning : theme.cardBorder)
+                                            border.width: 1
+
+                                            RowLayout {
+                                                anchors.centerIn: parent
+                                                spacing: 6
+                                                AppIcon {
+                                                    name: parent.parent.isInputValid ? "ui-check" : "ui-warning"
+                                                    size: 12
+                                                    color: parent.parent.isInputValid ? theme.success
+                                                           : (w.editMacInput.trim().length > 0 ? theme.warning : theme.textTertiary)
+                                                }
+                                                Text {
+                                                    id: macBreadcrumbTxt
+                                                    text: parent.parent.isInputValid
+                                                          ? "Format valid (e.g. 38:ca:84:39:6c:9e)"
+                                                          : "Format: XX:XX:XX:XX:XX:XX (e.g. 38:ca:84:39:6c:9e)"
+                                                    font.pixelSize: 11
+                                                    font.family: theme.fontMono
+                                                    color: parent.parent.isInputValid ? theme.success
+                                                           : (w.editMacInput.trim().length > 0 ? theme.warning : theme.textTertiary)
+                                                }
                                             }
                                         }
                                     }
@@ -2083,7 +2154,9 @@ WidgetChrome {
                                     RowLayout {
                                         spacing: 10
                                         Text {
-                                            text: deepDivePanel.selNode && deepDivePanel.selNode.mac ? deepDivePanel.selNode.mac : "Not configured"
+                                            text: deepDivePanel.selNode && deepDivePanel.selNode.mac
+                                                  ? deepDivePanel.selNode.mac
+                                                  : "Not configured (Format: XX:XX:XX:XX:XX:XX)"
                                             color: deepDivePanel.selNode && deepDivePanel.selNode.mac ? theme.textPrimary : theme.textTertiary
                                             font.pixelSize: 14
                                             font.family: theme.fontMono

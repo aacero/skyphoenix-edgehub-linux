@@ -874,7 +874,7 @@ QtObject {
             { title: "Target systems", cols: 1, fields: [
                 { key: "hosts", label: "Hosts / IPs", type: "textarea",
                   placeholder: "palatka | 10.0.0.227:9100 | 38:ca:84:39:6c:9e | 10.0.0.255\ndeerpark | 10.0.0.88:9100 | 40:a8:f0:a7:e9:9c\nlocalhost:9100", dflt: "localhost:9100",
-                  help: "List of systems running prometheus-node-exporter, one per line. Supports optional pipe syntax: Label | Host[:Port] | MAC Address | Broadcast IP. When a MAC address is provided, offline systems can be woken via Wake-on-LAN directly from the widget." },
+                  help: "List of systems running prometheus-node-exporter, one per line. Supports optional pipe syntax: Label | Host[:Port] | MAC Address | Broadcast IP. Desired MAC format: 6 hex pairs XX:XX:XX:XX:XX:XX (e.g. 38:ca:84:39:6c:9e). When a MAC address is provided, offline systems can be woken via Wake-on-LAN directly from the widget." },
                 { key: "defaultPort", label: "Default port", type: "number", min: 1, max: 65535, step: 1, dflt: 9100,
                   help: "Port used when not specified in the host string (Prometheus node_exporter defaults to 9100)." },
                 { type: "action", actionLabel: "Test connection", action: "testConnection",
