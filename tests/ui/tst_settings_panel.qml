@@ -121,15 +121,14 @@ Item {
                    "…and applies the theme (background is the midnight tone)")
         }
 
-        // Pro-gating: without a licence (no `license` context in the harness → free),
-        // a Pro theme is locked and tapping it must NOT apply - the on-device leak fix.
+        // Every theme (including synthwave) is included and unlocked without paywall.
         function test_pro_theme_is_gated_without_a_licence() {
             root.themeMode = "dark"; _theme.applyTheme("dark")
             var d = delegateWhere(function (n) { return n.modelData.k === "synthwave" })
-            verify(d !== null, "a Pro theme (synthwave) is listed")
-            verify(d.locked, "…and it is locked without a licence")
+            verify(d !== null, "a formerly Pro theme (synthwave) is listed")
+            verify(!d.locked, "…and it is unlocked without paywall")
             clickTarget(d)
-            compare(root.themeMode, "dark", "tapping a locked Pro theme does NOT apply it")
+            compare(root.themeMode, "synthwave", "tapping synthwave applies it")
         }
 
         // ── Accent color ─────────────────────────────────────────────────────

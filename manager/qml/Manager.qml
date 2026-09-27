@@ -559,11 +559,8 @@ ApplicationWindow {
             if (apThemeModel[i].k === key) return apThemeModel[i]
         return null
     }
-    // Commit an Edge theme: a locked Pro theme opens the licence dialog instead of
-    // applying (free users can still hover-preview it). Otherwise persist it.
+    // Commit an Edge theme and persist it.
     function commitTheme(key) {
-        var d = win._themeDef(key)
-        if (d && d.pro === true && !win.isPro) { win.endThemePreview(); licenseDialog.open(); return }
         store.setAppearance("themeMode", key)
     }
     // Transient "Starting hub…" feedback: set when the user hits Start, cleared
@@ -1331,7 +1328,6 @@ ApplicationWindow {
                                     policy: themeList.contentHeight > themeList.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
                                 delegate: Rectangle {
                                     required property var modelData
-                                    readonly property bool locked: (modelData.pro === true) && !win.isPro
                                     readonly property bool sel: (store.revision, (store.appearance().themeMode || theme.defaultThemeKey) === modelData.k)
                                     width: ListView.view ? ListView.view.width : 0
                                     height: m.touch; radius: 8
@@ -1349,13 +1345,6 @@ ApplicationWindow {
                                         Text { Layout.fillWidth: true; elide: Text.ElideRight
                                             text: modelData.n; color: m.textPrimary
                                             font.pixelSize: m.fontLabel; font.bold: sel }
-                                        Rectangle {
-                                            visible: locked
-                                            implicitWidth: proL.implicitWidth + 14; implicitHeight: 28; radius: 14
-                                            color: Qt.rgba(0, 0, 0, 0.30)
-                                            Text { id: proL; anchors.centerIn: parent; text: "PRO"
-                                                color: m.textSecondary; font.pixelSize: m.fontMinimum; font.bold: true }
-                                        }
                                         AppIcon { visible: sel; name: "ui-check"; size: 16; color: m.accent }
                                     }
                                     MouseArea {

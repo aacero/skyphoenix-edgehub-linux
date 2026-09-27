@@ -170,13 +170,7 @@ Rectangle {
                         property bool userIsPro: (typeof license !== "undefined") && license && license.isPro === true
                         property string lockHint: ""
                         function groupLabel(g) {
-                            // "Inspired", never "Distro-inspired": see the naming
-                            // policy in ui/qml/Theme.qml. No project name - and no
-                            // phrase that re-asserts the association - appears in a
-                            // user-visible string.
-                            return g === "Premium" ? "Premium (Pro)"
-                                 : g === "Inspired" ? "Inspired (Pro)"
-                                 : g === "Accessibility" ? "Accessibility" : "Standard"
+                            return g === "Accessibility" ? "Accessibility" : g
                         }
                         Text { text: "Theme"; font.pixelSize: theme.fontLabel; font.bold: true; color: theme.textSecondary }
                         Text {
@@ -201,14 +195,14 @@ Rectangle {
                                         delegate: Rectangle {
                                             required property var modelData
                                             readonly property bool active: root.themeMode === modelData.k
-                                            readonly property bool locked: (modelData.pro === true) && !themeSection.userIsPro
+                                            readonly property bool locked: false
                                             implicitWidth: chipRow.implicitWidth + 20; height: theme.touchTertiary
                                             radius: theme.radiusMd
                                             color: active ? Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.14)
                                                           : theme.cardBackgroundAlt
                                             border.width: active ? 2 : 1
                                             border.color: active ? theme.accent : theme.cardBorder
-                                            opacity: locked ? 0.55 : 1.0
+                                            opacity: 1.0
                                             scale: chipMA.pressed ? 0.97 : 1.0
                                             Behavior on scale { NumberAnimation { duration: theme.motionFast } }
                                             RowLayout {
@@ -220,16 +214,6 @@ Rectangle {
                                                         GradientStop { position: 1.0; color: modelData.c2 } }
                                                 }
                                                 Text { text: modelData.n; color: theme.textPrimary; font.pixelSize: theme.fontLabel }
-                                                Rectangle {
-                                                    visible: modelData.pro === true
-                                                    implicitWidth: proBadge.implicitWidth + 12
-                                                    implicitHeight: 24; radius: 12
-                                                    color: locked ? Qt.rgba(theme.textSecondary.r, theme.textSecondary.g, theme.textSecondary.b, 0.25)
-                                                                  : Qt.rgba(theme.accent.r, theme.accent.g, theme.accent.b, 0.22)
-                                                    Text { id: proBadge; anchors.centerIn: parent; text: "PRO"
-                                                        color: locked ? theme.textSecondary : theme.accent
-                                                        font.pixelSize: theme.fontMinimum; font.bold: true }
-                                                }
                                                 AppIcon { visible: active; name: "ui-check"; size: 16; color: theme.accent }
                                             }
                                             MouseArea {

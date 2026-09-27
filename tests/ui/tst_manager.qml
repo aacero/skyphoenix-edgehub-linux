@@ -1239,33 +1239,25 @@ Item {
         }
 
         // The Edge theme is chosen from a dropdown now; selection routes through
-        // win.commitTheme (which gates Pro themes). Test that logic directly (the
-        // dropdown rows live in a Popup that isn't in the tree until opened).
-        function test_a_premium_theme_is_locked_for_free_and_applies_for_pro() {
+        // Edge themes are unlocked: test that catalog themes apply directly via commitTheme.
+        function test_all_catalog_themes_apply_for_free_users() {
             backend.storedKey = ""; backend.licenseChanged()
             _nav.currentIndex = 1                       // Appearance tab
             _store.setAppearance("themeMode", "dark")   // known starting point
             tryVerify(function () { return win.isPro === false }, 2000)
             verify(typeof win.commitTheme === "function", "commitTheme is exposed")
-            verify(win._themeDef("synthwave").pro === true, "_themeDef resolves the premium flag")
+            verify(win._themeDef("synthwave") !== null, "_themeDef resolves synthwave")
+            verify(win._themeDef("synthwave").pro !== true, "synthwave paywall removed")
 
-            // A locked premium theme is NOT applied for a free user (commitTheme
-            // routes it to the licence dialog instead of the store).
-            win.commitTheme("synthwave")
-            compare(_store.appearance().themeMode, "dark",
-                    "a locked premium theme is not applied for a free user")
-
-            // Unlock Pro → the same theme now applies.
-            backend.setLicenseKey("XE1.valid.pro")
-            tryVerify(function () { return win.isPro === true }, 2000)
+            // Themes apply directly for free users without gating
             win.commitTheme("synthwave")
             compare(_store.appearance().themeMode, "synthwave",
-                    "with Pro, the premium theme applies")
-            // A free (non-Pro) theme always applies.
-            win.commitTheme("nord")
-            compare(_store.appearance().themeMode, "nord", "a free theme applies via commitTheme")
+                    "synthwave applies for a free user")
 
-            backend.clearLicenseKey()
+            // Non-pro theme also applies
+            win.commitTheme("nord")
+            compare(_store.appearance().themeMode, "nord", "nord applies via commitTheme")
+
             _store.setAppearance("themeMode", "dark")
         }
 
