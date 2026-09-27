@@ -217,6 +217,42 @@ WidgetChrome {
         return Math.max(1, diffMinutes) + "m left"
     }
 
+    function getEndMs(bundle) {
+        if (!bundle || !bundle.endDate) return Infinity
+        var d = new Date(bundle.endDate)
+        var t = d.getTime()
+        return isNaN(t) ? Infinity : t
+    }
+
+    function getRemainingMs(bundle) {
+        var end = getEndMs(bundle)
+        if (end === Infinity) return Infinity
+        return end - w.currentMs()
+    }
+
+    function getSortScore(bundle) {
+        var rem = getRemainingMs(bundle)
+        if (isNaN(rem) || rem === Infinity) return 9999999999999
+        if (rem <= 0) return 8888888888888 // ended bundles sink to the bottom
+        return rem
+    }
+
+    function getExpiryLevel(bundle) {
+        var rem = getRemainingMs(bundle)
+        if (rem <= 0) return "ended"
+        if (rem < 48 * 3600 * 1000) return "urgent"   // < 48 hours: red
+        if (rem < 5 * 86400 * 1000) return "soon"     // < 5 days: yellow
+        return "normal"                               // >= 5 days: no highlighting
+    }
+
+    function getExpiryColor(bundle) {
+        var lvl = getExpiryLevel(bundle)
+        if (lvl === "urgent") return theme.error      // Red (<48h)
+        if (lvl === "soon") return theme.warning      // Yellow (<5d)
+        if (lvl === "ended") return theme.textTertiary
+        return theme.textSecondary                    // Normal (no highlighting)
+    }
+
     function parseHumbleHtml(html) {
         if (!html || typeof html !== "string") return []
         var rawJson = ""
@@ -280,7 +316,14 @@ WidgetChrome {
 
     // ── Filtered bundles ─────────────────────────────────────────────────────
     readonly property var filteredBundles: {
-        var list = w.bundles || []
+        var _ = w.tick
+        var list = (w.bundles || []).slice()
+        list.sort(function(a, b) {
+            var sa = getSortScore(a)
+            var sb = getSortScore(b)
+            if (sa !== sb) return sa - sb
+            return (a.title || "").localeCompare(b.title || "")
+        })
         var cat = (w.activeCategory || "all").toLowerCase()
         if (cat === "all") return list
         var out = []
@@ -654,9 +697,13 @@ WidgetChrome {
                     width: bundleListView.width
                     implicitHeight: Math.max(76, cardRow.implicitHeight + 16)
                     radius: theme.radiusMd
-                    color: cardArea.containsMouse ? Qt.rgba(255, 255, 255, 0.08) : Qt.rgba(255, 255, 255, 0.04)
                     border.width: activeFocus ? 2 : 1
-                    border.color: activeFocus ? theme.textPrimary : theme.cardBorder
+                    border.color: activeFocus ? theme.textPrimary
+                                : (w.getExpiryLevel(modelData) === "urgent"
+                                   ? Qt.rgba(theme.error.r, theme.error.g, theme.error.b, 0.45)
+                                   : (w.getExpiryLevel(modelData) === "soon"
+                                      ? Qt.rgba(theme.warning.r, theme.warning.g, theme.warning.b, 0.3)
+                                      : theme.cardBorder))
 
                     activeFocusOnTab: true
                     Accessible.role: Accessible.Button
@@ -687,7 +734,7 @@ WidgetChrome {
 
                             Image {
                                 anchors.fill: parent
-                                source: card.modelData.imageUrl
+                                source: card.modelData.imageUrl || ""
                                 fillMode: Image.PreserveAspectCrop
                                 asynchronous: true
                                 visible: status === Image.Ready
@@ -730,13 +777,26 @@ WidgetChrome {
                                     }
                                 }
 
-                                Text {
-                                    text: card.modelData.timeRemainingText
-                                    color: (card.modelData.timeRemainingText.indexOf("h left") >= 0
-                                            || card.modelData.timeRemainingText === "1d left")
-                                           ? theme.warning : theme.textSecondary
-                                    font.pixelSize: theme.fontCaption - 1
-                                    font.weight: Font.Medium
+                                Rectangle {
+                                    id: expiryBadge
+                                    implicitHeight: 20
+                                    implicitWidth: timeRemainingLabel.implicitWidth + (expiryLevel !== "normal" ? 12 : 0)
+                                    radius: 10
+                                    property string expiryLevel: w.getExpiryLevel(card.modelData)
+                                    color: expiryLevel === "urgent"
+                                           ? Qt.rgba(theme.error.r, theme.error.g, theme.error.b, 0.18)
+                                           : (expiryLevel === "soon"
+                                              ? Qt.rgba(theme.warning.r, theme.warning.g, theme.warning.b, 0.15)
+                                              : "transparent")
+
+                                    Text {
+                                        id: timeRemainingLabel
+                                        anchors.centerIn: parent
+                                        text: w.formatTimeRemaining(card.modelData.endDate, w.currentMs()) || card.modelData.timeRemainingText
+                                        color: w.getExpiryColor(card.modelData)
+                                        font.pixelSize: theme.fontCaption - 1
+                                        font.weight: (parent.expiryLevel !== "normal") ? Font.DemiBold : Font.Medium
+                                    }
                                 }
 
                                 Item { Layout.fillWidth: true }
@@ -769,34 +829,34 @@ WidgetChrome {
                                 visible: !w.micro
 
                                 Text {
-                                    text: card.modelData.itemCountText
+                                    text: card.modelData.itemCountText || ""
                                     color: theme.textPrimary
                                     font.pixelSize: theme.fontCaption - 1
-                                    visible: card.modelData.itemCountText.length > 0
+                                    visible: !!card.modelData.itemCountText
                                 }
 
                                 Text {
                                     text: "•"
                                     color: theme.textSecondary
                                     font.pixelSize: theme.fontCaption - 2
-                                    visible: card.modelData.itemCountText.length > 0 && card.modelData.valueText.length > 0
+                                    visible: !!card.modelData.itemCountText && !!card.modelData.valueText
                                 }
 
                                 Text {
-                                    text: card.modelData.valueText
+                                    text: card.modelData.valueText || ""
                                     color: theme.textSecondary
                                     font.pixelSize: theme.fontCaption - 1
-                                    visible: card.modelData.valueText.length > 0
+                                    visible: !!card.modelData.valueText
                                 }
 
                                 Item { Layout.fillWidth: true }
 
                                 Text {
-                                    text: card.modelData.tierPriceText
+                                    text: card.modelData.tierPriceText || ""
                                     color: w.effAccent
                                     font.pixelSize: theme.fontCaption - 1
                                     font.weight: Font.Medium
-                                    visible: card.modelData.tierPriceText.length > 0 && w.big
+                                    visible: !!card.modelData.tierPriceText && w.big
                                 }
                             }
                         }

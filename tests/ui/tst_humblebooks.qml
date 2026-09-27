@@ -287,5 +287,36 @@ Item {
             // Category row height is at least 44
             verify(Math.max(44, theme.touchTertiary) >= 44, "touchTertiary >= 44px")
         }
+
+        function test_expiry_sorting_and_color_thresholds() {
+            var w = h.item
+            var refMs = new Date("2026-09-27T12:00:00.000Z").getTime()
+            w.nowMsOverride = refMs
+
+            // 1. Color threshold tests
+            var bUrgent = { endDate: new Date(refMs + 36 * 3600000).toISOString() } // 36 hours (<48h)
+            compare(w.getExpiryLevel(bUrgent), "urgent")
+            compare(w.getExpiryColor(bUrgent), theme.error)
+
+            var bSoon = { endDate: new Date(refMs + 3 * 86400000).toISOString() } // 3 days (<5d)
+            compare(w.getExpiryLevel(bSoon), "soon")
+            compare(w.getExpiryColor(bSoon), theme.warning)
+
+            var bNormal = { endDate: new Date(refMs + 10 * 86400000).toISOString() } // 10 days (>=5d)
+            compare(w.getExpiryLevel(bNormal), "normal")
+            compare(w.getExpiryColor(bNormal), theme.textSecondary)
+
+            // 2. Sorting test: bundles should sort in "about to expire" order
+            var b1 = { id: "later", title: "Later Bundle", endDate: new Date(refMs + 8 * 86400000).toISOString(), category: "Tech", imageUrl: "", itemCountText: "10 books", valueText: "$100", tierPriceText: "Pay What You Want" }
+            var b2 = { id: "soonest", title: "Soonest Bundle", endDate: new Date(refMs + 24 * 3600000).toISOString(), category: "Tech", imageUrl: "", itemCountText: "5 books", valueText: "$50", tierPriceText: "Pay What You Want" }
+            var b3 = { id: "middle", title: "Middle Bundle", endDate: new Date(refMs + 3 * 86400000).toISOString(), category: "Tech", imageUrl: "", itemCountText: "8 books", valueText: "$80", tierPriceText: "Pay What You Want" }
+            w.bundles = [b1, b2, b3]
+            w.activeCategory = "all"
+
+            compare(w.filteredBundles.length, 3)
+            compare(w.filteredBundles[0].id, "soonest", "first item is expiring soonest")
+            compare(w.filteredBundles[1].id, "middle", "second item is middle")
+            compare(w.filteredBundles[2].id, "later", "third item is latest")
+        }
     }
 }
