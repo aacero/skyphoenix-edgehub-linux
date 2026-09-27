@@ -80,53 +80,92 @@ WidgetChrome {
         var blurbLower = blurb.toLowerCase()
         var allText = nameLower + " " + blurbLower
 
-        // 1. Comics & Graphic Novels
-        if (nameLower.indexOf("comic") >= 0 || stamp === "comics"
-                || nameLower.indexOf("manga") >= 0
-                || allText.indexOf("graphic novel") >= 0) {
-            return "Comics"
-        }
-
-        // 2. Tech / Programming / Engineering / Cloud
-        var techKeywords = [
-            "tech book", "programming", "programmer", "software", "linux", "cloud",
-            "cybersecurity", "python", "c++", "coding", "web dev", "ai in production",
-            "creative bundle", "data science", "it & security", "devops", "code faster",
-            "no starch", "packt", "o'reilly", "manning", "computer"
+        // 1. Comics & Manga & Graphic Novels
+        var comicPublishers = [
+            "dark horse", "dynamite", "fantagraphics", "boom! studios", "boom studios",
+            "image comics", "top shelf", "idw", "valiant", "last gasp", "oni press",
+            "humanoids", "2000 ad", "titan comics", "heavy metal", "viz media", "kodansha"
         ]
-        for (var i = 0; i < techKeywords.length; i++) {
-            if (nameLower.indexOf(techKeywords[i]) >= 0) return "Tech"
+        var comicKeywords = [
+            "comic", "comics", "manga", "graphic novel", "webtoon", "light novel",
+            "bande dessinee", "superhero", "vampirella", "red sonja", "saga", "monstress"
+        ]
+        if (stamp === "comics") return "Comics"
+        for (var cp = 0; cp < comicPublishers.length; cp++) {
+            if (nameLower.indexOf(comicPublishers[cp]) >= 0) return "Comics"
+        }
+        for (var ck = 0; ck < comicKeywords.length; ck++) {
+            if (allText.indexOf(comicKeywords[ck]) >= 0) return "Comics"
         }
 
-        // 3. Cookbooks / Culinary / Baking / Food
+        // 2. Cookbooks / Culinary / Baking / Food & Drinks
         var cookKeywords = [
-            "cookbook", "cooking", "recipes", "baking", "keto", "kitchen", "food",
-            "culinary", "protein", "diet"
+            "cookbook", "cooking", "recipes", "baking", "bake", "keto", "kitchen", "food",
+            "culinary", "protein", "diet", "cocktail", "cocktails", "party snacks", "cook drink",
+            "home cooks", "grilling", "grill", "bbq", "chef", "meals", "vegan", "vegetarian",
+            "sourdough", "fermentation", "brewing"
         ]
         for (var j = 0; j < cookKeywords.length; j++) {
-            if (nameLower.indexOf(cookKeywords[j]) >= 0) return "Cookbooks"
+            if (allText.indexOf(cookKeywords[j]) >= 0) return "Cookbooks"
         }
 
-        // 4. Sci-Fi & Fantasy (SF)
+        // 3. Sci-Fi & Fantasy (SF)
+        var sfPublishers = [
+            "tor books", "tor publishing", "daw books", "baen", "black library",
+            "subterranean press", "tachyon", "night shade", "haikasoru"
+        ]
+        for (var sp = 0; sp < sfPublishers.length; sp++) {
+            if (nameLower.indexOf(sfPublishers[sp]) >= 0) return "SF"
+        }
         var sfKeywords = [
-            "sci-fi", "science fiction", "fantasy", "space opera", "dystopian",
-            "forever war", "worlds of"
+            "sci-fi", "scifi", "science fiction", "space opera", "dystopian",
+            "post-apocalyptic", "forever war", "worlds of", "super nebula", "nebula",
+            "hugo", "malazan", "stars of sci-fi", "sff", "time travel", "cyberpunk",
+            "steampunk", "warhammer", "horus heresy", "star trek", "star wars",
+            "interdependency", "fantasy"
         ]
         for (var k = 0; k < sfKeywords.length; k++) {
-            if (nameLower.indexOf(sfKeywords[k]) >= 0 || blurbLower.indexOf(sfKeywords[k]) >= 0)
-                return "SF"
+            if (allText.indexOf(sfKeywords[k]) >= 0) return "SF"
         }
         var sfAuthors = [
             "timothy zahn", "greg bear", "c.j. cherryh", "cj cherryh", "joe haldeman",
             "brian w. aldiss", "brian aldiss", "arthur c. clarke", "isaac asimov",
-            "philip k. dick", "ursula", "robert heinlein", "brandon sanderson", "neil gaiman"
+            "philip k. dick", "ursula", "robert heinlein", "brandon sanderson", "neil gaiman",
+            "steven erikson", "l.e. modesitt", "modesitt", "john scalzi", "scalzi",
+            "robert silverberg", "stephen king", "octavia butler", "william gibson",
+            "dan simmons", "peter f. hamilton"
         ]
         for (var a = 0; a < sfAuthors.length; a++) {
-            if (nameLower.indexOf(sfAuthors[a]) >= 0 || blurbLower.indexOf(sfAuthors[a]) >= 0)
-                return "SF"
+            if (allText.indexOf(sfAuthors[a]) >= 0) return "SF"
         }
 
-        // 5. Other (Tabletop RPGs, Game Dev, Art, and general)
+        // 4. Tech / Programming / Engineering / Cloud / STEM
+        var techPublishers = [
+            "no starch", "packt", "o'reilly", "oreilly", "manning", "apress", "pragmatic",
+            "mercury learning", "bpb", "bleeding edge", "springer", "morgan claypool",
+            "morgan  claypool", "make:", "make -", "make co", "zenva", "mit press", "crc press"
+        ]
+        for (var tp = 0; tp < techPublishers.length; tp++) {
+            if (nameLower.indexOf(techPublishers[tp]) >= 0) return "Tech"
+        }
+        var techKeywords = [
+            "tech book", "programming", "programmer", "software", "linux", "cloud",
+            "cybersecurity", "python", "c++", "coding", "web dev", "ai in production",
+            "creative bundle", "data science", "it & security", "devops", "code faster",
+            "computer", "machine learning", "deep learning", "data visualization", "physics",
+            "applied mathematics", "applied math", "maker", "electronics", "hacking", "hacker",
+            "functional programming", "react.js", "nosql", "sql", "3d printing", "drones",
+            "game dev", "game programming", "developing your own games", "uxui", "ux design",
+            "claude code", "stem", "open source", "microcontroller", "arduino", "raspberry pi",
+            "algorithms", "cyber", "sysadmin", "infrastructure & ops", "infrastructure  ops",
+            "networking", "data architecture", "kubernetes", "docker", "rust",
+            "javascript", "typescript", "golang", "pocket primers", "artificial intelligence"
+        ]
+        for (var i = 0; i < techKeywords.length; i++) {
+            if (allText.indexOf(techKeywords[i]) >= 0) return "Tech"
+        }
+
+        // 5. Other (Tabletop RPGs, Game Dev, Art, Crafts, Music, General)
         return "Other"
     }
 
