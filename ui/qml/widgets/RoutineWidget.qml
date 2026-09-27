@@ -104,8 +104,10 @@ WidgetChrome {
     }
     function isActiveToday() {
         var configured = String(w.activeDays).split(",")
-        for (var i = 0; i < configured.length; i++)
-            if (Number(configured[i].trim()) === w.currentWeekday()) return true
+        for (var i = 0; i < configured.length; i++) {
+            var tok = configured[i].trim()
+            if (tok.length > 0 && /^[0-6]$/.test(tok) && Number(tok) === w.currentWeekday()) return true
+        }
         return false
     }
     function keyOf(step) { return typeof step === "object" ? step.key : String(step) }

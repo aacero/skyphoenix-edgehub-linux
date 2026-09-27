@@ -27,13 +27,11 @@ Item {
     property var metrics: ({})
     property int tick: 0
     property bool expanded: false
-    property bool active: true
-    Loader { id: probe; anchors.fill: parent; visible: false }
-
     function fileExists(relPath) {
-        probe.source = ""
-        probe.source = relPath          // local load is synchronous
-        return probe.status === Loader.Ready
+        var comp = Qt.createComponent(relPath)
+        var ok = (comp.status === Component.Ready)
+        comp.destroy()
+        return ok
     }
 
     TestCase {

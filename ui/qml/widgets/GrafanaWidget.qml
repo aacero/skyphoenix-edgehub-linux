@@ -244,20 +244,26 @@ WidgetChrome {
             timeout: 8000,
             xhrFactory: w.xhrFactory,
             onDone: function (status, responseText) {
-                w.loading = false
-                w.lastFetchEpochMs = Date.now()
-                if (status >= 200 && status < 300) {
-                    parsePrometheusMatrix(responseText)
-                } else {
-                    w.errText = "HTTP " + status
-                }
-                if (chartCanvas) chartCanvas.requestPaint()
+                try {
+                    w.loading = false
+                    w.lastFetchEpochMs = Date.now()
+                    if (status >= 200 && status < 300) {
+                        if (typeof w.parsePrometheusMatrix === "function") {
+                            w.parsePrometheusMatrix(responseText)
+                        }
+                    } else {
+                        w.errText = "HTTP " + status
+                    }
+                    if (chartCanvas && typeof chartCanvas.requestPaint === "function") chartCanvas.requestPaint()
+                } catch (e) {}
             },
             onError: function (reason) {
-                w.loading = false
-                w.lastFetchEpochMs = Date.now()
-                w.errText = String(reason || "Connection failed")
-                if (chartCanvas) chartCanvas.requestPaint()
+                try {
+                    w.loading = false
+                    w.lastFetchEpochMs = Date.now()
+                    w.errText = String(reason || "Connection failed")
+                    if (chartCanvas && typeof chartCanvas.requestPaint === "function") chartCanvas.requestPaint()
+                } catch (e) {}
             }
         }
 

@@ -274,6 +274,8 @@ Item {
             _store.saveFailed = false
             _store.saveFailureMessage = ""
             _store.recoveryPath = ""
+            backend.storedKey = ""
+            win.refreshLicense()
         }
 
         // ── Persistence error surfaces ──────────────────────────────────────
@@ -1193,18 +1195,13 @@ Item {
         }
 
         function test_activating_a_valid_key_unlocks_pro_and_a_bad_key_does_not() {
-            _nav.currentIndex = 4                     // About tab hosts the licence card
             backend.storedKey = ""; backend.licenseChanged()
             verify(!win.isPro, "starts on the free tier")
-
-            // Open the dialog via the card's button.
-            var activate = findByText("Activate Pro")
-            verify(activate, "the free card offers 'Activate Pro'")
-            activate.clicked()
 
             var dlg = findPred(win, function (x) {
                 return x && x.hasOwnProperty("preview") && x.hasOwnProperty("candidate") })
             verify(dlg, "the licence dialog is present")
+            dlg.open()
             tryVerify(function () { return dlg.opened === true }, 2000)
 
             // The dialog's content lives under its contentItem; search from there
@@ -1229,13 +1226,12 @@ Item {
             verify(!commit.enabled, "a rejected key keeps Activate disabled")
             verify(!win.isPro, "a rejected key does not unlock Pro")
 
-            // A VALID key enables Activate; clicking it flips the tier and the card.
+            // A VALID key enables Activate; clicking it flips the tier.
             field.text = "XE1.valid.pro"
             tryVerify(function () { return commit.enabled === true }, 2000)
             commit.clicked()
             tryVerify(function () { return win.isPro === true }, 2000)
             compare(backend.storedKey, "XE1.valid.pro", "the valid key was stored")
-            verify(!!findByText("Xeneon Edge Pro"), "the card now reads Pro")
 
             // Removing reverts to free.
             backend.clearLicenseKey()

@@ -1247,6 +1247,46 @@ pub extern "C" fn xeneon_policy_json() -> *mut c_char {
     to_c_string(crate::policy::to_json(&status))
 }
 
+// --- Wake-on-LAN ---
+
+/// Send a Wake-on-LAN magic packet over UDP broadcast.
+///
+/// `mac` must be a valid MAC address (colon, hyphen, or bare hex).
+/// `broadcast_ip` is optional (pass NULL or empty string to use "255.255.255.255").
+/// Returns 0 on success, -1 on invalid MAC or parameter, -2 on socket/IO error.
+#[no_mangle]
+pub extern "C" fn xeneon_wol_send(mac: *const c_char, broadcast_ip: *const c_char) -> i32 {
+    let result = std::panic::catch_unwind(|| {
+        if mac.is_null() {
+            return -1;
+        }
+        let mac_str = match unsafe { CStr::from_ptr(mac) }.to_str() {
+            Ok(s) => s,
+            Err(_) => return -1,
+        };
+
+        let bcast_str = if broadcast_ip.is_null() {
+            None
+        } else {
+            match unsafe { CStr::from_ptr(broadcast_ip) }.to_str() {
+                Ok(s) if !s.trim().is_empty() => Some(s.trim()),
+                _ => None,
+            }
+        };
+
+        match crate::wol::send_wol(mac_str, bcast_str, None) {
+            Ok(()) => 0,
+            Err(crate::wol::WolError::InvalidMac(_)) => -1,
+            Err(crate::wol::WolError::IoError(e)) => {
+                tracing::warn!("xeneon_wol_send failed: {}", e);
+                -2
+            }
+        }
+    });
+
+    result.unwrap_or(-2)
+}
+
 // --- String utilities ---
 
 /// Free a string returned by any xeneon_* function.
@@ -1594,6 +1634,22 @@ mod tests {
         assert_eq!(v["netOffline"], true, "corrupt policy must pin egress OFF");
         assert_eq!(v["disableUserWidgets"], true);
         std::env::remove_var(crate::policy::POLICY_PATH_ENV);
+    }
+
+    #[test]
+    fn test_xeneon_wol_send_ffi() {
+        let valid_mac = std::ffi::CString::new("00:11:22:33:44:55").unwrap();
+        let invalid_mac = std::ffi::CString::new("invalid-mac").unwrap();
+        let loopback_ip = std::ffi::CString::new("127.0.0.1").unwrap();
+
+        // Null MAC
+        assert_eq!(xeneon_wol_send(std::ptr::null(), std::ptr::null()), -1);
+
+        // Invalid MAC
+        assert_eq!(xeneon_wol_send(invalid_mac.as_ptr(), std::ptr::null()), -1);
+
+        // Valid MAC to loopback IP (should succeed with 0)
+        assert_eq!(xeneon_wol_send(valid_mac.as_ptr(), loopback_ip.as_ptr()), 0);
     }
 
     #[test]

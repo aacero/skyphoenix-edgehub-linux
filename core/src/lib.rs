@@ -7,6 +7,7 @@ pub mod logging;
 pub mod metrics;
 pub mod policy;
 pub mod secrets;
+pub mod wol;
 
 // Single crate-wide lock serializing every test that mutates process-global
 // env vars (`XDG_CONFIG_HOME`, `XENEON_POLICY_PATH`, …). Tests live in multiple

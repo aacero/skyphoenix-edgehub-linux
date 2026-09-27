@@ -166,10 +166,13 @@ Item {
         // wall time, so on any host NOT in that zone the two instants differ.
         function test_tzid_is_not_treated_as_floating_local() {
             var w = h.item
-            var tzid  = w.parseDT("20260712T090000", "DTSTART;TZID=America/New_York")
+            var tzidNY = w.parseDT("20260712T090000", "DTSTART;TZID=America/New_York")
+            var tzidTokyo = w.parseDT("20260712T090000", "DTSTART;TZID=Asia/Tokyo")
+            verify(tzidNY.getTime() !== tzidTokyo.getTime(),
+                   "Different named timezones must not resolve to the same instant")
             var floatDt = w.parseDT("20260712T090000", "DTSTART")
-            verify(tzid.getTime() !== floatDt.getTime(),
-                   "TZID=America/New_York must not resolve to the same instant as a floating local time")
+            verify(tzidNY.getTime() !== floatDt.getTime() || tzidTokyo.getTime() !== floatDt.getTime(),
+                   "A named TZID must not unconditionally resolve to floating local time")
         }
         function test_malformed_dtstart_is_skipped_no_invalid_date() {
             var w = h.item

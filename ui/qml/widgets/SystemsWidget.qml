@@ -365,7 +365,7 @@ WidgetChrome {
                     url: target.url,
                     xhrFactory: w.xhrFactory,
                     onDone: function (status, body) {
-                        if (currentGen !== w._pollGeneration) return
+                        if (!w || currentGen !== w._pollGeneration) return
                         var latencyMs = Math.max(0, currentMs() - startReqMs)
                         if (status >= 200 && status < 300) {
                             var parsed = parseNodeExporter(body)
@@ -449,7 +449,7 @@ WidgetChrome {
                         finalizeOne()
                     },
                     onError: function (reason) {
-                        if (currentGen !== w._pollGeneration) return
+                        if (!w || currentGen !== w._pollGeneration) return
                         var latencyMs = Math.max(0, currentMs() - startReqMs)
                         stateMap[target.url] = {
                             label: target.label,

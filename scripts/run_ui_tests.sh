@@ -44,6 +44,7 @@ export QT_QPA_PLATFORM="${XENEON_QT_QPA_PLATFORM:-offscreen}"
 # different colours, different implicit sizes. A pixel assertion tuned to Fusion
 # then fails for a reason that has nothing to do with the product.
 export QT_QUICK_CONTROLS_STYLE=Fusion
+export TZ="${TZ:-UTC}"
 
 # Every runner is bounded in time and memory. A QML test that leaks must fail
 # ITSELF, never the machine - on 2026-07-19 an unbounded qmltestrunner reached

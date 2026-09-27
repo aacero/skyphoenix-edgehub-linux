@@ -215,6 +215,13 @@ char* xeneon_config_license_status_json(ConfigHandle* handle);
 // policy is never silently unmanaged. Never returns NULL, never panics.
 char* xeneon_policy_json(void);
 
+// === Wake-on-LAN ===
+// Send a Wake-on-LAN magic packet over UDP broadcast.
+// mac: target MAC address string (e.g. "AA:BB:CC:DD:EE:FF" or "aabbccddeeff").
+// broadcast_ip: optional broadcast IP (NULL or empty string defaults to "255.255.255.255").
+// Returns 0 on success, -1 on invalid parameter/MAC, -2 on socket/IO error.
+int32_t xeneon_wol_send(const char* mac, const char* broadcast_ip);
+
 // === String Utilities ===
 void xeneon_string_free(char* s);
 

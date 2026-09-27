@@ -77,5 +77,6 @@
         <file alias="systems.svg">icons/systems.svg</file>
         <file alias="grafana.svg">icons/grafana.svg</file>
         <file alias="skytonight.svg">icons/skytonight.svg</file>
+        <file alias="quickactions.svg">icons/sparkle.svg</file>
     </qresource>
 </RCC>

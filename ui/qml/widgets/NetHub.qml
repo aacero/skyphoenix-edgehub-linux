@@ -308,8 +308,12 @@ QtObject {
         var watchdog = null
         function clearWatchdog() {
             if (!watchdog) return
-            watchdog.stop()
-            watchdog.destroy()
+            try {
+                if (typeof watchdog.stop === "function") watchdog.stop()
+            } catch (e) {}
+            try {
+                if (typeof watchdog.destroy === "function") watchdog.destroy()
+            } catch (e) {}
             watchdog = null
         }
         function fail(reason, abortRequest) {

@@ -61,6 +61,9 @@ QtObject {
         { type: "systems",      title: "Systems",    category: "System", source: "qrc:/qml/SystemsWidget.qml",
           defaults: { hosts: "localhost:9100", defaultPort: 9100, pollSec: 10, warnCpu: 85, warnRam: 85, warnDisk: 90 },
           sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1", "1x1.5", "1x2", "1x3"], dflt: "1x1" },
+        { type: "quickactions", title: "Quick Actions", category: "System", source: "qrc:/qml/QuickActionsWidget.qml",
+          defaults: { showStatusBanner: true },
+          sizes: ["0.5x1", "1x0.5", "1x1", "1x1.5", "1x2"], dflt: "1x1" },
 
         // Time / ambient
         { type: "clock",   title: "Clock",       category: "Time", source: "qrc:/qml/ClockWidget.qml",   defaults: {},
@@ -209,7 +212,8 @@ QtObject {
         "quote": "A fresh bit of motivation each day.",
         "systems": "Live CPU, memory, disk, load, uptime and network throughput across your systems via Prometheus node_exporter.",
         "grafana": "Real-time time-series telemetry charts querying Prometheus or Grafana endpoints directly with hardware-accelerated vector rendering and interactive touch scrubbing.",
-        "skytonight": "Tonight's observing forecast, twilight dark-sky window, cloud cover, and moon phase for stargazers."
+        "skytonight": "Tonight's observing forecast, twilight dark-sky window, cloud cover, and moon phase for stargazers.",
+        "quickactions": "Tactile touch macros to broadcast Wake-on-LAN packets, launch background commands, and trigger webhooks."
     })
 
     // LOSS-001: content and progress that must survive a configuration reset.

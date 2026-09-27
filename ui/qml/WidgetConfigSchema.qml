@@ -932,6 +932,13 @@ QtObject {
             titleSection("Grafana / Metrics"),
             about("Real-time time-series telemetry charts querying Prometheus or Grafana endpoints directly with hardware-accelerated vector rendering and interactive touch scrubbing.") ] }
 
+        case "quickactions": return { sections: [
+            { title: "Presentation", cols: 1, fields: [
+                { key: "showStatusBanner", label: "Show result notice banner", type: "toggle", dflt: true,
+                  help: "Displays a temporary confirmation or error banner at the bottom of the card after triggering an action." } ] },
+            titleSection("Quick Actions"),
+            about("Tactile macro buttons to broadcast Wake-on-LAN packets to homelab servers, execute background shell commands, and trigger automation webhooks.") ] }
+
         default: return { sections: [ titleSection(type) ] }
         }
     }

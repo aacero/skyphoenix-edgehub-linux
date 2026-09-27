@@ -2113,7 +2113,7 @@ ApplicationWindow {
                             }
                             Text {
                                 text: "Manager"; color: m.textSecondary
-                                font.family: theme.fontMono; font.pixelSize: m.fontSmall; font.letterSpacing: 0.5
+                                font.family: theme.fontMono; font.pixelSize: m.fontMinimum; font.letterSpacing: 0.5
                                 Layout.bottomMargin: 8
                             }
                         }
@@ -2153,7 +2153,7 @@ ApplicationWindow {
                             }
                             Text {
                                 text: "Forked from: https://github.com/skyphoenix-it/skyphoenix-edgehub-linux.git"
-                                color: m.accent; font.pixelSize: m.fontSmall
+                                color: m.accent; font.pixelSize: m.fontMinimum
                                 font.family: theme.fontMono
                                 Layout.fillWidth: true; elide: Text.ElideRight
                             }

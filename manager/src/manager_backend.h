@@ -352,6 +352,14 @@ public:
              QStringLiteral("/proc"), QStringLiteral("/sys")});
     }
 
+    Q_INVOKABLE int sendWakeOnLan(const QString& mac, const QString& broadcastIp = QString()) const {
+        return ConfigBridge::sendWakeOnLanStatic(mac, broadcastIp);
+    }
+
+    Q_INVOKABLE bool executeCommand(const QString& command) const {
+        return ConfigBridge::executeCommandStatic(command);
+    }
+
     // ── configBridge-compatible surface (DashboardStore uses these) ──
     Q_INVOKABLE QString uiState() const {
         if (!m_config) return QString();

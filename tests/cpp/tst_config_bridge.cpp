@@ -889,6 +889,21 @@ private slots:
         xeneon_string_free(layout);
         xeneon_config_free(fresh);
     }
+
+    void sendWakeOnLanValidation() {
+        ConfigBridge bridge(cfg_);
+        QCOMPARE(bridge.sendWakeOnLan(QString()), -1);
+        QCOMPARE(bridge.sendWakeOnLan(QStringLiteral("   ")), -1);
+        QCOMPARE(bridge.sendWakeOnLan(QStringLiteral("invalid:mac")), -1);
+        QCOMPARE(bridge.sendWakeOnLan(QStringLiteral("00:11:22:33:44:55"), QStringLiteral("127.0.0.1")), 0);
+    }
+
+    void executeCommandValidation() {
+        ConfigBridge bridge(cfg_);
+        QVERIFY(!bridge.executeCommand(QString()));
+        QVERIFY(!bridge.executeCommand(QStringLiteral("   ")));
+        QVERIFY(bridge.executeCommand(QStringLiteral("true")));
+    }
 };
 
 QTEST_GUILESS_MAIN(TstConfigBridge)

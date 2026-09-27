@@ -8,6 +8,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QObject>
+#include <QProcess>
 #include <QString>
 #include <QStringList>
 #include <QUrl>
@@ -489,6 +490,34 @@ public:
                            {QStringLiteral("body"), QString::fromUtf8(bytes)},
                            {QStringLiteral("error"), QString()},
                            {QStringLiteral("message"), QString()}};
+    }
+
+    // --- Quick Actions & Wake-on-LAN (WoL) -------------------------------------
+    // Send a Wake-on-LAN UDP magic packet to wake remote hardware.
+    // Returns 0 on success, -1 on invalid MAC address, -2 on socket error.
+    static int sendWakeOnLanStatic(const QString& mac, const QString& broadcastIp = QString()) {
+        if (mac.trimmed().isEmpty()) return -1;
+        const QByteArray macBytes = mac.trimmed().toUtf8();
+        const QByteArray bcastBytes = broadcastIp.trimmed().toUtf8();
+        return xeneon_wol_send(
+            macBytes.constData(),
+            bcastBytes.isEmpty() ? nullptr : bcastBytes.constData()
+        );
+    }
+
+    // Execute an action shell command asynchronously in the background.
+    static bool executeCommandStatic(const QString& command) {
+        if (command.trimmed().isEmpty()) return false;
+        return QProcess::startDetached(QStringLiteral("/bin/sh"),
+                                       QStringList{QStringLiteral("-c"), command.trimmed()});
+    }
+
+    Q_INVOKABLE int sendWakeOnLan(const QString& mac, const QString& broadcastIp = QString()) const {
+        return sendWakeOnLanStatic(mac, broadcastIp);
+    }
+
+    Q_INVOKABLE bool executeCommand(const QString& command) const {
+        return executeCommandStatic(command);
     }
 
     // --- Managed / org policy (E9) --------------------------------------------
