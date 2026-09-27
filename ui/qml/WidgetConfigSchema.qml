@@ -936,7 +936,7 @@ QtObject {
         case "quickactions": return { sections: [
             { title: "Host Systems", cols: 1, fields: [
                 { key: "actionsText", label: "Systems List", type: "textarea",
-                  placeholder: "palatka | 10.0.0.227\ndeerpark | 10.0.0.88\nbframe | 100.69.69.10 | acero\naframe | 10.0.0.50",
+                  placeholder: "palatka | 10.0.0.227\ndeerpark | 10.0.0.88\nbframe | 100.69.69.10 | acero\naframe | 100.69.69.4 | acero",
                   help: "List of systems (one per line): Label | Host / IP | SSH User (optional). Each host card provides instant tactile buttons for Ping (with live latency), SSH terminal, and Mosh session." } ] },
             { title: "Presentation", cols: 1, fields: [
                 { key: "showStatusBanner", label: "Show result notice banner", type: "toggle", dflt: true,

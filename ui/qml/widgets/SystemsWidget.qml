@@ -101,8 +101,18 @@ WidgetChrome {
     // onto a monitor other than the Xeneon Edge (if another monitor exists).
     // If the Edge is the only display, it launches directly on the Edge.
     function buildTargetedCommand(innerCmd, isTerminal) {
+        var baseBinary = (innerCmd || "").trim().split(/\s+/)[0]
+        var binaryCheck = ""
+        if (baseBinary && baseBinary.length > 0) {
+            binaryCheck = "if ! command -v " + baseBinary + " >/dev/null 2>&1; then "
+                        + "  command -v notify-send >/dev/null 2>&1 && notify-send -u critical \"Command Not Found\" \"" + baseBinary + " is not installed on this system\"; "
+                        + "  exit 127; "
+                        + "fi; "
+        }
+
         var prelude =
-            "if command -v hyprctl >/dev/null 2>&1; then "
+            binaryCheck
+          + "if command -v hyprctl >/dev/null 2>&1; then "
           + "  TARGET_MON=$(hyprctl monitors 2>/dev/null | awk '/^Monitor / { cur=$2; mons[n++] = cur } /at 0x0/ { origin = cur } tolower($0) ~ /(xeneon|edge)/ { edge[cur] = 1 } END { if (origin && !edge[origin]) { print origin; exit } for (i=0; i<n; i++) { m = mons[i]; if (!edge[m]) { print m; exit } } }'); "
           + "  if [ -n \"$TARGET_MON\" ]; then "
           + "    hyprctl dispatch \"hl.dsp.focus({ monitor = \\\"$TARGET_MON\\\" })\" >/dev/null 2>&1 || hyprctl dispatch focusmonitor \"$TARGET_MON\" >/dev/null 2>&1 || true; "
@@ -177,7 +187,9 @@ WidgetChrome {
             if (parsed.label === targetLabel || parsed.url === targetUrl
                 || parsed.label.toLowerCase() === targetLabel.toLowerCase()) {
                 var hostPart = parsed.url.replace(/^https?:\/\//i, "").replace(/\/metrics$/i, "")
-                var outLine = (parsed.label || targetLabel) + " | " + hostPart
+                var displayLabel = (parsed.label || targetLabel).replace(/:\d+$/, "").trim()
+                if (!displayLabel.length) displayLabel = hostPart.replace(/:\d+$/, "").trim()
+                var outLine = displayLabel + " | " + hostPart
                 if (cleanMac.length > 0) {
                     outLine += " | " + cleanMac
                     if (parsed.broadcast && parsed.broadcast !== "255.255.255.255") {
@@ -193,7 +205,8 @@ WidgetChrome {
 
         if (!matched && targetLabel.length > 0) {
             var hostPart = targetUrl.replace(/^https?:\/\//i, "").replace(/\/metrics$/i, "")
-            var newLine = targetLabel + " | " + (hostPart || targetLabel)
+            var displayLabel = targetLabel.replace(/:\d+$/, "").trim() || hostPart.replace(/:\d+$/, "").trim()
+            var newLine = displayLabel + " | " + (hostPart || targetLabel)
             if (cleanMac.length > 0) newLine += " | " + cleanMac
             updatedLines.push(newLine)
         }
