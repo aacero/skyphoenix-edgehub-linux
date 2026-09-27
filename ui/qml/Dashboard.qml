@@ -64,9 +64,12 @@ Item {
     // Everything that must hold the current screen still. Editing and the
     // expanded overlay are direct interactions; a single page has nowhere to go;
     // and one non-empty page means the rotation would land right back here.
+    // Critical fleet/systems alerts also hold cycling so the emergency stays visible.
     readonly property bool cycleSuppressed: dashboard.editMode
                                             || dashboard.hasExpanded
                                             || dashboard.cyclablePages.length <= 1
+                                            || (dashboard.activeCriticalAlerts.length > 0
+                                                && store.appearance().alertSurfacing !== false)
 
     // Pages worth landing on. An empty screen is not worth a dwell, but the one
     // the user is LOOKING at always counts - silently rotating away from a page
@@ -303,6 +306,130 @@ Item {
         if (kept.length !== priorityAlertQueue.length)
             priorityAlertQueue = kept
         return priorityAlertQueue.length
+    }
+
+    // ── Reactive 'Alert-Driven' Screen Surfacing ──────────────────────────────
+    property var reactiveAlerts: []
+    readonly property var activeCriticalAlerts: {
+        var list = []
+        for (var i = 0; i < reactiveAlerts.length; i++) {
+            if (reactiveAlerts[i].level === "critical" && !reactiveAlerts[i].acknowledged)
+                list.push(reactiveAlerts[i])
+        }
+        return list
+    }
+    readonly property var activeWarningAlerts: {
+        var list = []
+        for (var i = 0; i < reactiveAlerts.length; i++) {
+            if (reactiveAlerts[i].level === "warning" && !reactiveAlerts[i].acknowledged)
+                list.push(reactiveAlerts[i])
+        }
+        return list
+    }
+    readonly property var currentBannerAlert: {
+        if (activeCriticalAlerts.length > 0) return activeCriticalAlerts[0]
+        if (activeWarningAlerts.length > 0) return activeWarningAlerts[0]
+        return null
+    }
+
+    function syncReactiveAlerts(sourceId, alertsList) {
+        if (!sourceId) return 0
+        var incoming = Array.isArray(alertsList) ? alertsList : []
+        var kept = []
+        for (var i = 0; i < reactiveAlerts.length; i++) {
+            if (reactiveAlerts[i].sourceId !== sourceId)
+                kept.push(reactiveAlerts[i])
+        }
+        var pageIdx = store.pageIndexForTile(sourceId)
+        var pageName = ""
+        if (pageIdx >= 0 && pageIdx < store.pageCount()) {
+            var ps = store.pages()
+            pageName = (ps[pageIdx] && ps[pageIdx].name) ? ps[pageIdx].name : ("Screen " + (pageIdx + 1))
+        }
+
+        for (var j = 0; j < incoming.length; j++) {
+            var item = incoming[j]
+            var k = String(item.key || (sourceId + ":" + (item.id !== undefined ? item.id : j)))
+            var ack = Boolean(item.acknowledged)
+            for (var prev = 0; prev < reactiveAlerts.length; prev++) {
+                if (reactiveAlerts[prev].key === k && reactiveAlerts[prev].acknowledged) {
+                    ack = true
+                    break
+                }
+            }
+            kept.push({
+                key: k,
+                sourceId: String(sourceId),
+                widgetType: String(item.widgetType || ""),
+                level: String(item.level || "warning"),
+                host: String(item.host || ""),
+                title: String(item.title || ""),
+                detail: String(item.detail || ""),
+                pageIndex: pageIdx,
+                pageName: pageName,
+                timestamp: Number(item.timestamp || Date.now()),
+                acknowledged: ack
+            })
+        }
+        reactiveAlerts = kept
+        dashboard.evaluateAlertSurfacing()
+        return reactiveAlerts.length
+    }
+
+    function acknowledgeAlert(key) {
+        if (!key) return false
+        var found = false
+        var next = []
+        for (var i = 0; i < reactiveAlerts.length; i++) {
+            var alert = reactiveAlerts[i]
+            if (alert.key === key) {
+                found = true
+                var updated = Object.assign({}, alert, { acknowledged: true })
+                next.push(updated)
+            } else {
+                next.push(alert)
+            }
+        }
+        if (found) reactiveAlerts = next
+        return found
+    }
+
+    function dismissAllAlerts() {
+        if (!reactiveAlerts.length) return false
+        var next = []
+        for (var i = 0; i < reactiveAlerts.length; i++) {
+            next.push(Object.assign({}, reactiveAlerts[i], { acknowledged: true }))
+        }
+        reactiveAlerts = next
+        return true
+    }
+
+    function pruneReactiveAlerts() {
+        var kept = []
+        for (var i = 0; i < reactiveAlerts.length; i++) {
+            var alert = reactiveAlerts[i]
+            if (alert.sourceId && dashboard._tileExists(alert.sourceId))
+                kept.push(alert)
+        }
+        if (kept.length !== reactiveAlerts.length)
+            reactiveAlerts = kept
+        return reactiveAlerts.length
+    }
+
+    function evaluateAlertSurfacing() {
+        var app = store.appearance()
+        if (app && app.alertSurfacing === false) return false
+        if (dashboard.editMode || dashboard.hasExpanded) return false
+        var crit = activeCriticalAlerts
+        if (!crit.length) return false
+        var targetAlert = crit[0]
+        if (targetAlert.pageIndex >= 0 && targetAlert.pageIndex !== swipeView.currentIndex) {
+            if (dashboard.cycleIdle || dashboard.pageCycleSec > 0) {
+                swipeView.goToPage(targetAlert.pageIndex)
+                return true
+            }
+        }
+        return false
     }
 
     // Synchronous preflight for a Manager document. The C++ control path calls
@@ -848,8 +975,142 @@ Item {
             }
         }
     }
+
+    // ── Reactive Top-Bar Alert Banner ─────────────────────────────────────────
+    Rectangle {
+        id: reactiveAlertBanner
+        objectName: "reactiveAlertBanner"
+        z: 950
+        visible: dashboard.currentBannerAlert !== null
+                 && !dashboard.editMode
+                 && !dashboard.hasExpanded
+                 && !store.saveFailed
+
+        readonly property var alert: dashboard.currentBannerAlert || ({})
+        readonly property bool isCritical: alert.level === "critical"
+        readonly property color accentCol: isCritical ? theme.error : theme.warning
+        readonly property color bgCol: isCritical ? "#2B1717" : "#2E2111"
+
+        anchors.top: parent.top
+        anchors.topMargin: theme.spacingSm
+        anchors.horizontalCenter: parent.horizontalCenter
+        width: Math.min(parent.width - theme.spacingLg * 2, 1120)
+        height: Math.max(theme.touchSecondary + theme.spacingSm * 2, alertContentRow.implicitHeight + theme.spacingSm * 2)
+        radius: theme.radiusMd
+        color: bgCol
+        border.width: 2
+        border.color: accentCol
+
+        Accessible.role: Accessible.Alert
+        Accessible.name: (alert.host ? alert.host + ": " : "") + (alert.title || "Alert")
+
+        Behavior on opacity { NumberAnimation { duration: theme.motionPage; easing.type: Easing.OutCubic } }
+
+        RowLayout {
+            id: alertContentRow
+            anchors.fill: parent
+            anchors.leftMargin: theme.spacingMd
+            anchors.rightMargin: theme.spacingMd
+            anchors.topMargin: theme.spacingSm
+            anchors.bottomMargin: theme.spacingSm
+            spacing: theme.spacingMd
+
+            // Left icon
+            Rectangle {
+                Layout.preferredWidth: 36
+                Layout.preferredHeight: 36
+                radius: 18
+                color: Qt.rgba(reactiveAlertBanner.accentCol.r, reactiveAlertBanner.accentCol.g, reactiveAlertBanner.accentCol.b, 0.2)
+                border.width: 1
+                border.color: reactiveAlertBanner.accentCol
+                AppIcon {
+                    anchors.centerIn: parent
+                    name: reactiveAlertBanner.isCritical ? "ui-warning" : "systems"
+                    size: 20
+                    color: reactiveAlertBanner.accentCol
+                }
+            }
+
+            // Message text
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+                spacing: 2
+                RowLayout {
+                    spacing: 8
+                    Text {
+                        text: (reactiveAlertBanner.alert.host || "System").toUpperCase()
+                        color: reactiveAlertBanner.accentCol
+                        font.pixelSize: theme.fontLabel
+                        font.bold: true
+                        font.family: theme.fontMono
+                    }
+                    Rectangle {
+                        visible: dashboard.activeCriticalAlerts.length + dashboard.activeWarningAlerts.length > 1
+                        Layout.preferredHeight: 18
+                        implicitWidth: alertCountText.implicitWidth + 8
+                        radius: 4
+                        color: Qt.rgba(reactiveAlertBanner.accentCol.r, reactiveAlertBanner.accentCol.g, reactiveAlertBanner.accentCol.b, 0.25)
+                        Text {
+                            id: alertCountText
+                            anchors.centerIn: parent
+                            text: (dashboard.activeCriticalAlerts.length + dashboard.activeWarningAlerts.length) + " alerts"
+                            color: "#FFFFFF"
+                            font.pixelSize: theme.fontMinimum
+                            font.bold: true
+                        }
+                    }
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: (reactiveAlertBanner.alert.title || "") + (reactiveAlertBanner.alert.detail ? " · " + reactiveAlertBanner.alert.detail : "")
+                    color: "#FFFFFF"
+                    font.pixelSize: theme.fontLabel
+                    font.bold: true
+                    elide: Text.ElideRight
+                }
+            }
+
+            // Action: Jump to screen
+            Button {
+                id: alertJumpBtn
+                objectName: "alertJumpButton"
+                visible: reactiveAlertBanner.alert.pageIndex !== undefined && reactiveAlertBanner.alert.pageIndex >= 0
+                text: reactiveAlertBanner.alert.pageName ? ("View " + reactiveAlertBanner.alert.pageName) : "Jump to Screen"
+                Layout.preferredHeight: theme.touchSecondary
+                Layout.minimumWidth: 120
+                onClicked: {
+                    if (reactiveAlertBanner.alert.pageIndex !== undefined && reactiveAlertBanner.alert.pageIndex >= 0) {
+                        swipeView.goToPage(reactiveAlertBanner.alert.pageIndex)
+                    }
+                }
+            }
+
+            // Action: Acknowledge / Dismiss
+            Button {
+                id: alertAckBtn
+                objectName: "alertAckButton"
+                text: "Acknowledge"
+                Layout.preferredHeight: theme.touchSecondary
+                Layout.minimumWidth: 100
+                onClicked: {
+                    if (reactiveAlertBanner.alert.key) {
+                        dashboard.acknowledgeAlert(reactiveAlertBanner.alert.key)
+                    }
+                }
+            }
+        }
+    }
+
+    readonly property alias reactiveAlertSurface: reactiveAlertBanner
+    readonly property alias reactiveAlertJumpButton: alertJumpBtn
+    readonly property alias reactiveAlertAckButton: alertAckBtn
+
     readonly property int observedStoreStructureRevision: store.structureRevision
-    onObservedStoreStructureRevisionChanged: dashboard.prunePriorityAlerts()
+    onObservedStoreStructureRevisionChanged: {
+        dashboard.prunePriorityAlerts()
+        dashboard.pruneReactiveAlerts()
+    }
     WidgetCatalog { id: catalog }
     readonly property alias widgetStore: store
     readonly property alias widgetCatalog: catalog

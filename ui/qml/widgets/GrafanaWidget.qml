@@ -21,6 +21,7 @@ WidgetChrome {
     NetHub { id: _fallbackHub }
     function _hub() { return netHub ? netHub : _fallbackHub }
     property var xhrFactory: null
+    property var priorityAlerts: null
 
     title: w.customTitle.length ? w.customTitle : (w.query.length ? w.query : "Grafana / Metrics")
     iconName: "grafana"
@@ -255,6 +256,7 @@ WidgetChrome {
                         w.errText = "HTTP " + status
                     }
                     if (chartCanvas && typeof chartCanvas.requestPaint === "function") chartCanvas.requestPaint()
+                    if (typeof w._evaluateAlerts === "function") w._evaluateAlerts()
                 } catch (e) {}
             },
             onError: function (reason) {
@@ -263,11 +265,45 @@ WidgetChrome {
                     w.lastFetchEpochMs = Date.now()
                     w.errText = String(reason || "Connection failed")
                     if (chartCanvas && typeof chartCanvas.requestPaint === "function") chartCanvas.requestPaint()
+                    if (typeof w._evaluateAlerts === "function") w._evaluateAlerts()
                 } catch (e) {}
             }
         }
 
         _hub().request(opts)
+    }
+
+    function _evaluateAlerts() {
+        if (!w || !w.priorityAlerts || typeof w.priorityAlerts.syncReactiveAlerts !== "function" || !w.instanceId)
+            return
+        var list = []
+        var hostName = w.customTitle.length ? w.customTitle : w.query
+        if (!isNaN(w.critThreshold) && w.latestVal >= w.critThreshold) {
+            list.push({
+                key: "grafana:" + w.instanceId + ":crit",
+                widgetType: "grafana",
+                level: "critical",
+                host: hostName,
+                title: hostName + " is critical",
+                detail: w.formatValue(w.latestVal) + " ≥ " + w.critThreshold
+            })
+        } else if (!isNaN(w.warnThreshold) && w.latestVal >= w.warnThreshold) {
+            list.push({
+                key: "grafana:" + w.instanceId + ":warn",
+                widgetType: "grafana",
+                level: "warning",
+                host: hostName,
+                title: hostName + " warning",
+                detail: w.formatValue(w.latestVal) + " ≥ " + w.warnThreshold
+            })
+        }
+        w.priorityAlerts.syncReactiveAlerts(w.instanceId, list)
+    }
+
+    Component.onDestruction: {
+        if (w.priorityAlerts && typeof w.priorityAlerts.syncReactiveAlerts === "function" && w.instanceId) {
+            w.priorityAlerts.syncReactiveAlerts(w.instanceId, [])
+        }
     }
 
     // Poll timer

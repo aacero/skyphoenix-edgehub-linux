@@ -26,6 +26,10 @@ WidgetChrome {
     // Test seam for offline deterministic testing
     property var xhrFactory: null
 
+    // Alert bus integration
+    property var priorityAlerts: null
+    property var _critTracker: ({})
+
     title: "Systems"
     iconName: "systems"
     accentColor: theme.catSystem
@@ -365,8 +369,8 @@ WidgetChrome {
                     url: target.url,
                     xhrFactory: w.xhrFactory,
                     onDone: function (status, body) {
-                        if (!w || currentGen !== w._pollGeneration) return
-                        var latencyMs = Math.max(0, currentMs() - startReqMs)
+                        if (!w || typeof w.currentMs !== "function" || currentGen !== w._pollGeneration) return
+                        var latencyMs = Math.max(0, w.currentMs() - startReqMs)
                         if (status >= 200 && status < 300) {
                             var parsed = parseNodeExporter(body)
                             var elapsedSec = prevSample ? Math.max(0.1, (nowMs - prevSample.timeMs) / 1000) : 0
@@ -449,8 +453,8 @@ WidgetChrome {
                         finalizeOne()
                     },
                     onError: function (reason) {
-                        if (!w || currentGen !== w._pollGeneration) return
-                        var latencyMs = Math.max(0, currentMs() - startReqMs)
+                        if (!w || typeof w.currentMs !== "function" || currentGen !== w._pollGeneration) return
+                        var latencyMs = Math.max(0, w.currentMs() - startReqMs)
                         stateMap[target.url] = {
                             label: target.label,
                             url: target.url,
@@ -479,8 +483,73 @@ WidgetChrome {
                 }
                 w.localNodes = merged
                 _commitEphemeral(merged)
+                w._evaluateFleetAlerts(merged)
                 if (typeof onComplete === "function") onComplete()
             }
+        }
+    }
+
+    function _evaluateFleetAlerts(nodeList) {
+        if (!nodeList) return
+        var nowMs = currentMs()
+        var alerts = []
+        var activeUrls = ({})
+
+        for (var i = 0; i < nodeList.length; i++) {
+            var node = nodeList[i]
+            if (!node || !node.url) continue
+            activeUrls[node.url] = true
+
+            // 1. Offline host alert
+            if (node.status === "offline") {
+                alerts.push({
+                    key: "systems:" + w.instanceId + ":" + node.label + ":offline",
+                    widgetType: "systems",
+                    level: "critical",
+                    host: node.label,
+                    title: node.label + " is offline",
+                    detail: node.error || "Connection timed out"
+                })
+                delete w._critTracker[node.url]
+            } else if (node.status === "critical") {
+                // 2. Threshold breach (CPU/RAM/Disk >= 95% sustained for >= 30s)
+                var reason = (node.cpuPercent >= 95) ? ("CPU " + Math.round(node.cpuPercent) + "%")
+                             : ((node.ramPercent >= 95) ? ("RAM " + Math.round(node.ramPercent) + "%")
+                                : ("Disk " + Math.round(node.diskPercent) + "%"))
+                if (!w._critTracker[node.url]) {
+                    w._critTracker[node.url] = { startMs: nowMs, reason: reason }
+                } else {
+                    w._critTracker[node.url].reason = reason
+                }
+                var sustainedMs = nowMs - w._critTracker[node.url].startMs
+                if (sustainedMs >= 30000) {
+                    alerts.push({
+                        key: "systems:" + w.instanceId + ":" + node.label + ":threshold",
+                        widgetType: "systems",
+                        level: "critical",
+                        host: node.label,
+                        title: node.label + " " + reason + " sustained",
+                        detail: ">95% for " + Math.max(30, Math.round(sustainedMs / 1000)) + "s"
+                    })
+                }
+            } else {
+                delete w._critTracker[node.url]
+            }
+        }
+
+        // Clean up trackers for hosts no longer in active targets
+        for (var u in w._critTracker) {
+            if (!activeUrls[u]) delete w._critTracker[u]
+        }
+
+        if (w.priorityAlerts && typeof w.priorityAlerts.syncReactiveAlerts === "function") {
+            w.priorityAlerts.syncReactiveAlerts(w.instanceId, alerts)
+        }
+    }
+
+    Component.onDestruction: {
+        if (w.priorityAlerts && typeof w.priorityAlerts.syncReactiveAlerts === "function") {
+            w.priorityAlerts.syncReactiveAlerts(w.instanceId, [])
         }
     }
 

@@ -408,5 +408,34 @@ Item {
             h.item.instanceId = oldId
             verify(h.item.configuredList.length > 0, "configuredList restored with instanceId")
         }
+
+        // ── 14. Reactive Alert Emission ──────────────────────────────────────
+        function test_reactive_alert_emission() {
+            var alertSink = {
+                alerts: [],
+                syncReactiveAlerts: function (sourceId, list) {
+                    this.alerts = list
+                }
+            }
+            h.item.priorityAlerts = alertSink
+            var activeFake = null
+            h.item.xhrFactory = function () {
+                activeFake = root.makeFake()
+                return activeFake
+            }
+
+            // 1. Offline host emits offline alert
+            h.item.refresh()
+            verify(activeFake !== null)
+            activeFake.resolveWith(500, "Internal Server Error")
+            compare(alertSink.alerts.length, 1)
+            compare(alertSink.alerts[0].level, "critical")
+            verify(alertSink.alerts[0].title.indexOf("offline") >= 0)
+
+            // 2. Online host with normal metrics clears alert
+            h.item.refresh()
+            activeFake.resolveWith(200, root.sampleNodeExporterMetrics)
+            compare(alertSink.alerts.length, 0)
+        }
     }
 }

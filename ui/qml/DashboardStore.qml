@@ -91,7 +91,7 @@ Item {
         "httpVal": true, "httpText": true, "httpErr": true, "httpList": true, "httpAt": true,
         "quoteManualIdx": true, "quotePinnedText": true, "quoteManualDay": true,
         "sysNodes": true, "sysSummary": true, "sysAt": true, "sysErr": true,
-        "sysSelected": true })
+        "sysSelected": true, "sysAlerts": true })
     function _isEphemeralKey(k) { return store._ephemeralKeys[k] === true }
 
     // Deep copy of the document with all ephemeral runtime keys removed - the exact
@@ -396,6 +396,10 @@ Item {
             doc.appearance.pageCycleSec = 0
         else
             doc.appearance.pageCycleSec = Number(doc.appearance.pageCycleSec)
+        if (doc.appearance.alertSurfacing === undefined)
+            doc.appearance.alertSurfacing = true
+        else
+            doc.appearance.alertSurfacing = Boolean(doc.appearance.alertSurfacing)
         if (!_isPlainObject(doc.settings)) doc.settings = {}
         for (var settingId in doc.settings)
             if (!_isPlainObject(doc.settings[settingId]))
@@ -668,6 +672,8 @@ Item {
             val = "standard"
         if (key === "pageCycleSec")
             val = isPageCycleChoice(val) ? Number(val) : 0
+        if (key === "alertSurfacing")
+            val = Boolean(val)
         document.appearance[key] = val
         _touchSettings()
     }
@@ -807,6 +813,7 @@ Item {
     function pageHasRoomFor(pageIdx, size) {
         if (pageIdx < 0 || pageIdx >= document.pages.length) return false
         if (!store._sizes.isLegal(size)) return false
+        if (!document.pages[pageIdx]) return false
         var tiles = (document.pages[pageIdx].tiles || []).slice()
         tiles.push({ "id": "__probe__", "type": "__probe__", "size": size })
         return store._packer.longExtent(store._packer.pack(tiles)) <= store._sizes.longHalves

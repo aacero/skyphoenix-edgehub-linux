@@ -1658,6 +1658,20 @@ ApplicationWindow {
                         ColumnLayout {
                             spacing: 2
                             MSwitch {
+                                text: "Reactive alert surfacing"
+                                checked: { store.revision; var a = store.appearance().alertSurfacing; return a === undefined ? true : a }
+                                onToggled: {
+                                    store.setAppearance("alertSurfacing", checked)
+                                    checked = Qt.binding(function() { store.revision; var a = store.appearance().alertSurfacing; return a === undefined ? true : a })
+                                }
+                            }
+                            Text { text: "Automatically shows a top alert banner and pauses screen rotation when homelab nodes drop offline or breach critical thresholds."
+                                color: m.textSecondary; font.pixelSize: m.fontMinimum; Layout.leftMargin: 56
+                                Layout.fillWidth: true; wrapMode: Text.WordWrap }
+                        }
+                        ColumnLayout {
+                            spacing: 2
+                            MSwitch {
                                 text: "Widget glow"
                                 checked: { store.revision; var g = store.appearance().glow; return g === undefined ? true : g }
                                 onToggled: {

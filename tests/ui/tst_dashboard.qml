@@ -10,6 +10,7 @@ import "../../ui/qml" as App
 // COVERS: fn:Dashboard.requestWidgetDataAction, fn:Dashboard.confirmWidgetDataAction
 // COVERS: fn:Dashboard.showPriorityAlert, fn:Dashboard.dismissPriorityAlert, fn:Dashboard.triggerPriorityAlertAction
 // COVERS: fn:Dashboard._openPriorityAlertWidget, fn:Dashboard._priorityAlertWidget, fn:Dashboard._invokePriorityAlertWidget, fn:Dashboard.prunePriorityAlerts
+// COVERS: fn:Dashboard.syncReactiveAlerts, fn:Dashboard.acknowledgeAlert, fn:Dashboard.dismissAllAlerts, fn:Dashboard.pruneReactiveAlerts, fn:Dashboard.evaluateAlertSurfacing
 // COVERS: fn:Dashboard._sweepStaleDying
 //
 // ui/qml/Dashboard.qml -
@@ -562,6 +563,126 @@ Item {
             tryVerify(function () { return d.priorityAlertQueue.length === 0 }, 1000)
             compare(d.prunePriorityAlerts(), 0,
                     "prunePriorityAlerts reports the remaining queue size")
+        }
+
+        function test_reactive_alerts_sync_and_banner() {
+            var d = ld.item
+            var s = root.store()
+            s.applyExternal(root.makeDoc([ { id: "sys-tile", type: "systems", size: "1x1" } ]))
+            compare(d.syncReactiveAlerts("sys-tile", [
+                {
+                    key: "sys-warn",
+                    widgetType: "systems",
+                    level: "warning",
+                    host: "palatka",
+                    title: "palatka CPU 88%",
+                    detail: "Above warning threshold"
+                }
+            ]), 1)
+            compare(d.reactiveAlerts.length, 1)
+            compare(d.activeWarningAlerts.length, 1)
+            compare(d.activeCriticalAlerts.length, 0)
+            verify(d.reactiveAlertSurface.visible, "banner appears for active alerts")
+            compare(d.reactiveAlertSurface.accentCol, root.theme.warning)
+
+            // Add critical alert
+            compare(d.syncReactiveAlerts("sys-tile", [
+                {
+                    key: "sys-warn",
+                    widgetType: "systems",
+                    level: "warning",
+                    host: "palatka",
+                    title: "palatka CPU 88%"
+                },
+                {
+                    key: "sys-crit",
+                    widgetType: "systems",
+                    level: "critical",
+                    host: "aframe",
+                    title: "aframe is offline",
+                    detail: "Connection timed out"
+                }
+            ]), 2)
+            compare(d.activeCriticalAlerts.length, 1)
+            // Critical alert prioritized on banner
+            compare(d.currentBannerAlert.key, "sys-crit")
+            compare(d.reactiveAlertSurface.accentCol, root.theme.error)
+            tryVerify(function () {
+                return d.reactiveAlertJumpButton.visible
+                    && d.reactiveAlertJumpButton.height >= 44
+                    && d.reactiveAlertAckButton.height >= 44
+            }, 1000)
+
+            // Acknowledge the critical alert
+            verify(d.acknowledgeAlert("sys-crit"))
+            compare(d.activeCriticalAlerts.length, 0)
+            // Warning alert becomes active on banner
+            compare(d.currentBannerAlert.key, "sys-warn")
+
+            // Clear all
+            compare(d.syncReactiveAlerts("sys-tile", []), 0)
+            compare(d.reactiveAlerts.length, 0)
+            verify(!d.reactiveAlertSurface.visible)
+            s.applyExternal(root.makeDoc([]))
+        }
+
+        function test_reactive_alerts_pause_and_surface() {
+            var d = ld.item
+            var s = root.store()
+            s.applyExternal(JSON.stringify({
+                version: 1, appearance: { pageCycleSec: 30, alertSurfacing: true },
+                settings: {},
+                pages: [
+                    { name: "P1", tiles: [ { id: "tile-p1", type: "clock", size: "1x1" } ] },
+                    { name: "P2", tiles: [ { id: "tile-p2", type: "clock", size: "1x1" } ] }
+                ]
+            }))
+            d.cycleIdle = true
+            compare(d.cyclablePages.length, 2)
+            tryVerify(function () { return !d.cycleSuppressed }, 1000)
+
+            // Critical alert triggers suppression
+            d.syncReactiveAlerts("tile-p1", [
+                {
+                    key: "crit-1",
+                    widgetType: "systems",
+                    level: "critical",
+                    host: "deerpark",
+                    title: "deerpark offline"
+                }
+            ])
+            verify(d.cycleSuppressed, "cycleSuppressed active when critical alert present")
+
+            // evaluateAlertSurfacing when already on page 0
+            verify(!d.evaluateAlertSurfacing(), "no jump needed if already on page 0")
+
+            // Ack clears suppression
+            verify(d.acknowledgeAlert("crit-1"))
+            verify(!d.cycleSuppressed, "cycleSuppressed clears after acknowledge")
+
+            d.syncReactiveAlerts("tile-p1", [])
+            s.applyExternal(root.makeDoc([]))
+        }
+
+        function test_reactive_alerts_dismiss_and_prune() {
+            var d = ld.item
+            var s = root.store()
+            s.applyExternal(root.makeDoc([ { id: "sys-prune", type: "systems", size: "1x1" } ]))
+            d.syncReactiveAlerts("sys-prune", [
+                { key: "c1", level: "critical", host: "h1", title: "t1" },
+                { key: "c2", level: "critical", host: "h2", title: "t2" }
+            ])
+            compare(d.activeCriticalAlerts.length, 2)
+            verify(d.dismissAllAlerts())
+            compare(d.activeCriticalAlerts.length, 0)
+
+            // Pruning removes alerts whose tile was deleted
+            d.syncReactiveAlerts("sys-prune", [
+                { key: "c3", level: "critical", host: "h3", title: "t3" }
+            ])
+            compare(d.reactiveAlerts.length, 1)
+            s.applyExternal(root.makeDoc([]))
+            compare(d.pruneReactiveAlerts(), 0)
         }
 
         function test_configuration_reset_keeps_personal_content() {
