@@ -101,9 +101,17 @@ pub fn send_wol(
         .set_broadcast(true)
         .map_err(|e| WolError::IoError(format!("set_broadcast failed: {}", e)))?;
 
-    socket
-        .send_to(&packet, &target)
-        .map_err(|e| WolError::IoError(format!("send_to {} failed: {}", target, e)))?;
+    // Wake-on-LAN is unacknowledged UDP broadcast. Sleeping NICs and network switches
+    // frequently drop initial broadcast packets when link power-saving (EEE) or low-power
+    // standby states are active. Send a burst of 3 packets spaced by 25ms to ensure reliable wake.
+    for i in 0..3 {
+        socket
+            .send_to(&packet, &target)
+            .map_err(|e| WolError::IoError(format!("send_to {} failed: {}", target, e)))?;
+        if i < 2 {
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+    }
 
     Ok(())
 }
