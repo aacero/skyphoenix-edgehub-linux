@@ -252,6 +252,21 @@ Item {
             h.item.launchSshNode(nodeWithMac)
             compare(mockBridge.cmdCallCount, 1)
             verify(mockBridge.lastCommand.indexOf("ssh 10.0.0.227") >= 0)
+
+            // Test Inline MAC editing
+            compare(h.item.editingNodeMac, false)
+            h.item.startEditMac(nodeWithMac)
+            compare(h.item.editingNodeMac, true)
+            compare(h.item.editMacInput, "38:ca:84:39:6c:9e")
+
+            h.item.cancelEditMac()
+            compare(h.item.editingNodeMac, false)
+            compare(h.item.editMacInput, "")
+
+            h.item.startEditMac(nodeWithMac)
+            h.item.saveNodeMac(nodeWithMac, "11:22:33:44:55:66")
+            compare(h.item.editingNodeMac, false)
+            compare(h.item.editMacInput, "")
         }
 
         // ── 1c. MAC Auto-discovery from Quick Actions ────────────────────────

@@ -55,36 +55,54 @@ WidgetChrome {
         if (!text || typeof text !== "string") return []
         var lines = text.split("\n")
         var list = []
+        var seen = {}
         for (var i = 0; i < lines.length; i++) {
             var line = lines[i].trim()
             if (!line || line.startsWith("#")) continue
             var parts = line.split("|").map(function(p) { return p.trim() })
-            if (parts.length >= 2) {
-                var label = parts[0]
-                var host = parts[1]
-                var user = parts.length >= 3 ? parts[2] : ""
 
-                // Handle legacy actionsText syntax: Label | Type | Target
+            var label = ""
+            var host = ""
+            var user = ""
+
+            if (parts.length >= 2) {
                 var legacyTypes = ["ping", "ssh", "mosh", "command", "webhook", "wol"]
                 if (parts.length >= 3 && legacyTypes.indexOf(parts[1].toLowerCase()) !== -1) {
-                    label = parts[0]
-                    host = parts[2]
+                    var rawTarget = parts[2]
+                    // Clean label: e.g. "Wake deerpark" -> "deerpark", "ping bframe" -> "bframe"
+                    label = parts[0].replace(/^(wake|ping|ssh|mosh|connect to)\s+/i, "").trim()
+                    if (!label.length) label = rawTarget
+
+                    // If target was a MAC address, the actual host is the machine name!
+                    if (/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(rawTarget)) {
+                        host = label
+                    } else {
+                        host = rawTarget
+                    }
                     user = ""
+                } else {
+                    label = parts[0]
+                    host = parts[1]
+                    user = parts.length >= 3 ? parts[2] : ""
                 }
-                list.push({
-                    id: "host-" + i + "-" + label.toLowerCase().replace(/[^a-z0-9]/g, "-"),
-                    label: label,
-                    host: host,
-                    user: user
-                })
             } else if (parts.length === 1 && parts[0].length > 0) {
-                list.push({
-                    id: "host-" + i + "-" + parts[0].toLowerCase().replace(/[^a-z0-9]/g, "-"),
-                    label: parts[0],
-                    host: parts[0],
-                    user: ""
-                })
+                label = parts[0].replace(/^(wake|ping|ssh|mosh|connect to)\s+/i, "").trim()
+                host = label
+                user = ""
             }
+
+            if (!label.length && !host.length) continue
+            var cleanKey = (label || host).toLowerCase()
+            // Consolidate duplicate actions for the same host into one host card
+            if (seen[cleanKey]) continue
+            seen[cleanKey] = true
+
+            list.push({
+                id: "host-" + list.length + "-" + cleanKey.replace(/[^a-z0-9]/g, "-"),
+                label: label || host,
+                host: host || label,
+                user: user
+            })
         }
         return list
     }
@@ -118,15 +136,39 @@ WidgetChrome {
         if (cfg.hosts && Array.isArray(cfg.hosts) && cfg.hosts.length > 0) {
             return cfg.hosts
         }
+        if (typeof cfg.hosts === "string" && cfg.hosts.trim().length > 0) {
+            var parsedHStr = parseHostsText(cfg.hosts)
+            var isOnlyLocalhost = parsedHStr.length === 1 && (parsedHStr[0].host === "localhost" || parsedHStr[0].host === "localhost:9100" || parsedHStr[0].label === "localhost:9100")
+            if (parsedHStr.length > 0 && !isOnlyLocalhost) return parsedHStr
+        }
         if (cfg.actions && Array.isArray(cfg.actions) && cfg.actions.length > 0) {
-            return cfg.actions.map(function(a, idx) {
-                return {
-                    id: a.id || ("host-" + idx),
-                    label: a.label || "Host",
-                    host: a.host || a.target || "",
-                    user: a.user || ""
+            var fromActions = []
+            var seenA = {}
+            for (var aIdx = 0; aIdx < cfg.actions.length; aIdx++) {
+                var it = cfg.actions[aIdx]
+                if (!it) continue
+                var aLabel = (it.label || "").replace(/^(wake|ping|ssh|mosh|connect to)\s+/i, "").trim()
+                var aHost = it.host || ""
+                if (!aHost) {
+                    var rawT = it.target || ""
+                    if (/^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(rawT)) {
+                        aHost = aLabel
+                    } else {
+                        aHost = rawT || aLabel
+                    }
                 }
-            })
+                var aKey = (aLabel || aHost).toLowerCase()
+                if (aKey.length > 0 && !seenA[aKey]) {
+                    seenA[aKey] = true
+                    fromActions.push({
+                        id: it.id || ("host-" + fromActions.length + "-" + aKey.replace(/[^a-z0-9]/g, "-")),
+                        label: aLabel || aHost,
+                        host: aHost || aLabel,
+                        user: it.user || ""
+                    })
+                }
+            }
+            if (fromActions.length > 0) return fromActions
         }
         return defaultHosts
     }

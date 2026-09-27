@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Controls
 
 // Systems - Fleet health and system metrics monitor.
 // Polls Prometheus node_exporter processes across multiple Kubuntu / Linux machines
@@ -111,6 +112,81 @@ WidgetChrome {
         if (w.bridge && typeof w.bridge.executeCommand === "function") {
             w.bridge.executeCommand(launchCmd)
         }
+    }
+
+    property bool editingNodeMac: false
+    property string editMacInput: ""
+
+    function startEditMac(node) {
+        if (!node) return
+        w.editingNodeMac = true
+        w.editMacInput = node.mac || ""
+    }
+
+    function cancelEditMac() {
+        w.editingNodeMac = false
+        w.editMacInput = ""
+    }
+
+    function saveNodeMac(node, newMac) {
+        if (!node) return
+        var targetLabel = (node.label || "").trim()
+        var targetUrl = (node.url || "").trim()
+        var cleanMac = (newMac || "").trim()
+
+        var lines = w.hostsRaw.split(/[\n,;]+/)
+        var updatedLines = []
+        var matched = false
+
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim()
+            if (!line) continue
+            var parsed = normalizeUrl(line, w.defaultPort)
+            if (parsed.label === targetLabel || parsed.url === targetUrl
+                || parsed.label.toLowerCase() === targetLabel.toLowerCase()) {
+                var hostPart = parsed.url.replace(/^https?:\/\//i, "").replace(/\/metrics$/i, "")
+                var outLine = (parsed.label || targetLabel) + " | " + hostPart
+                if (cleanMac.length > 0) {
+                    outLine += " | " + cleanMac
+                    if (parsed.broadcast && parsed.broadcast !== "255.255.255.255") {
+                        outLine += " | " + parsed.broadcast
+                    }
+                }
+                updatedLines.push(outLine)
+                matched = true
+            } else {
+                updatedLines.push(line)
+            }
+        }
+
+        if (!matched && targetLabel.length > 0) {
+            var hostPart = targetUrl.replace(/^https?:\/\//i, "").replace(/\/metrics$/i, "")
+            var newLine = targetLabel + " | " + (hostPart || targetLabel)
+            if (cleanMac.length > 0) newLine += " | " + cleanMac
+            updatedLines.push(newLine)
+        }
+
+        var newHostsText = updatedLines.join("\n")
+        if (store && instanceId) {
+            store.setSetting(instanceId, "hosts", newHostsText)
+        }
+
+        if (w.localNodes && w.localNodes.length > 0) {
+            var updatedLocal = []
+            for (var k = 0; k < w.localNodes.length; k++) {
+                var ln = JSON.parse(JSON.stringify(w.localNodes[k]))
+                if (ln.label === targetLabel || ln.url === targetUrl
+                    || (ln.label && ln.label.toLowerCase() === targetLabel.toLowerCase())) {
+                    ln.mac = cleanMac
+                }
+                updatedLocal.push(ln)
+            }
+            w.localNodes = updatedLocal
+        }
+
+        w.editingNodeMac = false
+        w.editMacInput = ""
+        if (typeof refresh === "function") refresh()
     }
 
     Timer {
@@ -1581,15 +1657,141 @@ WidgetChrome {
                                     font.weight: Font.Bold
                                 }
 
-                                Text {
-                                    text: deepDivePanel.selNode && deepDivePanel.selNode.mac
-                                          ? ("MAC: " + deepDivePanel.selNode.mac)
-                                          : (deepDivePanel.selNode ? deepDivePanel.selNode.url : "")
-                                    color: theme.textTertiary
-                                    font.pixelSize: 12
-                                    font.family: theme.fontMono
+                                // Node Address or Inline MAC Editor
+                                RowLayout {
                                     Layout.fillWidth: true
-                                    elide: Text.ElideRight
+                                    spacing: 8
+
+                                    // When not editing MAC: show address and MAC badge/button
+                                    Text {
+                                        visible: !w.editingNodeMac
+                                        text: deepDivePanel.selNode ? deepDivePanel.selNode.url : ""
+                                        color: theme.textTertiary
+                                        font.pixelSize: 12
+                                        font.family: theme.fontMono
+                                        elide: Text.ElideRight
+                                        Layout.maximumWidth: 220
+                                    }
+
+                                    // MAC Badge / Edit Trigger
+                                    Rectangle {
+                                        visible: !w.editingNodeMac
+                                        implicitHeight: 34
+                                        implicitWidth: macRow.implicitWidth + 20
+                                        radius: 6
+                                        color: macEditHover.containsMouse ? theme.cardBackgroundHover : "transparent"
+                                        border.color: (deepDivePanel.selNode && deepDivePanel.selNode.mac) ? theme.cardBorder : theme.accent
+                                        border.width: 1
+
+                                        RowLayout {
+                                            id: macRow
+                                            anchors.centerIn: parent
+                                            spacing: 6
+                                            AppIcon {
+                                                name: "ui-edit"
+                                                size: 13
+                                                color: (deepDivePanel.selNode && deepDivePanel.selNode.mac) ? theme.textSecondary : theme.accent
+                                            }
+                                            Text {
+                                                text: deepDivePanel.selNode && deepDivePanel.selNode.mac
+                                                      ? ("MAC: " + deepDivePanel.selNode.mac)
+                                                      : "+ Set MAC for WoL"
+                                                font.pixelSize: 12
+                                                font.family: theme.fontMono
+                                                font.weight: (deepDivePanel.selNode && deepDivePanel.selNode.mac) ? Font.Normal : Font.Bold
+                                                color: (deepDivePanel.selNode && deepDivePanel.selNode.mac) ? theme.textSecondary : theme.accent
+                                            }
+                                        }
+                                        MouseArea {
+                                            id: macEditHover
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: w.startEditMac(deepDivePanel.selNode)
+                                        }
+                                    }
+
+                                    // When editing MAC: inline textfield + save + cancel
+                                    RowLayout {
+                                        visible: w.editingNodeMac
+                                        spacing: 8
+                                        Layout.fillWidth: true
+
+                                        Text {
+                                            text: "MAC:"
+                                            color: theme.textSecondary
+                                            font.pixelSize: 12
+                                            font.family: theme.fontMono
+                                            font.weight: Font.DemiBold
+                                        }
+
+                                        TextField {
+                                            id: macInputBox
+                                            Layout.preferredWidth: 180
+                                            Layout.preferredHeight: 34
+                                            placeholderText: "xx:xx:xx:xx:xx:xx"
+                                            text: w.editMacInput
+                                            onTextChanged: w.editMacInput = text
+                                            color: theme.textPrimary
+                                            font.pixelSize: 12
+                                            font.family: theme.fontMono
+                                            verticalAlignment: Text.AlignVCenter
+                                            onAccepted: w.saveNodeMac(deepDivePanel.selNode, w.editMacInput)
+                                            Keys.onEscapePressed: w.cancelEditMac()
+                                            background: Rectangle {
+                                                radius: 6
+                                                color: theme.cardBackground
+                                                border.color: parent.activeFocus ? theme.accent : theme.cardBorder
+                                                border.width: 1
+                                            }
+                                            Component.onCompleted: forceActiveFocus()
+                                        }
+
+                                        Rectangle {
+                                            implicitWidth: saveMacTxt.implicitWidth + 20
+                                            implicitHeight: 34
+                                            radius: 6
+                                            color: saveMacMa.containsMouse ? theme.accentHover : theme.accent
+                                            Text {
+                                                id: saveMacTxt
+                                                anchors.centerIn: parent
+                                                text: "Save MAC"
+                                                font.pixelSize: 12
+                                                font.weight: Font.DemiBold
+                                                color: "#FFFFFF"
+                                            }
+                                            MouseArea {
+                                                id: saveMacMa
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: w.saveNodeMac(deepDivePanel.selNode, w.editMacInput)
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            implicitWidth: cancelMacTxt.implicitWidth + 20
+                                            implicitHeight: 34
+                                            radius: 6
+                                            color: cancelMacMa.containsMouse ? theme.cardBackgroundHover : theme.cardBorder
+                                            Text {
+                                                id: cancelMacTxt
+                                                anchors.centerIn: parent
+                                                text: "Cancel"
+                                                font.pixelSize: 12
+                                                color: theme.textPrimary
+                                            }
+                                            MouseArea {
+                                                id: cancelMacMa
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: w.cancelEditMac()
+                                            }
+                                        }
+                                    }
+
+                                    Item { Layout.fillWidth: true }
                                 }
 
                                 // Ping Button
@@ -1875,6 +2077,37 @@ WidgetChrome {
                                         color: theme.textPrimary
                                         font.pixelSize: 14
                                         font.family: theme.fontMono
+                                    }
+
+                                    Text { text: "MAC Address (WoL):"; color: theme.textTertiary; font.pixelSize: 14 }
+                                    RowLayout {
+                                        spacing: 10
+                                        Text {
+                                            text: deepDivePanel.selNode && deepDivePanel.selNode.mac ? deepDivePanel.selNode.mac : "Not configured"
+                                            color: deepDivePanel.selNode && deepDivePanel.selNode.mac ? theme.textPrimary : theme.textTertiary
+                                            font.pixelSize: 14
+                                            font.family: theme.fontMono
+                                        }
+                                        Rectangle {
+                                            implicitHeight: 24
+                                            implicitWidth: editMacTableTxt.implicitWidth + 14
+                                            radius: 4
+                                            color: tableMacEditMa.containsMouse ? theme.cardBackgroundHover : theme.cardBorder
+                                            Text {
+                                                id: editMacTableTxt
+                                                anchors.centerIn: parent
+                                                text: deepDivePanel.selNode && deepDivePanel.selNode.mac ? "Edit" : "Set MAC"
+                                                font.pixelSize: 11
+                                                color: theme.textPrimary
+                                            }
+                                            MouseArea {
+                                                id: tableMacEditMa
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: w.startEditMac(deepDivePanel.selNode)
+                                            }
+                                        }
                                     }
 
                                     Text { text: "System Uptime:"; color: theme.textTertiary; font.pixelSize: 14 }
