@@ -9,6 +9,7 @@
 #include <QJsonObject>
 #include <QObject>
 #include <QProcess>
+#include <QRegularExpression>
 #include <QString>
 #include <QStringList>
 #include <QUrl>
@@ -512,12 +513,71 @@ public:
                                        QStringList{QStringLiteral("-c"), command.trimmed()});
     }
 
+    // Ping a remote host via ICMP echo. Returns a QVariantMap:
+    //   "host": host
+    //   "ok": bool
+    //   "latencyMs": double
+    //   "error": QString
+    static QVariantMap pingHostStatic(const QString& host, int timeoutSec = 2) {
+        QVariantMap result;
+        const QString trimmed = host.trimmed();
+        result[QStringLiteral("host")] = trimmed;
+        result[QStringLiteral("ok")] = false;
+        result[QStringLiteral("latencyMs")] = -1.0;
+        result[QStringLiteral("error")] = QString();
+
+        if (trimmed.isEmpty()) {
+            result[QStringLiteral("error")] = QStringLiteral("Empty host");
+            return result;
+        }
+
+        // Host validation (hostname or IPv4/IPv6 address)
+        static const QRegularExpression hostRe(QStringLiteral("^[a-zA-Z0-9_.:-]+$"));
+        if (!hostRe.match(trimmed).hasMatch()) {
+            result[QStringLiteral("error")] = QStringLiteral("Invalid host name or IP");
+            return result;
+        }
+
+        QProcess proc;
+        QStringList args;
+        const int clampedTimeout = std::max(1, std::min(5, timeoutSec));
+        args << QStringLiteral("-c") << QStringLiteral("1")
+             << QStringLiteral("-W") << QString::number(clampedTimeout)
+             << trimmed;
+
+        proc.start(QStringLiteral("ping"), args);
+        if (!proc.waitForFinished((clampedTimeout + 1) * 1000)) {
+            proc.kill();
+            result[QStringLiteral("error")] = QStringLiteral("Timeout");
+            return result;
+        }
+
+        if (proc.exitCode() == 0) {
+            result[QStringLiteral("ok")] = true;
+            const QString out = QString::fromUtf8(proc.readAllStandardOutput());
+            static const QRegularExpression timeRe(QStringLiteral("time=([0-9.]+)"));
+            const auto match = timeRe.match(out);
+            if (match.hasMatch()) {
+                result[QStringLiteral("latencyMs")] = match.captured(1).toDouble();
+            } else {
+                result[QStringLiteral("latencyMs")] = 0.0;
+            }
+        } else {
+            result[QStringLiteral("error")] = QStringLiteral("Host unreachable");
+        }
+        return result;
+    }
+
     Q_INVOKABLE int sendWakeOnLan(const QString& mac, const QString& broadcastIp = QString()) const {
         return sendWakeOnLanStatic(mac, broadcastIp);
     }
 
     Q_INVOKABLE bool executeCommand(const QString& command) const {
         return executeCommandStatic(command);
+    }
+
+    Q_INVOKABLE QVariantMap pingHost(const QString& host, int timeoutSec = 2) const {
+        return pingHostStatic(host, timeoutSec);
     }
 
     // --- Managed / org policy (E9) --------------------------------------------

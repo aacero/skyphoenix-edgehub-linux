@@ -360,6 +360,10 @@ public:
         return ConfigBridge::executeCommandStatic(command);
     }
 
+    Q_INVOKABLE QVariantMap pingHost(const QString& host, int timeoutSec = 2) const {
+        return ConfigBridge::pingHostStatic(host, timeoutSec);
+    }
+
     // ── configBridge-compatible surface (DashboardStore uses these) ──
     Q_INVOKABLE QString uiState() const {
         if (!m_config) return QString();

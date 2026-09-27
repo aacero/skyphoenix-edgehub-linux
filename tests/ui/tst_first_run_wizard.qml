@@ -9,7 +9,7 @@ import "../../ui/qml" as App
 // through wizardBridge.completeWizard (success + failure messaging).
 Item {
     id: root
-    width: 800; height: 1000
+    width: 800; height: 2560
 
     property alias theme: _theme
     App.Theme { id: _theme }
@@ -68,7 +68,7 @@ Item {
             wizardBridge.nextResult = true
             // Layout visibility changes are polished on the next event-loop
             // turn. Wait before hit-testing the newly visible step controls.
-            wait(16)
+            wait(50)
         }
 
         // ── Screens parsing ──────────────────────────────────────────────────
@@ -85,15 +85,16 @@ Item {
             var next = findButton("Get Started →")
             verify(next !== null, "step-0 primary button present")
             mouseClick(next)
-            compare(wiz.currentStep, 1, "Get Started advances to step 1")
+            tryCompare(wiz, "currentStep", 1, 2000, "Get Started advances to step 1")
         }
 
         function test_back_decrements_step() {
             wiz.currentStep = 2
+            wait(50)
             var back = findButton("← Back")
             verify(back !== null, "Back button visible past step 0")
             mouseClick(back)
-            compare(wiz.currentStep, 1, "Back returns to the previous step")
+            tryCompare(wiz, "currentStep", 1, 2000, "Back returns to the previous step")
         }
 
         function test_back_hidden_on_first_step() {

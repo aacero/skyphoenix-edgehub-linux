@@ -904,6 +904,24 @@ private slots:
         QVERIFY(!bridge.executeCommand(QStringLiteral("   ")));
         QVERIFY(bridge.executeCommand(QStringLiteral("true")));
     }
+
+    void pingHostValidation() {
+        ConfigBridge bridge(cfg_);
+        const auto empty = bridge.pingHost(QString());
+        QCOMPARE(empty.value(QStringLiteral("ok")).toBool(), false);
+        QCOMPARE(empty.value(QStringLiteral("error")).toString(), QStringLiteral("Empty host"));
+
+        const auto whitespace = bridge.pingHost(QStringLiteral("   "));
+        QCOMPARE(whitespace.value(QStringLiteral("ok")).toBool(), false);
+
+        const auto invalid = bridge.pingHost(QStringLiteral("host; rm -rf /"));
+        QCOMPARE(invalid.value(QStringLiteral("ok")).toBool(), false);
+        QCOMPARE(invalid.value(QStringLiteral("error")).toString(), QStringLiteral("Invalid host name or IP"));
+
+        const auto loopback = bridge.pingHost(QStringLiteral("127.0.0.1"), 1);
+        QCOMPARE(loopback.value(QStringLiteral("ok")).toBool(), true);
+        QVERIFY(loopback.value(QStringLiteral("latencyMs")).toDouble() >= 0.0);
+    }
 };
 
 QTEST_GUILESS_MAIN(TstConfigBridge)

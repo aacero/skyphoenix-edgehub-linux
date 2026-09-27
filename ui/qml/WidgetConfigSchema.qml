@@ -933,11 +933,15 @@ QtObject {
             about("Real-time time-series telemetry charts querying Prometheus or Grafana endpoints directly with hardware-accelerated vector rendering and interactive touch scrubbing.") ] }
 
         case "quickactions": return { sections: [
+            { title: "Macro Actions", cols: 1, fields: [
+                { key: "actionsText", label: "Actions List", type: "textarea",
+                  placeholder: "Wake aframe | wol | 00:11:22:33:44:55\nWake deerpark | wol | 00:11:22:33:44:56\nPing deerpark | ping | deerpark.local\nSSH to deerpark | ssh | deerpark\nMosh to palatka | mosh | palatka",
+                  help: "List of macro buttons (one per line): Label | Type (wol/ping/ssh/mosh/command/webhook) | Target | Broadcast IP (optional for wol). Editing this updates the macro buttons live on the Edge." } ] },
             { title: "Presentation", cols: 1, fields: [
                 { key: "showStatusBanner", label: "Show result notice banner", type: "toggle", dflt: true,
                   help: "Displays a temporary confirmation or error banner at the bottom of the card after triggering an action." } ] },
             titleSection("Quick Actions"),
-            about("Tactile macro buttons to broadcast Wake-on-LAN packets to homelab servers, execute background shell commands, and trigger automation webhooks.") ] }
+            about("Tactile macro buttons to broadcast Wake-on-LAN packets, check host reachability via Ping, spawn interactive SSH/Mosh terminal sessions, and trigger automation commands.") ] }
 
         default: return { sections: [ titleSection(type) ] }
         }

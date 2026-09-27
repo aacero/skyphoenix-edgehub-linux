@@ -23,6 +23,7 @@
         <file alias="net.svg">icons/net.svg</file>
         <file alias="notes.svg">icons/notes.svg</file>
         <file alias="packages.svg">icons/packages.svg</file>
+        <file alias="quickactions.svg">icons/quickactions.svg</file>
         <file alias="quote.svg">icons/quote.svg</file>
         <file alias="ram.svg">icons/ram.svg</file>
         <file alias="rightnow.svg">icons/rightnow.svg</file>

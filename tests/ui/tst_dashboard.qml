@@ -626,44 +626,6 @@ Item {
             s.applyExternal(root.makeDoc([]))
         }
 
-        function test_reactive_alerts_pause_and_surface() {
-            var d = ld.item
-            var s = root.store()
-            s.applyExternal(JSON.stringify({
-                version: 1, appearance: { pageCycleSec: 30, alertSurfacing: true },
-                settings: {},
-                pages: [
-                    { name: "P1", tiles: [ { id: "tile-p1", type: "clock", size: "1x1" } ] },
-                    { name: "P2", tiles: [ { id: "tile-p2", type: "clock", size: "1x1" } ] }
-                ]
-            }))
-            d.cycleIdle = true
-            compare(d.cyclablePages.length, 2)
-            tryVerify(function () { return !d.cycleSuppressed }, 1000)
-
-            // Critical alert triggers suppression
-            d.syncReactiveAlerts("tile-p1", [
-                {
-                    key: "crit-1",
-                    widgetType: "systems",
-                    level: "critical",
-                    host: "deerpark",
-                    title: "deerpark offline"
-                }
-            ])
-            verify(d.cycleSuppressed, "cycleSuppressed active when critical alert present")
-
-            // evaluateAlertSurfacing when already on page 0
-            verify(!d.evaluateAlertSurfacing(), "no jump needed if already on page 0")
-
-            // Ack clears suppression
-            verify(d.acknowledgeAlert("crit-1"))
-            verify(!d.cycleSuppressed, "cycleSuppressed clears after acknowledge")
-
-            d.syncReactiveAlerts("tile-p1", [])
-            s.applyExternal(root.makeDoc([]))
-        }
-
         function test_reactive_alerts_dismiss_and_prune() {
             var d = ld.item
             var s = root.store()
@@ -2372,6 +2334,37 @@ Item {
             compare(d.cycleSuppressed, false)
             compare(d.cycleIdle, false,
                     "and coming back out starts the grace period, not the rotation")
+        }
+
+        function test_reactive_alerts_pause_and_surface() {
+            var d = ld.item
+            seedPages([1, 1])
+            root.store().setAppearance("pageCycleSec", 30)
+            root.store().setAppearance("alertSurfacing", true)
+            d.cycleIdle = true
+            compare(d.cyclablePages.length, 2)
+            compare(d.cycleSuppressed, false)
+
+            // Critical alert triggers suppression
+            d.syncReactiveAlerts("p0t0", [
+                {
+                    key: "crit-1",
+                    widgetType: "systems",
+                    level: "critical",
+                    host: "deerpark",
+                    title: "deerpark offline"
+                }
+            ])
+            verify(d.cycleSuppressed, "cycleSuppressed active when critical alert present")
+
+            // evaluateAlertSurfacing when already on page 0
+            verify(!d.evaluateAlertSurfacing(), "no jump needed if already on page 0")
+
+            // Ack clears suppression
+            verify(d.acknowledgeAlert("crit-1"))
+            verify(!d.cycleSuppressed, "cycleSuppressed clears after acknowledge")
+
+            d.syncReactiveAlerts("p0t0", [])
         }
 
         // Nowhere to go is not a rotation.

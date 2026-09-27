@@ -42,6 +42,56 @@ WidgetChrome {
         return (store && instanceId) ? JSON.parse(JSON.stringify(store.settingsFor(instanceId))) : ({})
     }
 
+    function defaultIconForType(t) {
+        if (t === "wol") return "hard-drives"
+        if (t === "ping") return "heartbeat"
+        if (t === "ssh") return "code"
+        if (t === "mosh") return "sparkle"
+        if (t === "command") return "code"
+        if (t === "webhook") return "httpjson"
+        return "sparkle"
+    }
+
+    function parseActionsText(text) {
+        if (!text || typeof text !== "string") return []
+        var lines = text.split("\n")
+        var list = []
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim()
+            if (!line || line.startsWith("#")) continue
+            var parts = line.split("|").map(function(p) { return p.trim() })
+            if (parts.length >= 3) {
+                var label = parts[0]
+                var type = parts[1].toLowerCase()
+                var target = parts[2]
+                var broadcast = parts.length >= 4 ? parts[3] : "255.255.255.255"
+                list.push({
+                    id: "act-" + i + "-" + label.toLowerCase().replace(/[^a-z0-9]/g, "-"),
+                    label: label,
+                    type: type,
+                    target: target,
+                    broadcast: broadcast,
+                    icon: defaultIconForType(type)
+                })
+            }
+        }
+        return list
+    }
+
+    function formatActionsText(actionList) {
+        if (!actionList || !Array.isArray(actionList)) return ""
+        var lines = []
+        for (var i = 0; i < actionList.length; i++) {
+            var a = actionList[i]
+            var line = (a.label || "Action") + " | " + (a.type || "wol") + " | " + (a.target || "")
+            if (a.type === "wol" && a.broadcast && a.broadcast !== "255.255.255.255") {
+                line += " | " + a.broadcast
+            }
+            lines.push(line)
+        }
+        return lines.join("\n")
+    }
+
     readonly property var defaultActions: [
         { id: "wol-aframe", label: "Wake aframe", icon: "hard-drives", type: "wol", target: "00:11:22:33:44:55", broadcast: "255.255.255.255" },
         { id: "wol-deerpark", label: "Wake deerpark", icon: "hard-drives", type: "wol", target: "00:11:22:33:44:56", broadcast: "255.255.255.255" },
@@ -49,7 +99,16 @@ WidgetChrome {
         { id: "wol-pelican", label: "Wake pelican", icon: "hard-drives", type: "wol", target: "00:11:22:33:44:58", broadcast: "255.255.255.255" }
     ]
 
-    readonly property var actions: (cfg.actions && Array.isArray(cfg.actions) && cfg.actions.length > 0) ? cfg.actions : defaultActions
+    readonly property var actions: {
+        if (cfg.actionsText && typeof cfg.actionsText === "string" && cfg.actionsText.trim().length > 0) {
+            var parsed = parseActionsText(cfg.actionsText)
+            if (parsed.length > 0) return parsed
+        }
+        if (cfg.actions && Array.isArray(cfg.actions) && cfg.actions.length > 0) {
+            return cfg.actions
+        }
+        return defaultActions
+    }
     readonly property bool showStatusBanner: cfg.showStatusBanner !== undefined ? cfg.showStatusBanner : true
 
     property var actionStates: ({})
@@ -106,6 +165,71 @@ WidgetChrome {
             }
             w.actionStates = updated
             resetNoticeTimer.restart()
+        } else if (actType === "ping") {
+            var pingTarget = (action.target || "").trim()
+            if (!pingTarget.length) {
+                var pingErr = JSON.parse(JSON.stringify(w.actionStates))
+                pingErr[actionId] = { status: "error", time: Date.now(), detail: "No host" }
+                w.actionStates = pingErr
+                w.lastNotice = "✕ Target host missing"
+                w.lastNoticeColor = theme.error
+                resetNoticeTimer.restart()
+                return
+            }
+
+            var pingRes = { ok: false, error: "Unavailable", latencyMs: -1 }
+            if (w.bridge && typeof w.bridge.pingHost === "function") {
+                pingRes = w.bridge.pingHost(pingTarget, 2)
+            }
+            var updatedPing = JSON.parse(JSON.stringify(w.actionStates))
+            if (pingRes && pingRes.ok) {
+                var lat = (pingRes.latencyMs >= 0) ? (pingRes.latencyMs.toFixed(1) + " ms") : "ok"
+                updatedPing[actionId] = { status: "ok", time: Date.now(), detail: lat }
+                w.lastNotice = "✓ " + pingTarget + " is reachable (" + lat + ")"
+                w.lastNoticeColor = theme.success
+            } else {
+                var errDetail = (pingRes && pingRes.error) ? pingRes.error : "unreachable"
+                updatedPing[actionId] = { status: "error", time: Date.now(), detail: errDetail }
+                w.lastNotice = "✕ " + pingTarget + " is " + errDetail
+                w.lastNoticeColor = theme.error
+            }
+            w.actionStates = updatedPing
+            resetNoticeTimer.restart()
+        } else if (actType === "ssh" || actType === "mosh") {
+            var targetHost = (action.target || "").trim()
+            if (!targetHost.length) {
+                var errStates = JSON.parse(JSON.stringify(w.actionStates))
+                errStates[actionId] = { status: "error", time: Date.now() }
+                w.actionStates = errStates
+                w.lastNotice = "✕ Target host missing"
+                w.lastNoticeColor = theme.error
+                resetNoticeTimer.restart()
+                return
+            }
+
+            var bin = (actType === "ssh") ? "ssh" : "mosh"
+            // Spawn an interactive terminal emulator running ssh or mosh to target
+            var launchCmd = "for t in \"$TERMINAL\" foot alacritty kitty ghostty konsole gnome-terminal xterm; do "
+                          + "if command -v \"$t\" >/dev/null 2>&1; then "
+                          + "exec \"$t\" -e " + bin + " " + targetHost + "; "
+                          + "fi; done"
+
+            var termOk = false
+            if (w.bridge && typeof w.bridge.executeCommand === "function") {
+                termOk = w.bridge.executeCommand(launchCmd)
+            }
+            var updatedTerm = JSON.parse(JSON.stringify(w.actionStates))
+            if (termOk) {
+                updatedTerm[actionId] = { status: "ok", time: Date.now() }
+                w.lastNotice = "✓ Launched " + bin.toUpperCase() + " terminal for " + targetHost
+                w.lastNoticeColor = theme.success
+            } else {
+                updatedTerm[actionId] = { status: "error", time: Date.now() }
+                w.lastNotice = "✕ Failed to launch terminal for " + targetHost
+                w.lastNoticeColor = theme.error
+            }
+            w.actionStates = updatedTerm
+            resetNoticeTimer.restart()
         } else if (actType === "command") {
             var cmd = action.target || ""
             var ok = false
@@ -146,6 +270,7 @@ WidgetChrome {
     function saveActionList(newList) {
         if (!store || !instanceId) return
         store.setSetting(instanceId, "actions", newList)
+        store.setSetting(instanceId, "actionsText", formatActionsText(newList))
     }
 
     function deleteAction(actionId) {
@@ -158,6 +283,17 @@ WidgetChrome {
         saveActionList(list)
     }
 
+    function startEdit(action) {
+        if (!action) return
+        w.isAdding = false
+        w.editId = action.id || ""
+        w.editLabel = action.label || ""
+        w.editType = action.type || "wol"
+        w.editTarget = action.target || ""
+        w.editBroadcast = action.broadcast || "255.255.255.255"
+        w.editIcon = action.icon || defaultIconForType(action.type)
+    }
+
     function commitEdit() {
         if (!w.editLabel.trim().length || !w.editTarget.trim().length) return
         var list = JSON.parse(JSON.stringify(w.actions))
@@ -167,18 +303,21 @@ WidgetChrome {
             type: w.editType,
             target: w.editTarget.trim(),
             broadcast: w.editBroadcast.trim(),
-            icon: w.editIcon
+            icon: w.editIcon || defaultIconForType(w.editType)
         }
 
         if (w.isAdding) {
             list.push(item)
         } else {
+            var found = false
             for (var i = 0; i < list.length; i++) {
                 if (list[i].id === w.editId) {
                     list[i] = item
+                    found = true
                     break
                 }
             }
+            if (!found) list.push(item)
         }
         saveActionList(list)
         cancelEdit()
@@ -265,7 +404,7 @@ WidgetChrome {
                         AppIcon {
                             id: actIcon
                             Layout.alignment: Qt.AlignVCenter
-                            name: act.icon || (act.type === "wol" ? "hard-drives" : (act.type === "command" ? "code" : "sparkle"))
+                            name: act.icon || w.defaultIconForType(act.type)
                             size: 22
                             color: {
                                 if (st === "ok") return theme.success
@@ -294,10 +433,26 @@ WidgetChrome {
                             Text {
                                 Layout.fillWidth: true
                                 text: {
-                                    if (st === "sending") return "Sending..."
-                                    if (st === "ok") return "Sent!"
-                                    if (st === "error") return "Failed"
+                                    if (st === "sending") {
+                                        if (act.type === "ping") return "Pinging..."
+                                        if (act.type === "ssh" || act.type === "mosh") return "Launching..."
+                                        if (act.type === "wol") return "Waking..."
+                                        return "Sending..."
+                                    }
+                                    if (st === "ok") {
+                                        if (act.type === "ping" && stateObj.detail) return "✓ " + stateObj.detail
+                                        if (act.type === "ssh" || act.type === "mosh") return "Terminal open"
+                                        if (act.type === "wol") return "Packet sent"
+                                        return "Done"
+                                    }
+                                    if (st === "error") {
+                                        if (act.type === "ping" && stateObj.detail) return "✕ " + stateObj.detail
+                                        return "Failed"
+                                    }
                                     if (act.type === "wol") return "WoL · " + (act.target || "")
+                                    if (act.type === "ping") return "Ping · " + (act.target || "")
+                                    if (act.type === "ssh") return "SSH · " + (act.target || "")
+                                    if (act.type === "mosh") return "Mosh · " + (act.target || "")
                                     if (act.type === "command") return "Command"
                                     return "Webhook"
                                 }
@@ -315,7 +470,7 @@ WidgetChrome {
                         // Type Badge or Status Indicator
                         Rectangle {
                             Layout.alignment: Qt.AlignVCenter
-                            width: 38
+                            implicitWidth: Math.max(38, typeBadgeText.implicitWidth + 8)
                             height: 20
                             radius: 4
                             color: {
@@ -326,12 +481,19 @@ WidgetChrome {
                             }
 
                             Text {
+                                id: typeBadgeText
                                 anchors.centerIn: parent
                                 text: {
                                     if (st === "sending") return "..."
-                                    if (st === "ok") return "✓"
+                                    if (st === "ok") {
+                                        if (act.type === "ping" && stateObj.detail) return stateObj.detail
+                                        return "✓"
+                                    }
                                     if (st === "error") return "✕"
                                     if (act.type === "wol") return "WoL"
+                                    if (act.type === "ping") return "PING"
+                                    if (act.type === "ssh") return "SSH"
+                                    if (act.type === "mosh") return "MOSH"
                                     if (act.type === "command") return "CMD"
                                     return "URL"
                                 }
@@ -447,8 +609,11 @@ WidgetChrome {
                             Layout.fillWidth: true
                             options: [
                                 { label: "Wake-on-LAN", value: "wol" },
-                                { label: "Shell Command", value: "command" },
-                                { label: "Webhook URL", value: "webhook" }
+                                { label: "Ping", value: "ping" },
+                                { label: "SSH", value: "ssh" },
+                                { label: "Mosh", value: "mosh" },
+                                { label: "Command", value: "command" },
+                                { label: "Webhook", value: "webhook" }
                             ]
                             currentValue: w.editType
                             onSelected: function(v) { w.editType = v }
@@ -474,7 +639,13 @@ WidgetChrome {
 
                         TextField {
                             Layout.fillWidth: true
-                            placeholderText: w.editType === "wol" ? "MAC Address (e.g. 00:11:22:33:44:55)" : (w.editType === "command" ? "Shell Command" : "http://...")
+                            placeholderText: {
+                                if (w.editType === "wol") return "MAC Address (e.g. 00:11:22:33:44:55)"
+                                if (w.editType === "ping") return "Hostname or IP (e.g. deerpark or 192.168.1.10)"
+                                if (w.editType === "ssh" || w.editType === "mosh") return "Host or user@host (e.g. deerpark or acero@deerpark)"
+                                if (w.editType === "command") return "Shell command (e.g. systemctl restart ...)"
+                                return "Webhook URL (e.g. http://192.168.1.5:8123/...)"
+                            }
                             text: w.editTarget
                             onTextChanged: w.editTarget = text
                             color: theme.textPrimary
@@ -512,7 +683,7 @@ WidgetChrome {
                         }
 
                         PillButton {
-                            label: "Save Action"
+                            label: w.isAdding ? "Add Action" : "Save Changes"
                             primary: true
                             onClicked: w.commitEdit()
                         }
@@ -520,7 +691,7 @@ WidgetChrome {
                 }
             }
 
-            // List of configured actions for deletion
+            // List of configured actions for management
             Repeater {
                 model: w.actions
                 delegate: RowLayout {
@@ -528,7 +699,7 @@ WidgetChrome {
                     spacing: 10
 
                     AppIcon {
-                        name: modelData.icon || "hard-drives"
+                        name: modelData.icon || w.defaultIconForType(modelData.type)
                         size: 18
                         color: theme.textSecondary
                     }
@@ -542,12 +713,17 @@ WidgetChrome {
                     }
 
                     Text {
-                        text: "(" + (modelData.type || "wol") + ": " + (modelData.target || "") + ")"
+                        text: "(" + (modelData.type || "wol").toUpperCase() + ": " + (modelData.target || "") + ")"
                         color: theme.textTertiary
                         font.family: theme.fontDisplay
                         font.pixelSize: theme.fontCaption
                         Layout.fillWidth: true
                         elide: Text.ElideRight
+                    }
+
+                    PillButton {
+                        label: "Edit"
+                        onClicked: w.startEdit(modelData)
                     }
 
                     PillButton {

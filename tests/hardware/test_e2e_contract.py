@@ -7,8 +7,10 @@ Xeneon display, so CI can catch drift before a hardware run.
 """
 
 import ast
+import importlib.util
 import os
 import re
+import shutil
 import sys
 import tempfile
 import unittest
@@ -460,6 +462,7 @@ class TestManagerWindowProof(unittest.TestCase):
         pointer.swipe.assert_not_called()
         self.assertEqual(1, guarded.refused)
 
+    @unittest.skipUnless(shutil.which("python3") and importlib.util.find_spec("PIL"), "PIL (Pillow) not installed")
     def test_selected_sidebar_row_is_detected_for_every_manager_accent_mode(self):
         from PIL import Image
 
@@ -477,6 +480,7 @@ class TestManagerWindowProof(unittest.TestCase):
                         image.save(path)
                         self.assertEqual("Screens", manager_window.active_row(path))
 
+    @unittest.skipUnless(shutil.which("python3") and importlib.util.find_spec("PIL"), "PIL (Pillow) not installed")
     def test_sidebar_without_one_selected_row_is_not_the_manager(self):
         from PIL import Image
 
