@@ -346,6 +346,8 @@ WidgetChrome {
     property int avgCloud: 0
     property var bestWindow: null
     property double lastSuccessMs: 0
+    property string lastSuccessStr: ""
+    property string observingDateLabel: ""
     property var _fxhr: null
     property int _fseq: 0
 
@@ -392,16 +394,28 @@ WidgetChrome {
                 return
             }
             var t = j.hourly.time, c = j.hourly.cloud_cover
-            var today = t[0].slice(0, 10)
-            var tomorrow = ""
-            for (var i = 0; i < t.length; i++) {
-                if (t[i].slice(0, 10) !== today) { tomorrow = t[i].slice(0, 10); break }
+            if (!t || !c || !t.length) {
+                w.errorText = "Invalid data"
+                return
             }
+
+            // Reference evening date based on currentDate()
+            var ref = currentDate()
+            var eveDate = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate(), 12, 0, 0)
+            if (ref.getHours() < 6) {
+                eveDate = new Date(eveDate.getTime() - 24 * 3600000)
+            }
+            var mornDate = new Date(eveDate.getTime() + 24 * 3600000)
+
+            function _p2(num) { return (num < 10 ? "0" : "") + num }
+            var targetEve = eveDate.getFullYear() + "-" + _p2(eveDate.getMonth() + 1) + "-" + _p2(eveDate.getDate())
+            var targetMorn = mornDate.getFullYear() + "-" + _p2(mornDate.getMonth() + 1) + "-" + _p2(mornDate.getDate())
+
             var win = []
             for (var k = 0; k < t.length; k++) {
-                var d = t[k].slice(0, 10)
+                var itemDate = t[k].slice(0, 10)
                 var hr = parseInt(t[k].slice(11, 13), 10)
-                if ((d === today && hr >= 20) || (d === tomorrow && hr <= 2)) {
+                if ((itemDate === targetEve && hr >= 20) || (itemDate === targetMorn && hr <= 2)) {
                     win.push({
                         hr: hr,
                         cloud: c[k],
@@ -409,6 +423,28 @@ WidgetChrome {
                     })
                 }
             }
+
+            var resolvedEveStr = targetEve
+            if (!win.length) {
+                var today = t[0].slice(0, 10)
+                var tomorrow = ""
+                for (var i = 0; i < t.length; i++) {
+                    if (t[i].slice(0, 10) !== today) { tomorrow = t[i].slice(0, 10); break }
+                }
+                resolvedEveStr = today
+                for (var k2 = 0; k2 < t.length; k2++) {
+                    var d2 = t[k2].slice(0, 10)
+                    var hr2 = parseInt(t[k2].slice(11, 13), 10)
+                    if ((d2 === today && hr2 >= 20) || (d2 === tomorrow && hr2 <= 2)) {
+                        win.push({
+                            hr: hr2,
+                            cloud: c[k2],
+                            label: formatHour(hr2)
+                        })
+                    }
+                }
+            }
+
             if (!win.length) {
                 w.errorText = "No evening data"
                 return
@@ -425,6 +461,16 @@ WidgetChrome {
             w.cloudLoaded = true
             w.errorText = ""
             w.lastSuccessMs = Date.now()
+            w.lastSuccessStr = Qt.formatTime(new Date(), "h:mm AP")
+
+            var todayRef = ref.getFullYear() + "-" + _p2(ref.getMonth() + 1) + "-" + _p2(ref.getDate())
+            if (resolvedEveStr === todayRef) {
+                w.observingDateLabel = "Tonight (" + Qt.formatDate(eveDate, "ddd MMM d") + ")"
+            } else if (ref.getHours() < 6) {
+                w.observingDateLabel = "Tonight (" + Qt.formatDate(eveDate, "ddd MMM d") + ")"
+            } else {
+                w.observingDateLabel = Qt.formatDate(eveDate, "ddd MMM d")
+            }
         } catch (e) {
             w.errorText = "Parse error"
         }
@@ -437,7 +483,7 @@ WidgetChrome {
             return
         }
         var url = "https://api.open-meteo.com/v1/forecast?latitude=" + w.lat + "&longitude=" + w.lon
-                + "&hourly=cloud_cover&timezone=auto&forecast_days=2"
+                + "&hourly=cloud_cover&timezone=auto&forecast_days=2&past_days=1"
         if (w._fxhr) { try { w._fxhr.abort() } catch (e) {} }
         w._fxhr = null
         w.loading = true
@@ -516,16 +562,26 @@ WidgetChrome {
         if (seq === _geocodeSeq) _geocodeXhr = xhr
     }
 
-    // Auto-refresh every 30 minutes when active
+    // Auto-refresh when active and data is missing or older than 15 minutes
     Timer {
         id: pollTimer
-        interval: 1800000 // 30 min
-        running: w.active && w.locationConfigured
+        interval: 60000 // Check every minute
+        running: w.locationConfigured
         repeat: true
-        onTriggered: w.refresh()
+        onTriggered: {
+            if (w.active) {
+                var age = Date.now() - w.lastSuccessMs
+                if (!w.cloudLoaded || age >= 900000) w.refresh()
+            }
+        }
     }
 
-    onActiveChanged: if (active && locationConfigured && !cloudLoaded) refresh()
+    onActiveChanged: {
+        if (active && locationConfigured) {
+            var age = Date.now() - w.lastSuccessMs
+            if (!cloudLoaded || age >= 900000) refresh()
+        }
+    }
     onLatChanged: if (locationConfigured) refresh()
     onLonChanged: if (locationConfigured) refresh()
 
@@ -681,6 +737,13 @@ WidgetChrome {
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
                             }
+
+                            Text {
+                                visible: w.lastSuccessStr.length > 0
+                                text: "· " + (w.loading ? "Updating…" : ("Updated " + w.lastSuccessStr))
+                                font.pixelSize: theme.fontMinimum
+                                color: theme.textTertiary
+                            }
                         }
                     }
                 }
@@ -781,6 +844,8 @@ WidgetChrome {
 
                     RowLayout {
                         Layout.fillWidth: true
+                        spacing: theme.spacingSm
+
                         Text {
                             text: "🔭 OBSERVING WINDOW (8 PM – 2 AM)"
                             font.pixelSize: theme.fontMinimum
@@ -788,10 +853,53 @@ WidgetChrome {
                             color: theme.textSecondary
                         }
                         Text {
-                            text: "· Sky Clarity"
+                            text: "· " + (w.observingDateLabel.length ? w.observingDateLabel : "Tonight")
+                            font.pixelSize: theme.fontMinimum
+                            font.bold: true
+                            color: w.accentColor
+                            elide: Text.ElideRight
+                        }
+                        Item { Layout.fillWidth: true }
+                        Text {
+                            visible: w.lastSuccessMs > 0 || w.loading
+                            text: w.loading ? "Refreshing…" : (w.lastSuccessStr.length ? ("Updated " + w.lastSuccessStr) : "")
+                            font.pixelSize: theme.fontMinimum - 1
+                            color: w.loading ? w.accentColor : theme.textTertiary
+                        }
+                        Rectangle {
+                            id: cardRefreshBtn
+                            width: 28; height: 28
+                            radius: 14
+                            color: cardRefHover.containsMouse ? theme.cardBackgroundHover : Qt.rgba(255, 255, 255, 0.06)
+                            border.color: theme.cardBorder; border.width: 1
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "↻"
+                                font.pixelSize: 15
+                                font.bold: true
+                                color: w.loading ? w.accentColor : (cardRefHover.containsMouse ? theme.textPrimary : theme.textSecondary)
+                                rotation: w.loading ? 360 : 0
+                                Behavior on rotation {
+                                    NumberAnimation { duration: 800; loops: Animation.Infinite; running: w.loading }
+                                }
+                            }
+                            MouseArea {
+                                id: cardRefHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: w.refresh()
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: "Sky Clarity"
                             font.pixelSize: theme.fontMinimum - 1
                             color: theme.textSecondary
-                            visible: w.twoColumn
                             Layout.fillWidth: true
                         }
                         Text {

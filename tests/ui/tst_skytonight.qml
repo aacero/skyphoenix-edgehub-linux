@@ -243,6 +243,30 @@ Item {
             compare(w.verdict, "Overcast — skywatching unlikely")
             compare(w.verdictEmoji, "☁️")
         }
+
+        function test_cloud_freshness_and_observing_labels() {
+            var w = h.item
+            var mockPayload = JSON.stringify({
+                hourly: {
+                    time: [
+                        "2026-09-27T18:00",
+                        "2026-09-27T19:00",
+                        "2026-09-27T20:00",
+                        "2026-09-27T21:00",
+                        "2026-09-27T22:00",
+                        "2026-09-27T23:00",
+                        "2026-09-28T00:00",
+                        "2026-09-28T01:00",
+                        "2026-09-28T02:00"
+                    ],
+                    cloud_cover: [20, 15, 0, 0, 0, 0, 5, 0, 0]
+                }
+            })
+            w._applyCloudData(mockPayload)
+            verify(w.lastSuccessMs > 0, "lastSuccessMs populated")
+            verify(w.lastSuccessStr.length > 0, "lastSuccessStr populated: " + w.lastSuccessStr)
+            verify(w.observingDateLabel.length > 0, "observingDateLabel populated: " + w.observingDateLabel)
+        }
     }
 
     // ── 4. Location Configuration and Fallback ──────────────────────────────
