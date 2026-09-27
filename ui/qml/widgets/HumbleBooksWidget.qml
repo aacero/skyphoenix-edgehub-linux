@@ -28,7 +28,26 @@ WidgetChrome {
 
     // Test seams for offline deterministic testing and external URL dispatch
     property var xhrFactory: null
-    property var externalOpener: function(url) { return Qt.openUrlExternally(url) }
+    property var bridge: (typeof configBridge !== "undefined") ? configBridge : null
+    property var externalOpener: function(url) {
+        if (!url) return false
+        var safeUrl = String(url).trim().replace(/["'`$\\]/g, "")
+        if (w.bridge && typeof w.bridge.executeCommand === "function") {
+            var cmd = "if command -v hyprctl >/dev/null 2>&1; then "
+                    + "  TARGET_MON=$(hyprctl monitors 2>/dev/null | awk '/^Monitor / { cur=$2; mons[n++] = cur } /at 0x0/ { origin = cur } tolower($0) ~ /(xeneon|edge)/ { edge[cur] = 1 } END { if (origin && !edge[origin]) { print origin; exit } for (i=0; i<n; i++) { m = mons[i]; if (!edge[m]) { print m; exit } } }'); "
+                    + "  if [ -n \"$TARGET_MON\" ]; then "
+                    + "    hyprctl dispatch \"hl.dsp.focus({ monitor = \\\"$TARGET_MON\\\" })\" >/dev/null 2>&1 || hyprctl dispatch focusmonitor \"$TARGET_MON\" >/dev/null 2>&1 || true; "
+                    + "    sleep 0.05; "
+                    + "  fi; "
+                    + "elif command -v swaymsg >/dev/null 2>&1; then "
+                    + "  TARGET_OUT=$(swaymsg -t get_outputs 2>/dev/null | awk '/\"name\":/ { gsub(/[\" ,]/, \"\", $2); cur=$2; outs[n++] = cur } tolower($0) ~ /(xeneon|edge)/ { edge[cur] = 1 } END { for (i=0; i<n; i++) { o = outs[i]; if (!edge[o]) { print o; exit } } }'); "
+                    + "  if [ -n \"$TARGET_OUT\" ]; then swaymsg focus output \"$TARGET_OUT\" >/dev/null 2>&1 || true; fi; "
+                    + "fi; "
+                    + "xdg-open \"" + safeUrl + "\" >/dev/null 2>&1 || true"
+            if (w.bridge.executeCommand(cmd)) return true
+        }
+        return Qt.openUrlExternally(url)
+    }
 
     title: "Humble Books"
     iconName: "humblebooks"
@@ -48,10 +67,64 @@ WidgetChrome {
     readonly property string configuredCategory: (cfg && cfg.category) ? String(cfg.category).toLowerCase() : "all"
     readonly property int pollHours: Math.max(1, Math.min(24, Number((cfg && cfg.pollHours !== undefined) ? cfg.pollHours : 2)))
 
-    // Active category filter on the widget (defaults to configuredCategory, user can toggle live)
-    property string activeCategory: configuredCategory
+    // Active category filter state
+    // selectedCategories is an array of lowercase keys, e.g. ["all"], ["tech"], ["tech", "sf"]
+    property var selectedCategories: [configuredCategory || "all"]
+    property string activeCategory: "all"
+
     onConfiguredCategoryChanged: {
-        w.activeCategory = w.configuredCategory
+        var c = (w.configuredCategory || "all").toLowerCase()
+        w.selectedCategories = [c]
+        w.activeCategory = c
+    }
+
+    onActiveCategoryChanged: {
+        var cat = (w.activeCategory || "all").toLowerCase()
+        if (cat.indexOf(",") >= 0) {
+            var parts = cat.split(",").map(function(s) { return s.trim().toLowerCase() }).filter(function(s) { return s.length > 0 })
+            w.selectedCategories = parts.length > 0 ? parts : ["all"]
+        } else if (w.selectedCategories.length !== 1 || w.selectedCategories[0] !== cat) {
+            w.selectedCategories = [cat]
+        }
+    }
+
+    function isCategoryActive(key) {
+        if (!key) return false
+        var k = String(key).toLowerCase()
+        var cats = w.selectedCategories || ["all"]
+        return cats.indexOf(k) >= 0
+    }
+
+    function toggleCategory(key) {
+        if (!key) return
+        var k = String(key).toLowerCase()
+        var current = (w.selectedCategories || []).slice()
+        if (k === "all") {
+            w.selectedCategories = ["all"]
+            w.activeCategory = "all"
+            return
+        }
+        var allIdx = current.indexOf("all")
+        if (allIdx >= 0) {
+            current.splice(allIdx, 1)
+        }
+        var idx = current.indexOf(k)
+        if (idx >= 0) {
+            current.splice(idx, 1)
+        } else {
+            current.push(k)
+        }
+        if (current.length === 0) {
+            current = ["all"]
+        }
+        w.selectedCategories = current
+        if (current.indexOf("all") >= 0 || current.length === 0) {
+            w.activeCategory = "all"
+        } else if (current.length === 1) {
+            w.activeCategory = current[0]
+        } else {
+            w.activeCategory = current.join(",")
+        }
     }
 
     // ── State ────────────────────────────────────────────────────────────────
@@ -64,6 +137,35 @@ WidgetChrome {
     property var _xhr: null
     property var selectedBundle: null
 
+    // ── Top-Tier Pricing Cache & Resolution ──────────────────────────────────
+    property var tierPriceCache: ({})
+    property var _tierResolveQueue: []
+    property bool _resolvingTier: false
+
+    readonly property var knownTopTierPrices: ({
+        "batmandaycomicsbundledccomics_bookbundle": "$20",
+        "50essentialfantagraphicstitlesfantagraphics_bookbundle": "$25",
+        "dungeonmastersguildtopcontentfromddcommunity_bookbundle": "$25",
+        "cprogrammingmasterclasscodefasterbuildsmartermasterc_bookbundle": "$18",
+        "legendinmistotherscaperpgcollectionsonoak_bookbundle": "$18",
+        "aiinproductiongovernancereliabilityandapplicationmanning_bookbundle": "$40",
+        "thinklikeprogrammer2026nostarch_bookbundle": "$40",
+        "softwarearchitecture2026oreilly_bookbundle": "$30",
+        "masterscraftmegabundlevaliantentertainment_bookbundle": "$20",
+        "ultimatelinuxcloudinfrastructurebundlepackt_bookbundle": "$25",
+        "moderndesigncreativebundle2026packt_bookbundle": "$25",
+        "imagein20smegabundleimagecomics_bookbundle": "$25",
+        "cavernsthraciamoregoodmangames_bookbundle": "$40",
+        "eatyourproteinketocookbookbundleforcarnivorespagestreetpublishing_bookbundle": "$18",
+        "originalworldstimothyzahnopenroadmedia_bookbundle": "$18",
+        "gregbearbirthdaybundleopenroadmedia_bookbundle": "$18",
+        "bestcjcherryhdawbooks_bookbundle": "$18",
+        "kurtbusieksastrocity30thanniversaryimagecomics_bookbundle": "$18",
+        "joehaldemanforeverwarandbeyondopenroadmedia_bookbundle": "$18",
+        "bestbrianwaldissopenroadmedia_bookbundle": "$18",
+        "gatchamanandspeedracermadcavestudios_bookbundle": "$18"
+    })
+
     readonly property string sharedKind: "humble-books-v1"
     readonly property string sharedKey: "books"
     readonly property string url: "https://www.humblebundle.com/books"
@@ -74,7 +176,8 @@ WidgetChrome {
     function classify(prod) {
         if (!prod) return "Other"
         var name = (prod.tile_name || "") + " " + (prod.tile_short_name || "")
-        var nameLower = name.toLowerCase()
+        var author = prod.author || ""
+        var nameLower = (name + " " + author).toLowerCase()
         var stamp = (prod.tile_stamp || "").toLowerCase()
         var blurb = (prod.short_marketing_blurb || "") + " " + (prod.marketing_blurb || "")
         var blurbLower = blurb.toLowerCase()
@@ -84,13 +187,14 @@ WidgetChrome {
         var comicPublishers = [
             "dark horse", "dynamite", "fantagraphics", "boom! studios", "boom studios",
             "image comics", "top shelf", "idw", "valiant", "last gasp", "oni press",
-            "humanoids", "2000 ad", "titan comics", "heavy metal", "viz media", "kodansha"
+            "humanoids", "2000 ad", "titan comics", "heavy metal", "viz media", "kodansha",
+            "mad cave studios", "dc comics", "marvel"
         ]
         var comicKeywords = [
             "comic", "comics", "manga", "graphic novel", "webtoon", "light novel",
             "bande dessinee", "superhero", "vampirella", "red sonja", "saga", "monstress"
         ]
-        if (stamp === "comics") return "Comics"
+        if (stamp === "comics" || nameLower.indexOf("comic bundle") >= 0 || nameLower.indexOf("comics bundle") >= 0) return "Comics"
         for (var cp = 0; cp < comicPublishers.length; cp++) {
             if (nameLower.indexOf(comicPublishers[cp]) >= 0) return "Comics"
         }
@@ -98,7 +202,53 @@ WidgetChrome {
             if (allText.indexOf(comicKeywords[ck]) >= 0) return "Comics"
         }
 
-        // 2. Cookbooks / Culinary / Baking / Food & Drinks
+        // 2. Tech / Programming / Engineering / Cloud / STEM (Check BEFORE Cookbooks so C++ / Python cookbooks map to Tech)
+        var techPublishers = [
+            "no starch", "packt", "o'reilly", "oreilly", "manning", "apress", "pragmatic",
+            "mercury learning", "bpb", "bleeding edge", "springer", "morgan claypool",
+            "morgan  claypool", "make:", "make -", "make co", "zenva", "mit press", "crc press"
+        ]
+        var techKeywords = [
+            "tech book", "programming", "programmer", "software", "linux", "cloud",
+            "cybersecurity", "python", "c++", "coding", "web dev", "ai in production",
+            "creative bundle", "data science", "it & security", "devops", "code faster",
+            "computer", "machine learning", "deep learning", "data visualization", "physics",
+            "applied mathematics", "applied math", "maker", "electronics", "hacking", "hacker",
+            "functional programming", "react.js", "nosql", "sql", "3d printing", "drones",
+            "game dev", "game programming", "developing your own games", "uxui", "ux design",
+            "claude code", "stem", "open source", "microcontroller", "arduino", "raspberry pi",
+            "algorithms", "cyber", "sysadmin", "infrastructure & ops", "infrastructure  ops",
+            "networking", "data architecture", "kubernetes", "docker", "rust",
+            "javascript", "typescript", "golang", "pocket primers", "artificial intelligence"
+        ]
+        if (nameLower.indexOf("tech book bundle") >= 0) return "Tech"
+        for (var tp = 0; tp < techPublishers.length; tp++) {
+            if (nameLower.indexOf(techPublishers[tp]) >= 0) return "Tech"
+        }
+        for (var i = 0; i < techKeywords.length; i++) {
+            if (allText.indexOf(techKeywords[i]) >= 0) return "Tech"
+        }
+
+        // 3. Tabletop RPGs (D&D, Pathfinder, Call of Cthulhu, etc.)
+        var rpgPublishers = [
+            "son of oak", "goodman games", "roll20", "paizo", "kobold press", "free league",
+            "modiphius", "evil hat", "monte cook", "chaosium", "onyx path", "pelgrane",
+            "green ronin", "steve jackson games", "troll lord", "cubicle 7"
+        ]
+        var rpgKeywords = [
+            "rpg bundle", "tabletop rpg", "ttrpg", "dungeon master", "d&d", "dungeons & dragons",
+            "pathfinder", "call of cthulhu", "roleplaying", "role playing", "role-playing",
+            "campaign setting", "character sheet", "adventures in", "tabletop adventure"
+        ]
+        if (nameLower.indexOf("rpg bundle") >= 0) return "RPG"
+        for (var rp = 0; rp < rpgPublishers.length; rp++) {
+            if (nameLower.indexOf(rpgPublishers[rp]) >= 0) return "RPG"
+        }
+        for (var rk = 0; rk < rpgKeywords.length; rk++) {
+            if (allText.indexOf(rpgKeywords[rk]) >= 0) return "RPG"
+        }
+
+        // 4. Cookbooks / Culinary / Baking / Food & Drinks
         var cookKeywords = [
             "cookbook", "cooking", "recipes", "baking", "bake", "keto", "kitchen", "food",
             "culinary", "protein", "diet", "cocktail", "cocktails", "party snacks", "cook drink",
@@ -109,10 +259,10 @@ WidgetChrome {
             if (allText.indexOf(cookKeywords[j]) >= 0) return "Cookbooks"
         }
 
-        // 3. Sci-Fi & Fantasy (SF)
+        // 5. Sci-Fi & Fantasy (SF)
         var sfPublishers = [
             "tor books", "tor publishing", "daw books", "baen", "black library",
-            "subterranean press", "tachyon", "night shade", "haikasoru"
+            "subterranean press", "tachyon", "night shade", "haikasoru", "open road media"
         ]
         for (var sp = 0; sp < sfPublishers.length; sp++) {
             if (nameLower.indexOf(sfPublishers[sp]) >= 0) return "SF"
@@ -139,33 +289,7 @@ WidgetChrome {
             if (allText.indexOf(sfAuthors[a]) >= 0) return "SF"
         }
 
-        // 4. Tech / Programming / Engineering / Cloud / STEM
-        var techPublishers = [
-            "no starch", "packt", "o'reilly", "oreilly", "manning", "apress", "pragmatic",
-            "mercury learning", "bpb", "bleeding edge", "springer", "morgan claypool",
-            "morgan  claypool", "make:", "make -", "make co", "zenva", "mit press", "crc press"
-        ]
-        for (var tp = 0; tp < techPublishers.length; tp++) {
-            if (nameLower.indexOf(techPublishers[tp]) >= 0) return "Tech"
-        }
-        var techKeywords = [
-            "tech book", "programming", "programmer", "software", "linux", "cloud",
-            "cybersecurity", "python", "c++", "coding", "web dev", "ai in production",
-            "creative bundle", "data science", "it & security", "devops", "code faster",
-            "computer", "machine learning", "deep learning", "data visualization", "physics",
-            "applied mathematics", "applied math", "maker", "electronics", "hacking", "hacker",
-            "functional programming", "react.js", "nosql", "sql", "3d printing", "drones",
-            "game dev", "game programming", "developing your own games", "uxui", "ux design",
-            "claude code", "stem", "open source", "microcontroller", "arduino", "raspberry pi",
-            "algorithms", "cyber", "sysadmin", "infrastructure & ops", "infrastructure  ops",
-            "networking", "data architecture", "kubernetes", "docker", "rust",
-            "javascript", "typescript", "golang", "pocket primers", "artificial intelligence"
-        ]
-        for (var i = 0; i < techKeywords.length; i++) {
-            if (allText.indexOf(techKeywords[i]) >= 0) return "Tech"
-        }
-
-        // 5. Other (Tabletop RPGs, Game Dev, Art, Crafts, Music, General)
+        // 6. Other (Art, Crafts, Music, General)
         return "Other"
     }
 
@@ -191,14 +315,82 @@ WidgetChrome {
         return ""
     }
 
-    function extractTierPrice(highlights) {
-        if (!Array.isArray(highlights)) return ""
-        for (var i = 0; i < highlights.length; i++) {
-            var h = String(highlights[i]).trim()
-            if (/pay what you want/i.test(h)) return "Pay What You Want"
-            if (/^from\s+[\$€£]/i.test(h)) return h
+    function extractTierPrice(highlights, heroHighlights, machineName, customMap) {
+        var topPrice = ""
+        var map = customMap || w.tierPriceCache
+        if (machineName && map && map[machineName]) {
+            topPrice = map[machineName]
+        } else if (machineName && w.knownTopTierPrices && w.knownTopTierPrices[machineName]) {
+            topPrice = w.knownTopTierPrices[machineName]
         }
-        return "Pay What You Want"
+        if (topPrice) {
+            return topPrice + " for all"
+        }
+
+        if (Array.isArray(heroHighlights)) {
+            for (var i = 0; i < heroHighlights.length; i++) {
+                var hh = heroHighlights[i]
+                if (!hh) continue
+                var heading = String(hh.heading || "").trim()
+                var m = heading.match(/pay\s*([\$€£]\d+(?:\.\d+)?)\s*or\s*more/i)
+                if (m && m[1]) return "From " + m[1]
+                var m2 = heading.match(/^(from\s*[\$€£]\d+(?:\.\d+)?)/i)
+                if (m2 && m2[1]) return m2[1]
+            }
+        }
+        if (Array.isArray(highlights)) {
+            for (var j = 0; j < highlights.length; j++) {
+                var h = String(highlights[j]).trim()
+                var mh = h.match(/^(from\s*[\$€£]\d+(?:\.\d+)?)/i)
+                if (mh && mh[1]) return mh[1]
+                var mh2 = h.match(/pay\s*([\$€£]\d+(?:\.\d+)?)\s*or\s*more/i)
+                if (mh2 && mh2[1]) return "From " + mh2[1]
+            }
+        }
+        return ""
+    }
+
+    function extractTopTierPriceFromSubpage(html) {
+        if (!html || typeof html !== "string") return ""
+        var startIdx = 0
+        while (true) {
+            var sPos = html.indexOf("<script", startIdx)
+            if (sPos === -1) break
+            var ePos = html.indexOf("</script>", sPos)
+            if (ePos === -1) break
+            var chunk = html.substring(sPos, ePos)
+            startIdx = ePos + 9
+            if (chunk.indexOf("bundleData") !== -1 && chunk.indexOf("tier_pricing_data") !== -1) {
+                var bStart = chunk.indexOf(">")
+                if (bStart !== -1) {
+                    try {
+                        var data = JSON.parse(chunk.substring(bStart + 1))
+                        var bd = data.bundleData || {}
+                        var tpd = bd.tier_pricing_data || {}
+                        var maxPrice = 0
+                        var symbol = "$"
+                        for (var tk in tpd) {
+                            var item = tpd[tk]
+                            if (!item) continue
+                            var pm = item["price|money"]
+                            if (pm && typeof pm.amount === "number") {
+                                if (pm.amount > maxPrice) {
+                                    maxPrice = pm.amount
+                                    if (pm.currency === "EUR") symbol = "€"
+                                    else if (pm.currency === "GBP") symbol = "£"
+                                    else symbol = "$"
+                                }
+                            }
+                        }
+                        if (maxPrice > 0) {
+                            var amtStr = (maxPrice % 1 === 0) ? String(maxPrice) : maxPrice.toFixed(2)
+                            return symbol + amtStr
+                        }
+                    } catch (e) {}
+                }
+            }
+        }
+        return ""
     }
 
     function formatTimeRemaining(endStr, nowMs) {
@@ -291,9 +483,11 @@ WidgetChrome {
                 var timeRem = formatTimeRemaining(endRaw, w.currentMs())
                 var imgUrl = p.high_res_tile_image || p.tile_image || ""
                 var hl = p.highlights || []
+                var heroHl = p.hero_highlights || []
 
                 result.push({
                     id: p.machine_name || ("bundle_" + i),
+                    machineName: p.machine_name || "",
                     title: cleanTitle,
                     fullName: p.tile_name || rawTitle,
                     category: cat,
@@ -302,9 +496,10 @@ WidgetChrome {
                     endDate: endRaw,
                     timeRemainingText: timeRem,
                     highlights: hl,
+                    heroHighlights: heroHl,
                     itemCountText: extractItemCount(hl),
                     valueText: extractValue(hl),
-                    tierPriceText: extractTierPrice(hl),
+                    tierPriceText: extractTierPrice(hl, heroHl, p.machine_name),
                     blurb: p.short_marketing_blurb || p.marketing_blurb || ""
                 })
             }
@@ -324,11 +519,12 @@ WidgetChrome {
             if (sa !== sb) return sa - sb
             return (a.title || "").localeCompare(b.title || "")
         })
-        var cat = (w.activeCategory || "all").toLowerCase()
-        if (cat === "all") return list
+        var cats = w.selectedCategories || ["all"]
+        if (cats.indexOf("all") >= 0) return list
         var out = []
         for (var i = 0; i < list.length; i++) {
-            if (String(list[i].category).toLowerCase() === cat) {
+            var bCat = String(list[i].category || "").toLowerCase()
+            if (cats.indexOf(bCat) >= 0) {
                 out.push(list[i])
             }
         }
@@ -369,7 +565,81 @@ WidgetChrome {
         function onSharedRevisionChanged() { w._syncShared() }
     }
 
+    Timer {
+        id: tierResolveTimer
+        interval: 350
+        repeat: false
+        onTriggered: w._processNextTierResolve()
+    }
+
+    function _queueTierResolutions() {
+        var q = []
+        var list = w.bundles || []
+        for (var i = 0; i < list.length; i++) {
+            var b = list[i]
+            if (!b || !b.url || !b.id) continue
+            // If already resolved with "for all", skip
+            if (b.tierPriceText && b.tierPriceText.indexOf("for all") >= 0) continue
+            q.push(b)
+        }
+        w._tierResolveQueue = q
+        if (q.length > 0 && !w._resolvingTier) {
+            tierResolveTimer.restart()
+        }
+    }
+
+    function _processNextTierResolve() {
+        if (!w._tierResolveQueue || w._tierResolveQueue.length === 0) {
+            w._resolvingTier = false
+            return
+        }
+        var hub = w._hub()
+        if (!hub || hub.offline) {
+            w._resolvingTier = false
+            return
+        }
+        var bundle = w._tierResolveQueue.shift()
+        w._resolvingTier = true
+        hub.request({
+            url: bundle.url,
+            timeout: 10000,
+            maxResponseBytes: 1048576,
+            xhrFactory: w.xhrFactory,
+            onDone: function(status, body) {
+                if (status >= 200 && status < 300 && body) {
+                    var topPrice = extractTopTierPriceFromSubpage(body)
+                    if (topPrice) {
+                        var c = Object.assign({}, w.tierPriceCache)
+                        c[bundle.id] = topPrice
+                        if (bundle.machineName) c[bundle.machineName] = topPrice
+                        w.tierPriceCache = c
+
+                        // Update bundle in current list
+                        var updated = false
+                        for (var j = 0; j < w.bundles.length; j++) {
+                            if (w.bundles[j].id === bundle.id) {
+                                w.bundles[j].tierPriceText = topPrice + " for all"
+                                updated = true
+                                break
+                            }
+                        }
+                        if (updated) {
+                            w.bundles = w.bundles.slice()
+                        }
+                    }
+                }
+                // Schedule next in queue
+                if (w._tierResolveQueue && w._tierResolveQueue.length > 0) {
+                    tierResolveTimer.restart()
+                } else {
+                    w._resolvingTier = false
+                }
+            }
+        })
+    }
+
     Component.onDestruction: {
+        tierResolveTimer.stop()
         if (_xhr) _xhr.abort()
         if (w._hub().releaseSharedProvider)
             w._hub().releaseSharedProvider(w.sharedKind, w.sharedKey, w, "")
@@ -410,6 +680,7 @@ WidgetChrome {
                             ? "Active book bundles updated."
                             : "Connected to Humble Bundle, but no active book bundles were found."
                         w.lastSuccessAt = w.currentMs()
+                        w._queueTierResolutions()
                         if (hub.publishSharedProvider) {
                             hub.publishSharedProvider(w.sharedKind, w.sharedKey, w, {
                                 bundles: w.bundles,
@@ -470,6 +741,7 @@ WidgetChrome {
         { key: "tech", label: "Tech" },
         { key: "comics", label: "Comics" },
         { key: "sf", label: "SF" },
+        { key: "rpg", label: "RPG" },
         { key: "cookbooks", label: "Cookbooks" },
         { key: "other", label: "Other" }
     ]
@@ -505,7 +777,7 @@ WidgetChrome {
                         delegate: Rectangle {
                             id: catPill
                             required property var modelData
-                            readonly property bool isSelected: w.activeCategory.toLowerCase() === modelData.key.toLowerCase()
+                            readonly property bool isSelected: w.isCategoryActive(modelData.key)
                             readonly property int itemCount: w.countForCategory(modelData.key)
 
                             implicitHeight: Math.max(44, theme.touchTertiary)
@@ -517,14 +789,14 @@ WidgetChrome {
                             border.color: activeFocus ? theme.textPrimary : (isSelected ? w.effAccent : theme.cardBorder)
 
                             activeFocusOnTab: true
-                            Accessible.role: Accessible.RadioButton
+                            Accessible.role: Accessible.CheckBox
                             Accessible.name: modelData.label + " (" + itemCount + ")"
                             Accessible.checked: isSelected
-                            Accessible.onPressAction: w.activeCategory = modelData.key
+                            Accessible.onPressAction: w.toggleCategory(modelData.key)
 
                             Keys.onPressed: function(event) {
                                 if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space) {
-                                    w.activeCategory = modelData.key
+                                    w.toggleCategory(modelData.key)
                                     event.accepted = true
                                 }
                             }
@@ -555,7 +827,7 @@ WidgetChrome {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     catPill.forceActiveFocus()
-                                    w.activeCategory = catPill.modelData.key
+                                    w.toggleCategory(catPill.modelData.key)
                                 }
                             }
                         }
@@ -646,7 +918,9 @@ WidgetChrome {
                 width: Math.min(parent.width - 32, 360)
 
                 Text {
-                    text: "No " + w.activeCategory.toUpperCase() + " bundles right now."
+                    text: w.isCategoryActive("all")
+                        ? "No bundles found."
+                        : ("No " + w.selectedCategories.map(function(s){ return s.toUpperCase() }).join(" / ") + " bundles right now.")
                     color: theme.textPrimary
                     font.pixelSize: theme.fontLabel
                     font.weight: Font.Medium
@@ -664,7 +938,7 @@ WidgetChrome {
                     activeFocusOnTab: true
                     Accessible.role: Accessible.Button
                     Accessible.name: "Show all bundles"
-                    Accessible.onPressAction: w.activeCategory = "all"
+                    Accessible.onPressAction: w.toggleCategory("all")
 
                     Text {
                         anchors.centerIn: parent
@@ -676,7 +950,7 @@ WidgetChrome {
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: w.activeCategory = "all"
+                        onClicked: w.toggleCategory("all")
                     }
                 }
             }
@@ -694,16 +968,22 @@ WidgetChrome {
                 delegate: Rectangle {
                     id: card
                     required property var modelData
+                    readonly property string expiryLevel: w.getExpiryLevel(modelData)
                     width: bundleListView.width
                     implicitHeight: Math.max(76, cardRow.implicitHeight + 16)
                     radius: theme.radiusMd
+                    color: cardArea.pressed
+                           ? theme.cardBackground
+                           : (cardArea.containsMouse
+                              ? Qt.lighter(theme.cardBackgroundAlt, 1.15)
+                              : theme.cardBackgroundAlt)
                     border.width: activeFocus ? 2 : 1
                     border.color: activeFocus ? theme.textPrimary
-                                : (w.getExpiryLevel(modelData) === "urgent"
-                                   ? Qt.rgba(theme.error.r, theme.error.g, theme.error.b, 0.45)
-                                   : (w.getExpiryLevel(modelData) === "soon"
-                                      ? Qt.rgba(theme.warning.r, theme.warning.g, theme.warning.b, 0.3)
-                                      : theme.cardBorder))
+                                : (expiryLevel === "urgent"
+                                   ? theme.error
+                                   : (expiryLevel === "soon"
+                                      ? theme.warning
+                                      : (cardArea.containsMouse ? theme.cardBorderGlass : theme.cardBorder)))
 
                     activeFocusOnTab: true
                     Accessible.role: Accessible.Button
@@ -856,7 +1136,7 @@ WidgetChrome {
                                     color: w.effAccent
                                     font.pixelSize: theme.fontCaption - 1
                                     font.weight: Font.Medium
-                                    visible: !!card.modelData.tierPriceText && w.big
+                                    visible: !!card.modelData.tierPriceText && !w.micro
                                 }
                             }
                         }

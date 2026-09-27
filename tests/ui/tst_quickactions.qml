@@ -134,7 +134,7 @@ Item {
             compare(w.hosts[2].host, "100.69.69.10")
             compare(w.hosts[2].user, "acero")
             compare(w.hosts[3].label, "aframe")
-            compare(w.hosts[3].host, "10.0.0.50")
+            compare(w.hosts[3].host, "100.69.69.4")
         }
 
         function test_ping_host_card_success() {

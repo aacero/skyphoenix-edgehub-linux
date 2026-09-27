@@ -57,6 +57,7 @@ QtObject {
     property color cardBackground: "#161B22"
     property color cardBackgroundAlt: "#1C222B"
     property color cardBorder: "#30363D"
+    readonly property color cardBackgroundHover: Qt.rgba(255, 255, 255, 0.12)
     property color textPrimary: "#E6EDF3"
     property color textSecondary: "#8B949E"
     property color textTertiary: "#6E7681"
