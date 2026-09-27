@@ -2238,17 +2238,18 @@ Item {
             }
         }
 
-        // Only the offered ladder is honoured: an arbitrary persisted number
-        // would be a dwell nobody can reproduce from the UI.
+        // Valid integer dwell values (both preset ladder and custom seconds up to 86400)
+        // are honoured, while invalid junk coerces to off (0).
         function test_only_offered_dwell_values_are_honoured_data() {
             return [
                 { tag: "off", set: 0, want: 0 },
                 { tag: "15s", set: 15, want: 15 },
                 { tag: "60s", set: 60, want: 60 },
                 { tag: "5min", set: 300, want: 300 },
-                { tag: "not-on-ladder", set: 7, want: 0 },
+                { tag: "custom-7s", set: 7, want: 7 },
+                { tag: "custom-45s", set: 45, want: 45 },
                 { tag: "fractional", set: 0.5, want: 0 },
-                { tag: "absurd", set: 86400, want: 0 },
+                { tag: "absurd", set: 999999, want: 0 },
                 { tag: "negative", set: -30, want: 0 },
                 { tag: "text", set: "60", want: 60 },
                 { tag: "junk", set: "soon", want: 0 }
@@ -2270,15 +2271,21 @@ Item {
                     JSON.stringify(data.set) + " must resolve to " + data.want)
         }
 
-        // A hand-edited config.toml is not a reason to render a dwell the UI
-        // cannot express.
+        // A hand-edited config.toml with junk is coerced off, while valid custom seconds load.
         function test_a_junk_dwell_in_a_loaded_document_is_coerced_off() {
             var s = root.store()
             s.applyExternal(JSON.stringify({
+                version: 1, appearance: { pageCycleSec: -30 }, settings: {},
+                pages: [ { name: "A", tiles: [] }, { name: "B", tiles: [] } ] }))
+            compare(s.appearance().pageCycleSec, 0, "-30 is negative and coerced to off")
+            compare(ld.item.pageCycleSec, 0)
+
+            // A valid custom dwell like 7 is loaded and respected
+            s.applyExternal(JSON.stringify({
                 version: 1, appearance: { pageCycleSec: 7 }, settings: {},
                 pages: [ { name: "A", tiles: [] }, { name: "B", tiles: [] } ] }))
-            compare(s.appearance().pageCycleSec, 0, "7 is not on the ladder")
-            compare(ld.item.pageCycleSec, 0)
+            compare(s.appearance().pageCycleSec, 7, "7 is a valid custom dwell in seconds")
+            compare(ld.item.pageCycleSec, 7)
         }
 
         // Idle-gated: configuring a dwell does NOT start rotating while someone

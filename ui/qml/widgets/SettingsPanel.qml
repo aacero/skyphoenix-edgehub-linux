@@ -435,15 +435,133 @@ Rectangle {
                                 var cur = Number(store.appearance().pageCycleSec)
                                 for (var i = 0; i < model.length; i++)
                                     if (model[i].secs === cur) return i
-                                return 0
+                                return -1
                             }
                             currentIndex: _indexForStore()
+                            displayText: {
+                                store.revision
+                                var cur = Number(store.appearance().pageCycleSec || 0)
+                                for (var i = 0; i < model.length; i++)
+                                    if (model[i].secs === cur) return model[i].label
+                                return cur > 0 ? ("Custom (" + cur + "s)") : "Off"
+                            }
                             // Selecting writes currentIndex internally, which would
                             // sever the binding above for good - same trap the glass
                             // slider documents. Push, then re-assert.
                             onActivated: {
                                 store.setAppearance("pageCycleSec", model[currentIndex].secs)
                                 currentIndex = Qt.binding(function () { return _indexForStore() })
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: theme.spacingSm
+
+                            Text {
+                                text: "Custom delay:"
+                                font.pixelSize: theme.fontCaption
+                                color: theme.textSecondary
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            Rectangle {
+                                width: theme.touchTertiary; height: theme.touchTertiary
+                                radius: theme.radiusSm
+                                color: cycleSubHover.containsMouse ? theme.cardBackgroundHover : theme.cardBackgroundAlt
+                                border.color: theme.cardBorder; border.width: 1
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "−"
+                                    font.pixelSize: theme.fontTitle
+                                    font.bold: true
+                                    color: theme.textPrimary
+                                }
+                                MouseArea {
+                                    id: cycleSubHover
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        var cur = Math.max(0, Number(store.appearance().pageCycleSec || 0) - 5)
+                                        store.setAppearance("pageCycleSec", cur)
+                                    }
+                                }
+                            }
+
+                            TextField {
+                                id: customCycleInput
+                                objectName: "pageCycleCustomField"
+                                width: 90
+                                implicitHeight: theme.touchTertiary
+                                horizontalAlignment: TextInput.AlignHCenter
+                                font.family: theme.fontMono
+                                font.pixelSize: theme.fontLabel
+                                font.bold: true
+                                color: theme.accent
+                                placeholderText: "0"
+                                text: {
+                                    store.revision
+                                    var cur = Number(store.appearance().pageCycleSec || 0)
+                                    return cur > 0 ? String(cur) : ""
+                                }
+                                validator: IntValidator { bottom: 0; top: 86400 }
+                                inputMethodHints: Qt.ImhDigitsOnly
+                                background: Rectangle {
+                                    radius: theme.radiusSm
+                                    color: theme.cardBackgroundAlt
+                                    border.color: customCycleInput.activeFocus ? theme.accent : theme.cardBorder
+                                    border.width: 1
+                                }
+                                onEditingFinished: {
+                                    var val = parseInt(text.trim(), 10)
+                                    if (isNaN(val) || val <= 0) {
+                                        store.setAppearance("pageCycleSec", 0)
+                                    } else {
+                                        store.setAppearance("pageCycleSec", Math.min(86400, val))
+                                    }
+                                    text = Qt.binding(function () {
+                                        store.revision
+                                        var cur = Number(store.appearance().pageCycleSec || 0)
+                                        return cur > 0 ? String(cur) : ""
+                                    })
+                                }
+                            }
+
+                            Rectangle {
+                                width: theme.touchTertiary; height: theme.touchTertiary
+                                radius: theme.radiusSm
+                                color: cycleAddHover.containsMouse ? theme.cardBackgroundHover : theme.cardBackgroundAlt
+                                border.color: theme.cardBorder; border.width: 1
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "+"
+                                    font.pixelSize: theme.fontTitle
+                                    font.bold: true
+                                    color: theme.textPrimary
+                                }
+                                MouseArea {
+                                    id: cycleAddHover
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        var cur = Number(store.appearance().pageCycleSec || 0) + 5
+                                        store.setAppearance("pageCycleSec", Math.min(86400, cur))
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: "sec"
+                                font.pixelSize: theme.fontCaption
+                                font.family: theme.fontMono
+                                color: theme.textTertiary
+                                Layout.alignment: Qt.AlignVCenter
                             }
                         }
 

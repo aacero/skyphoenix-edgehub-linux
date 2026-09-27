@@ -58,7 +58,7 @@ Item {
     readonly property int pageCycleSec: {
         store.revision
         var v = Number(store.appearance().pageCycleSec)
-        return store.isPageCycleChoice(v) ? v : 0
+        return (isFinite(v) && Math.floor(v) === v && v >= 0 && v <= 86400) ? v : 0
     }
 
     // Everything that must hold the current screen still. Editing and the

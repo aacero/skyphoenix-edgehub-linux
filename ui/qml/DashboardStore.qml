@@ -390,12 +390,12 @@ Item {
         if (doc.appearance.hubControlsMode !== "immersive"
                 && doc.appearance.hubControlsMode !== "standard")
             doc.appearance.hubControlsMode = "standard"
-        // A hand-edited or older document can carry anything here; an
-        // unrecognised dwell means off, never "some number of seconds".
-        if (!isPageCycleChoice(doc.appearance.pageCycleSec))
-            doc.appearance.pageCycleSec = 0
+        // Dwell times can be a preset or any custom non-negative integer seconds up to 86400 (24h).
+        var pcs = Number(doc.appearance.pageCycleSec)
+        if (isFinite(pcs) && Math.floor(pcs) === pcs && pcs >= 0 && pcs <= 86400)
+            doc.appearance.pageCycleSec = pcs
         else
-            doc.appearance.pageCycleSec = Number(doc.appearance.pageCycleSec)
+            doc.appearance.pageCycleSec = 0
         if (doc.appearance.alertSurfacing === undefined)
             doc.appearance.alertSurfacing = true
         else
@@ -655,11 +655,9 @@ Item {
     // ── Appearance ─────────────────────────────────────────────────────────
     function appearance() { return document.appearance || {} }
 
-    // Dwell times the auto-cycle offers, in seconds. 0 is "off" and is the
-    // default: a panel that starts moving by itself after an update is a
-    // surprise, and this ships B2B. Anything not on this ladder is coerced to
-    // off rather than honoured - an arbitrary persisted number (7, 0.5,
-    // 86400) would otherwise become a dwell nobody can reproduce from the UI.
+    // Dwell times the auto-cycle offers as quick presets in seconds. 0 is "off"
+    // and is the default. Any valid non-negative integer seconds (<= 86400) can
+    // also be set directly by the user.
     readonly property var pageCycleChoices: [0, 15, 30, 60, 90, 120, 300]
     function isPageCycleChoice(v) {
         var n = Number(v)
@@ -670,8 +668,10 @@ Item {
         if (!document.appearance) document.appearance = {}
         if (key === "hubControlsMode" && val !== "standard" && val !== "immersive")
             val = "standard"
-        if (key === "pageCycleSec")
-            val = isPageCycleChoice(val) ? Number(val) : 0
+        if (key === "pageCycleSec") {
+            var n = Number(val)
+            val = (isFinite(n) && Math.floor(n) === n && n >= 0 && n <= 86400) ? n : 0
+        }
         if (key === "alertSurfacing")
             val = Boolean(val)
         document.appearance[key] = val

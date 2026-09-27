@@ -1622,12 +1622,19 @@ ApplicationWindow {
                                 // why the neighbouring hub-bar switch has no test
                                 // either. A named function here would be an
                                 // obligation nothing can honestly meet.
+                                displayText: {
+                                    store.revision
+                                    var cur = Number(store.appearance().pageCycleSec || 0)
+                                    for (var i = 0; i < model.length; i++)
+                                        if (model[i].secs === cur) return model[i].label
+                                    return cur > 0 ? ("Custom (" + cur + "s)") : "Off"
+                                }
                                 currentIndex: {
                                     store.revision
                                     var cur = Number(store.appearance().pageCycleSec)
                                     for (var i = 0; i < model.length; i++)
                                         if (model[i].secs === cur) return i
-                                    return 0
+                                    return -1
                                 }
                                 onActivated: {
                                     store.setAppearance("pageCycleSec", model[currentIndex].secs)
@@ -1636,9 +1643,41 @@ ApplicationWindow {
                                         var cur = Number(store.appearance().pageCycleSec)
                                         for (var i = 0; i < model.length; i++)
                                             if (model[i].secs === cur) return i
-                                        return 0
+                                        return -1
                                     })
                                 }
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+                                Text { text: "Custom delay:"; color: m.textSecondary; font.pixelSize: m.fontMinimum }
+                                Item { Layout.fillWidth: true }
+                                TextField {
+                                    width: 80
+                                    horizontalAlignment: TextInput.AlignHCenter
+                                    font.family: m.fontMono
+                                    font.pixelSize: m.fontSmall
+                                    color: m.accent
+                                    placeholderText: "0"
+                                    text: {
+                                        store.revision
+                                        var cur = Number(store.appearance().pageCycleSec || 0)
+                                        return cur > 0 ? String(cur) : ""
+                                    }
+                                    validator: IntValidator { bottom: 0; top: 86400 }
+                                    inputMethodHints: Qt.ImhDigitsOnly
+                                    onEditingFinished: {
+                                        var val = parseInt(text.trim(), 10)
+                                        if (isNaN(val) || val <= 0) store.setAppearance("pageCycleSec", 0)
+                                        else store.setAppearance("pageCycleSec", Math.min(86400, val))
+                                        text = Qt.binding(function () {
+                                            store.revision
+                                            var cur = Number(store.appearance().pageCycleSec || 0)
+                                            return cur > 0 ? String(cur) : ""
+                                        })
+                                    }
+                                }
+                                Text { text: "sec"; color: m.textSecondary; font.pixelSize: m.fontMinimum }
                             }
                             Text { text: "The Hub moves to the next screen on its own while nobody is using it. Touching the Hub stops it, and it starts again after the same amount of time. Empty screens are skipped."
                                 color: m.textSecondary; font.pixelSize: m.fontMinimum

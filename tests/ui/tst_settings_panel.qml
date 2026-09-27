@@ -286,5 +286,27 @@ Item {
             compare(combo.currentIndex, 6,
                     "the selector still follows the store after being used")
         }
+
+        function test_cycle_custom_seconds_field_writes_and_reflects_store() {
+            var field = findObjectName(panel, "pageCycleCustomField")
+            verify(field !== null, "found the custom cycle input field")
+
+            // Setting store appearance reflects in field
+            store.setAppearance("pageCycleSec", 45)
+            compare(field.text, "45", "field reflects custom dwell set in store")
+
+            var combo = findObjectName(panel, "pageCycleCombo")
+            compare(combo.displayText, "Custom (45s)", "combo displayText reflects custom seconds")
+
+            // Editing the field writes through
+            field.text = "75"
+            field.editingFinished()
+            compare(store.appearance().pageCycleSec, 75, "editing custom field updates store")
+
+            // Setting to 0 clears field
+            store.setAppearance("pageCycleSec", 0)
+            compare(field.text, "", "field is empty placeholder when dwell is off")
+            compare(combo.displayText, "Off", "combo displayText is Off")
+        }
     }
 }
