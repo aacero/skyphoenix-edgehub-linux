@@ -237,6 +237,19 @@ Item {
             verify(wolSt !== undefined)
             compare(wolSt.status, "ok")
 
+            // Test Wake button mouse click in unexpanded deck view (verifies MouseArea layering)
+            h.expanded = false
+            h.item.localNodes = [nodeWithMac]
+            wait(50)
+            var deckWake = findChild(h.item, "deckWakeMa")
+            verify(deckWake !== null, "deckWakeMa found in unexpanded card")
+            mockBridge.reset()
+            mockBridge.wolReturnCode = 0
+            mouseClick(deckWake, deckWake.width / 2, deckWake.height / 2)
+            compare(mockBridge.wolCallCount, 1, "clicking deckWakeMa dispatches sendWakeOnLan")
+            compare(mockBridge.lastMac, "38:ca:84:39:6c:9e")
+            h.expanded = true
+
             // Test Ping dispatch
             mockBridge.pingReturnOk = true
             mockBridge.pingReturnLatency = 1.4

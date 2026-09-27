@@ -1048,6 +1048,12 @@ WidgetChrome {
                             border.color: (w.selectedIndex === index) ? theme.accent : theme.cardBorder
                             border.width: (w.selectedIndex === index) ? 2 : 1
 
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: w.selectedIndex = index
+                            }
+
                             ColumnLayout {
                                 anchors.fill: parent
                                 anchors.margins: nodeDeckCard.height > 300 ? 16 : 10
@@ -1278,6 +1284,8 @@ WidgetChrome {
                                             font.family: theme.fontMono
                                         }
                                         Rectangle {
+                                            id: deckWakeBtn
+                                            objectName: "deckWakeBtn"
                                             Layout.alignment: Qt.AlignCenter
                                             visible: !!modelData.mac
                                             implicitWidth: Math.max(130, deckWakeTxt.implicitWidth + 28)
@@ -1298,8 +1306,8 @@ WidgetChrome {
                                                 }
                                                 Text {
                                                     id: deckWakeTxt
-                                                    text: parent.parent.wolSt.status === "sending" ? "Waking..."
-                                                          : (parent.parent.wolSt.status === "ok" ? "Packet Sent ✓"
+                                                    text: deckWakeBtn.wolSt.status === "sending" ? "Waking..."
+                                                          : (deckWakeBtn.wolSt.status === "ok" ? "Packet Sent ✓"
                                                           : "Wake (WOL)")
                                                     color: "#FFFFFF"
                                                     font.pixelSize: 13
@@ -1309,6 +1317,7 @@ WidgetChrome {
                                             }
                                             MouseArea {
                                                 id: deckWakeMa
+                                                objectName: "deckWakeMa"
                                                 anchors.fill: parent
                                                 hoverEnabled: true
                                                 cursorShape: Qt.PointingHandCursor
@@ -1317,12 +1326,6 @@ WidgetChrome {
                                         }
                                     }
                                 }
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: w.selectedIndex = index
                             }
                         }
                     }
@@ -1344,6 +1347,12 @@ WidgetChrome {
                         color: theme.cardBackgroundAlt
                         border.color: (w.selectedIndex === index) ? theme.accent : theme.cardBorder
                         border.width: 1
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: w.selectedIndex = index
+                        }
 
                         ColumnLayout {
                             anchors.fill: parent
@@ -1379,6 +1388,8 @@ WidgetChrome {
                                         font.family: theme.fontMono
                                     }
                                     Rectangle {
+                                        id: listWakeBtn
+                                        objectName: "listWakeBtn"
                                         visible: modelData.status === "offline" && !!modelData.mac
                                         implicitWidth: listWakeTxt.implicitWidth + 16
                                         implicitHeight: 28
@@ -1391,8 +1402,8 @@ WidgetChrome {
                                         Text {
                                             id: listWakeTxt
                                             anchors.centerIn: parent
-                                            text: parent.wolSt.status === "sending" ? "Waking..."
-                                                  : (parent.wolSt.status === "ok" ? "Sent ✓"
+                                            text: listWakeBtn.wolSt.status === "sending" ? "Waking..."
+                                                  : (listWakeBtn.wolSt.status === "ok" ? "Sent ✓"
                                                   : "⚡ Wake")
                                             font.pixelSize: 11
                                             font.family: theme.fontDisplay
@@ -1401,7 +1412,10 @@ WidgetChrome {
                                         }
                                         MouseArea {
                                             id: listWakeMa
-                                            anchors.fill: parent
+                                            objectName: "listWakeMa"
+                                            anchors.centerIn: parent
+                                            width: Math.max(parent.width, 44)
+                                            height: Math.max(parent.height, 44)
                                             hoverEnabled: true
                                             cursorShape: Qt.PointingHandCursor
                                             onClicked: w.wakeNode(modelData)
@@ -1481,12 +1495,6 @@ WidgetChrome {
                                     visible: w.width > 300
                                 }
                             }
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: w.selectedIndex = index
                         }
                     }
                 }
@@ -2198,7 +2206,7 @@ WidgetChrome {
 
                                     Text { text: "System Uptime:"; color: theme.textTertiary; font.pixelSize: 14 }
                                     Text {
-                                        text: deepDivePanel.selNode ? deepDivePanel.selNode.uptimeStr : "-"
+                                        text: (deepDivePanel.selNode && deepDivePanel.selNode.uptimeStr) ? deepDivePanel.selNode.uptimeStr : "-"
                                         color: theme.textPrimary
                                         font.pixelSize: 14
                                         font.family: theme.fontMono
