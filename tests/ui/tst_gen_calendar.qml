@@ -311,6 +311,129 @@ Item {
         }
     }
 
+    // ── cancellation, recurrence-id overrides, and past bounds ──────────────
+    TestCase {
+        name: "CalendarCancellation"
+        when: windowShown
+        function init() { tryVerify(function () { return h.ready }, 3000) }
+
+        function only(evs, title) { return evs.filter(function (e) { return e.title === title }) }
+
+        function test_cancelled_recurring_master_from_years_ago_is_not_shown() {
+            var w = h.item
+            var ics = vcal(vevent(
+                "UID:ancient-recurring-1\n" +
+                "SUMMARY:Cancelled Old Gym\n" +
+                "STATUS:CANCELLED\n" +
+                "DTSTART:20120101T090000Z\n" +
+                "RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR\n"))
+            var evs = only(w.parseICS(ics), "Cancelled Old Gym")
+            compare(evs.length, 0, "a cancelled recurring series from years ago yields zero upcoming occurrences")
+        }
+
+        function test_cancelled_single_event_is_not_shown() {
+            var w = h.item
+            var when = daysFromNow(2)
+            var ics = vcal(vevent(
+                "UID:single-event-1\n" +
+                "SUMMARY:Cancelled Dental\n" +
+                "STATUS:CANCELLED\n" +
+                "DTSTART;VALUE=DATE-TIME:" + icsDateTime(when) + "\n"))
+            var evs = only(w.parseICS(ics), "Cancelled Dental")
+            compare(evs.length, 0, "a cancelled standalone event is not shown")
+        }
+
+        function test_recurrence_id_cancelled_occurrence_suppressed() {
+            var w = h.item
+            var base = daysFromNow(1)
+            var skip = daysFromNow(2)
+            var ics = vcal(
+                vevent(
+                    "UID:team-sync-1\n" +
+                    "SUMMARY:Daily Sync\n" +
+                    "DTSTART;VALUE=DATE-TIME:" + icsDateTime(base) + "\n" +
+                    "RRULE:FREQ=DAILY;COUNT=5\n") +
+                vevent(
+                    "UID:team-sync-1\n" +
+                    "RECURRENCE-ID;VALUE=DATE-TIME:" + icsDateTime(skip) + "\n" +
+                    "STATUS:CANCELLED\n"))
+            var evs = only(w.parseICS(ics), "Daily Sync")
+            verify(evs.length >= 3, "other occurrences of the series still appear")
+            for (var i = 0; i < evs.length; i++) {
+                verify(w.exKey(evs[i].start) !== w.exKey(skip), "the cancelled RECURRENCE-ID occurrence is excluded")
+            }
+        }
+
+        function test_recurrence_id_modified_occurrence_replaces_original() {
+            var w = h.item
+            var base = daysFromNow(1)
+            var modOccOriginal = daysFromNow(2)
+            var modOccNew = new Date(modOccOriginal.getTime() + 5 * 3600000)
+            var ics = vcal(
+                vevent(
+                    "UID:team-standup-2\n" +
+                    "SUMMARY:Standard Standup\n" +
+                    "DTSTART;VALUE=DATE-TIME:" + icsDateTime(base) + "\n" +
+                    "RRULE:FREQ=DAILY;COUNT=4\n") +
+                vevent(
+                    "UID:team-standup-2\n" +
+                    "RECURRENCE-ID;VALUE=DATE-TIME:" + icsDateTime(modOccOriginal) + "\n" +
+                    "DTSTART;VALUE=DATE-TIME:" + icsDateTime(modOccNew) + "\n" +
+                    "SUMMARY:Rescheduled Standup\n"))
+            var allEvs = w.parseICS(ics)
+            var origEvs = only(allEvs, "Standard Standup")
+            var modEvs = only(allEvs, "Rescheduled Standup")
+            compare(modEvs.length, 1, "modified instance is emitted as an event")
+            compare(modEvs[0].start.getTime(), modOccNew.getTime(), "modified instance starts at rescheduled time")
+            for (var i = 0; i < origEvs.length; i++) {
+                verify(w.exKey(origEvs[i].start) !== w.exKey(modOccOriginal), "original time slot is suppressed from master")
+            }
+        }
+
+        function test_recurrence_id_range_this_and_future_cancellation_cuts_off_series() {
+            var w = h.item
+            var ancientStart = new Date(2011, 0, 1, 9, 0, 0)
+            var cutOffDate = new Date(2015, 5, 1, 9, 0, 0)
+            var ics = vcal(
+                vevent(
+                    "UID:cut-off-series-1\n" +
+                    "SUMMARY:Old Recurring Project\n" +
+                    "DTSTART;VALUE=DATE-TIME:" + icsDateTime(ancientStart) + "\n" +
+                    "RRULE:FREQ=WEEKLY;BYDAY=MO\n") +
+                vevent(
+                    "UID:cut-off-series-1\n" +
+                    "RECURRENCE-ID;RANGE=THISANDFUTURE;VALUE=DATE-TIME:" + icsDateTime(cutOffDate) + "\n" +
+                    "STATUS:CANCELLED\n"))
+            var evs = only(w.parseICS(ics), "Old Recurring Project")
+            compare(evs.length, 0, "RANGE=THISANDFUTURE cancellation stopped the series in 2015, nothing in 2026")
+        }
+
+        function test_count_bounded_weekly_from_years_ago_exhausted() {
+            var w = h.item
+            var ancientStart = new Date(2011, 0, 1, 9, 0, 0)
+            var ics = vcal(vevent(
+                "UID:exhausted-count-1\n" +
+                "SUMMARY:Ten Meetings in 2011\n" +
+                "DTSTART;VALUE=DATE-TIME:" + icsDateTime(ancientStart) + "\n" +
+                "RRULE:FREQ=WEEKLY;BYDAY=MO;COUNT=10\n"))
+            var evs = only(w.parseICS(ics), "Ten Meetings in 2011")
+            compare(evs.length, 0, "COUNT=10 from 2011 was exhausted in 2011, zero occurrences in 2026")
+        }
+
+        function test_until_in_past_yields_zero_occurrences() {
+            var w = h.item
+            var ancientStart = new Date(2011, 0, 1, 9, 0, 0)
+            var ancientUntil = new Date(2013, 0, 1, 9, 0, 0)
+            var ics = vcal(vevent(
+                "UID:until-past-1\n" +
+                "SUMMARY:Until Ended 2013\n" +
+                "DTSTART;VALUE=DATE-TIME:" + icsDateTime(ancientStart) + "\n" +
+                "RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=" + icsDateTime(ancientUntil) + "\n"))
+            var evs = only(w.parseICS(ics), "Until Ended 2013")
+            compare(evs.length, 0, "UNTIL in 2013 yields zero occurrences in 2026")
+        }
+    }
+
     // ── expand(): horizon, duration, past-pruning, EXDATE (controlled clock) ──
     TestCase {
         name: "CalendarExpandBounds"

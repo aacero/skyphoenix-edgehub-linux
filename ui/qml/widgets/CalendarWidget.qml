@@ -160,17 +160,28 @@ WidgetChrome {
 
     function parseDT(val, key) {
         val = val.trim()
+        var isDateOnly = (val.length <= 8) || (key && key.indexOf("VALUE=DATE") >= 0 && key.indexOf("VALUE=DATE-TIME") < 0)
         var y = +val.substr(0, 4), mo = +val.substr(4, 2) - 1, d = +val.substr(6, 2)
-        if (val.length <= 8) return new Date(y, mo, d)
+        if (val.length <= 8) {
+            var dt = new Date(y, mo, d)
+            dt.isDateOnly = true
+            return dt
+        }
         var h = +val.substr(9, 2), mi = +val.substr(11, 2), s = +val.substr(13, 2) || 0
-        if (val.indexOf("Z") >= 0) return new Date(Date.UTC(y, mo, d, h, mi, s))
-        // A named zone (DTSTART;TZID=…) is NOT a floating wall time: anchor it to
-        // the zone's offset. Only a bare timed value stays device-local.
-        var tz = tzidOf(key)
-        var off = tz ? tzOffsetMinutes(tz, y, mo, d) : null
-        if (off !== null) return new Date(Date.UTC(y, mo, d, h, mi, s) - off * 60000)
-        if (tz) w.addParseWarning("Unsupported timezone: " + tz)
-        return new Date(y, mo, d, h, mi, s)
+        var res
+        if (val.indexOf("Z") >= 0) {
+            res = new Date(Date.UTC(y, mo, d, h, mi, s))
+        } else {
+            var tz = tzidOf(key)
+            var off = tz ? tzOffsetMinutes(tz, y, mo, d) : null
+            if (off !== null) res = new Date(Date.UTC(y, mo, d, h, mi, s) - off * 60000)
+            else {
+                if (tz) w.addParseWarning("Unsupported timezone: " + tz)
+                res = new Date(y, mo, d, h, mi, s)
+            }
+        }
+        if (isDateOnly && res) res.isDateOnly = true
+        return res
     }
 
     // Extract a TZID parameter from a property line's key part.
@@ -255,6 +266,9 @@ WidgetChrome {
     function exKey(d) {
         return d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate() + "-" + d.getHours() + "-" + d.getMinutes()
     }
+    function exDateKey(d) {
+        return d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate()
+    }
 
     function expand(ev, horizonEnd, now) {
         var out = []
@@ -262,11 +276,37 @@ WidgetChrome {
         // Duration of the event, used so an occurrence that STARTED before today
         // but hasn't finished yet (multi-day / in-progress) still counts.
         var dur = (ev.end && ev.start) ? (ev.end.getTime() - ev.start.getTime()) : 0
-        var excl = {}
-        if (ev.exdates) ev.exdates.forEach(function (d) { excl[exKey(d)] = true })
+        var exclKeys = {}
+        var exclDates = {}
+        if (ev.exdates) {
+            ev.exdates.forEach(function (d) {
+                if (!d || isNaN(d.getTime())) return
+                exclKeys[exKey(d)] = true
+                if (d.isDateOnly || ev.allDay)
+                    exclDates[exDateKey(d)] = true
+            })
+        }
+
+        function isExcluded(occStart) {
+            if (exclKeys[exKey(occStart)]) return true
+            if (exclDates[exDateKey(occStart)]) return true
+            if (ev.exdates) {
+                var t = occStart.getTime()
+                var dk = exDateKey(occStart)
+                for (var i = 0; i < ev.exdates.length; i++) {
+                    var ed = ev.exdates[i]
+                    if (!ed || isNaN(ed.getTime())) continue
+                    if (ed.isDateOnly && dk === exDateKey(ed)) return true
+                    if (Math.abs(t - ed.getTime()) < 60000) return true
+                }
+            }
+            return false
+        }
+
         // Emit one occurrence (honours EXDATE exclusions + horizon/past bounds).
         function emit(occStart) {
-            if (excl[exKey(occStart)]) return                          // cancelled (EXDATE)
+            if (isExcluded(occStart)) return                          // cancelled (EXDATE / RECURRENCE-ID)
+            if (ev.untilCutoff && occStart >= ev.untilCutoff) return  // RANGE=THISANDFUTURE cancelled
             if (occStart > horizonEnd) return
             var finished
             if (ev.allDay) {
@@ -297,6 +337,11 @@ WidgetChrome {
         var interval = +(parts.INTERVAL || 1)
         var count = parts.COUNT ? +parts.COUNT : 100000
         var until = parts.UNTIL ? parseDT(parts.UNTIL, "") : horizonEnd
+        if (parts.UNTIL && until && until.isDateOnly) {
+            until = new Date(until.getFullYear(), until.getMonth(), until.getDate(), 23, 59, 59, 999)
+        }
+        if (until.getTime() + dur < todayStart.getTime()) return out
+
         var freq = parts.FREQ, n = 0
 
         // WEEKLY with BYDAY (e.g. MO,WE,FR): walk day-by-day across the horizon and
@@ -305,6 +350,28 @@ WidgetChrome {
             var days = weekdayNums(parts.BYDAY)
             var startWeek = dayStart(ev.start); startWeek.setDate(startWeek.getDate() - startWeek.getDay())
             var cursor = dayStart(ev.start)
+            if (parts.COUNT && cursor < todayStart) {
+                // Pre-count past occurrences so a COUNT-bounded series from years ago
+                // does not re-emit occurrences today.
+                var scanWeek = new Date(startWeek)
+                var scanLimit = new Date(todayStart)
+                while (scanWeek <= scanLimit && n < count) {
+                    var wIdx = Math.round((scanWeek.getTime() - startWeek.getTime()) / (7 * 86400000))
+                    if (wIdx >= 0 && wIdx % interval === 0) {
+                        for (var di = 0; di < days.length; di++) {
+                            var occD = new Date(scanWeek)
+                            occD.setDate(occD.getDate() + days[di])
+                            occD.setHours(ev.start.getHours(), ev.start.getMinutes(), ev.start.getSeconds(), 0)
+                            if (occD >= ev.start && occD < todayStart) {
+                                n++
+                                if (n >= count) break
+                            }
+                        }
+                    }
+                    scanWeek.setDate(scanWeek.getDate() + 7)
+                }
+                if (n >= count) return out
+            }
             if (cursor < todayStart) cursor = new Date(todayStart)
             var guard = 0
             while (cursor <= horizonEnd && cursor <= until && n < count && out.length < 200 && guard < 800) {
@@ -359,36 +426,94 @@ WidgetChrome {
         w.parseWarnings = []
         var raw = text.replace(/\r\n/g, "\n").replace(/\n[ \t]/g, "") // unfold
         var lines = raw.split("\n")
-        var evs = [], cur = null
+        var rawEvents = [], cur = null
+        var cancelledUids = {}
+        var exclusionsByUid = {}
+        var rangeUntilByUid = {}
+
         for (var i = 0; i < lines.length; i++) {
             var line = lines[i]
-            if (line === "BEGIN:VEVENT") cur = {}
-            else if (line === "END:VEVENT") { if (cur && cur.start) evs.push(cur); cur = null }
-            else if (cur) {
-                var ci = line.indexOf(":"); if (ci < 0) continue
+            if (line === "BEGIN:VEVENT") {
+                cur = {}
+            } else if (line === "END:VEVENT") {
+                if (cur) {
+                    var isCancelled = (cur.status === "CANCELLED" || cur.status === "CANCELED")
+                    if (isCancelled) {
+                        if (cur.recurrenceId && cur.uid) {
+                            if (!exclusionsByUid[cur.uid]) exclusionsByUid[cur.uid] = []
+                            exclusionsByUid[cur.uid].push(cur.recurrenceId)
+                            if (cur.rangeThisAndFuture) {
+                                rangeUntilByUid[cur.uid] = cur.recurrenceId
+                            }
+                        } else if (cur.uid) {
+                            cancelledUids[cur.uid] = true
+                        }
+                    } else {
+                        if (cur.recurrenceId && cur.uid) {
+                            if (!exclusionsByUid[cur.uid]) exclusionsByUid[cur.uid] = []
+                            exclusionsByUid[cur.uid].push(cur.recurrenceId)
+                            if (cur.start) rawEvents.push(cur)
+                        } else if (cur.start) {
+                            rawEvents.push(cur)
+                        }
+                    }
+                }
+                cur = null
+            } else if (cur) {
+                var ci = line.indexOf(":")
+                if (ci < 0) continue
                 var key = line.substring(0, ci), val = line.substring(ci + 1)
                 var name = key.split(";")[0]
                 if (name === "SUMMARY") cur.title = val
                 else if (name === "LOCATION") cur.location = val
                 else if (name === "URL") cur.url = val
                 else if (name === "RRULE") cur.rrule = val
+                else if (name === "UID") cur.uid = val.trim()
+                else if (name === "STATUS") cur.status = val.trim().toUpperCase()
+                else if (name === "RECURRENCE-ID") {
+                    cur.recurrenceId = parseDT(val, key)
+                    if (cur.recurrenceId && ((val.trim().length <= 8) || (key.indexOf("VALUE=DATE") >= 0 && key.indexOf("VALUE=DATE-TIME") < 0)))
+                        cur.recurrenceId.isDateOnly = true
+                    if (key.indexOf("RANGE=THISANDFUTURE") >= 0)
+                        cur.rangeThisAndFuture = true
+                }
                 else if (name === "DTSTART") {
                     cur.start = parseDT(val, key)
                     // VALUE=DATE marks an all-day event, but must NOT match the
                     // longer VALUE=DATE-TIME (which is a normal timed event).
                     cur.allDay = key.indexOf("VALUE=DATE") >= 0 && key.indexOf("VALUE=DATE-TIME") < 0
+                    if (cur.allDay && cur.start) cur.start.isDateOnly = true
                 }
                 else if (name === "DTEND") cur.end = parseDT(val, key)
                 else if (name === "EXDATE") {
                     cur.exdates = cur.exdates || []
-                    val.split(",").forEach(function (v) { if (v.trim().length) cur.exdates.push(parseDT(v, key)) })
+                    val.split(",").forEach(function (v) {
+                        var vt = v.trim()
+                        if (vt.length) {
+                            var exd = parseDT(vt, key)
+                            if (exd) {
+                                if ((vt.length <= 8) || (key.indexOf("VALUE=DATE") >= 0 && key.indexOf("VALUE=DATE-TIME") < 0))
+                                    exd.isDateOnly = true
+                                cur.exdates.push(exd)
+                            }
+                        }
+                    })
                 }
             }
         }
         var now = new Date(), horizon = new Date(now.getTime() + 30 * 86400000)
         var all = []
-        for (var j = 0; j < evs.length; j++)
-            all = all.concat(expand(evs[j], horizon, now))
+        for (var j = 0; j < rawEvents.length; j++) {
+            var ev = rawEvents[j]
+            if (ev.uid && cancelledUids[ev.uid]) continue
+            if (ev.uid && exclusionsByUid[ev.uid]) {
+                ev.exdates = (ev.exdates || []).concat(exclusionsByUid[ev.uid])
+            }
+            if (ev.uid && rangeUntilByUid[ev.uid]) {
+                ev.untilCutoff = rangeUntilByUid[ev.uid]
+            }
+            all = all.concat(expand(ev, horizon, now))
+        }
         all.sort(function (a, b) { return a.start - b.start })
         return all.slice(0, 60)
     }
