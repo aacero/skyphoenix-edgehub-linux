@@ -177,6 +177,64 @@ WidgetChrome {
 
     function currentMs() { return w.nowMsOverride >= 0 ? w.nowMsOverride : Date.now() }
 
+    // ── MAC address auto-discovery ──────────────────────────────────────────
+    function findMacForNode(nodeLabel, nodeUrl) {
+        if (!store || !store.document || !store.document.settings) return ""
+        var s = store.document.settings
+        var cleanLabel = (nodeLabel || "").toLowerCase().replace(/:\d+$/, "")
+        var hostFromUrl = ""
+        if (nodeUrl) {
+            var m = nodeUrl.match(/^https?:\/\/([^:\/]+)/i)
+            if (m && m[1]) hostFromUrl = m[1].toLowerCase().replace(/^\[|\]$/g, "")
+        }
+
+        for (var k in s) {
+            if (k.indexOf("quickactions") === -1) continue
+            var qSettings = s[k]
+            if (!qSettings) continue
+
+            // 1. Check actions / hosts array
+            var acts = qSettings.actions || qSettings.hosts || []
+            if (Array.isArray(acts)) {
+                for (var i = 0; i < acts.length; i++) {
+                    var a = acts[i]
+                    if (!a) continue
+                    var targetMac = a.mac || (a.type === "wol" ? a.target : "")
+                    if (!targetMac && /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/.test(a.target || "")) {
+                        targetMac = a.target
+                    }
+                    if (targetMac) {
+                        var l = (a.label || "").toLowerCase()
+                        var h = (a.host || "").toLowerCase()
+                        if ((cleanLabel && (l.indexOf(cleanLabel) >= 0 || cleanLabel.indexOf(l) >= 0))
+                            || (hostFromUrl && (l.indexOf(hostFromUrl) >= 0 || hostFromUrl.indexOf(l) >= 0 || h === hostFromUrl))) {
+                            return targetMac
+                        }
+                    }
+                }
+            }
+
+            // 2. Check actionsText string
+            if (typeof qSettings.actionsText === "string") {
+                var lines = qSettings.actionsText.split("\n")
+                for (var j = 0; j < lines.length; j++) {
+                    var line = lines[j].trim()
+                    if (!line || line.startsWith("#")) continue
+                    var parts = line.split("|").map(function(p) { return p.trim() })
+                    if (parts.length >= 3 && parts[1].toLowerCase() === "wol") {
+                        var pl = parts[0].toLowerCase()
+                        var pmac = parts[2]
+                        if ((cleanLabel && (pl.indexOf(cleanLabel) >= 0 || cleanLabel.indexOf(pl) >= 0))
+                            || (hostFromUrl && (pl.indexOf(hostFromUrl) >= 0 || hostFromUrl.indexOf(pl) >= 0))) {
+                            return pmac
+                        }
+                    }
+                }
+            }
+        }
+        return ""
+    }
+
     // ── Host parsing ─────────────────────────────────────────────────────────
     function normalizeUrl(target, dfltPort) {
         var item = String(target || "").trim()
@@ -245,6 +303,9 @@ WidgetChrome {
             url = url.replace(/\/+$/, "") + "/metrics"
         }
         var label = customLabel || url.replace(/^https?:\/\//i, "").replace(/\/metrics$/i, "").replace(/\/+$/, "")
+        if (!mac && typeof findMacForNode === "function") {
+            mac = findMacForNode(label, url)
+        }
         return { label: label, url: url, mac: mac, broadcast: broadcast }
     }
 

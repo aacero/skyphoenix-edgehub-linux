@@ -254,6 +254,19 @@ Item {
             verify(mockBridge.lastCommand.indexOf("ssh 10.0.0.227") >= 0)
         }
 
+        // ── 1c. MAC Auto-discovery from Quick Actions ────────────────────────
+        function test_mac_autodiscovery_from_quickactions() {
+            h.storeCtl.setSetting("quickactions-test", "actions", [
+                { id: "act-1", label: "Wake palatka", type: "wol", target: "38:ca:84:39:6c:9e" },
+                { id: "act-2", label: "Wake deerpark", type: "wol", target: "40:a8:f0:a7:e9:9c" }
+            ])
+            var p1 = h.item.normalizeUrl("palatka:9100", 9100)
+            compare(p1.mac, "38:ca:84:39:6c:9e", "palatka MAC auto-discovered from QuickActions settings")
+
+            var p2 = h.item.normalizeUrl("deerpark:9100", 9100)
+            compare(p2.mac, "40:a8:f0:a7:e9:9c", "deerpark MAC auto-discovered from QuickActions settings")
+        }
+
         // ── 2. Prometheus Parser ─────────────────────────────────────────────
         function test_parse_node_exporter_metrics() {
             var parsed = h.item.parseNodeExporter(root.sampleNodeExporterMetrics)
