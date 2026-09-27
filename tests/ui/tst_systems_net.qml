@@ -248,6 +248,12 @@ Item {
             mouseClick(deckWake, deckWake.width / 2, deckWake.height / 2)
             compare(mockBridge.wolCallCount, 1, "clicking deckWakeMa dispatches sendWakeOnLan")
             compare(mockBridge.lastMac, "38:ca:84:39:6c:9e")
+            var wolStClick = h.item._wolStates[nodeWithMac.url]
+            compare(h.item.wolButtonLabel(wolStClick, false), "Packet Sent ✓")
+            compare(h.item.wolButtonLabel(wolStClick, true), "Sent ✓")
+            var simBootSt = { status: "ok", time: Date.now() - 15000 }
+            compare(h.item.wolButtonLabel(simBootSt, false), "⚡ Booting (15s)...")
+            compare(h.item.wolButtonLabel(simBootSt, true), "⚡ Booting (15s)")
             h.expanded = true
 
             // Test Ping dispatch

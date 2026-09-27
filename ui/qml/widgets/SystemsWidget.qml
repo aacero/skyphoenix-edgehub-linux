@@ -42,6 +42,17 @@ WidgetChrome {
 
     property var _wolStates: ({})
     property var _pingStates: ({})
+    property int _wolTick: 0
+
+    function wolButtonLabel(wolSt, compact) {
+        if (!wolSt || !wolSt.status) return compact ? "⚡ Wake" : "Wake (WOL)"
+        if (wolSt.status === "sending") return "Waking..."
+        if (wolSt.status === "error") return "Wake Failed"
+        var _ = w._wolTick // reactivity trigger on second tick
+        var elapsed = Math.max(0, Math.floor((Date.now() - (wolSt.time || 0)) / 1000))
+        if (elapsed < 3) return compact ? "Sent ✓" : "Packet Sent ✓"
+        return compact ? ("⚡ Booting (" + elapsed + "s)") : ("⚡ Booting (" + elapsed + "s)...")
+    }
 
     function wakeNode(node) {
         if (!node) return
@@ -236,15 +247,17 @@ WidgetChrome {
 
     Timer {
         id: wolResetTimer
-        interval: 4000
+        interval: 1000
         repeat: true
         running: Object.keys(w._wolStates).length > 0 || Object.keys(w._pingStates).length > 0
         onTriggered: {
+            w._wolTick++
             var now = Date.now()
             var copyW = JSON.parse(JSON.stringify(w._wolStates))
             var changedW = false
             for (var kw in copyW) {
-                if (now - (copyW[kw].time || 0) > 4000) {
+                // Give systems 60 seconds to POST, pass GRUB, and initialize network
+                if (now - (copyW[kw].time || 0) > 60000) {
                     delete copyW[kw]
                     changedW = true
                 }
@@ -823,6 +836,18 @@ WidgetChrome {
                 w.localNodes = merged
                 _commitEphemeral(merged)
                 w._evaluateFleetAlerts(merged)
+
+                // If a host was waking and has now responded, clear its booting state
+                var copyW = JSON.parse(JSON.stringify(w._wolStates))
+                var clearedW = false
+                for (var m = 0; m < merged.length; m++) {
+                    if (merged[m].status && merged[m].status !== "offline") {
+                        if (copyW[merged[m].url]) { delete copyW[merged[m].url]; clearedW = true }
+                        if (copyW[merged[m].label]) { delete copyW[merged[m].label]; clearedW = true }
+                    }
+                }
+                if (clearedW) w._wolStates = copyW
+
                 if (typeof onComplete === "function") onComplete()
             }
         }
@@ -1270,15 +1295,17 @@ WidgetChrome {
                                         spacing: 10
                                         Text {
                                             Layout.alignment: Qt.AlignCenter
-                                            text: "HOST UNREACHABLE"
-                                            color: theme.error
+                                            text: (deckWakeBtn.wolSt.status === "ok") ? "SYSTEM STARTING UP" : "HOST UNREACHABLE"
+                                            color: (deckWakeBtn.wolSt.status === "ok") ? theme.accent : theme.error
                                             font.pixelSize: 16
                                             font.family: theme.fontDisplay
                                             font.weight: Font.Bold
                                         }
                                         Text {
                                             Layout.alignment: Qt.AlignCenter
-                                            text: modelData.error || "Connection timed out"
+                                            text: (deckWakeBtn.wolSt.status === "ok")
+                                                  ? "Waiting for network and OS services..."
+                                                  : (modelData.error || "Connection timed out")
                                             color: theme.textSecondary
                                             font.pixelSize: 13
                                             font.family: theme.fontMono
@@ -1306,9 +1333,7 @@ WidgetChrome {
                                                 }
                                                 Text {
                                                     id: deckWakeTxt
-                                                    text: deckWakeBtn.wolSt.status === "sending" ? "Waking..."
-                                                          : (deckWakeBtn.wolSt.status === "ok" ? "Packet Sent ✓"
-                                                          : "Wake (WOL)")
+                                                    text: w.wolButtonLabel(deckWakeBtn.wolSt, false)
                                                     color: "#FFFFFF"
                                                     font.pixelSize: 13
                                                     font.family: theme.fontDisplay
@@ -1380,10 +1405,13 @@ WidgetChrome {
                                 RowLayout {
                                     spacing: 6
                                     Text {
-                                        text: modelData.status === "offline"
-                                              ? (modelData.error || "Offline")
-                                              : ("up " + modelData.uptimeStr)
-                                        color: modelData.status === "offline" ? theme.error : theme.textTertiary
+                                        text: (listWakeBtn.wolSt.status === "ok")
+                                              ? "Starting up..."
+                                              : (modelData.status === "offline"
+                                                 ? (modelData.error || "Offline")
+                                                 : ("up " + modelData.uptimeStr))
+                                        color: (listWakeBtn.wolSt.status === "ok") ? theme.accent
+                                               : (modelData.status === "offline" ? theme.error : theme.textTertiary)
                                         font.pixelSize: 12
                                         font.family: theme.fontMono
                                     }
@@ -1402,9 +1430,7 @@ WidgetChrome {
                                         Text {
                                             id: listWakeTxt
                                             anchors.centerIn: parent
-                                            text: listWakeBtn.wolSt.status === "sending" ? "Waking..."
-                                                  : (listWakeBtn.wolSt.status === "ok" ? "Sent ✓"
-                                                  : "⚡ Wake")
+                                            text: w.wolButtonLabel(listWakeBtn.wolSt, true)
                                             font.pixelSize: 11
                                             font.family: theme.fontDisplay
                                             font.weight: Font.Bold
@@ -1947,6 +1973,8 @@ WidgetChrome {
 
                                 // Wake (WOL) Button
                                 Rectangle {
+                                    id: deepWakeBtn
+                                    objectName: "deepWakeBtn"
                                     visible: deepDivePanel.selNode && !!deepDivePanel.selNode.mac
                                     implicitWidth: deepWakeTxt.implicitWidth + 22
                                     implicitHeight: 34
@@ -1961,9 +1989,7 @@ WidgetChrome {
                                         AppIcon { name: "hard-drives"; size: 14; color: "#FFFFFF" }
                                         Text {
                                             id: deepWakeTxt
-                                            text: parent.parent.wolSt.status === "sending" ? "Waking..."
-                                                  : (parent.parent.wolSt.status === "ok" ? "Packet Sent ✓"
-                                                  : "⚡ Wake (WOL)")
+                                            text: w.wolButtonLabel(deepWakeBtn.wolSt, false)
                                             font.pixelSize: 12
                                             font.family: theme.fontDisplay
                                             font.weight: Font.Bold
@@ -1972,7 +1998,10 @@ WidgetChrome {
                                     }
                                     MouseArea {
                                         id: deepWakeMa
-                                        anchors.fill: parent
+                                        objectName: "deepWakeMa"
+                                        anchors.centerIn: parent
+                                        width: Math.max(parent.width, 44)
+                                        height: Math.max(parent.height, 44)
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: w.wakeNode(deepDivePanel.selNode)
