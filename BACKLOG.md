@@ -2,7 +2,7 @@
 
 > **Project Fork & History:**
 > This repository was forked from upstream (`skyphoenix-it/XeneonEdge_Linux`) after v1.0.0.
-> Historical pre-fork backlog notes (Simon Kreitmayer's pre-1.0.0 decisions, commercial payment provider stubs, and legacy test post-mortems) have been archived to [`docs/archive/BACKLOG_HISTORICAL.md`](file:///home/acero/src/skyphoenix-edgehub-linux/docs/archive/BACKLOG_HISTORICAL.md).
+> Historical pre-fork backlog notes (Simon Kreitmayer's pre-1.0.0 decisions, commercial payment provider stubs, and legacy test post-mortems) have been archived to [docs/archive/BACKLOG_HISTORICAL.md](docs/archive/BACKLOG_HISTORICAL.md).
 
 ---
 
