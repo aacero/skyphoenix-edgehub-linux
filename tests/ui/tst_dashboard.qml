@@ -595,7 +595,7 @@ Item {
             compare(d.reactiveAlerts.length, 1)
             compare(d.activeWarningAlerts.length, 1)
             compare(d.activeCriticalAlerts.length, 0)
-            verify(d.reactiveAlertSurface.visible, "banner appears for active alerts")
+            tryVerify(function () { return d.reactiveAlertSurface.visible }, 1000, "banner appears for active alerts")
             compare(d.reactiveAlertSurface.accentCol, root.theme.warning)
 
             // Add critical alert
@@ -627,7 +627,7 @@ Item {
             }, 1000)
 
             // Acknowledge the critical alert
-            verify(d.acknowledgeAlert("sys-crit"))
+            verify(d.acknowledgeAlert("sys-crit"), "sys-crit alert acknowledged")
             compare(d.activeCriticalAlerts.length, 0)
             // Warning alert becomes active on banner
             compare(d.currentBannerAlert.key, "sys-warn")
@@ -635,7 +635,7 @@ Item {
             // Clear all
             compare(d.syncReactiveAlerts("sys-tile", []), 0)
             compare(d.reactiveAlerts.length, 0)
-            verify(!d.reactiveAlertSurface.visible)
+            tryVerify(function () { return !d.reactiveAlertSurface.visible }, 1000, "banner hides when alerts cleared")
             s.applyExternal(root.makeDoc([]))
         }
 

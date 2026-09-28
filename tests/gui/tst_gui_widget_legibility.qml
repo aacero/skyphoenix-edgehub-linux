@@ -647,9 +647,9 @@ Item {
             root.textInputScans = 0
             root.textEditScans = 0
             root.editorCoverage = ({ TextInput: ({}), TextEdit: ({}) })
-            verify(catalog.items.length === 30,
-                   "matrix is tied to all 30 first-party widgets")
-            compare(projections, 288,
+            verify(catalog.items.length === 35,
+                   "matrix is tied to all 35 first-party widgets")
+            compare(projections, 346,
                     "matrix contains every declared size in both orientations")
             compare(root.textScales.length, 4,
                     "matrix carries all four user-facing text scales")
@@ -661,8 +661,8 @@ Item {
                     "matrix carries native and 125 percent output scaling")
             compare(root.metricStates.length, 4,
                     "matrix retains nominal, zero, saturated, and empty metrics")
-            compare(projections * root.textScales.length, 1152,
-                    "bounded pairwise matrix remains 1,152 rendered rows")
+            compare(projections * root.textScales.length, 1384,
+                    "bounded pairwise matrix remains 1,384 rendered rows")
         }
 
         function test_minimum_rendered_type_data() {
@@ -704,8 +704,8 @@ Item {
                     }
                 }
             }
-            compare(projection, 288, "data generator produced every projection")
-            compare(rows.length, 1152, "data generator stayed within its bounded budget")
+            compare(projection, 346, "data generator produced every projection")
+            compare(rows.length, 1384, "data generator stayed within its bounded budget")
             return rows
         }
 

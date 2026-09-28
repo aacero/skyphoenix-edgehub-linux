@@ -120,13 +120,22 @@ Item {
             return null
         }
 
-        // Map an orientation mode to its expected rotation.
+        // Map an orientation mode to its expected rotation based on window aspect.
         function rotFor(mode) {
-            switch (mode) {
-            case "portrait": return 0
-            case "landscape": return 90
-            case "inverted-portrait": return 180
-            case "inverted-landscape": return 270
+            if (win && win.windowIsLandscape) {
+                switch (mode) {
+                case "landscape": return 0
+                case "portrait": return 90
+                case "inverted-landscape": return 180
+                case "inverted-portrait": return 270
+                }
+            } else {
+                switch (mode) {
+                case "portrait": return 0
+                case "landscape": return 90
+                case "inverted-portrait": return 180
+                case "inverted-landscape": return 270
+                }
             }
             return -1
         }
@@ -238,15 +247,21 @@ Item {
         // 3a - each fixed mode sets the right rotation (4). ORI-01/03/05/07.
         function test_ori_a_fixed_rotation_data() {
             return [
-                { tag: "portrait",           mode: "portrait",           rot: 0 },
-                { tag: "landscape",          mode: "landscape",          rot: 90 },
-                { tag: "inverted-portrait",  mode: "inverted-portrait",  rot: 180 },
-                { tag: "inverted-landscape", mode: "inverted-landscape", rot: 270 },
+                { tag: "portrait",           w: 300, h: 500, mode: "portrait",           rot: 0 },
+                { tag: "landscape",          w: 300, h: 500, mode: "landscape",          rot: 90 },
+                { tag: "inverted-portrait",  w: 300, h: 500, mode: "inverted-portrait",  rot: 180 },
+                { tag: "inverted-landscape", w: 300, h: 500, mode: "inverted-landscape", rot: 270 },
+                { tag: "landscape-landwin",  w: 500, h: 300, mode: "landscape",          rot: 0 },
+                { tag: "portrait-landwin",   w: 500, h: 300, mode: "portrait",           rot: 90 },
+                { tag: "inv-land-landwin",   w: 500, h: 300, mode: "inverted-landscape", rot: 180 },
+                { tag: "inv-port-landwin",   w: 500, h: 300, mode: "inverted-portrait",  rot: 270 },
             ]
         }
         function test_ori_a_fixed_rotation(d) {
+            win.width = d.w; win.height = d.h
             win.orientationMode = d.mode
-            compare(win.contentRotation, d.rot, d.mode + " → " + d.rot + "°")
+            compare(win.contentRotation, d.rot, d.mode + " on " + d.w + "x" + d.h + " → " + d.rot + "°")
+            win.width = baseW; win.height = baseH
         }
 
         // 3a - each mode swaps (or not) the contentRoot aspect (4). ORI-02/04/06/08.

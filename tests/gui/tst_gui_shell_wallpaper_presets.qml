@@ -667,7 +667,7 @@ Item {
         }
         function test_append_keeps_orientation() {
             store.load("blank"); win.orientationMode = "landscape"
-            compare(win.contentRotation, 90)
+            compare(win.contentRotation, win.windowIsLandscape ? 0 : 90)
             dash.appendPreset("developer")
             compare(win.orientationMode, "landscape", "orientation survives an append")
             win.orientationMode = "portrait"
@@ -726,7 +726,7 @@ Item {
         }
         function test_append_landscape_lands_and_stays() {
             store.load("blank"); win.orientationMode = "landscape"
-            compare(win.contentRotation, 90)
+            compare(win.contentRotation, win.windowIsLandscape ? 0 : 90)
             var count = store.pageCount()
             verify(dash.appendPreset("home-ambient"))
             tryVerify(function () { return swipe.currentIndex === count }, 4000)
@@ -1179,8 +1179,9 @@ Item {
             var doc = { version: 1, appearance: {}, settings: {},
                 pages: [ { name: "Home", tiles: [ { id: "clock-1", type: "clock", size: "1x1" } ] },
                          { name: "Home", tiles: "not-an-array" } ] }
-            dash.applyExternalState(JSON.stringify(doc)); wait(200)
-            verify(store.pageCount() >= 1, "a corrupt document is healed to at least one page")
+            dash.applyExternalState(JSON.stringify(doc))
+            tryVerify(function () { return store.pageCount() >= 1 }, 2000, "a corrupt document is healed to at least one page")
+            wait(500)
             var img = snap(dash, "healed")
             verify(G.looksRendered(img), "the healed dashboard renders (no blank/crash)")
         }

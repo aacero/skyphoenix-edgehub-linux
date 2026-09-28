@@ -44,7 +44,7 @@ WidgetChrome {
     property string userViewMode: ""
     readonly property real aspect: width / Math.max(1, height)
     readonly property string autoViewMode: {
-        if (aspect < 0.75) return "agenda"
+        if (aspect < 0.90) return "agenda"
         if (aspect <= 1.45) return "month"
         return "week"
     }

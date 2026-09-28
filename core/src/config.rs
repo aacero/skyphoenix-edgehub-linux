@@ -1641,7 +1641,11 @@ fn backup_config_of(path: &std::path::Path) -> Result<(), ConfigError> {
     let Some(snapshot) = read_config_snapshot(path)? else {
         return Ok(());
     };
-    replace_canonical_backup(path, &snapshot.bytes)?;
+    if let Ok(s) = std::str::from_utf8(&snapshot.bytes) {
+        if toml::from_str::<toml::Table>(s).is_ok() {
+            replace_canonical_backup(path, &snapshot.bytes)?;
+        }
+    }
     Ok(())
 }
 

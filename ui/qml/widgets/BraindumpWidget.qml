@@ -392,7 +392,7 @@ WidgetChrome {
                     visible: y + height > list.contentY
                              && y < list.contentY + list.height
 
-                    activeFocusOnTab: !w.expanded && !entryRow.editingThis
+                    activeFocusOnTab: true
                     Accessible.role: Accessible.ListItem
                     Accessible.name: (entryRow.modelData && entryRow.modelData.text ? entryRow.modelData.text : "Thought")
                                      + (entryRow.selectedThis ? " (selected)" : "")

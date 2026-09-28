@@ -1011,23 +1011,29 @@ Item {
             hS.storeCtl.patchSettings("test-instance", { url: "http://127.0.0.1:1/x.ics", viewMode: "auto" })
             w.userViewMode = ""
 
-            // 1. Vertical rectangle (aspect < 0.75) -> agenda
+            // 1. Vertical rectangle (aspect < 0.90) -> agenda
             sizeWrap.width = 410; sizeWrap.height = 704
             wait(20)
-            verify(w.aspect < 0.75, "aspect is vertical: " + w.aspect)
+            verify(w.aspect < 0.90, "aspect is vertical: " + w.aspect)
             compare(w.autoViewMode, "agenda")
             compare(w.effectiveViewMode, "agenda")
 
-            // 2. Square / near-square (0.75 <= aspect <= 1.45) -> month
-            sizeWrap.width = 696; sizeWrap.height = 819 // portrait 1x1
+            sizeWrap.width = 696; sizeWrap.height = 819 // portrait 1x1 (aspect ~0.85)
             wait(20)
-            verify(w.aspect >= 0.75 && w.aspect <= 1.45, "aspect is near-square: " + w.aspect)
+            verify(w.aspect < 0.90, "aspect is vertical 1x1: " + w.aspect)
+            compare(w.autoViewMode, "agenda")
+            compare(w.effectiveViewMode, "agenda")
+
+            // 2. Square / near-square (0.90 <= aspect <= 1.45) -> month
+            sizeWrap.width = 750; sizeWrap.height = 750 // square (aspect 1.0)
+            wait(20)
+            verify(w.aspect >= 0.90 && w.aspect <= 1.45, "aspect is square: " + w.aspect)
             compare(w.autoViewMode, "month")
             compare(w.effectiveViewMode, "month")
 
             sizeWrap.width = 846; sizeWrap.height = 612 // landscape 1x1
             wait(20)
-            verify(w.aspect >= 0.75 && w.aspect <= 1.45, "aspect is landscape 1x1: " + w.aspect)
+            verify(w.aspect >= 0.90 && w.aspect <= 1.45, "aspect is landscape 1x1: " + w.aspect)
             compare(w.autoViewMode, "month")
             compare(w.effectiveViewMode, "month")
 
