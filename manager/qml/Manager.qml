@@ -1655,8 +1655,8 @@ ApplicationWindow {
                                 TextField {
                                     width: 80
                                     horizontalAlignment: TextInput.AlignHCenter
-                                    font.family: m.fontMono
-                                    font.pixelSize: m.fontSmall
+                                    font.family: theme.fontMono
+                                    font.pixelSize: m.fontMinimum
                                     color: m.accent
                                     placeholderText: "0"
                                     text: {

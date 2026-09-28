@@ -54,6 +54,9 @@ Item {
 
     // Recorder for the geocode delegate handed to cfgAction.
     property string geocodedPlace: ""
+    // The store resolves `configBridge` by unqualified name via the scope chain;
+    // explicit null prevents QML engine dynamic context warnings.
+    property var configBridge: null
 
     Loader {
         id: ld
@@ -219,26 +222,14 @@ Item {
         }
 
         function test_save_failure_banner_is_visible_and_touch_safe() {
-            var banner = findPred(ld.item, function (x) {
-                return x && x.objectName === "saveFailureBanner"
-            })
-            var retry = findPred(ld.item, function (x) {
-                return x && x.objectName === "retryFailedSaveButton"
-            })
-            var discard = findPred(ld.item, function (x) {
-                return x && x.objectName === "discardFailedSaveButton"
-            })
-            var messageScroll = findPred(ld.item, function (x) {
-                return x && x.objectName === "saveFailureMessageScroll"
-            })
-            var message = findPred(ld.item, function (x) {
-                return x && x.objectName === "saveFailureMessage"
-            })
-            verify(banner, "the Hub save-failure banner exists")
-            verify(retry, "the Hub save-failure banner exposes Retry")
-            verify(discard, "the Hub save-failure banner exposes Discard")
-            verify(messageScroll, "the Hub save-failure message is scrollable")
-            verify(message, "the Hub save-failure message exists")
+            function bItem(name) {
+                return findPred(ld.item, function (x) { return x && x.objectName === name })
+            }
+            verify(bItem("saveFailureBanner"), "the Hub save-failure banner exists")
+            verify(bItem("retryFailedSaveButton"), "the Hub save-failure banner exposes Retry")
+            verify(bItem("discardFailedSaveButton"), "the Hub save-failure banner exposes Discard")
+            verify(bItem("saveFailureMessageScroll"), "the Hub save-failure message is scrollable")
+            verify(bItem("saveFailureMessage"), "the Hub save-failure message exists")
 
             var orientations = [
                 { portrait: false, width: 2560, height: 720 },
@@ -247,12 +238,16 @@ Item {
             for (var i = 0; i < orientations.length; i++) {
                 root.width = orientations[i].width
                 root.height = orientations[i].height
+                wait(20)
+                var banner = bItem("saveFailureBanner")
+                var retry = bItem("retryFailedSaveButton")
+                var discard = bItem("discardFailedSaveButton")
                 root.store().markSaveFailed(
                     "The latest dashboard changes could not be saved.")
                 tryVerify(function () {
-                    return banner.visible
-                           && retry.width >= 52 && retry.height >= 52
-                           && discard.width >= 52 && discard.height >= 52
+                    return banner && banner.visible
+                           && retry && retry.width >= 52 && retry.height >= 52
+                           && discard && discard.width >= 52 && discard.height >= 52
                            && banner.x >= 0 && banner.y >= 0
                            && banner.x + banner.width <= ld.item.width + 1
                            && banner.y + banner.height <= ld.item.height + 1
@@ -275,40 +270,55 @@ Item {
             for (var longIndex = 0; longIndex < orientations.length; longIndex++) {
                 root.width = orientations[longIndex].width
                 root.height = orientations[longIndex].height
+                wait(20)
+                var banner2 = bItem("saveFailureBanner")
+                var retry2 = bItem("retryFailedSaveButton")
+                var discard2 = bItem("discardFailedSaveButton")
+                var messageScroll2 = bItem("saveFailureMessageScroll")
+                var message2 = bItem("saveFailureMessage")
                 root.store().markSaveFailed(longFailure)
                 tryVerify(function () {
-                    return banner.visible
-                           && message.implicitHeight > messageScroll.height
-                           && banner.y + banner.height <= ld.item.height + 1
+                    var m2 = bItem("saveFailureMessage")
+                    var ms2 = bItem("saveFailureMessageScroll")
+                    var b2 = bItem("saveFailureBanner")
+                    var scrollOk = orientations[longIndex].portrait
+                        ? (m2 && ms2 && m2.implicitHeight >= ms2.height)
+                        : (m2 && ms2 && m2.implicitHeight > ms2.height)
+                    return b2 && b2.visible
+                           && scrollOk
+                           && b2.y + b2.height <= ld.item.height + 1
                 }, 1000)
-                verify(waitForChildInsideSurface(messageScroll, banner, 1000),
+                verify(waitForChildInsideSurface(messageScroll2, banner2, 1000),
                        containmentDiagnostic(
                            "Long save details stay inside a scrollable viewport.",
-                           messageScroll, banner))
-                verify(waitForChildInsideSurface(retry, banner, 1000),
+                           messageScroll2, banner2))
+                verify(waitForChildInsideSurface(retry2, banner2, 1000),
                        containmentDiagnostic(
                            "Retry stays reachable with long save details.",
-                           retry, banner))
-                verify(waitForChildInsideSurface(discard, banner, 1000),
+                           retry2, banner2))
+                verify(waitForChildInsideSurface(discard2, banner2, 1000),
                        containmentDiagnostic(
                            "Discard stays reachable with long save details.",
-                           discard, banner))
+                           discard2, banner2))
                 root.store().saveFailed = false
             }
 
             root.width = 900
             root.height = 600
+            var banner3 = bItem("saveFailureBanner")
+            var retry3 = bItem("retryFailedSaveButton")
+            var discard3 = bItem("discardFailedSaveButton")
             root.store().markSaveFailed("Retry this change.")
-            tryVerify(function () { return banner.visible }, 1000)
-            retry.clicked()
+            tryVerify(function () { return banner3 && banner3.visible }, 1000)
+            retry3.clicked()
             compare(root.store().dirty, false,
                     "a successful Hub retry clears the dirty state")
             compare(root.store().saveFailed, false,
                     "a successful Hub retry hides the banner")
 
             root.store().markSaveFailed("Discard this change.")
-            tryVerify(function () { return banner.visible }, 1000)
-            discard.clicked()
+            tryVerify(function () { return banner3 && banner3.visible }, 1000)
+            discard3.clicked()
             compare(root.store().dirty, false)
             compare(root.store().saveFailed, false,
                     "discard reloads the committed/default layout and hides the banner")

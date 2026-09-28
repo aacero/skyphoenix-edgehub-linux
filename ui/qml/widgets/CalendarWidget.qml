@@ -40,6 +40,192 @@ WidgetChrome {
     }
     readonly property string url: cfg.url || ""
     readonly property int maxEvents: cfg.maxEvents !== undefined ? cfg.maxEvents : 5
+    readonly property string configuredViewMode: cfg.viewMode || "auto"
+    property string userViewMode: ""
+    readonly property real aspect: width / Math.max(1, height)
+    readonly property string autoViewMode: {
+        if (aspect < 0.75) return "agenda"
+        if (aspect <= 1.45) return "month"
+        return "week"
+    }
+    readonly property string effectiveViewMode: {
+        if (userViewMode !== "") return userViewMode
+        if (configuredViewMode !== "auto") return configuredViewMode
+        return autoViewMode
+    }
+
+    // ── Date navigation & Day drawer state ───────────────────────────────────
+    property int displayYear: (new Date()).getFullYear()
+    property int displayMonth: (new Date()).getMonth()
+    property int weekOffset: 0
+    property var selectedDate: null
+    property bool dayDetailOpen: false
+
+    function prevMonth() {
+        if (w.displayMonth === 0) {
+            w.displayMonth = 11
+            w.displayYear--
+        } else {
+            w.displayMonth--
+        }
+    }
+    function nextMonth() {
+        if (w.displayMonth === 11) {
+            w.displayMonth = 0
+            w.displayYear++
+        } else {
+            w.displayMonth++
+        }
+    }
+    function prevWeek() { w.weekOffset-- }
+    function nextWeek() { w.weekOffset++ }
+    function goToday() {
+        var now = new Date()
+        w.displayYear = now.getFullYear()
+        w.displayMonth = now.getMonth()
+        w.weekOffset = 0
+    }
+    function openDayDetail(date) {
+        w.selectedDate = new Date(date)
+        w.dayDetailOpen = true
+    }
+    function closeDayDetail() {
+        w.dayDetailOpen = false
+    }
+
+    function eventsForDate(targetDate) {
+        if (!w.events || !w.events.length || !targetDate) return []
+        var y = targetDate.getFullYear(), m = targetDate.getMonth(), d = targetDate.getDate()
+        var startOfDay = new Date(y, m, d, 0, 0, 0, 0).getTime()
+        var endOfDay = new Date(y, m, d, 23, 59, 59, 999).getTime()
+        var res = []
+        for (var i = 0; i < w.events.length; i++) {
+            var ev = w.events[i]
+            if (!ev || !ev.start) continue
+            var s = ev.start.getTime()
+            var e = ev.end ? ev.end.getTime() : s
+            var effEnd = (ev.allDay && e > s) ? (e - 1) : e
+            if (s <= endOfDay && effEnd >= startOfDay) res.push(ev)
+        }
+        return res
+    }
+
+    readonly property var monthCells: {
+        var _ = w.events
+        var y = w.displayYear, mo = w.displayMonth
+        var firstDay = new Date(y, mo, 1).getDay()
+        var daysInMo = new Date(y, mo + 1, 0).getDate()
+        var prevDays = new Date(y, mo, 0).getDate()
+        var today = new Date()
+        var todayY = today.getFullYear(), todayM = today.getMonth(), todayD = today.getDate()
+        var list = []
+        for (var i = 0; i < 42; i++) {
+            var cellD, cellM = mo, cellY = y, inMonth = false
+            if (i < firstDay) {
+                cellD = prevDays - firstDay + 1 + i
+                cellM = mo === 0 ? 11 : mo - 1
+                cellY = mo === 0 ? y - 1 : y
+            } else if (i < firstDay + daysInMo) {
+                cellD = i - firstDay + 1
+                inMonth = true
+            } else {
+                cellD = i - (firstDay + daysInMo) + 1
+                cellM = mo === 11 ? 0 : mo + 1
+                cellY = mo === 11 ? y + 1 : y
+            }
+            var dt = new Date(cellY, cellM, cellD, 12, 0, 0, 0)
+            var isToday = (cellY === todayY && cellM === todayM && cellD === todayD)
+            var evs = w.eventsForDate(dt)
+            list.push({
+                year: cellY, month: cellM, day: cellD,
+                inMonth: inMonth,
+                isToday: isToday,
+                date: dt,
+                events: evs,
+                eventCount: evs.length
+            })
+        }
+        return list
+    }
+
+    readonly property var weekDays: {
+        var _ = w.events
+        var today = new Date()
+        var todayY = today.getFullYear(), todayM = today.getMonth(), todayD = today.getDate()
+        var base = new Date(today.getFullYear(), today.getMonth(), today.getDate() + w.weekOffset * 7, 12, 0, 0, 0)
+        var list = []
+        for (var j = 0; j < 7; j++) {
+            var d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + j, 12, 0, 0, 0)
+            var isToday = (d.getFullYear() === todayY && d.getMonth() === todayM && d.getDate() === todayD)
+            var evs = w.eventsForDate(d)
+            list.push({
+                date: d,
+                dayIndex: j,
+                isToday: isToday,
+                events: evs,
+                eventCount: evs.length
+            })
+        }
+        return list
+    }
+
+    // Interactive View Mode Switcher Chips in Header
+    headerRightItem: [
+        RowLayout {
+            id: viewModeChips
+            visible: !w.expanded && w.url.length > 0 && w.width >= 320
+            spacing: 2
+            Repeater {
+                model: [
+                    { id: "agenda", label: "List" },
+                    { id: "month", label: "Month" },
+                    { id: "week", label: "Week" }
+                ]
+                delegate: Rectangle {
+                    id: chip
+                    required property var modelData
+                    readonly property bool active: w.effectiveViewMode === modelData.id
+                    implicitWidth: Math.max(48, chipLabel.implicitWidth + 14)
+                    implicitHeight: 28
+                    radius: 14
+                    color: chip.active ? Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.22) : "transparent"
+                    border.width: 1
+                    border.color: chip.active ? w.effAccent : Qt.rgba(255, 255, 255, 0.15)
+                    Text {
+                        id: chipLabel
+                        anchors.centerIn: parent
+                        text: chip.modelData.label
+                        font.family: theme.fontDisplay
+                        font.pixelSize: theme.fontMinimum
+                        font.weight: chip.active ? Font.DemiBold : Font.Normal
+                        color: chip.active ? w.effAccent : theme.textSecondary
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -4
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (w.userViewMode === chip.modelData.id) {
+                                w.userViewMode = ""
+                            } else {
+                                w.userViewMode = chip.modelData.id
+                            }
+                        }
+                    }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "View " + chip.modelData.label
+                    Accessible.onPressAction: {
+                        if (w.userViewMode === chip.modelData.id) {
+                            w.userViewMode = ""
+                        } else {
+                            w.userViewMode = chip.modelData.id
+                        }
+                    }
+                }
+            }
+        }
+    ]
+
     property var events: []        // expanded, sorted upcoming
     property string errorText: ""
     property bool loading: false
@@ -501,7 +687,8 @@ WidgetChrome {
                 }
             }
         }
-        var now = new Date(), horizon = new Date(now.getTime() + 30 * 86400000)
+        var horizonDays = Math.max(30, (cfg.horizonDays !== undefined ? cfg.horizonDays : 90))
+        var now = new Date(), horizon = new Date(now.getTime() + horizonDays * 86400000)
         var all = []
         for (var j = 0; j < rawEvents.length; j++) {
             var ev = rawEvents[j]
@@ -515,7 +702,7 @@ WidgetChrome {
             all = all.concat(expand(ev, horizon, now))
         }
         all.sort(function (a, b) { return a.start - b.start })
-        return all.slice(0, 60)
+        return all.slice(0, 100)
     }
 
     // The sequence token - not the XHR object - is the supersede guard: the gate
@@ -575,9 +762,10 @@ WidgetChrome {
                 try {
                     w.events = w.parseICS(body)
                     w.errorText = ""
+                    var hDays = Math.max(30, (w.cfg.horizonDays !== undefined ? w.cfg.horizonDays : 90))
                     w.stateHelp = w.events.length
                         ? "Calendar is up to date."
-                        : "The subscription connected successfully but has no events in the next 30 days."
+                        : ("The subscription connected successfully but has no events in the next " + hDays + " days.")
                     w.lastSuccessAt = w.currentMs()
                     if (w._hub().publishSharedProvider)
                         w._hub().publishSharedProvider(w.sharedKind, w.url, w, {
@@ -656,7 +844,8 @@ WidgetChrome {
         id: tileAgenda
         objectName: "calendarTileAgenda"
         anchors.fill: parent; anchors.margins: theme.spacingSm
-        visible: !w.expanded; spacing: theme.spacingXs
+        visible: !w.expanded && (!w.url.length || (w.effectiveViewMode === "agenda" && (!w.dayDetailOpen || w.selectedDate === null)))
+        spacing: theme.spacingXs
 
         // The UNCONFIGURED state - this is what ships in the presets, so it has
         // to stay legible at every declared size, not just at 1x1.
@@ -808,6 +997,588 @@ WidgetChrome {
             Item {
                 visible: w.events.length > 0
                 Layout.fillHeight: true
+            }
+        }
+    }
+
+    // ── Tile: Month view (7-col grid, today highlight, event dots, clickable days)
+    ColumnLayout {
+        id: tileMonth
+        objectName: "calendarTileMonth"
+        anchors.fill: parent; anchors.margins: theme.spacingSm
+        visible: !w.expanded && w.url.length > 0 && w.effectiveViewMode === "month" && (!w.dayDetailOpen || w.selectedDate === null)
+        spacing: theme.spacingXs
+
+        // Header: Prev Month, Title (e.g. October 2026), Today button, Next Month
+        RowLayout {
+            id: monthHeader
+            objectName: "calendarMonthHeader"
+            Layout.fillWidth: true
+            Layout.preferredHeight: 38
+            spacing: theme.spacingSm
+
+            Rectangle {
+                id: btnPrevMonth
+                objectName: "calendarMonthPrev"
+                Layout.preferredWidth: 44
+                Layout.preferredHeight: 38
+                radius: theme.radiusSm
+                color: prevMa.pressed ? theme.cardFillSubtle : "transparent"
+                AppIcon {
+                    name: "ui-caret-left"
+                    size: 18
+                    color: theme.textSecondary
+                    anchors.centerIn: parent
+                }
+                MouseArea {
+                    id: prevMa
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: w.prevMonth()
+                }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Previous month"
+                Accessible.onPressAction: w.prevMonth()
+            }
+
+            Text {
+                id: monthTitle
+                objectName: "calendarMonthTitle"
+                text: Qt.formatDate(new Date(w.displayYear, w.displayMonth, 1), "MMMM yyyy")
+                font.family: theme.fontDisplay
+                font.pixelSize: Math.max(theme.fontLabel, Math.min(w.width * 0.045, theme.fontTitle))
+                font.bold: true
+                color: theme.textPrimary
+                Layout.alignment: Qt.AlignVCenter
+            }
+
+            Rectangle {
+                id: btnMonthToday
+                objectName: "calendarMonthToday"
+                readonly property bool notCurrentMonth: {
+                    var now = new Date()
+                    return w.displayYear !== now.getFullYear() || w.displayMonth !== now.getMonth()
+                }
+                visible: notCurrentMonth
+                implicitWidth: todayLabel.implicitWidth + 14
+                implicitHeight: 28
+                radius: 14
+                color: todayMa.pressed ? theme.cardFillSubtle : "transparent"
+                border.width: 1
+                border.color: w.effAccent
+                Text {
+                    id: todayLabel
+                    anchors.centerIn: parent
+                    text: "Today"
+                    font.family: theme.fontDisplay
+                    font.pixelSize: theme.fontMinimum
+                    color: w.effAccent
+                }
+                MouseArea {
+                    id: todayMa
+                    anchors.fill: parent
+                    anchors.margins: -4
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: w.goToday()
+                }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Go to today"
+                Accessible.onPressAction: w.goToday()
+            }
+
+            Item { Layout.fillWidth: true }
+
+            Rectangle {
+                id: btnNextMonth
+                objectName: "calendarMonthNext"
+                Layout.preferredWidth: 44
+                Layout.preferredHeight: 38
+                radius: theme.radiusSm
+                color: nextMa.pressed ? theme.cardFillSubtle : "transparent"
+                AppIcon {
+                    name: "ui-caret-right"
+                    size: 18
+                    color: theme.textSecondary
+                    anchors.centerIn: parent
+                }
+                MouseArea {
+                    id: nextMa
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: w.nextMonth()
+                }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Next month"
+                Accessible.onPressAction: w.nextMonth()
+            }
+        }
+
+        // Day of week labels
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 2
+            Repeater {
+                model: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+                delegate: Text {
+                    required property string modelData
+                    Layout.fillWidth: true
+                    horizontalAlignment: Text.AlignHCenter
+                    text: modelData
+                    color: theme.textTertiary
+                    font.family: theme.fontDisplay
+                    font.pixelSize: theme.fontMinimum
+                }
+            }
+        }
+
+        // 42-day Month Grid
+        GridLayout {
+            id: monthGrid
+            objectName: "calendarMonthGrid"
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            columns: 7
+            rows: 6
+            rowSpacing: 2
+            columnSpacing: 2
+
+            Repeater {
+                model: w.monthCells
+                delegate: Rectangle {
+                    id: dayCell
+                    objectName: "calendarMonthDayCell"
+                    required property var modelData
+                    required property int index
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    radius: theme.radiusSm
+                    color: dayMa.pressed
+                        ? theme.cardFillSubtle
+                        : (modelData.isToday
+                            ? Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.18)
+                            : "transparent")
+                    border.width: modelData.isToday ? 1 : 0
+                    border.color: modelData.isToday ? w.effAccent : "transparent"
+
+                    ColumnLayout {
+                        anchors.centerIn: parent
+                        spacing: 1
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: dayCell.modelData.day
+                            font.family: theme.fontDisplay
+                            font.pixelSize: Math.max(theme.fontMinimum, Math.min(dayCell.height * 0.40, 16))
+                            font.bold: dayCell.modelData.isToday
+                            color: dayCell.modelData.inMonth
+                                ? (dayCell.modelData.isToday ? w.effAccent : theme.textPrimary)
+                                : theme.textTertiary
+                            opacity: dayCell.modelData.inMonth ? 1.0 : 0.45
+                        }
+                        Row {
+                            Layout.alignment: Qt.AlignHCenter
+                            spacing: 2
+                            visible: dayCell.modelData.eventCount > 0
+                            Repeater {
+                                model: Math.min(3, dayCell.modelData.eventCount)
+                                delegate: Rectangle {
+                                    width: 4; height: 4; radius: 2
+                                    color: dayCell.modelData.isToday ? w.effAccent : theme.accentReadable
+                                }
+                            }
+                        }
+                    }
+                    MouseArea {
+                        id: dayMa
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: w.openDayDetail(dayCell.modelData.date)
+                    }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: Qt.formatDate(dayCell.modelData.date, "dddd, MMMM d, yyyy")
+                        + (dayCell.modelData.eventCount > 0
+                            ? (", " + dayCell.modelData.eventCount + " events")
+                            : ", no events")
+                    Accessible.onPressAction: w.openDayDetail(dayCell.modelData.date)
+                }
+            }
+        }
+    }
+
+    // ── Tile: Week view (7 day columns, event pills, clickable days) ─────────
+    ColumnLayout {
+        id: tileWeek
+        objectName: "calendarTileWeek"
+        anchors.fill: parent; anchors.margins: theme.spacingSm
+        visible: !w.expanded && w.url.length > 0 && w.effectiveViewMode === "week" && (!w.dayDetailOpen || w.selectedDate === null)
+        spacing: theme.spacingXs
+
+        // Header: Prev Week, Date range, Today button, Next Week
+        RowLayout {
+            id: weekHeader
+            objectName: "calendarWeekHeader"
+            Layout.fillWidth: true
+            Layout.preferredHeight: 38
+            spacing: theme.spacingSm
+
+            Rectangle {
+                id: btnPrevWeek
+                objectName: "calendarWeekPrev"
+                Layout.preferredWidth: 44
+                Layout.preferredHeight: 38
+                radius: theme.radiusSm
+                color: prevWkMa.pressed ? theme.cardFillSubtle : "transparent"
+                AppIcon {
+                    name: "ui-caret-left"
+                    size: 18
+                    color: theme.textSecondary
+                    anchors.centerIn: parent
+                }
+                MouseArea {
+                    id: prevWkMa
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: w.prevWeek()
+                }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Previous week"
+                Accessible.onPressAction: w.prevWeek()
+            }
+
+            Text {
+                id: weekTitle
+                objectName: "calendarWeekTitle"
+                readonly property string rangeText: {
+                    if (!w.weekDays.length) return "Week"
+                    var d1 = w.weekDays[0].date
+                    var d2 = w.weekDays[6].date
+                    return Qt.formatDate(d1, "MMM d") + " – " + Qt.formatDate(d2, "MMM d, yyyy")
+                }
+                text: rangeText
+                font.family: theme.fontDisplay
+                font.pixelSize: Math.max(theme.fontLabel, Math.min(w.width * 0.035, theme.fontTitle))
+                font.bold: true
+                color: theme.textPrimary
+                Layout.alignment: Qt.AlignVCenter
+            }
+
+            Rectangle {
+                id: btnWeekToday
+                objectName: "calendarWeekToday"
+                visible: w.weekOffset !== 0
+                implicitWidth: todayWkLabel.implicitWidth + 14
+                implicitHeight: 28
+                radius: 14
+                color: todayWkMa.pressed ? theme.cardFillSubtle : "transparent"
+                border.width: 1
+                border.color: w.effAccent
+                Text {
+                    id: todayWkLabel
+                    anchors.centerIn: parent
+                    text: "Today"
+                    font.family: theme.fontDisplay
+                    font.pixelSize: theme.fontMinimum
+                    color: w.effAccent
+                }
+                MouseArea {
+                    id: todayWkMa
+                    anchors.fill: parent
+                    anchors.margins: -4
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: w.goToday()
+                }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Go to this week"
+                Accessible.onPressAction: w.goToday()
+            }
+
+            Item { Layout.fillWidth: true }
+
+            Rectangle {
+                id: btnNextWeek
+                objectName: "calendarWeekNext"
+                Layout.preferredWidth: 44
+                Layout.preferredHeight: 38
+                radius: theme.radiusSm
+                color: nextWkMa.pressed ? theme.cardFillSubtle : "transparent"
+                AppIcon {
+                    name: "ui-caret-right"
+                    size: 18
+                    color: theme.textSecondary
+                    anchors.centerIn: parent
+                }
+                MouseArea {
+                    id: nextWkMa
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: w.nextWeek()
+                }
+                Accessible.role: Accessible.Button
+                Accessible.name: "Next week"
+                Accessible.onPressAction: w.nextWeek()
+            }
+        }
+
+        // 7 Day Columns
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: theme.spacingSm
+
+            Repeater {
+                model: w.weekDays
+                delegate: Rectangle {
+                    id: weekCol
+                    objectName: "calendarWeekCol"
+                    required property var modelData
+                    required property int index
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    Layout.preferredWidth: 1
+                    radius: theme.radiusMd
+                    color: weekColMa.pressed
+                        ? theme.cardFillSubtle
+                        : (modelData.isToday
+                            ? Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.12)
+                            : Qt.rgba(255, 255, 255, 0.03))
+                    border.width: modelData.isToday ? 1 : 0
+                    border.color: modelData.isToday ? w.effAccent : "transparent"
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 4
+                        spacing: 4
+
+                        // Column header
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            Text {
+                                text: weekCol.modelData.isToday ? "Today" : Qt.formatDate(weekCol.modelData.date, "ddd")
+                                font.family: theme.fontDisplay
+                                font.pixelSize: theme.fontMinimum
+                                font.bold: weekCol.modelData.isToday
+                                color: weekCol.modelData.isToday ? w.effAccent : theme.textSecondary
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                text: Qt.formatDate(weekCol.modelData.date, "d")
+                                font.family: theme.fontDisplay
+                                font.pixelSize: theme.fontMinimum
+                                font.bold: weekCol.modelData.isToday
+                                color: weekCol.modelData.isToday ? w.effAccent : theme.textPrimary
+                            }
+                        }
+
+                        // Event pills list
+                        ColumnLayout {
+                            id: weekPillCol
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            spacing: 2
+                            clip: true
+
+                            readonly property int maxVisiblePills: Math.max(1, Math.floor((height - 2) / 28))
+
+                            Repeater {
+                                model: weekCol.modelData.events.slice(0, weekPillCol.maxVisiblePills)
+                                delegate: Rectangle {
+                                    required property var modelData
+                                    Layout.fillWidth: true
+                                    Layout.preferredHeight: 24
+                                    radius: 3
+                                    color: Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.16)
+                                    border.width: 1
+                                    border.color: Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.28)
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 3
+                                        anchors.rightMargin: 3
+                                        spacing: 3
+                                        Rectangle {
+                                            Layout.preferredWidth: 2; Layout.preferredHeight: 14; radius: 1
+                                            color: w.effAccent
+                                        }
+                                        Text {
+                                            text: modelData.title || "(busy)"
+                                            font.family: theme.fontDisplay
+                                            font.pixelSize: Math.max(theme.fontMinimum - 1, 9)
+                                            color: theme.textPrimary
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                visible: weekCol.modelData.eventCount > weekPillCol.maxVisiblePills
+                                text: "+" + (weekCol.modelData.eventCount - weekPillCol.maxVisiblePills) + " more"
+                                font.family: theme.fontDisplay
+                                font.pixelSize: Math.max(theme.fontMinimum - 1, 9)
+                                color: w.effAccent
+                                Layout.alignment: Qt.AlignHCenter
+                            }
+
+                            Item {
+                                visible: weekCol.modelData.eventCount === 0
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "—"
+                                    color: theme.textTertiary
+                                    font.pixelSize: theme.fontMinimum
+                                }
+                            }
+                            Item { Layout.fillHeight: true }
+                        }
+                    }
+
+                    MouseArea {
+                        id: weekColMa
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: w.openDayDetail(weekCol.modelData.date)
+                    }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: Qt.formatDate(weekCol.modelData.date, "dddd, MMMM d")
+                        + (weekCol.modelData.eventCount > 0
+                            ? (", " + weekCol.modelData.eventCount + " events")
+                            : ", no events")
+                    Accessible.onPressAction: w.openDayDetail(weekCol.modelData.date)
+                }
+            }
+        }
+    }
+
+    // ── Day detail expander (opened by clicking day tile in Month/Week view) ──
+    Rectangle {
+        id: dayDetailDrawer
+        objectName: "calendarDayDetail"
+        anchors.fill: parent
+        anchors.margins: theme.spacingSm
+        visible: !w.expanded && w.dayDetailOpen && w.selectedDate !== null
+        z: 20
+        radius: theme.radiusMd
+        color: theme.cardFillColor
+        border.width: 1
+        border.color: w.effAccent
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: theme.spacingSm
+            spacing: theme.spacingSm
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: theme.spacingSm
+
+                Rectangle {
+                    id: btnDayDetailClose
+                    objectName: "calendarDayDetailClose"
+                    Layout.preferredWidth: 44
+                    Layout.preferredHeight: 44
+                    radius: theme.radiusSm
+                    color: closeMa.pressed ? theme.cardFillSubtle : Qt.rgba(255, 255, 255, 0.06)
+                    border.width: 1
+                    border.color: Qt.rgba(255, 255, 255, 0.12)
+                    AppIcon {
+                        name: "ui-caret-left"
+                        size: 22
+                        color: theme.textPrimary
+                        anchors.centerIn: parent
+                    }
+                    MouseArea {
+                        id: closeMa
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: w.closeDayDetail()
+                    }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "Back to calendar"
+                    Accessible.onPressAction: w.closeDayDetail()
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 1
+                    Text {
+                        objectName: "calendarDayDetailTitle"
+                        text: w.selectedDate ? Qt.formatDate(w.selectedDate, "dddd, MMMM d") : ""
+                        font.family: theme.fontDisplay
+                        font.pixelSize: theme.fontTitle
+                        font.bold: true
+                        color: theme.textPrimary
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                    Text {
+                        readonly property int evCount: w.selectedDate ? w.eventsForDate(w.selectedDate).length : 0
+                        text: evCount === 0 ? "No events scheduled" : (evCount === 1 ? "1 event" : (evCount + " events"))
+                        font.family: theme.fontDisplay
+                        font.pixelSize: theme.fontLabel
+                        color: theme.textSecondary
+                    }
+                }
+            }
+
+            ListView {
+                id: dayEventsList
+                objectName: "calendarDayDetailList"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                spacing: theme.spacingXs
+                model: w.selectedDate ? w.eventsForDate(w.selectedDate) : []
+                delegate: RowLayout {
+                    required property var modelData
+                    width: dayEventsList.width
+                    spacing: theme.spacingSm
+                    Rectangle {
+                        Layout.preferredWidth: 3
+                        Layout.preferredHeight: 38
+                        radius: 2
+                        color: w.effAccent
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 1
+                        Text {
+                            text: modelData.title || "(busy)"
+                            color: theme.textPrimary
+                            font.family: theme.fontDisplay
+                            font.pixelSize: theme.fontLabel
+                            font.bold: true
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+                        Text {
+                            readonly property string whenStr: modelData.allDay
+                                ? "All day"
+                                : (Qt.formatTime(modelData.start, "HH:mm") + (modelData.end ? " – " + Qt.formatTime(modelData.end, "HH:mm") : ""))
+                            text: whenStr + (modelData.location ? "  ·  " + modelData.location : "")
+                            color: theme.textSecondary
+                            font.family: theme.fontDisplay
+                            font.pixelSize: theme.fontMinimum
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+                    }
+                }
+            }
+
+            Item {
+                visible: (w.selectedDate ? w.eventsForDate(w.selectedDate).length : 0) === 0
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Text {
+                    anchors.centerIn: parent
+                    text: "No events scheduled for this day"
+                    color: theme.textTertiary
+                    font.family: theme.fontDisplay
+                    font.pixelSize: theme.fontLabel
+                }
             }
         }
     }

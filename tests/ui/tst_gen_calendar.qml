@@ -629,7 +629,7 @@ Item {
             var w = hTile.item
             // A non-empty url makes the event rows (not the empty prompt) visible;
             // the unreachable host fails fast without clobbering w.events.
-            hTile.storeCtl.patchSettings("test-instance", { url: "http://127.0.0.1:1/x.ics", maxEvents: 6 })
+            hTile.storeCtl.patchSettings("test-instance", { url: "http://127.0.0.1:1/x.ics", maxEvents: 6, viewMode: "agenda" })
             w.events = fakeEvents(8)
             compare(w.shownEvents.length, 6, "shownEvents honours maxEvents=6")
             wait(50)
@@ -732,6 +732,7 @@ Item {
             var keys = keysOf(s)
             verify(keys["url"] === true, "schema exposes 'url'")
             verify(keys["maxEvents"] === true, "schema exposes 'maxEvents'")
+            verify(keys["viewMode"] === true, "schema exposes 'viewMode'")
         }
         function test_max_events_field_bounds_match_widget() {
             var f = fieldOf(sc.schemaFor("calendar"), "maxEvents")
@@ -770,7 +771,7 @@ Item {
             sizeWrap.width = width; sizeWrap.height = height
             hS.item.sizeClass = cls
             hS.storeCtl.patchSettings("test-instance",
-                { url: "http://127.0.0.1:1/x.ics", maxEvents: maxEvents })
+                { url: "http://127.0.0.1:1/x.ics", maxEvents: maxEvents, viewMode: "agenda" })
             hS.item.errorText = ""
             hS.item.stateHelp = ""
             hS.item.loading = false
@@ -983,6 +984,206 @@ Item {
                 verify(found.width <= cases[i][0],
                        tag + ": the prompt fits inside the tile")
             }
+        }
+    }
+
+    // ── Adaptive Geometry Views (Agenda, Month, Week) & Clickable Days ───────
+    TestCase {
+        name: "CalendarAdaptiveViews"
+        when: windowShown
+
+        function initTestCase() { tryVerify(function () { return hS.ready }, 3000) }
+        function cleanup() {
+            sizeWrap.width = 696
+            sizeWrap.height = 819
+            hS.item.userViewMode = ""
+            hS.item.weekOffset = 0
+            hS.item.dayDetailOpen = false
+            hS.item.selectedDate = null
+            hS.item.errorText = ""
+            hS.item.stateHelp = ""
+            hS.item.loading = false
+            hS.storeCtl.patchSettings("test-instance", { url: "" })
+        }
+
+        function test_view_mode_auto_geometry_selection() {
+            var w = hS.item
+            hS.storeCtl.patchSettings("test-instance", { url: "http://127.0.0.1:1/x.ics", viewMode: "auto" })
+            w.userViewMode = ""
+
+            // 1. Vertical rectangle (aspect < 0.75) -> agenda
+            sizeWrap.width = 410; sizeWrap.height = 704
+            wait(20)
+            verify(w.aspect < 0.75, "aspect is vertical: " + w.aspect)
+            compare(w.autoViewMode, "agenda")
+            compare(w.effectiveViewMode, "agenda")
+
+            // 2. Square / near-square (0.75 <= aspect <= 1.45) -> month
+            sizeWrap.width = 696; sizeWrap.height = 819 // portrait 1x1
+            wait(20)
+            verify(w.aspect >= 0.75 && w.aspect <= 1.45, "aspect is near-square: " + w.aspect)
+            compare(w.autoViewMode, "month")
+            compare(w.effectiveViewMode, "month")
+
+            sizeWrap.width = 846; sizeWrap.height = 612 // landscape 1x1
+            wait(20)
+            verify(w.aspect >= 0.75 && w.aspect <= 1.45, "aspect is landscape 1x1: " + w.aspect)
+            compare(w.autoViewMode, "month")
+            compare(w.effectiveViewMode, "month")
+
+            // 3. Horizontal rectangle (aspect > 1.45) -> week
+            sizeWrap.width = 1692; sizeWrap.height = 612 // landscape 1x2
+            wait(20)
+            verify(w.aspect > 1.45, "aspect is horizontal: " + w.aspect)
+            compare(w.autoViewMode, "week")
+            compare(w.effectiveViewMode, "week")
+        }
+
+        function test_view_mode_config_and_user_overrides() {
+            var w = hS.item
+            sizeWrap.width = 410; sizeWrap.height = 704 // vertical aspect normally picks agenda
+
+            hS.storeCtl.patchSettings("test-instance", { url: "http://127.0.0.1:1/x.ics", viewMode: "month" })
+            wait(20)
+            compare(w.effectiveViewMode, "month", "config override forces month")
+
+            hS.storeCtl.patchSettings("test-instance", { url: "http://127.0.0.1:1/x.ics", viewMode: "week" })
+            wait(20)
+            compare(w.effectiveViewMode, "week", "config override forces week")
+
+            // User chip mode override wins over config
+            w.userViewMode = "agenda"
+            compare(w.effectiveViewMode, "agenda", "userViewMode chip wins over config")
+            w.userViewMode = ""
+            compare(w.effectiveViewMode, "week", "clearing userViewMode falls back to config")
+        }
+
+        function test_events_for_date_filtering() {
+            var w = hS.item
+            var now = new Date()
+            var today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 10, 0, 0)
+            var tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 14, 0, 0)
+            var allDayTodayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0)
+            var allDayTodayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0)
+
+            w.events = [
+                { title: "Today Meeting", start: today, end: new Date(today.getTime() + 3600000), allDay: false },
+                { title: "Today All-Day", start: allDayTodayStart, end: allDayTodayEnd, allDay: true },
+                { title: "Tomorrow Review", start: tomorrow, end: new Date(tomorrow.getTime() + 3600000), allDay: false }
+            ]
+
+            var todayMatches = w.eventsForDate(today)
+            compare(todayMatches.length, 2, "today matches both timed and all-day events")
+            compare(todayMatches[0].title, "Today Meeting")
+            compare(todayMatches[1].title, "Today All-Day")
+
+            var tomMatches = w.eventsForDate(tomorrow)
+            compare(tomMatches.length, 1, "tomorrow matches only tomorrow's event")
+            compare(tomMatches[0].title, "Tomorrow Review")
+        }
+
+        function test_month_view_navigation_and_day_cells() {
+            var w = hS.item
+            sizeWrap.width = 696; sizeWrap.height = 819
+            hS.storeCtl.patchSettings("test-instance", { url: "http://127.0.0.1:1/x.ics", viewMode: "month" })
+            w.events = fakeEvents(5)
+            wait(30)
+
+            compare(w.monthCells.length, 42, "month view grid has 42 cells (6 rows x 7 cols)")
+
+            var startMo = w.displayMonth
+
+            w.nextMonth()
+            compare(w.displayMonth, (startMo + 1) % 12, "nextMonth increments month")
+
+            w.prevMonth()
+            compare(w.displayMonth, startMo, "prevMonth decrements month back")
+
+            w.prevMonth()
+            compare(w.displayMonth, (startMo + 11) % 12, "prevMonth wraps properly")
+
+            w.goToday()
+            var today = new Date()
+            compare(w.displayMonth, today.getMonth(), "goToday restores current month")
+            compare(w.displayYear, today.getFullYear(), "goToday restores current year")
+        }
+
+        function test_week_view_navigation_and_columns() {
+            var w = hS.item
+            sizeWrap.width = 1692; sizeWrap.height = 612
+            hS.storeCtl.patchSettings("test-instance", { url: "http://127.0.0.1:1/x.ics", viewMode: "week" })
+            w.events = fakeEvents(5)
+            wait(30)
+
+            compare(w.weekDays.length, 7, "week view has 7 day columns")
+            compare(w.weekOffset, 0, "default weekOffset is 0 (current week)")
+
+            w.nextWeek()
+            compare(w.weekOffset, 1, "nextWeek increments offset")
+
+            w.prevWeek()
+            compare(w.weekOffset, 0, "prevWeek decrements offset back")
+
+            w.prevWeek()
+            compare(w.weekOffset, -1, "prevWeek can view past week")
+
+            w.goToday()
+            compare(w.weekOffset, 0, "goToday resets weekOffset to 0")
+        }
+
+        function test_day_detail_drawer_open_close_and_touch_target() {
+            var w = hS.item
+            sizeWrap.width = 696; sizeWrap.height = 819
+            hS.storeCtl.patchSettings("test-instance", { url: "http://127.0.0.1:1/x.ics", viewMode: "month" })
+            var testDate = new Date(2026, 9, 15, 12, 0, 0)
+            w.events = [
+                { title: "Team Sync", start: new Date(2026, 9, 15, 10, 0), end: new Date(2026, 9, 15, 11, 0), allDay: false, location: "Room A" }
+            ]
+            wait(30)
+
+            compare(w.dayDetailOpen, false, "day drawer initially closed")
+            w.openDayDetail(testDate)
+            compare(w.dayDetailOpen, true, "openDayDetail opens drawer")
+            compare(w.selectedDate.getDate(), 15, "selectedDate is set")
+
+            function findPred(node, pred) {
+                if (!node) return null
+                if (pred(node)) return node
+                if (node.children) {
+                    for (var i = 0; i < node.children.length; i++) {
+                        var r = findPred(node.children[i], pred)
+                        if (r) return r
+                    }
+                }
+                return null
+            }
+
+            var closeBtn = findPred(hS.item, function (x) {
+                return x && x.objectName === "calendarDayDetailClose"
+            })
+            verify(closeBtn !== null, "close button exists in day drawer")
+            verify(closeBtn.width >= 44 && closeBtn.height >= 44,
+                   "close button meets touch target >= 44px: " + closeBtn.width + "x" + closeBtn.height)
+
+            w.closeDayDetail()
+            compare(w.dayDetailOpen, false, "closeDayDetail hides drawer")
+        }
+
+        function test_horizon_days_configuration() {
+            var w = hS.item
+            hS.storeCtl.patchSettings("test-instance",
+                { url: "http://127.0.0.1:1/x.ics", horizonDays: 60 })
+            // Default horizon is at least 90 days, or configured value
+            var ics = "BEGIN:VCALENDAR\n"
+                    + "BEGIN:VEVENT\n"
+                    + "UID:ev-horizon-1\n"
+                    + "SUMMARY:Far Future Event\n"
+                    + "DTSTART:" + icsDateTime(daysFromNow(45)) + "\n"
+                    + "DTEND:" + icsDateTime(daysFromNow(45)) + "\n"
+                    + "END:VEVENT\n"
+                    + "END:VCALENDAR\n"
+            var parsed = w.parseICS(ics)
+            compare(parsed.length, 1, "events at 45 days are parsed within the extended horizon")
         }
     }
 }

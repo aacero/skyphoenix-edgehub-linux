@@ -834,8 +834,14 @@ QtObject {
                   help: "This URL can grant access to private calendar data. Prefer ${env:CALENDAR_ICS_URL} or file:/run/secrets/calendar-url so only a reference is stored. Legacy literal URLs remain supported in the private 0600 config file." },
                 { type: "info", text: "Use the secret iCal/ICS subscription URL from Google, Outlook or Nextcloud. The resolved value is used only inside the network request and is omitted from diagnostics." } ] },
             { title: "Display", cols: 1, fields: [
+                { key: "viewMode", label: "View mode", type: "segmented", dflt: "auto", options: [
+                    { value: "auto", label: "Auto" },
+                    { value: "agenda", label: "Agenda" },
+                    { value: "month", label: "Month" },
+                    { value: "week", label: "Week" } ],
+                  help: "Auto chooses Agenda for vertical layouts, Month for square layouts, and Week for horizontal layouts." },
                 { key: "maxEvents", label: "Events to show", type: "number", min: 1, max: 12, step: 1, dflt: 5,
-                  help: "At most this many. A smaller tile shows fewer - it never overflows, and never shows more than you ask for." } ] },
+                  help: "At most this many in the agenda list. A smaller tile shows fewer - it never overflows, and never shows more than you ask for." } ] },
             titleSection("Calendar"),
             about("Upcoming events from a calendar you subscribe to. Requests use the shared egress gate. The active widget reports freshness and any unsupported timezone or recurrence rules instead of silently claiming complete coverage.") ] }
 
