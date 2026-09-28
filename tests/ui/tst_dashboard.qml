@@ -305,12 +305,14 @@ Item {
 
             root.width = 900
             root.height = 600
+            wait(20)
             var banner3 = bItem("saveFailureBanner")
             var retry3 = bItem("retryFailedSaveButton")
             var discard3 = bItem("discardFailedSaveButton")
             root.store().markSaveFailed("Retry this change.")
             tryVerify(function () { return banner3 && banner3.visible }, 1000)
-            retry3.clicked()
+            mouseClick(retry3)
+            wait(20)
             compare(root.store().dirty, false,
                     "a successful Hub retry clears the dirty state")
             compare(root.store().saveFailed, false,
@@ -318,7 +320,8 @@ Item {
 
             root.store().markSaveFailed("Discard this change.")
             tryVerify(function () { return banner3 && banner3.visible }, 1000)
-            discard3.clicked()
+            mouseClick(discard3)
+            wait(50)
             compare(root.store().dirty, false)
             compare(root.store().saveFailed, false,
                     "discard reloads the committed/default layout and hides the banner")
