@@ -249,5 +249,16 @@ Item {
             compare(h.item.remoteArtworkBlocked, false)
             compare(h.item.artworkNotice, "")
         }
+
+        function test_corrupt_or_missing_artwork_produces_unavailable_notice() {
+            ignoreWarning(/QML Image: Cannot open: .*/)
+            h.mediaCtl.loadTrack("Test Song", "Test Artist")
+            h.mediaCtl.artUrl = "file:///nonexistent/path/corrupt_art.png"
+            tryVerify(function () {
+                return h.item.artworkLoadError === true
+            }, 1000)
+            compare(h.item.artworkNotice, "Artwork unavailable")
+            h.mediaCtl.artUrl = ""
+        }
     }
 }

@@ -52,9 +52,11 @@ WidgetChrome {
         ? w.localArtworkSource(media.artUrl) : ""
     readonly property bool remoteArtworkBlocked: w.avail && !!media.artUrl
                                                   && !w.artworkSource.length
+    readonly property bool artworkLoadError: (w.artworkSource.length > 0)
+        && ((artC && artC.status === Image.Error) || (artE && artE.status === Image.Error))
     readonly property string artworkNotice: !w.avail || !media.artUrl ? ""
         : w.remoteArtworkBlocked ? "Artwork blocked by network policy"
-        : !w.artworkSource.length ? "Artwork unavailable" : ""
+        : w.artworkLoadError ? "Artwork unavailable" : ""
 
     // accentColor MUST be a concrete colour: effAccent falls back to accentColor
     // (WidgetChrome), so `accentColor: effAccent` was a binding loop → the play
