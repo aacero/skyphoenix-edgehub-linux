@@ -4,7 +4,7 @@
 > labels below describe the tree at the time of that audit; they are not an open
 > defect count for the current branch. Many items were subsequently fixed and
 > regression-tested. Current release blockers are tracked in
-> [MVP scope](product/mvp-scope.md) and [the beta/release gate](BETA_PLAN.md).
+> [MVP scope](../../product/mvp-scope.md) and [the beta/release gate](BETA_PLAN.md).
 
 504 raw findings (345 audit + 159 test-confirmed). The test set overwhelmingly **corroborates** the audit rather than adding new defects - treat every `likelyRealBug:true` test as a regression gate for the matching audit item. After dedup, ~10 systemic patterns account for well over half the volume. **Fix the systemic patterns first**; most per-widget "lows" evaporate when the root cause is fixed once.
 

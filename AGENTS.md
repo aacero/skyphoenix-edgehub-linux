@@ -70,7 +70,7 @@ an assertion-backed `// COVERS:` claim. See `docs/DEV_AND_TEST_PLAN.md`.
 
 ## Generated files
 
-- `ui/qml/widgets/` - the widget files. **`scripts/gen_widgets.py` is stale bootstrap scaffolding, NOT a live source of truth** - the files have been hand-written far past it (only 3 of its ~30 names still match a real widget, and those have diverged to ~10x its size). Hand-edit the widgets directly. Do **not** "re-run the script to regenerate": a plain run now writes nothing (it skips existing files and no longer emits the dead names), and `--force` would replace a real widget with a 20-line stub. The old advice here caused exactly that.
+- `ui/qml/widgets/` - the widget files. Hand-edit the widgets directly. The initial bootstrap script has been archived to `scripts/archive/gen_widgets.py` and is NOT a source of truth. Never attempt to regenerate widgets from it.
 - `xeneon_core.h` is a **hand-maintained** C header for the FFI. Adding a new `#[no_mangle] extern "C"` function in `ffi.rs` requires updating this header.
 
 ## Config

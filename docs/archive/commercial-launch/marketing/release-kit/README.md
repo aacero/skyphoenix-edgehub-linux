@@ -41,7 +41,7 @@ self-update, performance, or long-soak promise.
 ## Finished media
 
 The versioned launch assets live under
-[`../../marketing-site/assets/release/v1.0.0-beta.1/`](../../marketing-site/assets/release/v1.0.0-beta.1/):
+[`../../../../marketing-site/assets/release/v1.0.0-beta.1/`](../../../../marketing-site/assets/release/v1.0.0-beta.1/):
 
 - `edgehub-v1.0.0-beta.1-live-product-film.mp4`, a 71-second 1080p film showing
   live Hub motion, animated rotation, Manager orientation reflection, and
@@ -59,7 +59,7 @@ The versioned launch assets live under
 - `SHA256SUMS` for every published media file.
 
 Capture provenance is recorded in
-[`../../testing/release-media-validation-2026-07-21.md`](../../testing/release-media-validation-2026-07-21.md).
+[`../../../../testing/release-media-validation-2026-07-21.md`](../../../../testing/release-media-validation-2026-07-21.md).
 
 ## Release values
 
@@ -80,10 +80,10 @@ rg -n '\[[A-Z][A-Z0-9_ -]*\]' docs/marketing/release-kit
 The source of truth is:
 
 - [`../../MARKETING.md`](../../MARKETING.md) for allowed and prohibited claims;
-- [`../../BETA_PLAN.md`](../../BETA_PLAN.md) for release blockers;
-- [`../../../RELEASE_NOTES.md`](../../../RELEASE_NOTES.md) for the beta release notes;
+- [`../../../pre-1.0/BETA_PLAN.md`](../../../pre-1.0/BETA_PLAN.md) for release blockers;
+- [`../../../../../RELEASE_NOTES.md`](../../../../../RELEASE_NOTES.md) for the beta release notes;
 - [`../free-vs-pro.md`](../free-vs-pro.md) for entitlement details;
-- [`../../testing/release-gate.md`](../../testing/release-gate.md) for the final
+- [`../../../../testing/release-gate.md`](../../../../testing/release-gate.md) for the final
   verification process.
 
 If the code, evidence, or business terms change, update the claim register first

@@ -142,5 +142,5 @@ This report complements the [real-hardware validation report](hardware-validatio
 Merge readiness is complete. Publication readiness remains **not ready** until
 the strict release gate, owner-issued Pro-key preflight, literal 48-hour soak,
 candidate package lifecycle checks, updater round trip, and the business/legal
-launch approvals in the [launch checklist](../marketing/release-kit/launch-checklist.md)
+launch approvals in the [launch checklist](../archive/commercial-launch/marketing/release-kit/launch-checklist.md)
 are complete.

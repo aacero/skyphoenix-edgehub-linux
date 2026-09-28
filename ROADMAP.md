@@ -50,7 +50,7 @@ feedback. Potential, demand-driven work includes OBS, MangoHud, Prometheus,
 smart-home integrations, a sandboxed widget SDK, marketplace governance, and
 localization. None has a committed delivery date.
 
-See [the historical beta/release gate](docs/BETA_PLAN.md), [distribution status](docs/DISTRIBUTION.md)
+See [the historical beta/release gate](docs/archive/pre-1.0/BETA_PLAN.md), [distribution status](docs/DISTRIBUTION.md)
 and [the changelog](CHANGELOG.md).
 
 ## Future Features Backlog & Candidates

@@ -130,5 +130,5 @@ deep vendor-specific GPU integrations, OBS/Discord integrations, embedded web
 content, multi-touch gestures and additional distribution stores remain post-MVP
 possibilities without committed dates.
 
-See [the roadmap](../../ROADMAP.md), [beta/release gate](../BETA_PLAN.md), and
+See [the roadmap](../../ROADMAP.md), [beta/release gate](../archive/pre-1.0/BETA_PLAN.md), and
 [distribution status](../DISTRIBUTION.md).

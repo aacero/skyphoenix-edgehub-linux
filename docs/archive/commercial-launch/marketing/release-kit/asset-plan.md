@@ -13,12 +13,12 @@ and easier to audit against the shipped build.
 
 | Repository asset | Intended use after recapture/verification | Suggested alt text |
 |---|---|---|
-| [`hero-system.png`](../../marketing-site/assets/generated/hero-system.png) | Portrait Hub hero reference | “EdgeHub system dashboard in portrait orientation with live metric widgets.” |
-| [`system-landscape.png`](../../marketing-site/assets/generated/system-landscape.png) | Landscape Hub hero reference | “EdgeHub system dashboard arranged across a wide landscape panel.” |
-| [`manager-layout.png`](../../marketing-site/assets/generated/manager-layout.png) | Manager layout feature reference | “EdgeHub Manager editing a multi-widget dashboard layout.” |
-| [`manager-appearance-pro.png`](../../marketing-site/assets/generated/manager-appearance-pro.png) | Appearance/Free-vs-Pro reference, only after terms are live | “EdgeHub Manager appearance controls with theme choices and a live panel preview.” |
-| [`calm-focus.png`](../../marketing-site/assets/generated/calm-focus.png) | Productivity/focus campaign reference | “A calm EdgeHub focus dashboard with time and task widgets.” |
-| [`health-aurora.png`](../../marketing-site/assets/generated/health-aurora.png) | Health/routine campaign reference | “An EdgeHub health dashboard with hydration and routine widgets.” |
+| [`hero-system.png`](../../../../marketing-site/assets/generated/hero-system.png) | Portrait Hub hero reference | “EdgeHub system dashboard in portrait orientation with live metric widgets.” |
+| [`system-landscape.png`](../../../../marketing-site/assets/generated/system-landscape.png) | Landscape Hub hero reference | “EdgeHub system dashboard arranged across a wide landscape panel.” |
+| [`manager-layout.png`](../../../../marketing-site/assets/generated/manager-layout.png) | Manager layout feature reference | “EdgeHub Manager editing a multi-widget dashboard layout.” |
+| [`manager-appearance-pro.png`](../../../../marketing-site/assets/generated/manager-appearance-pro.png) | Appearance/Free-vs-Pro reference, only after terms are live | “EdgeHub Manager appearance controls with theme choices and a live panel preview.” |
+| [`calm-focus.png`](../../../../marketing-site/assets/generated/calm-focus.png) | Productivity/focus campaign reference | “A calm EdgeHub focus dashboard with time and task widgets.” |
+| [`health-aurora.png`](../../../../marketing-site/assets/generated/health-aurora.png) | Health/routine campaign reference | “An EdgeHub health dashboard with hydration and routine widgets.” |
 
 ## Completed exact-candidate captures
 
