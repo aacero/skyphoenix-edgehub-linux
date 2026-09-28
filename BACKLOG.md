@@ -1,19 +1,8 @@
 # Backlog - Xeneon Edge Linux Hub
 
-> **Note on Project Fork & Archive:**
-> Historical backlog items, pre-v1.0.0 development notes, and legacy upstream decisions (prior to this fork) have been archived to [`docs/archive/BACKLOG_HISTORICAL.md`](file:///home/acero/src/skyphoenix-edgehub-linux/docs/archive/BACKLOG_HISTORICAL.md).
-> This backlog tracks active development, upcoming releases, approved enhancements, and candidate ideas for the SkyPhoenix EdgeHub fork.
-
----
-
-## Structure & Policies
-
-Backlog items follow the framework's Scope Control Policy (`agent-framework/canonical/policies/scope-control-policy.md`):
-- **Now**: Active release baking and immediate delivery items.
-- **Next**: Approved work queued for the next point release (v1.1.2).
-- **Later**: Approved strategic features for future milestones (v1.2+).
-- **Candidates**: Unapproved ideas, community proposals, and exploratory features requiring product-owner approval.
-- **Risks and debt**: Technical debt, deprecated upstream code, and test/platform maintenance.
+> **Project Fork & History:**
+> This repository was forked from upstream (`skyphoenix-it/XeneonEdge_Linux`) after v1.0.0.
+> Historical pre-fork backlog notes (Simon Kreitmayer's pre-1.0.0 decisions, commercial payment provider stubs, and legacy test post-mortems) have been archived to [`docs/archive/BACKLOG_HISTORICAL.md`](file:///home/acero/src/skyphoenix-edgehub-linux/docs/archive/BACKLOG_HISTORICAL.md).
 
 ---
 
@@ -21,8 +10,8 @@ Backlog items follow the framework's Scope Control Policy (`agent-framework/cano
 
 - [ ] **Bake-in of v1.1.1 Enhancements**:
   - Verify live stability across daily desktop sessions on the physical Xeneon Edge display (`DVI-I-1`, `2560x720`).
-  - Implemented features under bake-in:
-    - **Wake-on-LAN**: 3-packet burst transmission spaced by 25ms and realistic 60s boot phase timer with live countdown/feedback.
+  - Completed items under active bake-in:
+    - **Wake-on-LAN**: 3-packet burst transmission spaced by 25ms and realistic 60s boot phase timer with live elapsed feedback (`core/src/wol.rs`, `ui/qml/widgets/SystemsWidget.qml`).
     - **Screen Rotation**: Arbitrary custom delay in seconds (0..86400) with dedicated stepper/input controls in Hub and Manager.
     - **Sky Tonight Widget**: Freshness timestamp, date header anchoring, active screen-revisit auto-refresh, and manual `↻` refresh button.
     - **Calendar Widget**: Geometry-adaptive views (List/Agenda for vertical, Month grid for square, 7-day Week for wide horizontal), extended 90-day horizon, interactive header view switcher, and clickable day expander drawer.
@@ -38,13 +27,11 @@ Backlog items follow the framework's Scope Control Policy (`agent-framework/cano
 
 - [ ] **Tiling Window Manager / Workspace Targeting (`hyprctl` / `swaymsg`)**:
   - Support triggering workspace navigation or window focus on Wayland tiling window managers directly from touch macro tiles or widgets.
-  - Example commands: `hyprctl dispatch workspace <N>`, `swaymsg workspace <N>`.
-  - Configurable in widget actions / quick action macros with execution status feedback.
+  - Commands: `hyprctl dispatch workspace <N>`, `swaymsg workspace <N>`.
+  - Configurable in widget actions with tactile status feedback.
 - [ ] **MediaWidget Artwork Load Error Handling**:
-  - Handle cases where local `file://` album artwork fails to load (corrupt image, missing path, unsupported format) via `Image.status === Image.Error`.
-  - Render an elegant fallback disc icon / "Artwork unavailable" plate rather than leaving an empty black rectangle.
-- [ ] **Custom Screen Rotation Fine-tuning**:
-  - Address any ergonomics or edge cases surfaced during the v1.1.1 bake-in period.
+  - *(Inherited from upstream backlog finding)*: When local `file://` album artwork fails to load (corrupt image, missing path, unsupported format) or passes policy but cannot be rendered, QML leaves a blank black box.
+  - Wire `Image.status === Image.Error` to display the default album disc fallback icon or "Artwork unavailable" plate.
 
 ---
 
@@ -54,36 +41,34 @@ Backlog items follow the framework's Scope Control Policy (`agent-framework/cano
   - Dedicated first-party widget providing direct integration with local Home Assistant instances (REST API / WebSocket).
   - Displays live entity states: room temperature, humidity, air quality, power consumption.
   - Touch toggles for smart plugs, desk lighting, and scene presets.
-- [ ] **Reactive 'Alert-Driven' Screen Surfacing**:
-  - Dynamically alert or switch screens when noteworthy conditions occur:
-    - Homelab node drops offline or exceeds resource alert thresholds (CPU, RAM, Disk).
-    - Calendar event begins in $< 5$ minutes.
-    - Countdown timer or break reminder expires.
-  - Visual attention indicators: subtle pulse on the page indicator dots or a non-intrusive alert banner with tap-to-jump.
 - [ ] **Routine Configuration Backup Safety Net (`config.toml.bak`)**:
-  - Extend the existing backup mechanism (`backup_config_of()`) from `--reset` to standard UI saves, keeping a rolling `.bak` file before atomic overwrite.
+  - *(Inherited from upstream backlog finding)*: Currently `--reset` makes a backup, but normal UI saves do not keep a rolling `.bak`.
+  - Automatically write a rolling `config.toml.bak` on standard saves for easy rollback if manually edited or corrupted.
 
 ---
 
-## Candidates (Unapproved Ideas & Proposals)
+## Completed in Earlier Fork Iterations
 
-*Ideas requiring product-owner approval before implementation:*
-
-- **Generic Touch Macro & Webhook Deck**:
-  - Configurable grid of quick-action buttons capable of firing arbitrary shell scripts, HTTP POST webhooks, or MQTT messages.
-- **AUR Package Automation**:
-  - Automated workflow to update the Arch Linux AUR `PKGBUILD` upon GitHub release tags.
-- **Weather Widget Multi-Location Cycling**:
-  - Allow configuring multiple cities/locations and cycling through them or tapping the header to switch.
+- [x] **⚡ Quick Actions & Wake-on-LAN**: Configurable touch actions, fleet MAC targeting, 3-packet UDP burst, live boot phase timer.
+- [x] **🚨 Reactive Alert-Driven Screen Surfacing**: Built into `Dashboard.qml` (`syncReactiveAlerts`, `evaluateAlertSurfacing`, `test_reactive_alerts_pause_and_surface`). Fleet offline events pause idle cycle and surface the alert.
+- [x] **Continuous Widget Refinements**:
+  - Moon widget: Centered layout with enlarged ~295px lunar disc and stacked info on 1x1 tiles.
+  - The Sky Tonight: Responsive 2-column layout with hourly Sky Clarity bars and 5-planet ephemeris rows.
+  - Systems widget: Full-screen `1x3` panoramic layout support across 2560px.
+  - Orientation calibration: Synchronized landscape 2560x720 panel detection and rotation handling.
+  - Calendar widget: Adaptive month/week/agenda views, 90-day horizon, day expanders.
+  - Humble Bundle: Top-tier price detection and single-category toggle pills.
 
 ---
 
-## Risks and Debt
+## Candidates & Technical Debt
 
-- **Legacy Upstream Licensing Code**:
-  - The repository contains upstream references to commercial payment providers (Lemon Squeezy, Gumroad) and keygen tooling from before the fork.
-  - Evaluate cleanly removing or deprecating unused commercial licensing scaffolding while preserving offline theme unlocks.
+- **Prune Upstream Commercial Licensing**:
+  - The upstream codebase included Lemon Squeezy / Gumroad commercial payment stubs, webhooks, and key generation tooling.
+  - Cleanly prune unused commercial payment files while keeping the offline local theme unlock system intact.
 - **Dead Code Pruning**:
-  - Remove dead `notificationBridge.send` fallback in `FocusWidget.qml`, `BreakWidget.qml`, and `MedsWidget.qml` (the `sendPriority` method is implemented by all bridges and doubles).
-- **Mesa Driver / Zink Warning Logging**:
-  - Monitor offscreen OpenGL/Zink fallback warnings in logs (`copy boxes detected`) on newer Mesa packages.
+  - Remove dead `notificationBridge.send` fallback in `FocusWidget.qml`, `BreakWidget.qml`, and `MedsWidget.qml` (all bridges implement `sendPriority`).
+- **Wallpaper / Theme Name Collision**:
+  - `Theme.qml` and `WallpaperCatalog.qml` share 5 identical names (`aurora`, `ember`, `midnight`, `nebula`, `sunset`) where only 5 of 12 wallpapers match a theme. Decide if UI copy disambiguation is needed.
+- **AUR Package Automation**:
+  - Synchronize Arch Linux AUR `PKGBUILD` upon GitHub release tags.
