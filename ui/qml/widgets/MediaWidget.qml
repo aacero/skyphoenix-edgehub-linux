@@ -357,7 +357,7 @@ WidgetChrome {
             Layout.preferredHeight: Math.round(w.artSize)
             radius: theme.radiusMd; clip: true
             gradient: Gradient { GradientStop { position: 0; color: w.effAccent } GradientStop { position: 1; color: Qt.darker(w.effAccent, 1.5) } }
-            Image { id: artC; anchors.fill: parent; source: w.artworkSource
+            Image { id: artC; anchors.fill: parent; source: !w.expanded ? w.artworkSource : ""
                 fillMode: Image.PreserveAspectCrop; asynchronous: true; cache: false
                 visible: status === Image.Ready }
             // The fallback glyph is the art at this size - scale it with the box.
@@ -474,7 +474,7 @@ WidgetChrome {
             Layout.preferredWidth: Math.round(w.artSize); Layout.preferredHeight: Math.round(w.artSize)
             radius: theme.radiusLg; clip: true
             gradient: Gradient { GradientStop { position: 0; color: w.effAccent } GradientStop { position: 1; color: Qt.darker(w.effAccent, 1.5) } }
-            Image { id: artE; anchors.fill: parent; source: w.artworkSource
+            Image { id: artE; anchors.fill: parent; source: w.expanded ? w.artworkSource : ""
                 fillMode: Image.PreserveAspectCrop; asynchronous: true; cache: false
                 visible: status === Image.Ready }
             Text { anchors.centerIn: parent; text: "♪"; color: "#fff"
