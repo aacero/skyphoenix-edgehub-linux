@@ -317,10 +317,11 @@ Item {
             compare(w.filteredBundles.length, 6)
         }
 
-        function test_additive_category_filtering() {
+        function test_toggle_category_filtering() {
             var w = h.item
             w.toggleCategory("all")
             compare(w.filteredBundles.length, 6)
+            compare(w.isCategoryActive("all"), true)
 
             // 1. Toggle Tech: only tech is selected
             w.toggleCategory("tech")
@@ -329,28 +330,33 @@ Item {
             compare(w.filteredBundles.length, 1)
             compare(w.filteredBundles[0].category, "Tech")
 
-            // 2. Additive multi-select: toggle SF as well -> both Tech and SF shown!
+            // 2. Toggle SF while Tech is active: switches directly to SF (not additive)
             w.toggleCategory("sf")
-            compare(w.isCategoryActive("tech"), true)
-            compare(w.isCategoryActive("sf"), true)
-            compare(w.filteredBundles.length, 2)
-
-            // 3. Untoggle Tech -> only SF remains
-            w.toggleCategory("tech")
             compare(w.isCategoryActive("tech"), false)
             compare(w.isCategoryActive("sf"), true)
+            compare(w.isCategoryActive("all"), false)
             compare(w.filteredBundles.length, 1)
             compare(w.filteredBundles[0].category, "SF")
 
-            // 4. Untoggle SF -> empty falls back to All
+            // 3. Toggle SF again: toggles off and returns to All
             w.toggleCategory("sf")
+            compare(w.isCategoryActive("sf"), false)
             compare(w.isCategoryActive("all"), true)
             compare(w.filteredBundles.length, 6)
 
-            // 5. Multi-select Comics + RPG, then tap All to clear
+            // 4. Toggle Comics: only Comics selected
             w.toggleCategory("comics")
-            w.toggleCategory("rpg")
-            compare(w.filteredBundles.length, 2)
+            compare(w.isCategoryActive("comics"), true)
+            compare(w.filteredBundles.length, 1)
+            compare(w.filteredBundles[0].category, "Comics")
+
+            // 5. Tap All: explicitly clears back to All
+            w.toggleCategory("all")
+            compare(w.isCategoryActive("comics"), false)
+            compare(w.isCategoryActive("all"), true)
+            compare(w.filteredBundles.length, 6)
+
+            // 6. Tap All again while All is active: remains All
             w.toggleCategory("all")
             compare(w.isCategoryActive("all"), true)
             compare(w.filteredBundles.length, 6)

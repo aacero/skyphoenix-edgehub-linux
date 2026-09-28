@@ -98,32 +98,17 @@ WidgetChrome {
     function toggleCategory(key) {
         if (!key) return
         var k = String(key).toLowerCase()
-        var current = (w.selectedCategories || []).slice()
         if (k === "all") {
-            w.selectedCategories = ["all"]
             w.activeCategory = "all"
+            w.selectedCategories = ["all"]
             return
         }
-        var allIdx = current.indexOf("all")
-        if (allIdx >= 0) {
-            current.splice(allIdx, 1)
-        }
-        var idx = current.indexOf(k)
-        if (idx >= 0) {
-            current.splice(idx, 1)
-        } else {
-            current.push(k)
-        }
-        if (current.length === 0) {
-            current = ["all"]
-        }
-        w.selectedCategories = current
-        if (current.indexOf("all") >= 0 || current.length === 0) {
+        if (w.isCategoryActive(k)) {
             w.activeCategory = "all"
-        } else if (current.length === 1) {
-            w.activeCategory = current[0]
+            w.selectedCategories = ["all"]
         } else {
-            w.activeCategory = current.join(",")
+            w.activeCategory = k
+            w.selectedCategories = [k]
         }
     }
 
@@ -789,7 +774,7 @@ WidgetChrome {
                             border.color: activeFocus ? theme.textPrimary : (isSelected ? w.effAccent : theme.cardBorder)
 
                             activeFocusOnTab: true
-                            Accessible.role: Accessible.CheckBox
+                            Accessible.role: Accessible.Button
                             Accessible.name: modelData.label + " (" + itemCount + ")"
                             Accessible.checked: isSelected
                             Accessible.onPressAction: w.toggleCategory(modelData.key)
