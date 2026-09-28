@@ -1555,6 +1555,15 @@ fn save_config_to_if_generation_with_sync(
         }
     }
 
+    // When replacing an existing configuration file, preserve the prior
+    // known-good version as the canonical <name>.toml.bak.
+    if path.is_file() {
+        if let Err(e) = backup_config_of(path) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(e);
+        }
+    }
+
     fs::rename(&tmp_path, path).map_err(|e| {
         let _ = fs::remove_file(&tmp_path);
         ConfigError::Io {
@@ -3372,6 +3381,50 @@ version = 1
             "config.toml must be owner-only (was {:o})",
             mode & 0o777
         );
+
+        std::env::remove_var("XDG_CONFIG_HOME");
+    }
+
+    #[test]
+    fn save_config_creates_canonical_backup_when_replacing_existing_file() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", dir.path());
+
+        let bak_path = config_dir().join("config.toml.bak");
+
+        // 1) First save: creates config.toml, no .bak yet
+        let mut cfg1 = AppConfig::default();
+        cfg1.theme.accent_color = "amber".to_string();
+        save_config(&cfg1).unwrap();
+        assert!(config_path().exists());
+        assert!(!bak_path.exists());
+
+        // 2) Second save: updates config.toml, creates config.toml.bak containing cfg1
+        let mut cfg2 = AppConfig::default();
+        cfg2.theme.accent_color = "cyan".to_string();
+        save_config(&cfg2).unwrap();
+        assert!(bak_path.exists());
+
+        let bak_bytes = fs::read(&bak_path).unwrap();
+        let bak_str = std::str::from_utf8(&bak_bytes).unwrap();
+        assert!(bak_str.contains("amber"));
+        assert!(!bak_str.contains("cyan"));
+
+        let current_bytes = fs::read(config_path()).unwrap();
+        let current_str = std::str::from_utf8(&current_bytes).unwrap();
+        assert!(current_str.contains("cyan"));
+        assert!(!current_str.contains("amber"));
+
+        // 3) Third save: updates config.toml, updates config.toml.bak containing cfg2
+        let mut cfg3 = AppConfig::default();
+        cfg3.theme.accent_color = "emerald".to_string();
+        save_config(&cfg3).unwrap();
+
+        let bak_bytes3 = fs::read(&bak_path).unwrap();
+        let bak_str3 = std::str::from_utf8(&bak_bytes3).unwrap();
+        assert!(bak_str3.contains("cyan"));
+        assert!(!bak_str3.contains("emerald"));
 
         std::env::remove_var("XDG_CONFIG_HOME");
     }
