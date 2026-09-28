@@ -37,7 +37,7 @@ fi
 env -u XENEON_LICENSE_SEED -u XENEON_LICENSE_SEED_FILE \
     cargo build -q --locked \
     --manifest-path tools/license-tool/Cargo.toml \
-    --bin xeneon-license
+    --bin xeneon-license 3<&-
 
 if [ -n "${CARGO_TARGET_DIR:-}" ]; then
     case "$CARGO_TARGET_DIR" in
