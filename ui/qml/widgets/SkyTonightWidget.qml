@@ -1092,7 +1092,7 @@ WidgetChrome {
                         visible: w.twoColumn
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        spacing: 4
+                        spacing: (planetsCard.height < 210) ? 2 : 4
 
                         Repeater {
                             model: w.planets
@@ -1100,7 +1100,7 @@ WidgetChrome {
                             Rectangle {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
-                                Layout.minimumHeight: 32
+                                Layout.minimumHeight: (planetsCard.height < 210) ? 26 : 32
                                 radius: theme.radiusSm
                                 color: Qt.rgba(1, 1, 1, 0.035)
                                 border.color: (modelData.status.indexOf("Up all night") >= 0 || modelData.status.indexOf("Evening") >= 0)
@@ -1309,7 +1309,7 @@ WidgetChrome {
                     visible: w.showTwilights && w.sunEvents !== null
                     sourceComponent: twilightCardComp
                     Layout.fillWidth: true
-                    Layout.preferredHeight: w.roomy ? 80 : 64
+                    Layout.preferredHeight: (w.height < 480) ? 66 : (w.roomy ? 80 : 64)
                 }
 
                 Loader {
@@ -1317,7 +1317,7 @@ WidgetChrome {
                     visible: w.showMoon
                     sourceComponent: moonCardComp
                     Layout.fillWidth: true
-                    Layout.preferredHeight: w.roomy ? 64 : 48
+                    Layout.preferredHeight: (w.height < 480) ? 52 : (w.roomy ? 64 : 48)
                 }
 
                 Loader {
@@ -1365,8 +1365,8 @@ WidgetChrome {
             }
 
             Loader {
-                active: cardsSingleCol.visible && w.showMoon && w.height >= 440
-                visible: w.showMoon && w.height >= 440
+                active: cardsSingleCol.visible && w.showMoon && w.height >= 520
+                visible: w.showMoon && w.height >= 520
                 sourceComponent: moonCardComp
                 Layout.fillWidth: true
                 Layout.preferredHeight: w.roomy ? 56 : 44
@@ -1388,21 +1388,22 @@ WidgetChrome {
 
             Text {
                 text: w.lastSuccessMs > 0
-                    ? ((w.width < 500)
+                    ? ((w.width < 620)
                         ? ("Updated " + Qt.formatTime(new Date(w.lastSuccessMs), "HH:mm"))
                         : ("Updated " + Qt.formatTime(new Date(w.lastSuccessMs), "HH:mm") + " · Open-Meteo & Local Astro"))
-                    : (w.locationConfigured ? "Local astronomical calculations active" : "Unconfigured")
+                    : (w.locationConfigured
+                        ? (w.width < 620 ? "Astronomical calculations active" : "Local astronomical calculations active")
+                        : "Unconfigured")
                 font.pixelSize: theme.fontMinimum
                 color: theme.textSecondary
                 Layout.fillWidth: true
             }
 
-            Button {
+            PillButton {
                 id: refreshBtn
-                text: "Refresh"
-                font.pixelSize: Math.max(theme.fontMinimum, 13)
+                label: "Refresh"
+                glyph: "↻"
                 visible: w.locationConfigured
-                Layout.preferredHeight: 32
                 onClicked: w.refresh()
             }
         }

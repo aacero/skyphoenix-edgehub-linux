@@ -346,7 +346,7 @@ WidgetChrome {
                 horizontalAlignment: Text.AlignHCenter
                 text: w.elapsedLabel(); color: theme.textPrimary
                 opacity: 0.78
-                font.pixelSize: Math.max(theme.fontMinimum, Math.min(theme.fontLabel, w.width * 0.04))
+                font.pixelSize: theme.fontLabel
             }
         }
     }

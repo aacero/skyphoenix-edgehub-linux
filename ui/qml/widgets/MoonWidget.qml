@@ -293,7 +293,7 @@ WidgetChrome {
                                height * (roomy ? 0.55 : 0.55), roomy ? 260 : 170)
         : tallish ? Math.min(width * (compactDetail ? 0.54 : 0.68),
                              height * (compactDetail ? 0.30 : 0.45), 260)
-        : (roomy && sizeClass !== "full") ? Math.min(width * 0.46, height * (w.showLocalEvents ? 0.34 : 0.44), 300)
+        : (roomy && sizeClass !== "full") ? Math.min(width * 0.46, height * (w.showLocalEvents ? (w.height < 520 ? 0.26 : 0.32) : 0.44), 300)
         : Math.min(width * 0.50, height * 0.44, 300)
     // Illumination context: the sizes that have room add the lunar age. (`|| expanded`
     // dropped - `roomy` already covers sizeClass "full", which is what the overlay
@@ -330,7 +330,7 @@ WidgetChrome {
         // Air is room, not mode: 14 was "the overlay" and 2 "not the overlay",
         // so a 0.5x1 tall tile carrying the same glyph + name + illumination +
         // dates stack as the overlay got the cramped 2.
-        rowSpacing: w.compactDetail ? theme.spacingXs : (w.roomy ? (w.showLocalEvents ? 6 : 12) : 2)
+        rowSpacing: w.compactDetail ? theme.spacingXs : (w.roomy ? (w.showLocalEvents ? (w.height < 520 ? 4 : 6) : 12) : 2)
         columnSpacing: w.compactDetail ? theme.spacingSm : theme.spacingLg
 
         Canvas {

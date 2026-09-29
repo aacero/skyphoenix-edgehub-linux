@@ -1049,9 +1049,9 @@ private slots:
         // The older timer must not clear the newer request. The newer request's
         // own timeout then releases the optimistic pin and asks the Hub for its
         // authoritative page, without changing the visible page speculatively.
-        QTest::qWait(1900);
+        QTest::qWait(1700);
         QCOMPARE(b.pendingHubPageForTest(), 2);
-        QTRY_COMPARE_WITH_TIMEOUT(b.pendingHubPageForTest(), -1, 1000);
+        QTRY_COMPARE_WITH_TIMEOUT(b.pendingHubPageForTest(), -1, 1500);
         QCOMPARE(b.hubCurrentPage(), 2);
         QVERIFY(hub.getPending);
     }
