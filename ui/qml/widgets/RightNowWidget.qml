@@ -89,9 +89,9 @@ WidgetChrome {
     function elapsedLabel() {
         var m = Math.floor(elapsedSeconds / 60)
         if (m < 1) return "Started just now"
-        if (m < 60) return "Focused for " + m + " min"
+        if (m < 60) return (w.width < 320 ? "" : "Focused for ") + m + " min"
         var h = Math.floor(m / 60), rem = m % 60
-        return "Focused for " + h + "h" + (rem ? " " + rem + "m" : "")
+        return (w.width < 320 ? "" : "Focused for ") + h + "h" + (rem ? " " + rem + "m" : "")
     }
     function startedLabel() {
         return startedAt > 0 ? Qt.formatTime(new Date(startedAt), "HH:mm") : "Not started"
