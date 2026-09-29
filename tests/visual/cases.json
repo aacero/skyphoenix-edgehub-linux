@@ -1,7 +1,7 @@
 {
   "version": 1,
   "expected": {
-    "widgets": 30,
+    "widgets": 35,
     "presets": 19,
     "orientations": 1
   },
@@ -41,6 +41,11 @@
     {"id": "widget-countdown", "kind": "widget", "source": "wmisc_cd_size_p_1x1.png"},
     {"id": "widget-eod", "kind": "widget", "source": "wmisc_eod_size_p_1x1.png"},
     {"id": "widget-quote", "kind": "widget", "source": "wmisc_qt_size_p_1x1.png"},
+    {"id": "widget-systems", "kind": "widget", "source": "wext_systems_portrait-1x1.png"},
+    {"id": "widget-quickactions", "kind": "widget", "source": "wext_quickactions_portrait-1x1.png"},
+    {"id": "widget-grafana", "kind": "widget", "source": "wext_grafana_portrait-1x1.png"},
+    {"id": "widget-skytonight", "kind": "widget", "source": "wext_skytonight_portrait-1x1.png"},
+    {"id": "widget-humblebooks", "kind": "widget", "source": "wext_humblebooks_portrait-1x1.png"},
 
     {"id": "preset-ambient", "kind": "preset", "source": "shellpreset_append_ambient.png"},
     {"id": "preset-analyst", "kind": "preset", "source": "shellpreset_append_analyst.png"},

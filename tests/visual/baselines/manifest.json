@@ -1,5 +1,5 @@
 {
-  "case_count": 50,
+  "case_count": 55,
   "entries": [
     {
       "crop": null,
@@ -329,6 +329,56 @@
       "kind": "widget",
       "sha256": "6464ea66a9a4b6b530d23f70a5dee046500adef0d54b57a21869d728c5917f52",
       "source": "wmisc_qt_size_p_1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-systems.png",
+      "height": 818,
+      "id": "widget-systems",
+      "kind": "widget",
+      "sha256": "7a5115fe57c37dbdee7a9fff8f413a47ac07edcce72656a8e12e285fccc528b3",
+      "source": "wext_systems_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-quickactions.png",
+      "height": 818,
+      "id": "widget-quickactions",
+      "kind": "widget",
+      "sha256": "60d78199df90f6db39921856fb0e69258163f47206a73ca68f7955c300209144",
+      "source": "wext_quickactions_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-grafana.png",
+      "height": 818,
+      "id": "widget-grafana",
+      "kind": "widget",
+      "sha256": "2ae9c6641329c6f9a073d0a47a6c7d54d56f09ce76a6b3c639c8176c25acbb70",
+      "source": "wext_grafana_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-skytonight.png",
+      "height": 818,
+      "id": "widget-skytonight",
+      "kind": "widget",
+      "sha256": "f8abe7a45d7cc52ac1c828e57cade428055205574ab0eaeb06f07ce70c43233e",
+      "source": "wext_skytonight_portrait-1x1.png",
+      "width": 696
+    },
+    {
+      "crop": null,
+      "file": "widget-humblebooks.png",
+      "height": 818,
+      "id": "widget-humblebooks",
+      "kind": "widget",
+      "sha256": "574c304e25ee0f82a0898b2c7fae5ac286508b073ac9217cd2a8370453350590",
+      "source": "wext_humblebooks_portrait-1x1.png",
       "width": 696
     },
     {
