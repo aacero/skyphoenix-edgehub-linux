@@ -173,7 +173,7 @@ WidgetChrome {
     headerRightItem: [
         RowLayout {
             id: viewModeChips
-            visible: !w.expanded && w.url.length > 0 && w.width >= 320
+            visible: !w.expanded && w.url.length > 0 && w.width >= 420
             spacing: 2
             Repeater {
                 model: [
@@ -1353,14 +1353,13 @@ WidgetChrome {
                             Layout.fillWidth: true
                             spacing: 2
                             Text {
-                                text: weekCol.modelData.isToday ? "Today" : Qt.formatDate(weekCol.modelData.date, "ddd")
+                                text: weekCol.width < 65 ? Qt.formatDate(weekCol.modelData.date, "ddd") : (weekCol.modelData.isToday ? "Today" : Qt.formatDate(weekCol.modelData.date, "ddd"))
                                 font.family: theme.fontDisplay
                                 font.pixelSize: theme.fontMinimum
                                 font.bold: weekCol.modelData.isToday
                                 color: weekCol.modelData.isToday ? w.effAccent : theme.textSecondary
-                                Layout.fillWidth: true
-                                elide: Text.ElideRight
                             }
+                            Item { Layout.fillWidth: true }
                             Text {
                                 text: Qt.formatDate(weekCol.modelData.date, "d")
                                 font.family: theme.fontDisplay

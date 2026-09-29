@@ -1086,7 +1086,7 @@ Item {
             // is why the wallpaper rows failed their pixel proof with diff=0.
             win.width = 2560; win.height = 720
             win.visibility = Window.Windowed
-            win.orientationMode = "portrait"
+            win.orientationMode = win.windowIsLandscape ? "landscape" : "portrait"
             sv = G.findPred(win.contentItem, function (n) {
                 return n && typeof n.push === "function" && n.currentItem !== undefined })
             sv.clear(StackView.Immediate)

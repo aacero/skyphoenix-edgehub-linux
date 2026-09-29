@@ -225,10 +225,10 @@ WidgetChrome {
              ? (detailPanel.visible ? w.histStats : w.detailLine)
            : !w.haveBytes ? "-"
            : w.unit === "gb" ? w.v.toFixed(0) + "%"
-                              : w.glanceDetails.length > 0
-                                ? w.gib(w.usedBytes) + " GiB used"
-                                : "used " + w.gib(w.usedBytes) + " · available "
+                              : (w.expanded || (w.roomyTile && w.width >= 700))
+                                ? "used " + w.gib(w.usedBytes) + " · available "
                                   + w.gib(w.displayAvailableBytes) + " GiB"
+                                : w.gib(w.usedBytes) + " GiB used"
         color: w.col(w.v)
         history: w.showHistory && !w.micro ? w.hist : []
         chartStyle: w.graphStyle

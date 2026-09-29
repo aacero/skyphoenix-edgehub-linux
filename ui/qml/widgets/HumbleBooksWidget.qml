@@ -49,7 +49,7 @@ WidgetChrome {
         return Qt.openUrlExternally(url)
     }
 
-    title: "Humble Books"
+    title: (w.width < 360 && !w.expanded) ? "Books" : "Humble Books"
     iconName: "humblebooks"
     accentColor: theme.catEntertainment
     showHeader: !micro
@@ -741,7 +741,7 @@ WidgetChrome {
         Item {
             Layout.fillWidth: true
             implicitHeight: Math.max(44, theme.touchTertiary)
-            visible: !w.micro
+            visible: !w.micro && (w.errorText.length === 0 || w.bundles.length > 0) && w.height >= 160
 
             Flickable {
                 id: pillFlick
@@ -796,14 +796,18 @@ WidgetChrome {
                                     color: catPill.isSelected ? "#0D1117" : theme.textPrimary
                                     font.pixelSize: theme.fontCaption
                                     font.weight: catPill.isSelected ? Font.DemiBold : Font.Normal
+                                    Layout.preferredWidth: implicitWidth
+                                    Layout.preferredHeight: implicitHeight
                                 }
 
                                 Text {
                                     id: countBadge
                                     text: catPill.itemCount > 0 ? ("(" + catPill.itemCount + ")") : ""
                                     color: catPill.isSelected ? "#0D1117" : theme.textSecondary
-                                    font.pixelSize: theme.fontCaption - 1
+                                    font.pixelSize: theme.fontCaption
                                     visible: catPill.itemCount > 0
+                                    Layout.preferredWidth: implicitWidth
+                                    Layout.preferredHeight: implicitHeight
                                 }
                             }
 
@@ -847,29 +851,34 @@ WidgetChrome {
 
             // Error / Offline State with Retry Button
             ColumnLayout {
+                id: errCol
                 anchors.centerIn: parent
-                spacing: theme.spacingMd
+                spacing: w.height < 180 ? 4 : theme.spacingMd
                 visible: !w.loading && w.errorText.length > 0 && w.bundles.length === 0
                 width: Math.min(parent.width - 32, 400)
 
                 Text {
                     text: w.errorText
                     color: theme.warning
-                    font.pixelSize: theme.fontTitle
+                    font.pixelSize: (w.height < 180 || w.width < 380) ? theme.fontLabel : theme.fontTitle
                     font.weight: Font.DemiBold
                     horizontalAlignment: Text.AlignHCenter
                     Layout.fillWidth: true
+                    Layout.preferredHeight: contentHeight
                     wrapMode: Text.WordWrap
                 }
                 Text {
+                    visible: w.height >= 180
                     text: w.stateHelp || "Unable to load active book bundles."
                     color: theme.textSecondary
                     font.pixelSize: theme.fontLabel
                     horizontalAlignment: Text.AlignHCenter
                     Layout.fillWidth: true
+                    Layout.preferredHeight: contentHeight
                     wrapMode: Text.WordWrap
                 }
                 Rectangle {
+                    visible: w.height >= 220
                     Layout.alignment: Qt.AlignHCenter
                     implicitHeight: Math.max(44, theme.touchTertiary)
                     implicitWidth: 120
@@ -956,6 +965,7 @@ WidgetChrome {
                     readonly property string expiryLevel: w.getExpiryLevel(modelData)
                     width: bundleListView.width
                     implicitHeight: Math.max(76, cardRow.implicitHeight + 16)
+                    height: implicitHeight
                     radius: theme.radiusMd
                     color: cardArea.pressed
                            ? theme.cardBackground
@@ -1037,7 +1047,7 @@ WidgetChrome {
                                         anchors.centerIn: parent
                                         text: card.modelData.category
                                         color: w.effAccent
-                                        font.pixelSize: theme.fontCaption - 2
+                                        font.pixelSize: theme.fontCaption
                                         font.weight: Font.DemiBold
                                     }
                                 }
@@ -1059,7 +1069,7 @@ WidgetChrome {
                                         anchors.centerIn: parent
                                         text: w.formatTimeRemaining(card.modelData.endDate, w.currentMs()) || card.modelData.timeRemainingText
                                         color: w.getExpiryColor(card.modelData)
-                                        font.pixelSize: theme.fontCaption - 1
+                                        font.pixelSize: theme.fontCaption
                                         font.weight: (parent.expiryLevel !== "normal") ? Font.DemiBold : Font.Medium
                                     }
                                 }
@@ -1082,9 +1092,7 @@ WidgetChrome {
                                 font.pixelSize: w.big ? theme.fontLabel : theme.fontCaption
                                 font.weight: Font.DemiBold
                                 Layout.fillWidth: true
-                                elide: Text.ElideRight
-                                maximumLineCount: w.big ? 2 : 1
-                                wrapMode: Text.WordWrap
+                                wrapMode: Text.Wrap
                             }
 
                             // Meta Row: Items count + Value
@@ -1096,21 +1104,21 @@ WidgetChrome {
                                 Text {
                                     text: card.modelData.itemCountText || ""
                                     color: theme.textPrimary
-                                    font.pixelSize: theme.fontCaption - 1
+                                    font.pixelSize: theme.fontCaption
                                     visible: !!card.modelData.itemCountText
                                 }
 
                                 Text {
                                     text: "•"
                                     color: theme.textSecondary
-                                    font.pixelSize: theme.fontCaption - 2
+                                    font.pixelSize: theme.fontCaption
                                     visible: !!card.modelData.itemCountText && !!card.modelData.valueText
                                 }
 
                                 Text {
                                     text: card.modelData.valueText || ""
                                     color: theme.textSecondary
-                                    font.pixelSize: theme.fontCaption - 1
+                                    font.pixelSize: theme.fontCaption
                                     visible: !!card.modelData.valueText
                                 }
 
@@ -1119,7 +1127,7 @@ WidgetChrome {
                                 Text {
                                     text: card.modelData.tierPriceText || ""
                                     color: w.effAccent
-                                    font.pixelSize: theme.fontCaption - 1
+                                    font.pixelSize: theme.fontCaption
                                     font.weight: Font.Medium
                                     visible: !!card.modelData.tierPriceText && !w.micro
                                 }

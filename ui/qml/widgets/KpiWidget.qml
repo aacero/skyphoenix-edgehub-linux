@@ -533,7 +533,7 @@ WidgetChrome {
                     // so the row stays centred and a stray-long value still can't
                     // overrun the tile.
                     fontSizeMode: Text.HorizontalFit; minimumPixelSize: theme.fontMinimum; elide: Text.ElideRight
-                    Layout.maximumWidth: w._boxW
+                    Layout.maximumWidth: (w.unit.length > 0 && w.valText.length > 0) ? (w._boxW - unitText.implicitWidth - 4) : w._boxW
                 }
                 Text {
                     id: unitText

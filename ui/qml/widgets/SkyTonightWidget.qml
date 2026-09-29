@@ -72,10 +72,10 @@ WidgetChrome {
     readonly property bool locationConfigured: (lat !== 0 || lon !== 0) || place.length > 0
 
     // ── Sizing properties ───────────────────────────────────────────────────
-    readonly property bool micro: width < 250 && height < 250
+    readonly property bool micro: (sizeClass === "compact" && Math.min(width, height) < 480) || (width < 360 && height < 300)
     readonly property bool wideTile: width > 500 && height < 340
     readonly property bool tallTile: height > 400 && width < 460
-    readonly property bool roomy: expanded || (width * height > 280000)
+    readonly property bool roomy: expanded || (width >= 500 && height >= 480 && width * height > 280000)
     readonly property bool twoColumn: !micro && width >= 720 && height >= 380
 
     // ── Current Reference Time ──────────────────────────────────────────────
@@ -609,7 +609,7 @@ WidgetChrome {
                 Text {
                     id: microEmoji
                     text: w.verdictEmoji
-                    font.pixelSize: Math.min(parent.width * 0.35, 42)
+                    font.pixelSize: Math.max(theme.fontMinimum, Math.min(parent.width * 0.35, 42))
                     Layout.alignment: Qt.AlignHCenter
                 }
 
@@ -617,7 +617,7 @@ WidgetChrome {
                     id: microCloud
                     text: w.cloudLoaded ? (w.avgCloud + "%") : w.verdictShort
                     font.bold: true
-                    font.pixelSize: Math.min(parent.width * 0.22, 22)
+                    font.pixelSize: Math.max(theme.fontMinimum, Math.min(parent.width * 0.22, 22))
                     color: w.verdictAccent
                     Layout.alignment: Qt.AlignHCenter
                 }
@@ -645,16 +645,16 @@ WidgetChrome {
             Layout.fillWidth: true
 
             Text {
-                text: "📍 " + w.place
+                text: "📍 " + ((w.width < 340) ? w.place.split(" ")[0] : w.place)
                 font.pixelSize: theme.fontCaption
                 font.bold: true
                 color: theme.textSecondary
-                elide: Text.ElideRight
+                wrapMode: Text.WordWrap
                 Layout.fillWidth: true
             }
 
             Rectangle {
-                visible: w.isDarkSkyNow
+                visible: w.isDarkSkyNow && w.width >= 340
                 Layout.preferredHeight: 20
                 Layout.preferredWidth: darkLabel.implicitWidth + 12
                 radius: 10
@@ -666,7 +666,7 @@ WidgetChrome {
                     id: darkLabel
                     anchors.centerIn: parent
                     text: "🌌 DARK SKY ACTIVE"
-                    font.pixelSize: theme.fontMinimum - 1
+                    font.pixelSize: theme.fontMinimum
                     font.bold: true
                     color: w.accentColor
                 }
@@ -703,11 +703,11 @@ WidgetChrome {
 
                         Text {
                             id: heroTitle
-                            text: w.verdict
+                            text: (heroCard.width < 360) ? (w.verdict.indexOf("—") >= 0 ? w.verdict.split("—")[0].trim() : w.verdict) : w.verdict
                             font.bold: true
-                            font.pixelSize: w.roomy ? theme.fontTitle : theme.fontLabel
+                            font.pixelSize: (w.roomy && heroCard.width >= 500) ? theme.fontTitle : theme.fontLabel
                             color: theme.textPrimary
-                            elide: Text.ElideRight
+                            wrapMode: Text.WordWrap
                             Layout.fillWidth: true
                         }
 
@@ -731,15 +731,15 @@ WidgetChrome {
 
                             Text {
                                 visible: w.bestWindow !== null
-                                text: w.bestWindow ? ("Clearest at " + w.bestWindow.label + " (" + w.bestWindow.cloud + "%)") : ""
+                                text: w.bestWindow ? ((heroCard.width < 620) ? (w.bestWindow.label + " (" + w.bestWindow.cloud + "%)") : ("Clearest at " + w.bestWindow.label + " (" + w.bestWindow.cloud + "%)")) : ""
                                 font.pixelSize: theme.fontMinimum
                                 color: w.verdictAccent
-                                elide: Text.ElideRight
+                                wrapMode: Text.WordWrap
                                 Layout.fillWidth: true
                             }
 
                             Text {
-                                visible: w.lastSuccessStr.length > 0
+                                visible: heroCard.width >= 620 && w.lastSuccessStr.length > 0
                                 text: "· " + (w.loading ? "Updating…" : ("Updated " + w.lastSuccessStr))
                                 font.pixelSize: theme.fontMinimum
                                 color: theme.textTertiary
@@ -768,13 +768,14 @@ WidgetChrome {
                     RowLayout {
                         Layout.fillWidth: true
                         Text {
-                            text: "☀️ TWILIGHT & DARK SKY"
+                            text: (twilightCard.width < 450) ? "☀️ TWILIGHT" : "☀️ TWILIGHT & DARK SKY"
                             font.pixelSize: theme.fontMinimum
                             font.bold: true
                             color: theme.textSecondary
                             Layout.fillWidth: true
                         }
                         Text {
+                            visible: twilightCard.width >= 560
                             text: w.sunEvents ? ("Dark Sky: " + w.formatTime(w.sunEvents.astroDusk) + " – " + w.formatTime(w.sunEvents.astroDawn)) : ""
                             font.pixelSize: theme.fontMinimum
                             font.bold: true
@@ -789,38 +790,39 @@ WidgetChrome {
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 0
-                            Text { text: "Sunset"; font.pixelSize: theme.fontMinimum - 1; color: theme.textSecondary }
-                            Text { text: w.sunEvents ? w.formatTime(w.sunEvents.sunset) : "—"; font.pixelSize: theme.fontLabel; font.bold: true; color: theme.textPrimary }
+                            Text { text: "Sunset"; font.pixelSize: theme.fontMinimum; color: theme.textSecondary }
+                            Text { text: w.sunEvents ? w.formatTime(w.sunEvents.sunset) : "—"; font.pixelSize: (twilightCard.width < 360) ? theme.fontCaption : theme.fontLabel; font.bold: true; color: theme.textPrimary }
                         }
 
                         ColumnLayout {
-                            visible: w.roomy
+                            visible: w.roomy && twilightCard.width >= 620
                             Layout.fillWidth: true
                             spacing: 0
-                            Text { text: "Civil Dusk"; font.pixelSize: theme.fontMinimum - 1; color: theme.textSecondary }
-                            Text { text: w.sunEvents ? w.formatTime(w.sunEvents.civilDusk) : "—"; font.pixelSize: theme.fontLabel; font.bold: true; color: theme.textPrimary }
+                            Text { text: "Civil Dusk"; font.pixelSize: theme.fontMinimum; color: theme.textSecondary }
+                            Text { text: w.sunEvents ? w.formatTime(w.sunEvents.civilDusk) : "—"; font.pixelSize: (twilightCard.width < 360) ? theme.fontCaption : theme.fontLabel; font.bold: true; color: theme.textPrimary }
                         }
 
                         ColumnLayout {
-                            visible: w.roomy
+                            visible: w.roomy && twilightCard.width >= 620
                             Layout.fillWidth: true
                             spacing: 0
-                            Text { text: "Nautical"; font.pixelSize: theme.fontMinimum - 1; color: theme.textSecondary }
-                            Text { text: w.sunEvents ? w.formatTime(w.sunEvents.nauticalDusk) : "—"; font.pixelSize: theme.fontLabel; font.bold: true; color: theme.textPrimary }
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            spacing: 0
-                            Text { text: "Astro Dusk (Dark)"; font.pixelSize: theme.fontMinimum - 1; color: w.accentColor }
-                            Text { text: w.sunEvents ? w.formatTime(w.sunEvents.astroDusk) : "—"; font.pixelSize: theme.fontLabel; font.bold: true; color: w.accentColor }
+                            Text { text: "Nautical"; font.pixelSize: theme.fontMinimum; color: theme.textSecondary }
+                            Text { text: w.sunEvents ? w.formatTime(w.sunEvents.nauticalDusk) : "—"; font.pixelSize: (twilightCard.width < 360) ? theme.fontCaption : theme.fontLabel; font.bold: true; color: theme.textPrimary }
                         }
 
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 0
-                            Text { text: "Sunrise"; font.pixelSize: theme.fontMinimum - 1; color: theme.textSecondary }
-                            Text { text: w.sunEvents ? w.formatTime(w.sunEvents.sunrise) : "—"; font.pixelSize: theme.fontLabel; font.bold: true; color: theme.textPrimary }
+                            Text { text: twilightCard.width >= 480 ? "Astro Dusk (Dark)" : (twilightCard.width < 320 ? "Dark Sky" : "Astro Dusk"); font.pixelSize: theme.fontMinimum; color: w.accentColor }
+                            Text { text: w.sunEvents ? w.formatTime(w.sunEvents.astroDusk) : "—"; font.pixelSize: (twilightCard.width < 360) ? theme.fontCaption : theme.fontLabel; font.bold: true; color: w.accentColor }
+                        }
+
+                        ColumnLayout {
+                            visible: twilightCard.width >= 320
+                            Layout.fillWidth: true
+                            spacing: 0
+                            Text { text: "Sunrise"; font.pixelSize: theme.fontMinimum; color: theme.textSecondary }
+                            Text { text: w.sunEvents ? w.formatTime(w.sunEvents.sunrise) : "—"; font.pixelSize: (twilightCard.width < 360) ? theme.fontCaption : theme.fontLabel; font.bold: true; color: theme.textPrimary }
                         }
                     }
                 }
@@ -847,12 +849,13 @@ WidgetChrome {
                         spacing: theme.spacingSm
 
                         Text {
-                            text: "🔭 OBSERVING WINDOW (8 PM – 2 AM)"
+                            text: w.width > 680 ? "🔭 OBSERVING WINDOW (8 PM – 2 AM)" : "🔭 OBSERVING WINDOW"
                             font.pixelSize: theme.fontMinimum
                             font.bold: true
                             color: theme.textSecondary
                         }
                         Text {
+                            visible: w.width > 600
                             text: "· " + (w.observingDateLabel.length ? w.observingDateLabel : "Tonight")
                             font.pixelSize: theme.fontMinimum
                             font.bold: true
@@ -861,9 +864,9 @@ WidgetChrome {
                         }
                         Item { Layout.fillWidth: true }
                         Text {
-                            visible: w.lastSuccessMs > 0 || w.loading
+                            visible: w.width > 700 && (w.lastSuccessMs > 0 || w.loading)
                             text: w.loading ? "Refreshing…" : (w.lastSuccessStr.length ? ("Updated " + w.lastSuccessStr) : "")
-                            font.pixelSize: theme.fontMinimum - 1
+                            font.pixelSize: theme.fontMinimum
                             color: w.loading ? w.accentColor : theme.textTertiary
                         }
                         Rectangle {
@@ -876,7 +879,7 @@ WidgetChrome {
                             Text {
                                 anchors.centerIn: parent
                                 text: "↻"
-                                font.pixelSize: 15
+                                font.pixelSize: Math.max(theme.fontMinimum, 15)
                                 font.bold: true
                                 color: w.loading ? w.accentColor : (cardRefHover.containsMouse ? theme.textPrimary : theme.textSecondary)
                                 rotation: w.loading ? 360 : 0
@@ -898,7 +901,7 @@ WidgetChrome {
                         Layout.fillWidth: true
                         Text {
                             text: "Sky Clarity"
-                            font.pixelSize: theme.fontMinimum - 1
+                            font.pixelSize: theme.fontMinimum
                             color: theme.textSecondary
                             Layout.fillWidth: true
                         }
@@ -930,7 +933,7 @@ WidgetChrome {
 
                                 Text {
                                     text: modelData.cloud <= 5 ? "Clear" : (modelData.cloud + "%")
-                                    font.pixelSize: theme.fontMinimum - 1
+                                    font.pixelSize: theme.fontMinimum
                                     font.bold: (w.bestWindow && modelData.hr === w.bestWindow.hr)
                                     color: (modelData.cloud <= 20)
                                         ? w.accentColor
@@ -981,7 +984,7 @@ WidgetChrome {
 
                                 Text {
                                     text: modelData.label
-                                    font.pixelSize: theme.fontMinimum - 1
+                                    font.pixelSize: theme.fontMinimum
                                     font.bold: (w.bestWindow && modelData.hr === w.bestWindow.hr)
                                     color: (w.bestWindow && modelData.hr === w.bestWindow.hr) ? theme.textPrimary : theme.textSecondary
                                     Layout.alignment: Qt.AlignHCenter
@@ -1020,24 +1023,32 @@ WidgetChrome {
                         spacing: 1
 
                         RowLayout {
+                            Layout.fillWidth: true
                             spacing: theme.spacingSm
                             Text {
-                                text: w.moon.name
+                                text: (moonCard.width < 320) ? String(w.moon.name).split(" ")[0] : w.moon.name
                                 font.bold: true
-                                font.pixelSize: theme.fontLabel
+                                font.pixelSize: (moonCard.width < 340) ? theme.fontCaption : theme.fontLabel
                                 color: theme.textPrimary
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
                             }
                             Text {
-                                text: "· " + w.moon.illum + "% illuminated"
-                                font.pixelSize: theme.fontLabel
+                                text: (moonCard.width < 450) ? (w.moon.illum + "%") : ("· " + w.moon.illum + "% illuminated")
+                                font.pixelSize: (moonCard.width < 340) ? theme.fontCaption : theme.fontLabel
                                 color: theme.textSecondary
+                                Layout.preferredWidth: contentWidth
                             }
                         }
 
                         Text {
-                            text: "Lunar age ~" + w.moon.age.toFixed(1) + " days (" + (w.moon.cyclePos < 0.5 ? "Waxing" : "Waning") + ")"
+                            visible: moonCard.width >= 340
+                            text: (moonCard.width < 450)
+                                ? ("Age ~" + w.moon.age.toFixed(1) + "d · " + (w.moon.cyclePos < 0.5 ? "Waxing" : "Waning"))
+                                : ("Lunar age ~" + w.moon.age.toFixed(1) + " days (" + (w.moon.cyclePos < 0.5 ? "Waxing" : "Waning") + ")")
                             font.pixelSize: theme.fontMinimum
                             color: theme.textSecondary
+                            Layout.fillWidth: true
                         }
                     }
                 }
@@ -1062,7 +1073,7 @@ WidgetChrome {
                     RowLayout {
                         Layout.fillWidth: true
                         Text {
-                            text: "🪐 NAKED-EYE PLANETS"
+                            text: (planetsCard.width < 450) ? "🪐 PLANETS" : "🪐 NAKED-EYE PLANETS"
                             font.pixelSize: theme.fontMinimum
                             font.bold: true
                             color: theme.textSecondary
@@ -1070,7 +1081,7 @@ WidgetChrome {
                         }
                         Text {
                             text: "Rise & Set Tonight"
-                            font.pixelSize: theme.fontMinimum - 1
+                            font.pixelSize: theme.fontMinimum
                             color: theme.textSecondary
                             visible: w.roomy
                         }
@@ -1110,7 +1121,7 @@ WidgetChrome {
 
                                         Text {
                                             text: modelData.symbol
-                                            font.pixelSize: 18
+                                            font.pixelSize: Math.max(theme.fontMinimum, 18)
                                             font.bold: true
                                             color: (modelData.status.indexOf("Up all night") >= 0 || modelData.status.indexOf("Evening") >= 0)
                                                 ? w.accentColor : theme.textPrimary
@@ -1140,7 +1151,7 @@ WidgetChrome {
                                         Text {
                                             id: statusTxt
                                             anchors.centerIn: parent
-                                            text: modelData.status
+                                            text: (planetsCard.width < 680) ? String(modelData.status).split("·")[0].trim() : modelData.status
                                             font.pixelSize: theme.fontMinimum
                                             font.bold: (modelData.status.indexOf("Up all night") >= 0 || modelData.status.indexOf("Evening") >= 0)
                                             color: (modelData.status.indexOf("Up all night") >= 0 || modelData.status.indexOf("Evening") >= 0)
@@ -1152,6 +1163,7 @@ WidgetChrome {
 
                                     // Rise & Set times
                                     RowLayout {
+                                        visible: planetsCard.width >= 460
                                         spacing: theme.spacingSm
 
                                         RowLayout {
@@ -1171,7 +1183,7 @@ WidgetChrome {
                                         }
 
                                         Text {
-                                            visible: modelData.rise !== null && modelData.set !== null
+                                            visible: modelData.rise !== null && modelData.set !== null && planetsCard.width >= 500
                                             text: "·"
                                             font.pixelSize: theme.fontCaption
                                             color: theme.textSecondary
@@ -1179,7 +1191,7 @@ WidgetChrome {
 
                                         RowLayout {
                                             spacing: 3
-                                            visible: modelData.set !== null
+                                            visible: modelData.set !== null && planetsCard.width >= 500
                                             Text {
                                                 text: "Set"
                                                 font.pixelSize: theme.fontCaption
@@ -1198,7 +1210,7 @@ WidgetChrome {
                         }
                     }
 
-                    // ── Single-Column Compact Mode: Horizontal 5-Planet Row ──
+                    // ── Single-Column Compact Mode: Horizontal Planet Row ──
                     RowLayout {
                         visible: !w.twoColumn
                         Layout.fillWidth: true
@@ -1206,7 +1218,7 @@ WidgetChrome {
                         spacing: theme.spacingSm
 
                         Repeater {
-                            model: w.planets
+                            model: (planetsCard.width < 450) ? w.planets.slice(0, 2) : ((planetsCard.width < 650) ? w.planets.slice(0, 3) : ((planetsCard.width < 850) ? w.planets.slice(0, 4) : w.planets))
 
                             ColumnLayout {
                                 Layout.fillWidth: true
@@ -1231,17 +1243,17 @@ WidgetChrome {
                                 }
 
                                 Text {
-                                    text: modelData.status
-                                    font.pixelSize: theme.fontMinimum - 1
+                                    text: (planetsCard.width < 600) ? String(modelData.status).split("·")[0].trim() : modelData.status
+                                    font.pixelSize: theme.fontMinimum
                                     color: (modelData.status.indexOf("Up all night") >= 0 || modelData.status.indexOf("Evening") >= 0)
                                         ? w.accentColor : theme.textSecondary
                                     elide: Text.ElideRight
                                 }
 
                                 Text {
-                                    visible: modelData.set !== null
+                                    visible: planetsCard.width > 500 && modelData.set !== null
                                     text: "Set " + w.formatTime(modelData.set)
-                                    font.pixelSize: theme.fontMinimum - 2
+                                    font.pixelSize: theme.fontMinimum
                                     color: theme.textSecondary
                                     elide: Text.ElideRight
                                 }
@@ -1336,33 +1348,33 @@ WidgetChrome {
             }
 
             Loader {
-                active: cardsSingleCol.visible && w.showTwilights && w.sunEvents !== null
-                visible: w.showTwilights && w.sunEvents !== null
+                active: cardsSingleCol.visible && w.showTwilights && w.sunEvents !== null && w.height >= 340
+                visible: w.showTwilights && w.sunEvents !== null && w.height >= 340
                 sourceComponent: twilightCardComp
                 Layout.fillWidth: true
                 Layout.preferredHeight: w.roomy ? 72 : 56
             }
 
             Loader {
-                active: cardsSingleCol.visible && w.showHourlyBar && w.hourlyWindow.length > 0 && (w.roomy || w.tallTile)
-                visible: w.showHourlyBar && w.hourlyWindow.length > 0 && (w.roomy || w.tallTile)
+                active: cardsSingleCol.visible && w.showHourlyBar && w.hourlyWindow.length > 0 && w.roomy && w.width >= 360
+                visible: w.showHourlyBar && w.hourlyWindow.length > 0 && w.roomy && w.width >= 360
                 sourceComponent: chartCardComp
                 Layout.fillWidth: true
-                Layout.preferredHeight: Math.min(180, Math.max(90, parent.height * 0.28))
-                Layout.fillHeight: true
+                Layout.preferredHeight: 110
+                Layout.maximumHeight: 140
             }
 
             Loader {
-                active: cardsSingleCol.visible && w.showMoon
-                visible: w.showMoon
+                active: cardsSingleCol.visible && w.showMoon && w.height >= 440
+                visible: w.showMoon && w.height >= 440
                 sourceComponent: moonCardComp
                 Layout.fillWidth: true
                 Layout.preferredHeight: w.roomy ? 56 : 44
             }
 
             Loader {
-                active: cardsSingleCol.visible && w.showPlanets && w.planets.length > 0
-                visible: w.showPlanets && w.planets.length > 0
+                active: cardsSingleCol.visible && w.showPlanets && w.planets.length > 0 && w.height >= 580
+                visible: w.showPlanets && w.planets.length > 0 && w.height >= 580
                 sourceComponent: planetsCardComp
                 Layout.fillWidth: true
                 Layout.preferredHeight: w.roomy ? 72 : 56
@@ -1376,17 +1388,19 @@ WidgetChrome {
 
             Text {
                 text: w.lastSuccessMs > 0
-                    ? ("Updated " + Qt.formatTime(new Date(w.lastSuccessMs), "HH:mm") + " · Open-Meteo & Local Astro")
+                    ? ((w.width < 500)
+                        ? ("Updated " + Qt.formatTime(new Date(w.lastSuccessMs), "HH:mm"))
+                        : ("Updated " + Qt.formatTime(new Date(w.lastSuccessMs), "HH:mm") + " · Open-Meteo & Local Astro"))
                     : (w.locationConfigured ? "Local astronomical calculations active" : "Unconfigured")
                 font.pixelSize: theme.fontMinimum
                 color: theme.textSecondary
-                elide: Text.ElideRight
                 Layout.fillWidth: true
             }
 
             Button {
                 id: refreshBtn
                 text: "Refresh"
+                font.pixelSize: Math.max(theme.fontMinimum, 13)
                 visible: w.locationConfigured
                 Layout.preferredHeight: 32
                 onClicked: w.refresh()

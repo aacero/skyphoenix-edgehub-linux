@@ -235,6 +235,18 @@ private slots:
         QVERIFY(QDir().mkpath(configRoot));
     }
 
+    void existingAutostartDirectoryAsFileIsRejected() {
+        const QString directory = QFileInfo(path_).absolutePath();
+        QDir(directory).removeRecursively();
+        QFile blocker(directory);
+        QVERIFY(blocker.open(QIODevice::WriteOnly));
+        blocker.write("not a directory");
+        blocker.close();
+
+        QVERIFY(!applyAutostart(true));
+        QVERIFY(blocker.remove());
+    }
+
     void unsafeAutostartEntrySymlinkIsRejected() {
         const QString directory = QFileInfo(path_).absolutePath();
         QVERIFY(QDir().mkpath(directory));

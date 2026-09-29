@@ -581,7 +581,7 @@ Item {
         function test_reactive_alerts_sync_and_banner() {
             var d = ld.item
             var s = root.store()
-            s.applyExternal(root.makeDoc([ { id: "sys-tile", type: "systems", size: "1x1" } ]))
+            s.applyExternal(root.makeDoc([ { id: "sys-tile", type: "clock", size: "1x1" } ]))
             compare(d.syncReactiveAlerts("sys-tile", [
                 {
                     key: "sys-warn",
@@ -642,7 +642,7 @@ Item {
         function test_reactive_alerts_dismiss_and_prune() {
             var d = ld.item
             var s = root.store()
-            s.applyExternal(root.makeDoc([ { id: "sys-prune", type: "systems", size: "1x1" } ]))
+            s.applyExternal(root.makeDoc([ { id: "sys-prune", type: "clock", size: "1x1" } ]))
             d.syncReactiveAlerts("sys-prune", [
                 { key: "c1", level: "critical", host: "h1", title: "t1" },
                 { key: "c2", level: "critical", host: "h2", title: "t2" }

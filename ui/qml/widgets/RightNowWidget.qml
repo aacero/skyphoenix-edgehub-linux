@@ -270,13 +270,19 @@ WidgetChrome {
         ColumnLayout {
             visible: w.showDoneTile || w.showCount
             Layout.alignment: Qt.AlignVCenter | Qt.AlignHCenter
+            Layout.fillWidth: !w.horiz
+            Layout.preferredWidth: w.horiz
+                ? ((w.heroRoomy && w.hasFocus)
+                    ? Math.min(480, w.width * 0.45)
+                    : Math.max(180, rightNowElapsed.implicitWidth + 16))
+                : -1
             spacing: theme.spacingXs
             Rectangle {
                 objectName: "rightNowFocusContext"
                 visible: w.heroRoomy && w.hasFocus
                 Layout.fillWidth: true
-                Layout.preferredWidth: w.horiz ? Math.min(540, w.width * 0.43)
-                                               : Math.min(620, w.width * 0.86)
+                Layout.preferredWidth: w.horiz ? Math.min(480, w.width * 0.45) : Math.min(620, w.width * 0.86)
+                Layout.maximumWidth: w.horiz ? Math.min(480, w.width * 0.45) : Math.min(620, w.width * 0.86)
                 Layout.preferredHeight: 78
                 radius: theme.radiusMd
                 color: Qt.rgba(w.effAccent.r, w.effAccent.g, w.effAccent.b, 0.08)
@@ -332,12 +338,15 @@ WidgetChrome {
                 opacity: 0.78
             }
             Text {
+                id: rightNowElapsed
                 objectName: "rightNowElapsed"
                 visible: w.showElapsed && !w.heroRoomy
                 Layout.alignment: Qt.AlignHCenter
+                Layout.preferredWidth: contentWidth
+                horizontalAlignment: Text.AlignHCenter
                 text: w.elapsedLabel(); color: theme.textPrimary
                 opacity: 0.78
-                font.pixelSize: theme.fontLabel
+                font.pixelSize: Math.max(theme.fontMinimum, Math.min(theme.fontLabel, w.width * 0.04))
             }
         }
     }

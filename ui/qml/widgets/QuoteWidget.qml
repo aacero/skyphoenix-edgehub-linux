@@ -242,8 +242,8 @@ WidgetChrome {
     readonly property bool showShuffleTile: !expanded && !micro && pool.length > 1
     readonly property real quotePx: {
         if (sizeClass === "full") return 30
-        if (micro) return Math.max(theme.fontLabel, Math.min(width * 0.072, 22))
-        if (sizeClass === "compact") return Math.max(theme.fontLabel, Math.min(width * 0.045, 25))
+        if (micro) return Math.max(theme.fontMinimum, Math.min(width * 0.055, 18))
+        if (sizeClass === "compact") return Math.max(theme.fontMinimum, Math.min(width * 0.04, 22))
         if (horiz) return Math.max(theme.fontLabel, Math.min(height * 0.07, width * 0.035, 30))
         return Math.max(theme.fontTitle, Math.min(width * 0.07, 30))   // tall
     }
@@ -259,7 +259,7 @@ WidgetChrome {
         anchors.centerIn: parent
         // A very wide box narrows the reading column so a
         // short quote sits as a centred block instead of hugging the left edge.
-        width: parent.width * (w.horiz && w.width > 1000 ? 0.62 : 0.9)
+        width: parent.width * (w.horiz && w.width > 1000 ? 0.62 : (w.width < 450 ? 0.95 : 0.9))
         columns: w.horiz ? 2 : 1
         columnSpacing: theme.spacingMd
         rowSpacing: w.sizeClass === "full" ? 14 : (w.micro ? 2 : theme.spacingXs)
@@ -267,9 +267,11 @@ WidgetChrome {
         Text {
             visible: w.showGlyph
             Layout.alignment: w.horiz ? (Qt.AlignTop | Qt.AlignLeft) : Qt.AlignHCenter
+            Layout.preferredWidth: contentWidth
+            Layout.preferredHeight: contentHeight
             text: "“"; font.bold: true
-            font.pixelSize: w.sizeClass === "full" ? 72
-                            : Math.max(22, Math.min(Math.min(w.width, w.height) * 0.12, 56))
+            font.pixelSize: w.sizeClass === "full" ? 64
+                            : Math.max(18, Math.min(Math.min(w.width, w.height) * 0.08, 40))
             color: w.effAccent
         }
         ColumnLayout {
@@ -278,6 +280,7 @@ WidgetChrome {
             spacing: w.micro ? 2 : theme.spacingXs
             Text {
                 Layout.fillWidth: true
+                Layout.preferredHeight: contentHeight
                 horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
                 wrapMode: Text.WordWrap
                 text: w.displayQuoteText
@@ -285,15 +288,14 @@ WidgetChrome {
                 font.weight: w.customLibraryEmpty ? Font.DemiBold : Font.Normal
                 color: w.customLibraryEmpty ? w.effAccent : theme.textPrimary
                 font.pixelSize: w.quotePx
-                maximumLineCount: w.quoteLines; elide: Text.ElideRight
-                fontSizeMode: Text.Fit; minimumPixelSize: theme.fontMinimum
             }
             Text {
                 Layout.fillWidth: true
+                Layout.preferredHeight: contentHeight
                 horizontalAlignment: w.horiz ? Text.AlignLeft : Text.AlignHCenter
                 visible: w.showAuthor; text: "- " + w.authorText
                 font.pixelSize: w.sizeClass === "full" ? 20
-                                : Math.max(theme.fontLabel, Math.min(w.width * 0.03, 20))
+                                : Math.max(theme.fontMinimum, Math.min(w.width * 0.035, theme.fontLabel))
                 font.weight: Font.Medium
                 color: theme.textPrimary
                 elide: Text.ElideRight; maximumLineCount: 1

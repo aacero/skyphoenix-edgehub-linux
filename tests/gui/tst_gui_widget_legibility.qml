@@ -523,6 +523,31 @@ Item {
                     : error ? " | Missing author" : "A useful release makes quality visible. | EdgeHub editorial",
                 authorDisplay: "always"
             }
+        case "systems":
+            return {
+                hosts: "alpha | 10.0.0.10:9100\nbeta | 10.0.0.11:9100",
+                defaultPort: 9100, pollSec: 3600, warnCpu: 85, warnRam: 85, warnDisk: 90
+            }
+        case "quickactions":
+            return {
+                hostsText: "alpha | 10.0.0.10 | user\nbeta | 10.0.0.11 | user",
+                showStatusBanner: true
+            }
+        case "grafana":
+            return {
+                url: "http://localhost:9090", query: "node_load1", rangeSec: 3600,
+                pollSec: 3600, chartType: "area", unit: "%", unitScale: "auto",
+                showMinMax: true, fillGlow: true
+            }
+        case "skytonight":
+            return {
+                locationMode: "manual", lat: 48.2082, lon: 16.3738,
+                place: longContent ? "Vienna International Observatory" : "Vienna",
+                showTwilights: true, showClouds: true, showHourlyBar: true,
+                showMoon: true, showPlanets: true
+            }
+        case "humblebooks":
+            return { category: "all", pollHours: 2 }
         default:
             return ({})
         }
@@ -565,6 +590,75 @@ Item {
             item.windSpeed = maximum ? 999.9 : 12.4
             item.precipitation = maximum ? 999.9 : 1.2
             item.days = error ? [] : weatherDays(maximum ? 8 : 5)
+        } else if (type === "humblebooks") {
+            item.loading = false
+            item.errorText = error ? "Catalog unreachable" : ""
+            item.stateHelp = error ? "Check network permissions." : ""
+            item.bundles = error ? [] : [
+                {
+                    id: "bundle-1", machineName: "techbooks",
+                    title: longContent ? "Comprehensive Linux Architecture and System Engineering Bundle" : "Linux Systems",
+                    fullName: "Comprehensive Linux Architecture Bundle", category: "Tech",
+                    url: "https://example.test/bundle1", imageUrl: "", endDate: "2026-12-31T00:00:00Z",
+                    timeRemainingText: "14d left", itemCountText: maximum ? "48 items" : "12 items",
+                    valueText: maximum ? "$1,248" : "$320", tierPriceText: "$25 for all",
+                    blurb: longContent ? "Deep-dive systems engineering books from premier publishers." : "Master Linux internals."
+                },
+                {
+                    id: "bundle-2", machineName: "sfbooks",
+                    title: "Sci-Fi Classics", fullName: "Sci-Fi Classics Bundle", category: "SF",
+                    url: "https://example.test/bundle2", imageUrl: "", endDate: "2026-12-31T00:00:00Z",
+                    timeRemainingText: "3d left", itemCountText: "10 items",
+                    valueText: "$180", tierPriceText: "$18 for all",
+                    blurb: "Classic science fiction masterpieces."
+                }
+            ]
+        } else if (type === "systems") {
+            item.localNodes = error
+                ? [{ label: "Node 1", url: "http://localhost:9100/metrics", status: "offline", error: "Connection refused", cpuPercent: 0, ramPercent: 0, diskPercent: 0, netRxRate: 0, netTxRate: 0, uptimeStr: "-" }]
+                : [
+                    {
+                        label: longContent ? "production-edge-hub-host" : "alpha",
+                        url: "http://10.0.0.10:9100/metrics", status: "online", error: "",
+                        cpuPercent: maximum ? 98.4 : 32.5, ramPercent: maximum ? 92.1 : 54.2,
+                        diskPercent: maximum ? 95.0 : 68.0,
+                        netRxRate: 1048576, netTxRate: 524288,
+                        uptimeSec: 1234567, uptimeStr: "14d 6h"
+                    },
+                    {
+                        label: "beta",
+                        url: "http://10.0.0.11:9100/metrics", status: "online", error: "",
+                        cpuPercent: 45.0, ramPercent: 62.0, diskPercent: 40.0,
+                        netRxRate: 2097152, netTxRate: 1048576,
+                        uptimeSec: 3600000, uptimeStr: "42d 1h"
+                    }
+                ]
+        } else if (type === "grafana") {
+            item.loading = false
+            item.errText = error ? "Metric endpoint unreachable" : ""
+            item.latestVal = maximum ? 9999.9 : 42.5
+            item.minVal = maximum ? 100.0 : 12.0
+            item.maxVal = maximum ? 9999.9 : 85.0
+            item.avgVal = maximum ? 5000.0 : 48.2
+            item.deltaVal = 3.5
+            item.seriesName = longContent ? "production.core.cluster.load" : "cluster_load"
+            item.dataPoints = error ? [] : [
+                { t: 1000, v: 20 }, { t: 2000, v: 40 }, { t: 3000, v: 42.5 }
+            ]
+        } else if (type === "skytonight") {
+            item.loading = false
+            item.cloudLoaded = !error
+            item.errorText = error ? "Open-Meteo service unreachable" : ""
+            item.avgCloud = maximum ? 100 : 15
+            item.bestWindow = error ? null : { hr: 23, label: "11 PM", cloud: 5 }
+            item.hourlyWindow = error ? [] : [
+                { hr: 20, label: "8 PM", cloud: 10 },
+                { hr: 21, label: "9 PM", cloud: 15 },
+                { hr: 22, label: "10 PM", cloud: 12 },
+                { hr: 23, label: "11 PM", cloud: 5 },
+                { hr: 0, label: "12 AM", cloud: 8 },
+                { hr: 1, label: "1 AM", cloud: 14 }
+            ]
         }
     }
 

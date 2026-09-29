@@ -554,6 +554,10 @@ private slots:
         b.listImages();                 // returns without crashing (possibly empty)
         b.setHubActivePage(7);          // offline is a safe no-op
         QVERIFY(!b.stopHub());          // no hub connected → honest false
+        b.sendWakeOnLan(QStringLiteral("00:11:22:33:44:55"));
+        QVERIFY(!b.executeCommand(QStringLiteral("")));
+        const QVariantMap pingRes = b.pingHost(QStringLiteral("127.0.0.1"), 1);
+        QVERIFY(pingRes.contains(QStringLiteral("ok")));
     }
 
     void malformedHubLayoutsFailClosedAndTheNextValidReplyRecovers() {
@@ -676,6 +680,7 @@ private slots:
         QVERIFY(!backend.setAutostart(true));
         QVERIFY(!backend.setLicenseKey(QStringLiteral("XE1.invalid.signature")));
         QCOMPARE(errors.count(), 3);
+        QVERIFY(backend.saveUiState(testState("staged-offline", 1)));
     }
 
     void diagnosticsConfigIsStructuredAndRedacted() {
@@ -1256,6 +1261,42 @@ private slots:
         b.discardLocalAndReload();
         QTRY_COMPARE_WITH_TIMEOUT(layoutChanges.count(), 1, 5000);
         QCOMPARE(b.uiState(), external);
+    }
+
+    void offlineConflictCanBeRetried() {
+        XeneonString directory(xeneon_config_dir());
+        const QString configPath =
+            directory.qstring() + QStringLiteral("/config.toml");
+        QFile::remove(configPath);
+        const QString baseline = testState("offline-baseline-retry", 1);
+        const QString external = testState("offline-external-retry", 2);
+
+        ConfigHandle* seed = xeneon_config_load();
+        QVERIFY(seed);
+        QCOMPARE(
+            xeneon_config_set_ui_state(seed, baseline.toUtf8().constData()), 0);
+        QVERIFY(xeneon_config_save(seed) >= 0);
+        xeneon_config_free(seed);
+
+        ManagerBackend b;
+        QCOMPARE(b.uiState(), baseline);
+        b.setLayoutSavePending(true);
+        b.setOfflineExternalChangePreflight([] { return false; });
+        QSignalSpy conflicts(&b, &ManagerBackend::externalConfigConflict);
+
+        ConfigHandle* writer = xeneon_config_load();
+        QVERIFY(writer);
+        QCOMPARE(
+            xeneon_config_set_ui_state(
+                writer, external.toUtf8().constData()),
+            0);
+        QVERIFY(xeneon_config_save(writer) >= 0);
+        xeneon_config_free(writer);
+
+        QTRY_COMPARE_WITH_TIMEOUT(conflicts.count(), 1, 5000);
+        QVERIFY(b.preparePendingLayoutRetry());
+        b.setLayoutSavePending(false);
+        b.discardPendingLayoutAndSync();
     }
 
     void hubOwnedFieldsRefreshWithoutDisconnectOrLayoutReload() {

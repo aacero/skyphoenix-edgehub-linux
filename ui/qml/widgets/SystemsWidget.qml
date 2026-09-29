@@ -957,7 +957,7 @@ WidgetChrome {
                 horizontalAlignment: Text.AlignHCenter
                 text: "No Systems Configured"
                 color: theme.textPrimary
-                font.pixelSize: w.micro ? theme.fontMinimum : (w.expanded ? 20 : 14)
+                font.pixelSize: w.micro ? theme.fontMinimum : (w.expanded ? 20 : Math.max(theme.fontMinimum, 14))
                 font.family: theme.fontDisplay
                 font.weight: Font.DemiBold
             }
@@ -968,7 +968,7 @@ WidgetChrome {
                 visible: !w.micro
                 text: "Add hostnames in settings to monitor Prometheus node_exporter metrics."
                 color: theme.textTertiary
-                font.pixelSize: 12
+                font.pixelSize: Math.max(theme.fontMinimum, 12)
                 font.family: theme.fontDisplay
             }
         }
@@ -992,7 +992,7 @@ WidgetChrome {
                     Text {
                         text: w.onlineCount + "/" + w.totalCount + " UP"
                         color: theme.textPrimary
-                        font.pixelSize: Math.max(16, Math.min(w.width * 0.12, w.height * 0.15, 24))
+                        font.pixelSize: Math.max(theme.fontMinimum, Math.min(w.width * 0.12, w.height * 0.15, 24))
                         font.family: theme.fontDisplay
                         font.weight: Font.Bold
                     }
@@ -1002,7 +1002,7 @@ WidgetChrome {
                     Layout.alignment: Qt.AlignCenter
                     text: "CPU " + w.avgCpu.toFixed(0) + "% · RAM " + w.avgRam.toFixed(0) + "%"
                     color: theme.textSecondary
-                    font.pixelSize: Math.max(theme.fontMinimum, Math.min(w.width * 0.08, 12))
+                    font.pixelSize: theme.fontMinimum
                     font.family: theme.fontMono
                 }
             }
@@ -1031,36 +1031,37 @@ WidgetChrome {
                     Text {
                         text: w.onlineCount + "/" + w.totalCount + " Systems Online"
                         color: theme.textPrimary
-                        font.pixelSize: 15
+                        font.pixelSize: Math.max(theme.fontMinimum, 15)
                         font.family: theme.fontDisplay
                         font.weight: Font.Bold
                     }
 
                     Text {
-                        visible: w.width > 500
+                        visible: w.width >= 720
                         text: "·   Avg CPU " + w.avgCpu.toFixed(0) + "%   ·   Avg RAM " + w.avgRam.toFixed(0) + "%"
                         color: theme.textSecondary
-                        font.pixelSize: 14
+                        font.pixelSize: Math.max(theme.fontMinimum, 14)
                         font.family: theme.fontMono
                     }
 
                     Item { Layout.fillWidth: true }
 
                     Text {
+                        visible: w.width >= 920
                         text: "↓ " + w.formatRate(w.totalNetRx) + "   ↑ " + w.formatRate(w.totalNetTx)
                         color: theme.textTertiary
-                        font.pixelSize: 14
+                        font.pixelSize: Math.max(theme.fontMinimum, 14)
                         font.family: theme.fontMono
                         font.weight: Font.Bold
                     }
                 }
 
-                // Wide Multi-Column Card Deck (when width > 540)
+                // Wide Multi-Column Card Deck (when width >= 960)
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     spacing: theme.spacingSm
-                    visible: w.width > 540
+                    visible: w.width >= 960
 
                     Repeater {
                         model: w.displayNodes
@@ -1081,8 +1082,8 @@ WidgetChrome {
 
                             ColumnLayout {
                                 anchors.fill: parent
-                                anchors.margins: nodeDeckCard.height > 300 ? 16 : 10
-                                spacing: nodeDeckCard.height > 300 ? 12 : 6
+                                anchors.margins: nodeDeckCard.height > 440 ? 16 : 8
+                                spacing: nodeDeckCard.height > 440 ? 10 : 4
 
                                 // Card Header: Status Dot, Host Label, Uptime
                                 RowLayout {
@@ -1097,7 +1098,7 @@ WidgetChrome {
                                     Text {
                                         text: modelData.label || "System"
                                         color: theme.textPrimary
-                                        font.pixelSize: nodeDeckCard.height > 300 ? 22 : 17
+                                        font.pixelSize: Math.max(theme.fontMinimum, nodeDeckCard.height > 300 ? 22 : 17)
                                         font.family: theme.fontDisplay
                                         font.weight: Font.Bold
                                         elide: Text.ElideRight
@@ -1108,7 +1109,7 @@ WidgetChrome {
                                               ? (modelData.error || "Offline")
                                               : ("up " + modelData.uptimeStr)
                                         color: modelData.status === "offline" ? theme.error : theme.textTertiary
-                                        font.pixelSize: nodeDeckCard.height > 300 ? 13 : 12
+                                        font.pixelSize: nodeDeckCard.height > 300 ? Math.max(theme.fontMinimum, 13) : Math.max(theme.fontMinimum, 12)
                                         font.family: theme.fontMono
                                         font.weight: Font.Medium
                                     }
@@ -1126,7 +1127,7 @@ WidgetChrome {
                                 ColumnLayout {
                                     Layout.fillWidth: true
                                     Layout.fillHeight: true
-                                    spacing: nodeDeckCard.height > 300 ? 12 : 6
+                                    spacing: nodeDeckCard.height > 440 ? 10 : 4
                                     visible: modelData.status !== "offline"
 
                                     // CPU Block
@@ -1138,7 +1139,7 @@ WidgetChrome {
                                             Text {
                                                 text: "PROCESSOR (CPU)"
                                                 color: theme.textSecondary
-                                                font.pixelSize: nodeDeckCard.height > 300 ? 14 : 12
+                                                font.pixelSize: nodeDeckCard.height > 300 ? Math.max(theme.fontMinimum, 14) : Math.max(theme.fontMinimum, 12)
                                                 font.family: theme.fontMono
                                                 font.weight: Font.Bold
                                             }
@@ -1146,7 +1147,7 @@ WidgetChrome {
                                             Text {
                                                 text: Math.round(modelData.cpuPercent || 0) + "%"
                                                 color: (modelData.cpuPercent >= w.warnCpu) ? theme.warning : theme.textPrimary
-                                                font.pixelSize: nodeDeckCard.height > 350 ? 36 : (nodeDeckCard.height > 250 ? 26 : 18)
+                                                font.pixelSize: Math.max(theme.fontMinimum, nodeDeckCard.height > 350 ? 36 : (nodeDeckCard.height > 250 ? 26 : 18))
                                                 font.family: theme.fontDisplay
                                                 font.weight: Font.Bold
                                             }
@@ -1165,11 +1166,15 @@ WidgetChrome {
                                         }
                                         Text {
                                             visible: nodeDeckCard.height > 200
-                                            text: (modelData.cpuCores || 1) + " Cores  ·  Load: " + Number(modelData.load1 || 0).toFixed(2) + ", " + Number(modelData.load5 || 0).toFixed(2)
+                                            text: nodeDeckCard.width < 250
+                                                  ? ("Load: " + Number(modelData.load1 || 0).toFixed(2))
+                                                  : ((modelData.cpuCores || 1) + " Cores  ·  Load: " + Number(modelData.load1 || 0).toFixed(2) + ", " + Number(modelData.load5 || 0).toFixed(2))
                                             color: theme.textPrimary
-                                            font.pixelSize: nodeDeckCard.height > 300 ? 14 : 12
+                                            font.pixelSize: nodeDeckCard.height > 300 ? Math.max(theme.fontMinimum, 14) : Math.max(theme.fontMinimum, 12)
                                             font.family: theme.fontMono
                                             font.weight: Font.Medium
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
                                         }
                                     }
 
@@ -1182,7 +1187,7 @@ WidgetChrome {
                                             Text {
                                                 text: "MEMORY (RAM)"
                                                 color: theme.textSecondary
-                                                font.pixelSize: nodeDeckCard.height > 300 ? 14 : 12
+                                                font.pixelSize: nodeDeckCard.height > 300 ? Math.max(theme.fontMinimum, 14) : Math.max(theme.fontMinimum, 12)
                                                 font.family: theme.fontMono
                                                 font.weight: Font.Bold
                                             }
@@ -1190,7 +1195,7 @@ WidgetChrome {
                                             Text {
                                                 text: Math.round(modelData.ramPercent || 0) + "%"
                                                 color: (modelData.ramPercent >= w.warnRam) ? theme.warning : theme.textPrimary
-                                                font.pixelSize: nodeDeckCard.height > 350 ? 36 : (nodeDeckCard.height > 250 ? 26 : 18)
+                                                font.pixelSize: Math.max(theme.fontMinimum, nodeDeckCard.height > 350 ? 36 : (nodeDeckCard.height > 250 ? 26 : 18))
                                                 font.family: theme.fontDisplay
                                                 font.weight: Font.Bold
                                             }
@@ -1211,9 +1216,11 @@ WidgetChrome {
                                             visible: nodeDeckCard.height > 200
                                             text: w.formatBytes(modelData.ramUsedBytes) + " used / " + w.formatBytes(modelData.ramTotalBytes) + " total"
                                             color: theme.textPrimary
-                                            font.pixelSize: nodeDeckCard.height > 300 ? 14 : 12
+                                            font.pixelSize: nodeDeckCard.height > 300 ? Math.max(theme.fontMinimum, 14) : Math.max(theme.fontMinimum, 12)
                                             font.family: theme.fontMono
                                             font.weight: Font.Medium
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
                                         }
                                     }
 
@@ -1227,7 +1234,7 @@ WidgetChrome {
                                             Text {
                                                 text: "STORAGE (/)"
                                                 color: theme.textSecondary
-                                                font.pixelSize: nodeDeckCard.height > 300 ? 14 : 12
+                                                font.pixelSize: nodeDeckCard.height > 300 ? Math.max(theme.fontMinimum, 14) : Math.max(theme.fontMinimum, 12)
                                                 font.family: theme.fontMono
                                                 font.weight: Font.Bold
                                             }
@@ -1235,7 +1242,7 @@ WidgetChrome {
                                             Text {
                                                 text: Math.round(modelData.diskPercent || 0) + "%"
                                                 color: (modelData.diskPercent >= w.warnDisk) ? theme.warning : theme.textPrimary
-                                                font.pixelSize: nodeDeckCard.height > 350 ? 26 : (nodeDeckCard.height > 250 ? 20 : 15)
+                                                font.pixelSize: Math.max(theme.fontMinimum, nodeDeckCard.height > 350 ? 26 : (nodeDeckCard.height > 250 ? 20 : 15))
                                                 font.family: theme.fontDisplay
                                                 font.weight: Font.Bold
                                             }
@@ -1256,9 +1263,11 @@ WidgetChrome {
                                             visible: nodeDeckCard.height > 280
                                             text: w.formatBytes(modelData.diskUsedBytes) + " used / " + w.formatBytes(modelData.diskTotalBytes) + " total"
                                             color: theme.textPrimary
-                                            font.pixelSize: nodeDeckCard.height > 300 ? 14 : 12
+                                            font.pixelSize: nodeDeckCard.height > 300 ? Math.max(theme.fontMinimum, 14) : Math.max(theme.fontMinimum, 12)
                                             font.family: theme.fontMono
                                             font.weight: Font.Medium
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
                                         }
                                     }
 
@@ -1270,17 +1279,21 @@ WidgetChrome {
                                         Text {
                                             text: "BANDWIDTH:"
                                             color: theme.textSecondary
-                                            font.pixelSize: nodeDeckCard.height > 300 ? 14 : 12
+                                            font.pixelSize: nodeDeckCard.height > 300 ? Math.max(theme.fontMinimum, 14) : Math.max(theme.fontMinimum, 12)
                                             font.family: theme.fontMono
                                             font.weight: Font.Bold
                                         }
                                         Item { Layout.fillWidth: true }
                                         Text {
-                                            text: "↓ " + w.formatRate(modelData.netRxRate) + "   ↑ " + w.formatRate(modelData.netTxRate)
+                                            text: nodeDeckCard.width < 250
+                                                  ? ("↓ " + w.formatRate(modelData.netRxRate))
+                                                  : ("↓ " + w.formatRate(modelData.netRxRate) + "   ↑ " + w.formatRate(modelData.netTxRate))
                                             color: theme.textPrimary
-                                            font.pixelSize: nodeDeckCard.height > 300 ? 16 : 13
+                                            font.pixelSize: Math.max(theme.fontMinimum, nodeDeckCard.height > 300 ? 16 : 13)
                                             font.family: theme.fontMono
                                             font.weight: Font.Bold
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
                                         }
                                     }
                                 }
@@ -1297,7 +1310,7 @@ WidgetChrome {
                                             Layout.alignment: Qt.AlignCenter
                                             text: (deckWakeBtn.wolSt.status === "ok") ? "SYSTEM STARTING UP" : "HOST UNREACHABLE"
                                             color: (deckWakeBtn.wolSt.status === "ok") ? theme.accent : theme.error
-                                            font.pixelSize: 16
+                                            font.pixelSize: Math.max(theme.fontMinimum, 16)
                                             font.family: theme.fontDisplay
                                             font.weight: Font.Bold
                                         }
@@ -1307,7 +1320,7 @@ WidgetChrome {
                                                   ? "Waiting for network and OS services..."
                                                   : (modelData.error || "Connection timed out")
                                             color: theme.textSecondary
-                                            font.pixelSize: 13
+                                            font.pixelSize: Math.max(theme.fontMinimum, 13)
                                             font.family: theme.fontMono
                                         }
                                         Rectangle {
@@ -1335,7 +1348,7 @@ WidgetChrome {
                                                     id: deckWakeTxt
                                                     text: w.wolButtonLabel(deckWakeBtn.wolSt, false)
                                                     color: "#FFFFFF"
-                                                    font.pixelSize: 13
+                                                    font.pixelSize: Math.max(theme.fontMinimum, 13)
                                                     font.family: theme.fontDisplay
                                                     font.weight: Font.Bold
                                                 }
@@ -1356,18 +1369,18 @@ WidgetChrome {
                     }
                 }
 
-                // Narrow / Vertical List Mode (when width <= 540)
+                // Narrow / Vertical List Mode (when width < 960)
                 ListView {
                     id: tileListView
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
                     spacing: 6
-                    visible: w.width <= 540
+                    visible: w.width < 960
                     model: w.displayNodes
                     delegate: Rectangle {
                         width: tileListView.width
-                        height: w.tallish ? 64 : 52
+                        height: Math.max(w.tallish ? 72 : 60, theme.fontMinimum * 2 + 36)
                         radius: theme.radiusSm
                         color: theme.cardBackgroundAlt
                         border.color: (w.selectedIndex === index) ? theme.accent : theme.cardBorder
@@ -1384,7 +1397,7 @@ WidgetChrome {
                             anchors.margins: 8
                             spacing: 3
 
-                            // Top line: Status dot, Label, Uptime / Error / Wake
+                            // Top line: Status dot, Label, Uptime
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: 8
@@ -1396,56 +1409,68 @@ WidgetChrome {
                                 Text {
                                     text: modelData.label || "System"
                                     color: theme.textPrimary
-                                    font.pixelSize: 15
+                                    font.pixelSize: Math.max(theme.fontMinimum, 15)
                                     font.family: theme.fontDisplay
                                     font.weight: Font.Bold
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true
                                 }
-                                RowLayout {
-                                    spacing: 6
+                                Text {
+                                    visible: w.width >= 480 && modelData.status !== "offline"
+                                    text: "up " + modelData.uptimeStr
+                                    color: theme.textTertiary
+                                    font.pixelSize: Math.max(theme.fontMinimum, 12)
+                                    font.family: theme.fontMono
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
+                            }
+
+                            // Bottom line: Offline error / wake button
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+                                visible: modelData.status === "offline"
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                    text: (listWakeBtn.wolSt.status === "ok")
+                                          ? "Starting up..."
+                                          : (modelData.error || "Offline")
+                                    color: (listWakeBtn.wolSt.status === "ok") ? theme.accent : theme.error
+                                    font.pixelSize: Math.max(theme.fontMinimum, 12)
+                                    font.family: theme.fontMono
+                                }
+                                Rectangle {
+                                    id: listWakeBtn
+                                    objectName: "listWakeBtn"
+                                    visible: modelData.status === "offline" && !!modelData.mac
+                                    implicitWidth: listWakeTxt.implicitWidth + 16
+                                    implicitHeight: 28
+                                    radius: 14
+                                    z: 2
+                                    property var wolSt: w._wolStates[modelData.url || modelData.label] || ({})
+                                    color: wolSt.status === "sending" ? theme.warning
+                                           : (wolSt.status === "ok" ? theme.catSystem
+                                           : (listWakeMa.containsMouse ? theme.accentHover : theme.accent))
                                     Text {
-                                        text: (listWakeBtn.wolSt.status === "ok")
-                                              ? "Starting up..."
-                                              : (modelData.status === "offline"
-                                                 ? (modelData.error || "Offline")
-                                                 : ("up " + modelData.uptimeStr))
-                                        color: (listWakeBtn.wolSt.status === "ok") ? theme.accent
-                                               : (modelData.status === "offline" ? theme.error : theme.textTertiary)
-                                        font.pixelSize: 12
-                                        font.family: theme.fontMono
+                                        id: listWakeTxt
+                                        anchors.centerIn: parent
+                                        text: w.wolButtonLabel(listWakeBtn.wolSt, true)
+                                        font.pixelSize: Math.max(theme.fontMinimum, 11)
+                                        font.family: theme.fontDisplay
+                                        font.weight: Font.Bold
+                                        color: "#FFFFFF"
                                     }
-                                    Rectangle {
-                                        id: listWakeBtn
-                                        objectName: "listWakeBtn"
-                                        visible: modelData.status === "offline" && !!modelData.mac
-                                        implicitWidth: listWakeTxt.implicitWidth + 16
-                                        implicitHeight: 28
-                                        radius: 14
-                                        z: 2
-                                        property var wolSt: w._wolStates[modelData.url || modelData.label] || ({})
-                                        color: wolSt.status === "sending" ? theme.warning
-                                               : (wolSt.status === "ok" ? theme.catSystem
-                                               : (listWakeMa.containsMouse ? theme.accentHover : theme.accent))
-                                        Text {
-                                            id: listWakeTxt
-                                            anchors.centerIn: parent
-                                            text: w.wolButtonLabel(listWakeBtn.wolSt, true)
-                                            font.pixelSize: 11
-                                            font.family: theme.fontDisplay
-                                            font.weight: Font.Bold
-                                            color: "#FFFFFF"
-                                        }
-                                        MouseArea {
-                                            id: listWakeMa
-                                            objectName: "listWakeMa"
-                                            anchors.centerIn: parent
-                                            width: Math.max(parent.width, 44)
-                                            height: Math.max(parent.height, 44)
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: w.wakeNode(modelData)
-                                        }
+                                    MouseArea {
+                                        id: listWakeMa
+                                        objectName: "listWakeMa"
+                                        anchors.centerIn: parent
+                                        width: Math.max(parent.width, 44)
+                                        height: Math.max(parent.height, 44)
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: w.wakeNode(modelData)
                                     }
                                 }
                             }
@@ -1463,7 +1488,7 @@ WidgetChrome {
                                     Text {
                                         text: "C"
                                         color: theme.textTertiary
-                                        font.pixelSize: 11
+                                        font.pixelSize: Math.max(theme.fontMinimum, 11)
                                         font.family: theme.fontMono
                                     }
                                     Rectangle {
@@ -1479,7 +1504,7 @@ WidgetChrome {
                                     Text {
                                         text: Math.round(modelData.cpuPercent || 0) + "%"
                                         color: theme.textSecondary
-                                        font.pixelSize: 12
+                                        font.pixelSize: Math.max(theme.fontMinimum, 12)
                                         font.family: theme.fontMono
                                     }
                                 }
@@ -1491,7 +1516,7 @@ WidgetChrome {
                                     Text {
                                         text: "M"
                                         color: theme.textTertiary
-                                        font.pixelSize: 11
+                                        font.pixelSize: Math.max(theme.fontMinimum, 11)
                                         font.family: theme.fontMono
                                     }
                                     Rectangle {
@@ -1507,7 +1532,7 @@ WidgetChrome {
                                     Text {
                                         text: Math.round(modelData.ramPercent || 0) + "%"
                                         color: theme.textSecondary
-                                        font.pixelSize: 12
+                                        font.pixelSize: Math.max(theme.fontMinimum, 12)
                                         font.family: theme.fontMono
                                     }
                                 }
@@ -1516,7 +1541,7 @@ WidgetChrome {
                                 Text {
                                     text: "↓" + w.formatRate(modelData.netRxRate)
                                     color: theme.textTertiary
-                                    font.pixelSize: 11
+                                    font.pixelSize: Math.max(theme.fontMinimum, 11)
                                     font.family: theme.fontMono
                                     visible: w.width > 300
                                 }
@@ -1564,14 +1589,14 @@ WidgetChrome {
                                 Text {
                                     text: w.onlineCount + " / " + w.totalCount + " ONLINE"
                                     color: theme.textPrimary
-                                    font.pixelSize: 17
+                                    font.pixelSize: Math.max(theme.fontMinimum, 17)
                                     font.family: theme.fontDisplay
                                     font.weight: Font.Bold
                                 }
                                 Text {
                                     text: w.offlineCount > 0 ? (w.offlineCount + " unreachable") : "All systems healthy"
                                     color: w.offlineCount > 0 ? theme.error : theme.textTertiary
-                                    font.pixelSize: 13
+                                    font.pixelSize: Math.max(theme.fontMinimum, 13)
                                     font.family: theme.fontDisplay
                                 }
                             }
@@ -1585,13 +1610,13 @@ WidgetChrome {
                             Text {
                                 text: "FLEET AVG CPU"
                                 color: theme.textTertiary
-                                font.pixelSize: 11
+                                font.pixelSize: Math.max(theme.fontMinimum, 11)
                                 font.family: theme.fontMono
                             }
                             Text {
                                 text: w.avgCpu.toFixed(1) + "%"
                                 color: w.avgCpu >= w.warnCpu ? theme.warning : theme.textPrimary
-                                font.pixelSize: 20
+                                font.pixelSize: Math.max(theme.fontMinimum, 20)
                                 font.family: theme.fontDisplay
                                 font.weight: Font.Bold
                             }
@@ -1603,13 +1628,13 @@ WidgetChrome {
                             Text {
                                 text: "FLEET AVG RAM"
                                 color: theme.textTertiary
-                                font.pixelSize: 11
+                                font.pixelSize: Math.max(theme.fontMinimum, 11)
                                 font.family: theme.fontMono
                             }
                             Text {
                                 text: w.avgRam.toFixed(1) + "%"
                                 color: w.avgRam >= w.warnRam ? theme.warning : theme.textPrimary
-                                font.pixelSize: 20
+                                font.pixelSize: Math.max(theme.fontMinimum, 20)
                                 font.family: theme.fontDisplay
                                 font.weight: Font.Bold
                             }
@@ -1621,13 +1646,13 @@ WidgetChrome {
                             Text {
                                 text: "FLEET BANDWIDTH"
                                 color: theme.textTertiary
-                                font.pixelSize: 11
+                                font.pixelSize: Math.max(theme.fontMinimum, 11)
                                 font.family: theme.fontMono
                             }
                             Text {
                                 text: "↓ " + w.formatRate(w.totalNetRx) + "   ↑ " + w.formatRate(w.totalNetTx)
                                 color: theme.textPrimary
-                                font.pixelSize: 16
+                                font.pixelSize: Math.max(theme.fontMinimum, 16)
                                 font.family: theme.fontMono
                                 font.weight: Font.Bold
                             }
@@ -1643,7 +1668,7 @@ WidgetChrome {
                     Text {
                         text: "SELECT SYSTEM:"
                         color: theme.textTertiary
-                        font.pixelSize: 12
+                        font.pixelSize: Math.max(theme.fontMinimum, 12)
                         font.family: theme.fontMono
                         font.weight: Font.Bold
                     }
@@ -1678,7 +1703,7 @@ WidgetChrome {
                                     text: modelData.label || "System"
                                     anchors.verticalCenter: parent.verticalCenter
                                     color: w.selectedIndex === index ? "#0D1117" : theme.textPrimary
-                                    font.pixelSize: 15
+                                    font.pixelSize: Math.max(theme.fontMinimum, 15)
                                     font.family: theme.fontDisplay
                                     font.weight: Font.Bold
                                 }
@@ -1731,7 +1756,7 @@ WidgetChrome {
                                 Text {
                                     text: deepDivePanel.selNode ? deepDivePanel.selNode.label : "System"
                                     color: theme.textPrimary
-                                    font.pixelSize: 15
+                                    font.pixelSize: Math.max(theme.fontMinimum, 15)
                                     font.family: theme.fontDisplay
                                     font.weight: Font.Bold
                                 }
@@ -1746,7 +1771,7 @@ WidgetChrome {
                                         visible: !w.editingNodeMac
                                         text: deepDivePanel.selNode ? deepDivePanel.selNode.url : ""
                                         color: theme.textTertiary
-                                        font.pixelSize: 12
+                                        font.pixelSize: Math.max(theme.fontMinimum, 12)
                                         font.family: theme.fontMono
                                         elide: Text.ElideRight
                                         Layout.maximumWidth: 220
@@ -1775,7 +1800,7 @@ WidgetChrome {
                                                 text: deepDivePanel.selNode && deepDivePanel.selNode.mac
                                                       ? ("MAC: " + deepDivePanel.selNode.mac)
                                                       : "+ Set MAC for WoL"
-                                                font.pixelSize: 12
+                                                font.pixelSize: Math.max(theme.fontMinimum, 12)
                                                 font.family: theme.fontMono
                                                 font.weight: (deepDivePanel.selNode && deepDivePanel.selNode.mac) ? Font.Normal : Font.Bold
                                                 color: (deepDivePanel.selNode && deepDivePanel.selNode.mac) ? theme.textSecondary : theme.accent
@@ -1799,7 +1824,7 @@ WidgetChrome {
                                         Text {
                                             text: "MAC:"
                                             color: theme.textSecondary
-                                            font.pixelSize: 12
+                                            font.pixelSize: Math.max(theme.fontMinimum, 12)
                                             font.family: theme.fontMono
                                             font.weight: Font.DemiBold
                                         }
@@ -1812,7 +1837,7 @@ WidgetChrome {
                                             text: w.editMacInput
                                             onTextChanged: w.editMacInput = text
                                             color: theme.textPrimary
-                                            font.pixelSize: 12
+                                            font.pixelSize: Math.max(theme.fontMinimum, 12)
                                             font.family: theme.fontMono
                                             verticalAlignment: Text.AlignVCenter
                                             onAccepted: w.saveNodeMac(deepDivePanel.selNode, w.editMacInput)
@@ -1835,7 +1860,7 @@ WidgetChrome {
                                                 id: saveMacTxt
                                                 anchors.centerIn: parent
                                                 text: "Save MAC"
-                                                font.pixelSize: 12
+                                                font.pixelSize: Math.max(theme.fontMinimum, 12)
                                                 font.weight: Font.DemiBold
                                                 color: "#FFFFFF"
                                             }
@@ -1857,7 +1882,7 @@ WidgetChrome {
                                                 id: cancelMacTxt
                                                 anchors.centerIn: parent
                                                 text: "Cancel"
-                                                font.pixelSize: 12
+                                                font.pixelSize: Math.max(theme.fontMinimum, 12)
                                                 color: theme.textPrimary
                                             }
                                             MouseArea {
@@ -1900,7 +1925,7 @@ WidgetChrome {
                                                     text: parent.parent.isInputValid
                                                           ? "Format valid (e.g. 38:ca:84:39:6c:9e)"
                                                           : "Format: XX:XX:XX:XX:XX:XX (e.g. 38:ca:84:39:6c:9e)"
-                                                    font.pixelSize: 11
+                                                    font.pixelSize: Math.max(theme.fontMinimum, 11)
                                                     font.family: theme.fontMono
                                                     color: parent.parent.isInputValid ? theme.success
                                                            : (w.editMacInput.trim().length > 0 ? theme.warning : theme.textTertiary)
@@ -1930,7 +1955,7 @@ WidgetChrome {
                                             text: parent.parent.pingSt.status === "pinging" ? "Pinging..."
                                                   : (parent.parent.pingSt.status === "ok" ? ("✓ " + parent.parent.pingSt.detail)
                                                   : "Ping")
-                                            font.pixelSize: 12
+                                            font.pixelSize: Math.max(theme.fontMinimum, 12)
                                             font.weight: Font.DemiBold
                                             color: theme.textPrimary
                                         }
@@ -1957,7 +1982,7 @@ WidgetChrome {
                                         Text {
                                             id: sshBtnTxt
                                             text: "SSH"
-                                            font.pixelSize: 12
+                                            font.pixelSize: Math.max(theme.fontMinimum, 12)
                                             font.weight: Font.DemiBold
                                             color: theme.textPrimary
                                         }
@@ -1990,7 +2015,7 @@ WidgetChrome {
                                         Text {
                                             id: deepWakeTxt
                                             text: w.wolButtonLabel(deepWakeBtn.wolSt, false)
-                                            font.pixelSize: 12
+                                            font.pixelSize: Math.max(theme.fontMinimum, 12)
                                             font.family: theme.fontDisplay
                                             font.weight: Font.Bold
                                             color: "#FFFFFF"
@@ -2032,13 +2057,13 @@ WidgetChrome {
                                     Text {
                                         text: "PROCESSOR"
                                         color: theme.textTertiary
-                                        font.pixelSize: 12
+                                        font.pixelSize: Math.max(theme.fontMinimum, 12)
                                         font.family: theme.fontMono
                                     }
                                     Text {
                                         text: Math.round(deepDivePanel.selNode ? deepDivePanel.selNode.cpuPercent : 0) + "%"
                                         color: (deepDivePanel.selNode && deepDivePanel.selNode.cpuPercent >= w.warnCpu) ? theme.warning : theme.textPrimary
-                                        font.pixelSize: 32
+                                        font.pixelSize: Math.max(theme.fontMinimum, 32)
                                         font.family: theme.fontDisplay
                                         font.weight: Font.Bold
                                     }
@@ -2047,7 +2072,7 @@ WidgetChrome {
                                               + (deepDivePanel.selNode ? Number(deepDivePanel.selNode.load1 || 0).toFixed(2) : "0.00") + ", "
                                               + (deepDivePanel.selNode ? Number(deepDivePanel.selNode.load5 || 0).toFixed(2) : "0.00")
                                         color: theme.textSecondary
-                                        font.pixelSize: 13
+                                        font.pixelSize: Math.max(theme.fontMinimum, 13)
                                         font.family: theme.fontMono
                                     }
                                 }
@@ -2070,13 +2095,13 @@ WidgetChrome {
                                     Text {
                                         text: "MEMORY (RAM)"
                                         color: theme.textTertiary
-                                        font.pixelSize: 12
+                                        font.pixelSize: Math.max(theme.fontMinimum, 12)
                                         font.family: theme.fontMono
                                     }
                                     Text {
                                         text: Math.round(deepDivePanel.selNode ? deepDivePanel.selNode.ramPercent : 0) + "%"
                                         color: (deepDivePanel.selNode && deepDivePanel.selNode.ramPercent >= w.warnRam) ? theme.warning : theme.textPrimary
-                                        font.pixelSize: 32
+                                        font.pixelSize: Math.max(theme.fontMinimum, 32)
                                         font.family: theme.fontDisplay
                                         font.weight: Font.Bold
                                     }
@@ -2084,7 +2109,7 @@ WidgetChrome {
                                         text: w.formatBytes(deepDivePanel.selNode ? deepDivePanel.selNode.ramUsedBytes : 0) + " / "
                                               + w.formatBytes(deepDivePanel.selNode ? deepDivePanel.selNode.ramTotalBytes : 0)
                                         color: theme.textSecondary
-                                        font.pixelSize: 13
+                                        font.pixelSize: Math.max(theme.fontMinimum, 13)
                                         font.family: theme.fontMono
                                     }
                                 }
@@ -2107,13 +2132,13 @@ WidgetChrome {
                                     Text {
                                         text: "STORAGE (/)"
                                         color: theme.textTertiary
-                                        font.pixelSize: 12
+                                        font.pixelSize: Math.max(theme.fontMinimum, 12)
                                         font.family: theme.fontMono
                                     }
                                     Text {
                                         text: Math.round(deepDivePanel.selNode ? deepDivePanel.selNode.diskPercent : 0) + "%"
                                         color: (deepDivePanel.selNode && deepDivePanel.selNode.diskPercent >= w.warnDisk) ? theme.warning : theme.textPrimary
-                                        font.pixelSize: 32
+                                        font.pixelSize: Math.max(theme.fontMinimum, 32)
                                         font.family: theme.fontDisplay
                                         font.weight: Font.Bold
                                     }
@@ -2121,7 +2146,7 @@ WidgetChrome {
                                         text: w.formatBytes(deepDivePanel.selNode ? deepDivePanel.selNode.diskUsedBytes : 0) + " / "
                                               + w.formatBytes(deepDivePanel.selNode ? deepDivePanel.selNode.diskTotalBytes : 0)
                                         color: theme.textSecondary
-                                        font.pixelSize: 13
+                                        font.pixelSize: Math.max(theme.fontMinimum, 13)
                                         font.family: theme.fontMono
                                     }
                                 }
@@ -2144,20 +2169,20 @@ WidgetChrome {
                                     Text {
                                         text: "NETWORK BANDWIDTH"
                                         color: theme.textTertiary
-                                        font.pixelSize: 12
+                                        font.pixelSize: Math.max(theme.fontMinimum, 12)
                                         font.family: theme.fontMono
                                     }
                                     Text {
                                         text: "↓ " + w.formatRate(deepDivePanel.selNode ? deepDivePanel.selNode.netRxRate : 0)
                                         color: theme.textPrimary
-                                        font.pixelSize: 22
+                                        font.pixelSize: Math.max(theme.fontMinimum, 22)
                                         font.family: theme.fontMono
                                         font.weight: Font.Bold
                                     }
                                     Text {
                                         text: "↑ " + w.formatRate(deepDivePanel.selNode ? deepDivePanel.selNode.netTxRate : 0)
                                         color: theme.textSecondary
-                                        font.pixelSize: 15
+                                        font.pixelSize: Math.max(theme.fontMinimum, 15)
                                         font.family: theme.fontMono
                                     }
                                 }
@@ -2181,7 +2206,7 @@ WidgetChrome {
                                 Text {
                                     text: "SYSTEM DETAILS & TELEMETRY"
                                     color: theme.textTertiary
-                                    font.pixelSize: 12
+                                    font.pixelSize: Math.max(theme.fontMinimum, 12)
                                     font.family: theme.fontMono
                                     font.weight: Font.Bold
                                 }
@@ -2192,15 +2217,15 @@ WidgetChrome {
                                     rowSpacing: 10
                                     columnSpacing: 28
 
-                                    Text { text: "Endpoint URL:"; color: theme.textTertiary; font.pixelSize: 14 }
+                                    Text { text: "Endpoint URL:"; color: theme.textTertiary; font.pixelSize: Math.max(theme.fontMinimum, 14) }
                                     Text {
                                         text: deepDivePanel.selNode ? deepDivePanel.selNode.url : ""
                                         color: theme.textPrimary
-                                        font.pixelSize: 14
+                                        font.pixelSize: Math.max(theme.fontMinimum, 14)
                                         font.family: theme.fontMono
                                     }
 
-                                    Text { text: "MAC Address (WoL):"; color: theme.textTertiary; font.pixelSize: 14 }
+                                    Text { text: "MAC Address (WoL):"; color: theme.textTertiary; font.pixelSize: Math.max(theme.fontMinimum, 14) }
                                     RowLayout {
                                         spacing: 10
                                         Text {
@@ -2208,7 +2233,7 @@ WidgetChrome {
                                                   ? deepDivePanel.selNode.mac
                                                   : "Not configured (Format: XX:XX:XX:XX:XX:XX)"
                                             color: deepDivePanel.selNode && deepDivePanel.selNode.mac ? theme.textPrimary : theme.textTertiary
-                                            font.pixelSize: 14
+                                            font.pixelSize: Math.max(theme.fontMinimum, 14)
                                             font.family: theme.fontMono
                                         }
                                         Rectangle {
@@ -2220,7 +2245,7 @@ WidgetChrome {
                                                 id: editMacTableTxt
                                                 anchors.centerIn: parent
                                                 text: deepDivePanel.selNode && deepDivePanel.selNode.mac ? "Edit" : "Set MAC"
-                                                font.pixelSize: 11
+                                                font.pixelSize: Math.max(theme.fontMinimum, 11)
                                                 color: theme.textPrimary
                                             }
                                             MouseArea {
@@ -2233,38 +2258,38 @@ WidgetChrome {
                                         }
                                     }
 
-                                    Text { text: "System Uptime:"; color: theme.textTertiary; font.pixelSize: 14 }
+                                    Text { text: "System Uptime:"; color: theme.textTertiary; font.pixelSize: Math.max(theme.fontMinimum, 14) }
                                     Text {
                                         text: (deepDivePanel.selNode && deepDivePanel.selNode.uptimeStr) ? deepDivePanel.selNode.uptimeStr : "-"
                                         color: theme.textPrimary
-                                        font.pixelSize: 14
+                                        font.pixelSize: Math.max(theme.fontMinimum, 14)
                                         font.family: theme.fontMono
                                     }
 
-                                    Text { text: "Load Averages (1m, 5m, 15m):"; color: theme.textTertiary; font.pixelSize: 14 }
+                                    Text { text: "Load Averages (1m, 5m, 15m):"; color: theme.textTertiary; font.pixelSize: Math.max(theme.fontMinimum, 14) }
                                     Text {
                                         text: deepDivePanel.selNode ? (Number(deepDivePanel.selNode.load1 || 0).toFixed(2) + "   "
                                                          + Number(deepDivePanel.selNode.load5 || 0).toFixed(2) + "   "
                                                          + Number(deepDivePanel.selNode.load15 || 0).toFixed(2)) : "-"
                                         color: theme.textPrimary
-                                        font.pixelSize: 14
+                                        font.pixelSize: Math.max(theme.fontMinimum, 14)
                                         font.family: theme.fontMono
                                     }
 
-                                    Text { text: "Connection Status:"; color: theme.textTertiary; font.pixelSize: 14 }
+                                    Text { text: "Connection Status:"; color: theme.textTertiary; font.pixelSize: Math.max(theme.fontMinimum, 14) }
                                     Text {
                                         text: deepDivePanel.selNode ? (deepDivePanel.selNode.status.toUpperCase() + (deepDivePanel.selNode.error ? " (" + deepDivePanel.selNode.error + ")" : "")) : "-"
                                         color: deepDivePanel.selNode ? w.statusColor(deepDivePanel.selNode.status) : theme.textPrimary
-                                        font.pixelSize: 14
+                                        font.pixelSize: Math.max(theme.fontMinimum, 14)
                                         font.family: theme.fontDisplay
                                         font.weight: Font.Bold
                                     }
 
-                                    Text { text: "Connection Latency:"; color: theme.textTertiary; font.pixelSize: 14 }
+                                    Text { text: "Connection Latency:"; color: theme.textTertiary; font.pixelSize: Math.max(theme.fontMinimum, 14) }
                                     Text {
                                         text: deepDivePanel.selNode ? (deepDivePanel.selNode.latencyMs !== undefined && deepDivePanel.selNode.latencyMs >= 0 ? (deepDivePanel.selNode.latencyMs + " ms") : "-") : "-"
                                         color: theme.textPrimary
-                                        font.pixelSize: 14
+                                        font.pixelSize: Math.max(theme.fontMinimum, 14)
                                         font.family: theme.fontMono
                                     }
                                 }
@@ -2294,7 +2319,7 @@ WidgetChrome {
                                         Layout.fillWidth: true
                                         text: w.connectionStatus
                                         color: theme.textSecondary
-                                        font.pixelSize: 13
+                                        font.pixelSize: Math.max(theme.fontMinimum, 13)
                                         elide: Text.ElideRight
                                     }
                                 }

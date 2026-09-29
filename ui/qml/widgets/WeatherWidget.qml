@@ -73,7 +73,7 @@ WidgetChrome {
     // more blank area. The old constants remain the FLOOR, so a small tile is
     // unchanged.
     readonly property real _shortEdge: Math.min(w.width, w.height)
-    readonly property real glyphPx: w.micro ? Math.min(w.width * 0.30, w.height * 0.26, 72)
+    readonly property real glyphPx: w.micro ? Math.min(w.width * 0.20, w.height * 0.20, 50)
         : w.horiz ? Math.min(w.width * 0.10, w.height * 0.26, Math.max(80, w._shortEdge * 0.30))
         : Math.min(w.width * 0.18, w.height * 0.22, Math.max(88, w._shortEdge * 0.34))
     readonly property real tempPx: Math.max(18, Math.round(w.glyphPx * 0.78))
@@ -524,6 +524,8 @@ WidgetChrome {
                         text: w.loaded ? Math.round(w.curTemp) + w.degSym
                               : (w.errorText.length ? "-" : "…")
                         font.pixelSize: w.tempPx; font.bold: true; color: theme.textPrimary
+                        fontSizeMode: Text.HorizontalFit
+                        minimumPixelSize: theme.fontMinimum
                     }
                     // "Feels like" is data the CURRENT reading already carries -
                     // it was locked in the overlay for no reason. The half-cell

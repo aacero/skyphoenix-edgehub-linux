@@ -177,7 +177,7 @@ WidgetChrome {
         : w.dateStyle === "iso" ? "yyyy-MM-dd"
         : w.dateStyle === "custom"
           ? (w.validDatePattern(w.datePattern) ? w.datePattern : "ddd, d MMM")
-        : ((w.expanded || w.tallish) ? "dddd, MMMM d yyyy" : "ddd, d MMM")
+        : ((w.expanded || (w.tallish && w.width >= 320)) ? "dddd, MMMM d yyyy" : "ddd, d MMM")
 
     function secondaryZoneIds() {
         return w.secondaryZones.split(",").map(function (s) { return s.trim() })

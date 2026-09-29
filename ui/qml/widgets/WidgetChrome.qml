@@ -191,6 +191,8 @@ Item {
                 font.family: theme.fontDisplay
                 color: theme.textPrimary
                 elide: Text.ElideRight
+                Layout.alignment: Qt.AlignVCenter
+                Layout.preferredHeight: contentHeight
                 Layout.fillWidth: true
             }
             // Optional custom trailing items (buttons etc.)
@@ -206,6 +208,8 @@ Item {
                 font.family: theme.fontMono
                 color: chrome.statusColor
                 elide: Text.ElideRight
+                Layout.alignment: Qt.AlignVCenter
+                Layout.preferredHeight: contentHeight
                 // Status is glance-critical state, not decorative metadata. The
                 // old 30% cap cut ordinary shipped strings such as "No track
                 // loaded", "Outside active hours", and "Utilization

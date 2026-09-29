@@ -337,24 +337,26 @@ WidgetChrome {
         // Error State
         ColumnLayout {
             anchors.centerIn: parent
+            width: Math.min(parent.width - 16, 320)
             visible: w.errText.length > 0 && w.dataPoints.length === 0
             spacing: 6
             Text {
                 Layout.alignment: Qt.AlignCenter
                 text: "METRICS UNAVAILABLE"
                 color: theme.error
-                font.pixelSize: 14
+                font.pixelSize: Math.max(theme.fontMinimum, 14)
                 font.family: theme.fontDisplay
                 font.weight: Font.Bold
             }
             Text {
                 Layout.alignment: Qt.AlignCenter
+                Layout.fillWidth: true
                 text: w.errText
                 color: theme.textSecondary
-                font.pixelSize: 12
+                font.pixelSize: Math.max(theme.fontMinimum, 12)
                 font.family: theme.fontMono
-                elide: Text.ElideRight
-                Layout.maximumWidth: parent.width - 20
+                wrapMode: Text.Wrap
+                horizontalAlignment: Text.AlignHCenter
             }
         }
 
@@ -374,7 +376,7 @@ WidgetChrome {
                 Text {
                     text: w.formattedLatest
                     color: w.statusColor
-                    font.pixelSize: w.wideTile ? 32 : (w.tallTile ? 28 : 22)
+                    font.pixelSize: Math.max(theme.fontMinimum, w.wideTile ? 32 : (w.tallTile ? 28 : 22))
                     font.family: theme.fontDisplay
                     font.weight: Font.Bold
                 }
@@ -385,7 +387,7 @@ WidgetChrome {
                     Text {
                         text: w.effectiveUnit
                         color: theme.textSecondary
-                        font.pixelSize: 13
+                        font.pixelSize: Math.max(theme.fontMinimum, 13)
                         font.family: theme.fontMono
                         font.weight: Font.Bold
                         visible: w.effectiveUnit.length > 0
@@ -393,10 +395,10 @@ WidgetChrome {
                     Text {
                         text: (w.deltaVal >= 0 ? "+" : "") + w.formatValue(w.deltaVal) + " (" + (w.deltaPercent >= 0 ? "+" : "") + w.deltaPercent.toFixed(1) + "%)"
                         color: w.deltaVal >= 0 ? theme.catSystem : theme.catServices
-                        font.pixelSize: 11
+                        font.pixelSize: Math.max(theme.fontMinimum, 11)
                         font.family: theme.fontMono
                         font.weight: Font.Medium
-                        visible: w.wideTile || w.tallTile
+                        visible: (w.wideTile || w.tallTile) && w.width >= 350
                     }
                 }
 
@@ -405,27 +407,28 @@ WidgetChrome {
                 // Min / Avg / Max Badges
                 RowLayout {
                     spacing: 6
-                    visible: w.showMinMax && w.wideTile
+                    visible: w.showMinMax && w.width >= 680
 
                     Rectangle {
                         color: Qt.rgba(1, 1, 1, 0.06); radius: 4
                         implicitWidth: minLbl.implicitWidth + 8; implicitHeight: 20
-                        Text { id: minLbl; anchors.centerIn: parent; text: "MIN " + w.formattedMin; color: theme.textSecondary; font.pixelSize: 11; font.family: theme.fontMono; font.bold: true }
+                        Text { id: minLbl; anchors.centerIn: parent; text: "MIN " + w.formattedMin; color: theme.textSecondary; font.pixelSize: Math.max(theme.fontMinimum, 11); font.family: theme.fontMono; font.bold: true }
                     }
                     Rectangle {
                         color: Qt.rgba(1, 1, 1, 0.06); radius: 4
                         implicitWidth: avgLbl.implicitWidth + 8; implicitHeight: 20
-                        Text { id: avgLbl; anchors.centerIn: parent; text: "AVG " + w.formattedAvg; color: theme.textPrimary; font.pixelSize: 11; font.family: theme.fontMono; font.bold: true }
+                        Text { id: avgLbl; anchors.centerIn: parent; text: "AVG " + w.formattedAvg; color: theme.textPrimary; font.pixelSize: Math.max(theme.fontMinimum, 11); font.family: theme.fontMono; font.bold: true }
                     }
                     Rectangle {
                         color: Qt.rgba(1, 1, 1, 0.06); radius: 4
                         implicitWidth: maxLbl.implicitWidth + 8; implicitHeight: 20
-                        Text { id: maxLbl; anchors.centerIn: parent; text: "MAX " + w.formattedMax; color: theme.textSecondary; font.pixelSize: 11; font.family: theme.fontMono; font.bold: true }
+                        Text { id: maxLbl; anchors.centerIn: parent; text: "MAX " + w.formattedMax; color: theme.textSecondary; font.pixelSize: Math.max(theme.fontMinimum, 11); font.family: theme.fontMono; font.bold: true }
                     }
                 }
 
                 // Range Tag
                 Rectangle {
+                    visible: w.width >= 360
                     color: theme.cardBorder
                     radius: 4
                     implicitWidth: rangeTxt.implicitWidth + 8
@@ -435,7 +438,7 @@ WidgetChrome {
                         anchors.centerIn: parent
                         text: w.rangeLabel
                         color: theme.textTertiary
-                        font.pixelSize: 11
+                        font.pixelSize: Math.max(theme.fontMinimum, 11)
                         font.family: theme.fontMono
                         font.bold: true
                     }
@@ -451,36 +454,36 @@ WidgetChrome {
                 Rectangle {
                     Layout.fillWidth: true; Layout.preferredHeight: 52; radius: theme.radiusSm; color: theme.cardBackgroundAlt
                     ColumnLayout { anchors.centerIn: parent; spacing: 2
-                        Text { text: "CURRENT"; color: theme.textSecondary; font.pixelSize: 11; font.family: theme.fontMono; font.bold: true; Layout.alignment: Qt.AlignCenter }
-                        Text { text: w.formattedLatest + " " + w.effectiveUnit; color: w.statusColor; font.pixelSize: 16; font.family: theme.fontDisplay; font.bold: true; Layout.alignment: Qt.AlignCenter }
+                        Text { text: "CURRENT"; color: theme.textSecondary; font.pixelSize: Math.max(theme.fontMinimum, 11); font.family: theme.fontMono; font.bold: true; Layout.alignment: Qt.AlignCenter }
+                        Text { text: w.formattedLatest + " " + w.effectiveUnit; color: w.statusColor; font.pixelSize: Math.max(theme.fontMinimum, 16); font.family: theme.fontDisplay; font.bold: true; Layout.alignment: Qt.AlignCenter }
                     }
                 }
                 Rectangle {
                     Layout.fillWidth: true; Layout.preferredHeight: 52; radius: theme.radiusSm; color: theme.cardBackgroundAlt
                     ColumnLayout { anchors.centerIn: parent; spacing: 2
-                        Text { text: "MINIMUM"; color: theme.textSecondary; font.pixelSize: 11; font.family: theme.fontMono; font.bold: true; Layout.alignment: Qt.AlignCenter }
-                        Text { text: w.formattedMin + " " + w.effectiveUnit; color: theme.textPrimary; font.pixelSize: 16; font.family: theme.fontDisplay; font.bold: true; Layout.alignment: Qt.AlignCenter }
+                        Text { text: "MINIMUM"; color: theme.textSecondary; font.pixelSize: Math.max(theme.fontMinimum, 11); font.family: theme.fontMono; font.bold: true; Layout.alignment: Qt.AlignCenter }
+                        Text { text: w.formattedMin + " " + w.effectiveUnit; color: theme.textPrimary; font.pixelSize: Math.max(theme.fontMinimum, 16); font.family: theme.fontDisplay; font.bold: true; Layout.alignment: Qt.AlignCenter }
                     }
                 }
                 Rectangle {
                     Layout.fillWidth: true; Layout.preferredHeight: 52; radius: theme.radiusSm; color: theme.cardBackgroundAlt
                     ColumnLayout { anchors.centerIn: parent; spacing: 2
-                        Text { text: "AVERAGE"; color: theme.textSecondary; font.pixelSize: 11; font.family: theme.fontMono; font.bold: true; Layout.alignment: Qt.AlignCenter }
-                        Text { text: w.formattedAvg + " " + w.effectiveUnit; color: theme.textPrimary; font.pixelSize: 16; font.family: theme.fontDisplay; font.bold: true; Layout.alignment: Qt.AlignCenter }
+                        Text { text: "AVERAGE"; color: theme.textSecondary; font.pixelSize: Math.max(theme.fontMinimum, 11); font.family: theme.fontMono; font.bold: true; Layout.alignment: Qt.AlignCenter }
+                        Text { text: w.formattedAvg + " " + w.effectiveUnit; color: theme.textPrimary; font.pixelSize: Math.max(theme.fontMinimum, 16); font.family: theme.fontDisplay; font.bold: true; Layout.alignment: Qt.AlignCenter }
                     }
                 }
                 Rectangle {
                     Layout.fillWidth: true; Layout.preferredHeight: 52; radius: theme.radiusSm; color: theme.cardBackgroundAlt
                     ColumnLayout { anchors.centerIn: parent; spacing: 2
-                        Text { text: "MAXIMUM"; color: theme.textSecondary; font.pixelSize: 11; font.family: theme.fontMono; font.bold: true; Layout.alignment: Qt.AlignCenter }
-                        Text { text: w.formattedMax + " " + w.effectiveUnit; color: theme.textPrimary; font.pixelSize: 16; font.family: theme.fontDisplay; font.bold: true; Layout.alignment: Qt.AlignCenter }
+                        Text { text: "MAXIMUM"; color: theme.textSecondary; font.pixelSize: Math.max(theme.fontMinimum, 11); font.family: theme.fontMono; font.bold: true; Layout.alignment: Qt.AlignCenter }
+                        Text { text: w.formattedMax + " " + w.effectiveUnit; color: theme.textPrimary; font.pixelSize: Math.max(theme.fontMinimum, 16); font.family: theme.fontDisplay; font.bold: true; Layout.alignment: Qt.AlignCenter }
                     }
                 }
                 Rectangle {
                     Layout.fillWidth: true; Layout.preferredHeight: 52; radius: theme.radiusSm; color: theme.cardBackgroundAlt
                     ColumnLayout { anchors.centerIn: parent; spacing: 2
-                        Text { text: "NET DELTA"; color: theme.textSecondary; font.pixelSize: 11; font.family: theme.fontMono; font.bold: true; Layout.alignment: Qt.AlignCenter }
-                        Text { text: (w.deltaVal >= 0 ? "+" : "") + w.formatValue(w.deltaVal); color: w.deltaVal >= 0 ? theme.catSystem : theme.catServices; font.pixelSize: 16; font.family: theme.fontMono; font.bold: true; Layout.alignment: Qt.AlignCenter }
+                        Text { text: "NET DELTA"; color: theme.textSecondary; font.pixelSize: Math.max(theme.fontMinimum, 11); font.family: theme.fontMono; font.bold: true; Layout.alignment: Qt.AlignCenter }
+                        Text { text: (w.deltaVal >= 0 ? "+" : "") + w.formatValue(w.deltaVal); color: w.deltaVal >= 0 ? theme.catSystem : theme.catServices; font.pixelSize: Math.max(theme.fontMinimum, 16); font.family: theme.fontMono; font.bold: true; Layout.alignment: Qt.AlignCenter }
                     }
                 }
             }
@@ -524,7 +527,7 @@ WidgetChrome {
                         ctx.stroke()
 
                         // Y-axis guide labels
-                        ctx.font = (w.expanded ? "10px " : "9px ") + theme.fontMono
+                        ctx.font = (w.expanded ? "10px " : "9px ") + "sans-serif"
                         ctx.fillStyle = "rgba(255, 255, 255, 0.35)"
                         ctx.textAlign = "left"
                         ctx.textBaseline = "bottom"
@@ -629,7 +632,7 @@ WidgetChrome {
                         anchors.centerIn: parent
                         text: w.scrubPoint ? (w.formatValue(w.scrubPoint.v) + " " + w.effectiveUnit) : ""
                         color: theme.textPrimary
-                        font.pixelSize: 12
+                        font.pixelSize: Math.max(theme.fontMinimum, 12)
                         font.family: theme.fontMono
                         font.bold: true
                     }

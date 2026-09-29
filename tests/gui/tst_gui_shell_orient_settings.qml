@@ -640,29 +640,29 @@ Item {
             verify(Qt.colorEqual(theme.backgroundColor, "#0B1026"),
                    "…and applied the theme (background is the midnight tone)")
         }
-        // SET-08 a Pro theme is locked without a licence.
-        function test_set_b_pro_theme_locked() {
+        // SET-08 every theme (including synthwave) is included and unlocked without paywall.
+        function test_set_b_pro_theme_unlocked() {
             openSettings()
             var d = delegateWhere(function (n) { return n.modelData.k === "synthwave" })
-            verify(d !== null, "a Pro theme (synthwave) is listed")
-            verify(d.locked, "…and it is locked without a licence")
+            verify(d !== null, "a formerly Pro theme (synthwave) is listed")
+            verify(!d.locked, "…and it is unlocked without a paywall")
         }
-        // SET-09 tapping a locked Pro theme does NOT apply it.
-        function test_set_b_pro_theme_no_apply() {
+        // SET-09 tapping synthwave applies it.
+        function test_set_b_pro_theme_apply() {
             openSettings()
             win.themeMode = "dark"; theme.applyTheme("dark"); wait(60)
             var d = delegateWhere(function (n) { return n.modelData.k === "synthwave" })
             bringIntoView(d); mouseClick(d, d.width / 2, d.height / 2)
-            compare(win.themeMode, "dark", "tapping a locked Pro theme left the theme unchanged")
+            compare(win.themeMode, "synthwave", "tapping synthwave applied the theme")
         }
-        // SET-10 the lock hint explains where to unlock.
-        function test_set_b_lock_hint_mentions_pro() {
+        // SET-10 all themes in the picker are unlocked.
+        function test_set_b_all_themes_unlocked() {
             openSettings()
-            win.themeMode = "dark"; theme.applyTheme("dark"); wait(60)
-            var d = delegateWhere(function (n) { return n.modelData.k === "synthwave" })
-            bringIntoView(d); mouseClick(d, d.width / 2, d.height / 2)
-            var hint = G.byText(panel, "Pro theme")
-            verify(hint !== null && hint.visible, "a lock hint mentioning the Pro theme appeared")
+            var themes = theme.themeCatalog
+            for (var i = 0; i < themes.length; i++) {
+                var d = delegateWhere(function (n) { return n.modelData.k === themes[i].k })
+                if (d) verify(!d.locked, themes[i].k + " is unlocked")
+            }
         }
         // SET-11 switching a valid theme changes the dashboard background pixel.
         function test_set_b_theme_changes_dashboard() {

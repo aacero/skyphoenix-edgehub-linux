@@ -573,17 +573,18 @@ WidgetChrome {
                             text: hostItem.label || "Host"
                             color: theme.textPrimary
                             font.family: theme.fontDisplay
-                            font.pixelSize: 13
+                            font.pixelSize: Math.max(theme.fontMinimum, 13)
                             font.weight: Font.Bold
                         }
 
                         Text {
+                            visible: hostCard.width >= 380
                             text: hostItem.user && hostItem.user.length > 0
                                   ? (hostItem.user + "@" + (hostItem.host || ""))
                                   : (hostItem.host || "")
                             color: theme.textTertiary
                             font.family: theme.fontMono
-                            font.pixelSize: 11
+                            font.pixelSize: Math.max(theme.fontMinimum, 11)
                             Layout.fillWidth: true
                             elide: Text.ElideRight
                         }
@@ -598,7 +599,7 @@ WidgetChrome {
                                 Text {
                                     anchors.centerIn: parent
                                     text: "Ping"
-                                    font.pixelSize: 11
+                                    font.pixelSize: Math.max(theme.fontMinimum, 11)
                                     font.weight: Font.DemiBold
                                     color: theme.textPrimary
                                 }
@@ -617,7 +618,7 @@ WidgetChrome {
                                 Text {
                                     anchors.centerIn: parent
                                     text: "SSH"
-                                    font.pixelSize: 11
+                                    font.pixelSize: Math.max(theme.fontMinimum, 11)
                                     font.weight: Font.DemiBold
                                     color: theme.textPrimary
                                 }
@@ -636,7 +637,7 @@ WidgetChrome {
                                 Text {
                                     anchors.centerIn: parent
                                     text: "Mosh"
-                                    font.pixelSize: 11
+                                    font.pixelSize: Math.max(theme.fontMinimum, 11)
                                     font.weight: Font.DemiBold
                                     color: theme.textPrimary
                                 }
@@ -673,17 +674,18 @@ WidgetChrome {
                                 text: hostItem.label || "Host"
                                 color: theme.textPrimary
                                 font.family: theme.fontDisplay
-                                font.pixelSize: 14
+                                font.pixelSize: Math.max(theme.fontMinimum, 14)
                                 font.weight: Font.Bold
                             }
 
                             Text {
+                                visible: hostCard.width >= 360
                                 text: hostItem.user && hostItem.user.length > 0
                                       ? (hostItem.user + "@" + (hostItem.host || ""))
                                       : (hostItem.host || "")
                                 color: theme.textTertiary
                                 font.family: theme.fontMono
-                                font.pixelSize: 11
+                                font.pixelSize: Math.max(theme.fontMinimum, 11)
                                 Layout.fillWidth: true
                                 elide: Text.ElideRight
                             }
@@ -707,14 +709,14 @@ WidgetChrome {
                                         if (st === "pinging") return "Pinging..."
                                         if (st === "launching") return "Opening..."
                                         if (st === "ok") {
-                                            if (stateObj.terminalType) return stateObj.terminalType + " ✓"
-                                            if (stateObj.latency) return stateObj.latency
-                                            return "✓"
+                                             if (stateObj.terminalType) return stateObj.terminalType + " ✓"
+                                             if (stateObj.latency) return stateObj.latency
+                                             return "✓"
                                         }
                                         if (st === "error") return stateObj.detail ? ("✕ " + stateObj.detail) : "✕"
                                         return ""
                                     }
-                                    font.pixelSize: 10
+                                    font.pixelSize: Math.max(theme.fontMinimum, 10)
                                     font.weight: Font.DemiBold
                                     color: st === "ok" ? theme.success
                                            : (st === "error" ? theme.error : theme.warning)
@@ -740,7 +742,7 @@ WidgetChrome {
                                     AppIcon { name: "heartbeat"; size: 13; color: theme.textPrimary }
                                     Text {
                                         text: "Ping"
-                                        font.pixelSize: 12
+                                        font.pixelSize: Math.max(theme.fontMinimum, 12)
                                         font.weight: Font.DemiBold
                                         color: theme.textPrimary
                                     }
@@ -767,7 +769,7 @@ WidgetChrome {
                                     AppIcon { name: "code"; size: 13; color: theme.textPrimary }
                                     Text {
                                         text: "SSH"
-                                        font.pixelSize: 12
+                                        font.pixelSize: Math.max(theme.fontMinimum, 12)
                                         font.weight: Font.DemiBold
                                         color: theme.textPrimary
                                     }
@@ -794,7 +796,7 @@ WidgetChrome {
                                     AppIcon { name: "sparkle"; size: 13; color: theme.textPrimary }
                                     Text {
                                         text: "Mosh"
-                                        font.pixelSize: 12
+                                        font.pixelSize: Math.max(theme.fontMinimum, 12)
                                         font.weight: Font.DemiBold
                                         color: theme.textPrimary
                                     }

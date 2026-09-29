@@ -669,7 +669,7 @@ WidgetChrome {
                     }
                     Text {
                         objectName: "moonLocalTimeNote"
-                        visible: w.locationConfigured
+                        visible: w.locationConfigured && (w.height >= 500 || w.expanded)
                         Layout.fillWidth: true
                         text: w.compactDetail ? "Approximate local times"
                                               : "Approximate times in this device's local time"
@@ -684,7 +684,7 @@ WidgetChrome {
             Text {
                 objectName: "moonAccuracyNote"
                 Layout.fillWidth: true
-                visible: w.roomy && w.showAccuracyNote
+                visible: w.roomy && w.showAccuracyNote && (!w.showLocalEvents || w.height >= 660 || w.expanded) && (w.height >= 620 || w.expanded)
                 text: w.compactDetail
                       ? w.phaseDirection + " · estimated phase"
                       : w.phaseDirection + " · " + w.modelLabel
