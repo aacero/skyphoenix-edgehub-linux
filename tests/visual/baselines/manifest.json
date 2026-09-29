@@ -122,9 +122,10 @@
       "height": 818,
       "id": "widget-moon",
       "kind": "widget",
-      "sha256": "adcbdbb6ef2d0c404a321507a9b4c56adb28f0e42ab5a2d9d3b5ceea90cfac1b",
+      "sha256": "dcdbb01ee75505470e5de99cf5c16129eb0062c4b7a74922328970836632b2bf",
       "source": "wtime_moon_size_portrait-1x1.png",
-      "width": 696
+      "width": 696,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -357,9 +358,10 @@
       "height": 818,
       "id": "widget-grafana",
       "kind": "widget",
-      "sha256": "2ae9c6641329c6f9a073d0a47a6c7d54d56f09ce76a6b3c639c8176c25acbb70",
+      "sha256": "a501d4ad4a3d97c0bbcb34cef17aca37b67207b425759a8fe566ec9266f1f453",
       "source": "wext_grafana_portrait-1x1.png",
-      "width": 696
+      "width": 696,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -367,9 +369,10 @@
       "height": 818,
       "id": "widget-skytonight",
       "kind": "widget",
-      "sha256": "f8abe7a45d7cc52ac1c828e57cade428055205574ab0eaeb06f07ce70c43233e",
+      "sha256": "9970fafaa8f95c4916ffebe500ee69c97786455e386a5f1ab837fca2e8f9702b",
       "source": "wext_skytonight_portrait-1x1.png",
-      "width": 696
+      "width": 696,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -387,9 +390,10 @@
       "height": 720,
       "id": "preset-ambient",
       "kind": "preset",
-      "sha256": "e6d1501892a48436b6bc0d2ff24bf35fe0239d9362629b1c53346b6d304482b3",
+      "sha256": "44dd630ef0bd9898a69db51e72123e1bfb642a78ce090278790f53cc5a6b72fd",
       "source": "shellpreset_append_ambient.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -397,9 +401,10 @@
       "height": 720,
       "id": "preset-analyst",
       "kind": "preset",
-      "sha256": "36705f96310588a76dc7b54312265885b13d162a1029684bfd47b63d9e31f01b",
+      "sha256": "d8effcc3be094caf05262badd866d0c91cbd68ae709bf24ce8dcf4e252ab2ab9",
       "source": "shellpreset_append_analyst.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -407,9 +412,10 @@
       "height": 720,
       "id": "preset-calm-focus",
       "kind": "preset",
-      "sha256": "b91db00ef37a8fab181918a4e4eaa39a3abbb2aa46fb23b5e2efaf0b550184d0",
+      "sha256": "daefe725d252f7087eb63b8c05de94c069c6573ed821b94f621df0586b19c2a4",
       "source": "shellpreset_append_calm-focus.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -417,9 +423,10 @@
       "height": 720,
       "id": "preset-creator",
       "kind": "preset",
-      "sha256": "e49996d0730a251ea624751b3f76b69f017be7c000bdfd694fc5de945ec3af67",
+      "sha256": "27781503d6802fbb9cc73376110bd02b59f27b6cbcb07a97b6058fddc6fa79c0",
       "source": "shellpreset_append_creator.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -427,9 +434,10 @@
       "height": 720,
       "id": "preset-day-plan",
       "kind": "preset",
-      "sha256": "6cafa4d0ff3eea35236c2100281ee357eb960f34bdaf98a320801600d70970d5",
+      "sha256": "a4f06c936ce79424355b358e0afad90846bd7e9ecd38c91e27311d5af5a8d395",
       "source": "shellpreset_append_day-plan.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -437,9 +445,10 @@
       "height": 720,
       "id": "preset-developer",
       "kind": "preset",
-      "sha256": "f5e34d3b77f1f2fa98d156b934c88fcf6b4203e1bcb24b959296aa26d0c6dff7",
+      "sha256": "a919b116111229e1c1967ec9e66e7400e0f51d39c6615e5911c34ba27d75aee7",
       "source": "shellpreset_append_developer.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -447,9 +456,10 @@
       "height": 720,
       "id": "preset-enterprise",
       "kind": "preset",
-      "sha256": "01c78048214b91658379e06315d54a0500df2c00d9d0000ba57cdf3b504d0d27",
+      "sha256": "03bcec90f7022080e7b05a4940004ccef19c0e2a766d543e9d4e2e2b31fca710",
       "source": "shellpreset_append_enterprise.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -457,9 +467,10 @@
       "height": 720,
       "id": "preset-gaming",
       "kind": "preset",
-      "sha256": "fb5939f8b2326de70d393926de90207e4e1e7ad1d58e85404222c7df582ccd87",
+      "sha256": "aed65b85c088beff5123b23dbdd4016e865e1fd9a064406a0961a8a448aa5c17",
       "source": "shellpreset_append_gaming.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -467,9 +478,10 @@
       "height": 720,
       "id": "preset-health",
       "kind": "preset",
-      "sha256": "38df4900eb9ff6db3ab60cf07762f7bc5452fc920d874967eafd60f243130533",
+      "sha256": "31f4847c25d637f04aa23c956928bd34669fa00cb7f3a5da276708e290186ddf",
       "source": "shellpreset_append_health.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -477,9 +489,10 @@
       "height": 720,
       "id": "preset-home-ambient",
       "kind": "preset",
-      "sha256": "4974c91d3c981a3ca769f1bd54d1b2cca09f336720948ff94cafdba648f332a0",
+      "sha256": "11f7aef822d2516b48aa554d8f6392e374c2f56304e16766c49dac484d82f4c1",
       "source": "shellpreset_append_home-ambient.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -487,9 +500,10 @@
       "height": 720,
       "id": "preset-homelab",
       "kind": "preset",
-      "sha256": "48a4f86d488d11067ddd8c6e853293a1aac298e736dde98a85dcc4e2b41953e3",
+      "sha256": "f9ee15455adb6970799d2ba27966e1bdcebf4df9bf0301f53e26f210d8a263cb",
       "source": "shellpreset_append_homelab.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -497,9 +511,10 @@
       "height": 720,
       "id": "preset-minimal",
       "kind": "preset",
-      "sha256": "e18966587a3305c3576c296ab72abbf3cfbe09a71e4ee54738d0cf66149bf694",
+      "sha256": "bb9ddba3e7160c062c49d57ea9e4a83de79a0069e40e30bccf00a840ebdabeb0",
       "source": "shellpreset_append_minimal.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -507,9 +522,10 @@
       "height": 720,
       "id": "preset-notes-streak",
       "kind": "preset",
-      "sha256": "b1155ed6ca7ce0118f29fe19a0a6106c1041e8a36e1db443603a63cba2a7941a",
+      "sha256": "aa75785660f3cae37b5486f147b79881e1e7b0be03e1f9c1f82ef192f0142eca",
       "source": "shellpreset_append_notes-streak.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -517,9 +533,10 @@
       "height": 720,
       "id": "preset-productivity",
       "kind": "preset",
-      "sha256": "7edc6236aa66438428e85af3558b97a581255c8ec07a86e21a9e8f80d16212cd",
+      "sha256": "a61841dde7f2ad660232ffe61c7962205e8fcc1fe90301b0b7ce530a7d3fca3d",
       "source": "shellpreset_append_productivity.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -527,9 +544,10 @@
       "height": 720,
       "id": "preset-remote-work",
       "kind": "preset",
-      "sha256": "10982020d0f2f7c0bf1c7506b8e69f5ebcd32fefdf3a0e63532d04b03535607f",
+      "sha256": "aa719ee30dd1b566d5b5fa99941d74c904dd70893d2badac8ae17e97901d15dd",
       "source": "shellpreset_append_remote-work.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -537,9 +555,10 @@
       "height": 720,
       "id": "preset-study",
       "kind": "preset",
-      "sha256": "19f50064ab86cdef9665a41ec2b2258af9223b7aef30d1cccc8c40f95df63c94",
+      "sha256": "8282255e9b96c4cbf695384e6ae88072e153942d2955d2b9ed1e2e67e17a3a0d",
       "source": "shellpreset_append_study.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -547,9 +566,10 @@
       "height": 720,
       "id": "preset-system-io",
       "kind": "preset",
-      "sha256": "8247bf720ed7d013c8ec4d9d5831c7fad4f62f595db2bf7fc16673441b7965d1",
+      "sha256": "d5fc5fe3e81df67b9934965ff64ca8c0acb9eefc745d47ece8816b7fcb5dd360",
       "source": "shellpreset_append_system-io.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -557,9 +577,10 @@
       "height": 720,
       "id": "preset-system-monitor",
       "kind": "preset",
-      "sha256": "a893fa82bb0653aa306f232373f6ab72d747608a2e349a21ac286faba4c1ef6f",
+      "sha256": "02b4930cd84f14c0850a0dc1873130e3563f8720ea5663f3556b7025210df5dd",
       "source": "shellpreset_append_system-monitor.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -567,9 +588,10 @@
       "height": 720,
       "id": "preset-trading-desk",
       "kind": "preset",
-      "sha256": "17e06aa63ee37cb03632b7a3e74e5ae10a269cd30457bc9886eb6322a7f1f768",
+      "sha256": "b718912e36c30b17f6d5233c6e17e1a6fe546120e88b598d486d40aa58cb53de",
       "source": "shellpreset_append_trading-desk.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     },
     {
       "crop": null,
@@ -577,9 +599,10 @@
       "height": 720,
       "id": "orientation-home-ambient-landscape",
       "kind": "orientation",
-      "sha256": "bb95d2df8cd81042e061634e8d7517966dca085ee957b95c26d15c0ae6d94794",
+      "sha256": "ad5c9cc222ca3f3c899df8e6e194ecb2795a8bf521f5be31d2e8538133f73eee",
       "source": "shellpreset_append_landscape.png",
-      "width": 2560
+      "width": 2560,
+      "source_commit": "bd78eeebbf252fa645d9138eda132d756d49cc0f"
     }
   ],
   "source_commit": "4c2292274da091fc3fd5f4bcfe66534352692e57",
