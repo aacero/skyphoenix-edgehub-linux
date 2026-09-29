@@ -6,29 +6,29 @@
 
 ---
 
-## Now — v1.1.1 Release Finalization (Bake-in)
-
-- [ ] **Bake-in of v1.1.1 Enhancements**:
-  - Verify live stability across daily desktop sessions on the physical Xeneon Edge display (`DVI-I-1`, `2560x720`).
-  - Completed items under active bake-in:
-    - **Wake-on-LAN**: 3-packet burst transmission spaced by 25ms and realistic 60s boot phase timer with live elapsed feedback (`core/src/wol.rs`, `ui/qml/widgets/SystemsWidget.qml`).
-    - **Screen Rotation**: Arbitrary custom delay in seconds (0..86400) with dedicated stepper/input controls in Hub and Manager.
-    - **Sky Tonight Widget**: Freshness timestamp, date header anchoring, active screen-revisit auto-refresh, and manual `↻` refresh button.
-    - **Calendar Widget**: Geometry-adaptive views (List/Agenda for vertical, Month grid for square, 7-day Week for wide horizontal), extended 90-day horizon, interactive header view switcher, and clickable day expander drawer.
-    - **Humble Bundle Widget**: Single-category filter toggle and "All" reset pills, plus top-tier bundle price resolution.
-- [ ] **v1.1.1 Release Execution**:
-  - [x] Version bump to `1.1.1` in `CMakeLists.txt` and `core/Cargo.toml`.
-  - [x] Update `CHANGELOG.md` and release metadata with release notes.
-  - [ ] Tag release `v1.1.1` and build release artifacts.
-
----
-
-## Next — v1.1.2 Scope
+## Now — v1.1.2 Scope
 
 - [ ] **Tiling Window Manager / Workspace Targeting (`hyprctl` / `swaymsg`)**:
   - Support triggering workspace navigation or window focus on Wayland tiling window managers directly from touch macro tiles or widgets.
   - Commands: `hyprctl dispatch workspace <N>`, `swaymsg workspace <N>`.
   - Configurable in widget actions with tactile status feedback.
+
+---
+
+## Completed in v1.1.1
+
+- [x] **v1.1.1 Release Execution & Artifact Distribution**:
+  - [x] Version bump to `1.1.1` in `CMakeLists.txt` and `core/Cargo.toml`.
+  - [x] Update `CHANGELOG.md` and release metadata with release notes.
+  - [x] Tag release `v1.1.1`, publish GitHub release with signed artifacts (`.deb`, `.rpm`, `.AppImage`, Arch `.pkg.tar.zst`, `SHA256SUMS.txt`).
+  - [x] Dogfood local installation on Arch Linux via `scripts/update-local.sh`.
+- [x] **v1.1.1 Enhancements & Hardening**:
+  - [x] **Wake-on-LAN**: 3-packet burst transmission spaced by 25ms and realistic 60s boot phase timer with live elapsed feedback (`core/src/wol.rs`, `ui/qml/widgets/SystemsWidget.qml`).
+  - [x] **Screen Rotation**: Arbitrary custom delay in seconds (0..86400) with dedicated stepper/input controls in Hub and Manager.
+  - [x] **Sky Tonight Widget**: Freshness timestamp, date header anchoring, active screen-revisit auto-refresh, and manual `↻` refresh button.
+  - [x] **Calendar Widget**: Geometry-adaptive views (List/Agenda for vertical, Month grid for square, 7-day Week for wide horizontal), extended 90-day horizon, interactive header view switcher, and clickable day expander drawer.
+  - [x] **Humble Bundle Widget**: Single-category filter toggle and "All" reset pills, plus top-tier bundle price resolution.
+
 
 ---
 
