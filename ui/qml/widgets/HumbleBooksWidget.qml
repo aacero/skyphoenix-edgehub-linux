@@ -1009,7 +1009,9 @@ WidgetChrome {
 
                             Image {
                                 anchors.fill: parent
-                                source: card.modelData.imageUrl || ""
+                                // Gate network load behind active flag — keeps egress through
+                                // NetHub consistent and prevents spurious warnings in tests.
+                                source: w.active ? (card.modelData.imageUrl || "") : ""
                                 fillMode: Image.PreserveAspectCrop
                                 asynchronous: true
                                 visible: status === Image.Ready

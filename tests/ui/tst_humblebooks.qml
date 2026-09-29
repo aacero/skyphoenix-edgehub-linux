@@ -264,6 +264,7 @@ Item {
         function init() {
             tryVerify(function () { return h.ready }, 3000)
             var w = h.item
+            w.active = false        // prevent cover-art Image from firing network requests
             w.bundles = w.parseHumbleHtml(root.sampleHumbleHtml)
             w.activeCategory = "all"
         }
