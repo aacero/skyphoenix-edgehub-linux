@@ -51,6 +51,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="1.1.1" date="2026-09-28" type="stable">
+      <description>
+        <p>Feature release with Quick Actions host configuration, Systems Wake-on-LAN settings, custom rotation interval controls, and unlocked theme previews.</p>
+      </description>
+    </release>
     <release version="1.1.0" date="2026-09-25" type="stable">
       <description>
         <p>Feature release with Moon high-density preview support, Braindump quick actions, Prometheus fleet configuration, Grafana charting controls, and idle screen cycling.</p>

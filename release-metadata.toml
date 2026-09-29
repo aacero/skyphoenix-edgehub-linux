@@ -4,4 +4,4 @@
 # self-declared by this file.
 schema = 1
 stage = "candidate"
-target_version = "v1.1.0"
+target_version = "v1.1.1"

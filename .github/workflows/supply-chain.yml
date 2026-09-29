@@ -124,7 +124,7 @@ jobs:
           python3 scripts/generate_rust_third_party_notices.py \
             --check packaging/THIRD_PARTY_NOTICES-RUST.txt
           printf '%s  %s\n' \
-            6452680cafbc12a17989e43cc3cd14a96c6360c6c0ee2114baf64087a357b801 \
+            aa50e581e4d26c17c65a0357fe6075d4350fc1b692e92da8c8ac18f457335c04 \
             packaging/aur/THIRD_PARTY_NOTICES-RUST.txt |
             sha256sum --check --strict
           python3 scripts/generate_debian_copyright.py \

@@ -17,9 +17,9 @@
     - **Calendar Widget**: Geometry-adaptive views (List/Agenda for vertical, Month grid for square, 7-day Week for wide horizontal), extended 90-day horizon, interactive header view switcher, and clickable day expander drawer.
     - **Humble Bundle Widget**: Single-category filter toggle and "All" reset pills, plus top-tier bundle price resolution.
 - [ ] **v1.1.1 Release Execution**:
-  - Version bump to `1.1.1` in `CMakeLists.txt` and `core/Cargo.toml`.
-  - Update `CHANGELOG.md` with release notes.
-  - Tag release `v1.1.1` and build release artifacts.
+  - [x] Version bump to `1.1.1` in `CMakeLists.txt` and `core/Cargo.toml`.
+  - [x] Update `CHANGELOG.md` and release metadata with release notes.
+  - [ ] Tag release `v1.1.1` and build release artifacts.
 
 ---
 
@@ -29,9 +29,6 @@
   - Support triggering workspace navigation or window focus on Wayland tiling window managers directly from touch macro tiles or widgets.
   - Commands: `hyprctl dispatch workspace <N>`, `swaymsg workspace <N>`.
   - Configurable in widget actions with tactile status feedback.
-- [ ] **MediaWidget Artwork Load Error Handling**:
-  - *(Inherited from upstream backlog finding)*: When local `file://` album artwork fails to load (corrupt image, missing path, unsupported format) or passes policy but cannot be rendered, QML leaves a blank black box.
-  - Wire `Image.status === Image.Error` to display the default album disc fallback icon or "Artwork unavailable" plate.
 
 ---
 
@@ -41,9 +38,13 @@
   - Dedicated first-party widget providing direct integration with local Home Assistant instances (REST API / WebSocket).
   - Displays live entity states: room temperature, humidity, air quality, power consumption.
   - Touch toggles for smart plugs, desk lighting, and scene presets.
-- [ ] **Routine Configuration Backup Safety Net (`config.toml.bak`)**:
-  - *(Inherited from upstream backlog finding)*: Currently `--reset` makes a backup, but normal UI saves do not keep a rolling `.bak`.
-  - Automatically write a rolling `config.toml.bak` on standard saves for easy rollback if manually edited or corrupted.
+
+---
+
+## Completed in Earlier Fork Iterations
+
+- [x] **MediaWidget Artwork Load Error Handling**: Displays artwork unavailable notice on image load failure.
+- [x] **Routine Configuration Backup Safety Net (`config.toml.bak`)**: Automatically preserves prior version as `config.toml.bak` on save.
 
 ---
 

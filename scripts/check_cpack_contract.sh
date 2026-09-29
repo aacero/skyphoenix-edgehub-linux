@@ -98,7 +98,7 @@ python3 "$REPO/scripts/generate_rust_third_party_notices.py" \
 python3 "$REPO/scripts/generate_debian_copyright.py" \
   --check "$REPO/packaging/debian/copyright"
 printf '%s  %s\n' \
-  6452680cafbc12a17989e43cc3cd14a96c6360c6c0ee2114baf64087a357b801 \
+  aa50e581e4d26c17c65a0357fe6075d4350fc1b692e92da8c8ac18f457335c04 \
   "$REPO/packaging/aur/THIRD_PARTY_NOTICES-RUST.txt" |
   sha256sum --check --strict
 echo "  ok  generated Rust and Debian legal records are current"

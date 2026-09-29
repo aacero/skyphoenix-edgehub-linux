@@ -21,7 +21,7 @@ EdgeHub is a native Linux widget dashboard designed for the Corsair Xeneon Edge 
 > is not reported as a certified manual audit. See the
 > [1.0 release notes](https://github.com/skyphoenix-it/skyphoenix-edgehub-linux/releases/tag/v1.0.0).
 
-**Release target:** `v1.1.0`. This checkout is unreleased and is not published
+**Release target:** `v1.1.1`. This checkout is unreleased and is not published
 or certified.
 
 **[Watch the 71-second live product film](docs/marketing-site/trailer.html)** or

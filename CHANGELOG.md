@@ -9,6 +9,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-09-28
+
+### Added
+
+- **Quick Actions widget** — configurable host cards with one-tap Ping, SSH, and
+  Mosh shortcuts plus Wake-on-LAN triggers. Supports inline tile editing, action
+  schema (`actionsText`), a dedicated app icon, and desktop-notification feedback
+  when a binary is not found.
+- **Wake-on-LAN (WoL)** — moved from Quick Actions into the Systems fleet monitor
+  for co-location with host metrics. Transmits a three-packet magic-packet burst
+  spaced 25 ms apart for reliable delivery on noisy segments. Shows a real-time
+  boot-phase timer with elapsed feedback while the target is booting.
+- **MAC address management in Systems** — inline MAC address editor in the
+  expanded deep-dive view; auto-discovers MAC addresses from Quick Actions host
+  settings; breadcrumb-formatted address display.
+- **Reactive screen surfacing** — the dashboard automatically pauses idle cycling
+  and surfaces the affected screen when a fleet host goes offline or a reminder
+  fires. Resumes cycling automatically once the alert is dismissed.
+- **Geometry-adaptive Calendar** — Month grid for square tiles, 7-day Week view
+  for wide horizontal tiles, List/Agenda for vertical tiles. Extends the
+  lookahead horizon to 90 days. Clickable day-header expander drawer to drill
+  into a single day's events.
+- **Sky Tonight improvements** — freshness timestamp on the observing window
+  forecast, anchored date header, active screen-revisit auto-refresh, and a
+  manual ↻ refresh button.
+- **Humble Books widget** — tracks live Humble Bundle book, comic, sci-fi, and
+  cookbook bundles. Classifies bundles by category using a heuristic corpus.
+  Shows tiered urgency colour highlights and countdown-sorted bundle cards.
+  Top-tier full bundle pricing surfaced alongside Pay-What-You-Want tiers.
+- **Category filter pills on Humble Books** — single-category toggle with an All
+  reset; replaces the previous additive multi-select.
+- **Custom screen rotation delay** — settings let you dial an arbitrary delay
+  (0–86400 s) for how long the hub waits before rotating, with a dedicated
+  stepper and direct numeric input.
+- **Config rolling backup** — every standard save now atomically writes
+  `config.toml.bak` alongside the live config. `--reset` continues to back up
+  before clearing.
+- **All premium and inspired themes unlocked** — Synthwave, Cyberpunk, Vaporwave,
+  Matrix, Trilby, Keystone, Swirl, Cascade, and Fizz are now available to all
+  users without a Pro key.
+- **Systems widget 1×3 panoramic layout** — fills the full 2560 px panel width
+  with an expanded fleet overview.
+- **Planetary ephemeris and clarity tracks on Sky Tonight** — hourly sky-clarity
+  bars and naked-eye planet rows (Mercury → Saturn) alongside the existing
+  twilight window.
+- **Photorealistic Moon disc** — phase-masked texture with configurable
+  information fields and a centred layout on 1×1 tiles.
+
+### Fixed
+
+- Media widget shows an "Artwork unavailable" notice on `Image.Error` instead of
+  a blank black box; artwork is only fetched while the tile is active and visible.
+- Calendar correctly filters cancelled recurring event instances, processes
+  `RECURRENCE-ID` overrides, and exhausts past-recurrence sequences.
+- Sky Tonight observing window forecast now refreshes on re-visit and shows the
+  current forecast date.
+- Humble Books category pills switched from additive to exclusive toggle to
+  prevent confusing no-result states.
+- Wake-on-LAN click hit-testing on compact card tiles.
+- WoL now sends the required three-packet burst; single-packet delivery was
+  silently dropped on some switches.
+- `RightNow` elapsed-duration label no longer overflows on narrow (0.5×) tiles.
+- Orientation sensor correctly reports the native 2560×720 landscape panel
+  without requiring a manual calibration step.
+
+### Security
+
+- Cover-art `Image` elements in Humble Books are now gated behind the widget's
+  `active` flag, consistent with the existing NetHub egress gate. No outbound
+  image requests are made when the widget is inactive or under test.
+
 ## [1.1.0] - 2026-09-25
 
 ### Added
@@ -236,6 +307,7 @@ display matching, and the CI/coverage gates.
 | Version | Date | Description |
 |---------|------|-------------|
 | Unreleased | - | Maintenance |
+| 1.1.1 | 2026-09-28 | Quick Actions, Systems WoL burst, adaptive Calendar, Sky Tonight ephemeris, Humble Books monitor, reactive alert surfacing, config rolling backup |
 | 1.1.0 | 2026-09-25 | Moon density, Braindump quick edit/delete, Prometheus fleet monitor, Grafana vector chart, idle screen cycle |
 | 1.0.0 | 2026-07-28 | Stable release: per-size widgets, Manager previews, persistent alerts, hardened recovery |
 | 1.0.0-beta.1 | 2026-07-21 | Hub/Manager integration, hardware lifecycle, widget fidelity and release hardening |
