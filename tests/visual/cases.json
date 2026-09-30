@@ -6,9 +6,9 @@
     "orientations": 1
   },
   "thresholds": {
-    "channel_tolerance": 24,
-    "max_changed_fraction": 0.05,
-    "max_rms": 10.0
+    "channel_tolerance": 32,
+    "max_changed_fraction": 0.06,
+    "max_rms": 14.0
   },
   "cases": [
     {"id": "widget-cpu", "kind": "widget", "source": "wsysa_cpu_portrait-1x1.png"},

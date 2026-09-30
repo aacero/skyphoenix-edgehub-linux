@@ -430,7 +430,7 @@ jobs:
         # CI is not a watchable demonstration. Remove the runner's deliberate
         # human-visible mouse/key delays so this required gate completes inside
         # the job limit without changing any assertion or bounded wait.
-        run: bash tests/gui/run_gui_tests.sh --fast -j4
+        run: bash tests/gui/run_gui_tests.sh --fast -j2
       - name: Install Pillow for the visual-baseline comparison
         # `python3-pil` above lands in the SYSTEM python, but install-qt-action
         # puts a tool-cache python first on PATH - so `python3` here is 3.12 from
