@@ -472,7 +472,13 @@ Item {
         function test_an_older_stamp_carries_the_weekday() {
             var then = new Date(Date.now() - 3 * 86400000)
             compare(h.item.stampOf({ text: "x", at: then.getTime() }),
-                    Qt.formatDateTime(then, "ddd HH:mm"), "older → weekday + time")
+                    Qt.formatDateTime(then, "ddd HH:mm"), "older (<1 week) → weekday + time")
+        }
+
+        function test_stamp_older_than_a_week_carries_month_day_and_time() {
+            var then = new Date(Date.now() - 8 * 86400000)
+            compare(h.item.stampOf({ text: "x", at: then.getTime() }),
+                    Qt.formatDateTime(then, "MMM dd HH:mm"), ">= 1 week elapsed → month/day + time")
         }
 
         // A hand-edited config must not render "Invalid Date" next to real text.

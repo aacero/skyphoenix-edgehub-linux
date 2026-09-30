@@ -328,17 +328,24 @@ WidgetChrome {
     }
     Component.onDestruction: w.flush()
 
-    // Today → just the time; older → weekday + time. An entry with no usable
-    // stamp (hand-edited config, an older schema) renders blank rather than
-    // "Invalid Date" - the text is what matters, the stamp is a nicety.
+    // Today → just the time; less than a week old → weekday + time;
+    // once a week has elapsed → month/day + time ("MMM dd HH:mm", e.g. "Sep 01 14:30")
+    // to avoid day-of-week ambiguity across weeks.
+    // An entry with no usable stamp renders blank rather than "Invalid Date".
     function stampOf(entry) {
         if (!entry || entry.at === undefined || !isFinite(entry.at)) return ""
         var d = new Date(entry.at)
         if (isNaN(d.getTime())) return ""
         var now = new Date()
-        return d.toDateString() === now.toDateString()
-            ? Qt.formatTime(d, "HH:mm")
-            : Qt.formatDateTime(d, "ddd HH:mm")
+        if (d.toDateString() === now.toDateString()) {
+            return Qt.formatTime(d, "HH:mm")
+        }
+        var elapsedMs = now.getTime() - d.getTime()
+        var oneWeekMs = 7 * 86400000
+        if (elapsedMs >= oneWeekMs) {
+            return Qt.formatDateTime(d, "MMM dd HH:mm")
+        }
+        return Qt.formatDateTime(d, "ddd HH:mm")
     }
 
     // `columns` flips for a wide box: the capture column sits BESIDE the queue
