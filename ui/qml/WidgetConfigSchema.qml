@@ -959,6 +959,7 @@ QtObject {
                     { value: "sf", label: "Sci-Fi & fantasy" },
                     { value: "rpg", label: "Tabletop RPGs" },
                     { value: "cookbooks", label: "Cookbooks & culinary" },
+                    { value: "hobbies", label: "Hobbies & crafts" },
                     { value: "other", label: "Other & misc" } ],
                   help: "Filters which bundles are initially shown. You can also tap category pills directly on the widget." },
                 { key: "pollHours", label: "Check for new bundles every", type: "select", dflt: 2, options: [

@@ -5,7 +5,7 @@ import QtQuick.Controls
 // ─────────────────────────────────────────────────────────────────────────
 // HumbleBooksWidget - monitors active book, comic, sci-fi, and cookbook
 // bundles on Humble Bundle with live countdowns, cover art, tier values,
-// and category filters (Tech, Comics, SF, Cookbooks, Other).
+// and category filters (Tech, Comics, SF, RPG, Cookbooks, Hobbies, Other).
 //
 // Egress is gated exclusively through NetHub; bundle metadata is parsed
 // from the public landing page without tracking, cookies, or user credentials.
@@ -244,10 +244,42 @@ WidgetChrome {
             if (allText.indexOf(cookKeywords[j]) >= 0) return "Cookbooks"
         }
 
-        // 5. Sci-Fi & Fantasy (SF)
+        // 5. Hobbies, Crafts, Outdoors, Music & Recreation
+        if (stamp === "craft" || stamp === "crafts" || stamp === "hobbies" || stamp === "hobby"
+            || nameLower.indexOf("craft book bundle") >= 0 || nameLower.indexOf("craft bundle") >= 0
+            || nameLower.indexOf("crafts bundle") >= 0 || nameLower.indexOf("hobby bundle") >= 0
+            || nameLower.indexOf("diy book bundle") >= 0 || nameLower.indexOf("diy bundle") >= 0) {
+            return "Hobbies"
+        }
+        var hobbyKeywords = [
+            "hobby", "hobbies", "crafting", "crafts", "handicraft", "arts & crafts", "arts and crafts",
+            "crochet", "amigurumi", "mochimochi", "knitting", "knitwear", "hand knit", "knit pattern", "knitted", "sewing", "sewn",
+            "quilt", "quilting", "embroidery", "cross stitch", "needlework", "yarn", "wearables",
+            "textiles", "weaving", "macrame",
+            "woodworking", "carpentry", "woodcraft", "wood carving", "woodturning",
+            "furniture making", "blacksmithing", "metalworking", "leathercraft", "leatherwork",
+            "guitar", "guitars", "guitar playing", "acoustic guitar", "electric guitar", "bass guitar",
+            "piano", "ukulele", "drumming", "violin", "songwriting",
+            "audio production", "music production", "home studio", "sound design",
+            "digital audio workstation",
+            "hunting", "bowhunting", "fishing", "angler", "fly fishing", "bushcraft",
+            "wilderness survival", "outdoor survival", "survival", "survive", "camping", "hiking", "backpacking", "archery", "outdoors",
+            "gardening", "gardener", "horticulture", "permaculture", "homesteading",
+            "indoor plants", "houseplants",
+            "drawing", "sketching", "sketchbook", "how to draw", "learn to draw", "painting", "watercolor", "acrylic painting", "oil painting",
+            "calligraphy", "origami", "pottery", "ceramics", "sculpting", "jewelry making",
+            "photography", "digital photography", "portrait photography", "landscape photography",
+            "scale modeling", "model building", "model trains", "miniatures painting",
+            "fitness", "yoga", "martial arts", "diy", "self-reliance", "off-grid"
+        ]
+        for (var h = 0; h < hobbyKeywords.length; h++) {
+            if (allText.indexOf(hobbyKeywords[h]) >= 0) return "Hobbies"
+        }
+
+        // 6. Sci-Fi & Fantasy (SF)
         var sfPublishers = [
             "tor books", "tor publishing", "daw books", "baen", "black library",
-            "subterranean press", "tachyon", "night shade", "haikasoru", "open road media"
+            "subterranean press", "tachyon", "night shade", "haikasoru"
         ]
         for (var sp = 0; sp < sfPublishers.length; sp++) {
             if (nameLower.indexOf(sfPublishers[sp]) >= 0) return "SF"
@@ -274,7 +306,7 @@ WidgetChrome {
             if (allText.indexOf(sfAuthors[a]) >= 0) return "SF"
         }
 
-        // 6. Other (Art, Crafts, Music, General)
+        // 7. Other (History, Biographies, Business, General)
         return "Other"
     }
 
@@ -728,6 +760,7 @@ WidgetChrome {
         { key: "sf", label: "SF" },
         { key: "rpg", label: "RPG" },
         { key: "cookbooks", label: "Cookbooks" },
+        { key: "hobbies", label: "Hobbies" },
         { key: "other", label: "Other" }
     ]
 

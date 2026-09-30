@@ -29,6 +29,7 @@ Item {
         + ',{"machine_name":"keto_cookbook","tile_name":"Humble Book Bundle: Eat Your Protein! A Keto Cookbook Bundle","tile_short_name":"Eat Your Protein! A Keto Cookbook Bundle","tile_stamp":"books","product_url":"/books/keto-cookbook","tile_image":"https://hb.imgix.net/keto.jpg","end_date|datetime":"2026-10-01T18:00:00","highlights":["Pay What You Want","25 books","$278 Value","Support Charity"],"hero_highlights":[{"heading":"Pay $18 or more"}],"short_marketing_blurb":"Delicious recipes and meal plans."}'
         + ',{"machine_name":"dnd_guild","tile_name":"Humble RPG Bundle: Dungeon Master\'s Guild Top Content","tile_short_name":"Dungeon Master\'s Guild Top Content","tile_stamp":"books","product_url":"/books/dnd-guild","tile_image":"https://hb.imgix.net/dnd.jpg","end_date|datetime":"2026-10-03T18:00:00","highlights":["Pay What You Want","19 books","$326 Value","Support Charity"],"hero_highlights":[{"heading":"Pay $5 or more"}],"short_marketing_blurb":"Top D&D campaign content."}'
         + ',{"machine_name":"woodworking_bundle","tile_name":"The Ultimate Woodworking & Carpentry Masterclass","tile_short_name":"Woodworking Masterclass","tile_stamp":"books","product_url":"/books/woodworking","tile_image":"https://hb.imgix.net/wood.jpg","end_date|datetime":"2026-10-05T18:00:00","highlights":["Pay What You Want","12 books","$150 Value"],"hero_highlights":[{"heading":"Pay $5 or more"}],"short_marketing_blurb":"Crafting and woodworking."}'
+        + ',{"machine_name":"world_history","tile_name":"World War II: The Definitive Visual History","tile_short_name":"World War II History","tile_stamp":"books","product_url":"/books/wwii-history","tile_image":"https://hb.imgix.net/history.jpg","end_date|datetime":"2026-10-07T18:00:00","highlights":["Pay What You Want","15 books","$220 Value"],"hero_highlights":[{"heading":"Pay $5 or more"}],"short_marketing_blurb":"Historical accounts and memoirs."}'
         + ']}]}}}'
         + '</script></head><body><h1>Humble Bundle Books</h1></body></html>'
 
@@ -70,6 +71,7 @@ Item {
             verify(catField !== null && catField.options !== undefined, "category field defines options")
             var catVals = catField.options.map(function(o) { return o.value })
             verify(catVals.indexOf("rpg") >= 0, "category schema includes rpg option")
+            verify(catVals.indexOf("hobbies") >= 0, "category schema includes hobbies option")
         }
     }
 
@@ -120,6 +122,7 @@ Item {
         function test_sf_classification() {
             var w = h.item
             compare(w.classify({ tile_name: "The Original Worlds of Timothy Zahn", tile_stamp: "books" }), "SF")
+            compare(w.classify({ tile_name: "The Original Worlds of Timothy Zahn by Open Road Media", tile_stamp: "books" }), "SF")
             compare(w.classify({ tile_name: "The Greg Bear Birthday Bundle", tile_stamp: "books" }), "SF")
             compare(w.classify({ tile_name: "The Best of C.J. Cherryh", tile_stamp: "books" }), "SF")
             compare(w.classify({ tile_name: "Joe Haldeman: The Forever War and Beyond", tile_stamp: "books" }), "SF")
@@ -128,11 +131,25 @@ Item {
             compare(w.classify({ tile_name: "High Fantasy Realms", tile_stamp: "books", short_marketing_blurb: "Fantasy novels from bestsellers" }), "SF")
         }
 
+        function test_hobbies_classification() {
+            var w = h.item
+            compare(w.classify({ tile_name: "Humble Craft Book Bundle: Crochet Bags and Wearables by Open Road Media", tile_stamp: "books" }), "Hobbies")
+            compare(w.classify({ tile_name: "Crochet Bags and Wearables", tile_stamp: "books" }), "Hobbies")
+            compare(w.classify({ tile_name: "The Ultimate Woodworking & Carpentry Masterclass", tile_stamp: "books" }), "Hobbies")
+            compare(w.classify({ tile_name: "Acoustic & Electric Guitar Playing Masterclass", tile_stamp: "books" }), "Hobbies")
+            compare(w.classify({ tile_name: "Hunting, Fishing & Wilderness Survival Guide", tile_stamp: "books" }), "Hobbies")
+            compare(w.classify({ tile_name: "Master Your Digital Audio Workstation", tile_stamp: "books" }), "Hobbies")
+            compare(w.classify({ tile_name: "Watercolor Painting Essentials", tile_stamp: "books" }), "Hobbies")
+            compare(w.classify({ tile_name: "Knitting & Quilt Design", tile_stamp: "craft" }), "Hobbies")
+        }
+
         function test_other_classification() {
             var w = h.item
-            compare(w.classify({ tile_name: "The Ultimate Woodworking & Carpentry Masterclass", tile_stamp: "books" }), "Other")
-            compare(w.classify({ tile_name: "Master Your Digital Audio Workstation", tile_stamp: "books" }), "Other")
-            compare(w.classify({ tile_name: "Watercolor Painting Essentials", tile_stamp: "books" }), "Other")
+            compare(w.classify({ tile_name: "World War II: The Definitive Visual History", tile_stamp: "books" }), "Other")
+            compare(w.classify({ tile_name: "Personal Finance & Real Estate Investing", tile_stamp: "books" }), "Other")
+            compare(w.classify({ tile_name: "Mindfulness & Personal Growth", tile_stamp: "books" }), "Other")
+            // Non-SF Open Road Media bundle must classify as Other, NOT SF
+            compare(w.classify({ tile_name: "True Crime Investigations by Open Road Media", tile_stamp: "books" }), "Other")
         }
     }
 
@@ -148,7 +165,7 @@ Item {
         function test_parse_sample_html() {
             var w = h.item
             var bundles = w.parseHumbleHtml(root.sampleHumbleHtml)
-            compare(bundles.length, 6, "parsed all 6 sample bundles")
+            compare(bundles.length, 7, "parsed all 7 sample bundles")
 
             // Batman (Comics)
             compare(bundles[0].id, "batmanday_bundle")
@@ -183,10 +200,15 @@ Item {
             compare(bundles[4].itemCountText, "19 books")
             compare(bundles[4].tierPriceText, "From $5")
 
-            // Woodworking (Other)
-            compare(bundles[5].category, "Other")
+            // Woodworking (Hobbies)
+            compare(bundles[5].category, "Hobbies")
             compare(bundles[5].itemCountText, "12 books")
             compare(bundles[5].tierPriceText, "From $5")
+
+            // World History (Other)
+            compare(bundles[6].category, "Other")
+            compare(bundles[6].itemCountText, "15 books")
+            compare(bundles[6].tierPriceText, "From $5")
         }
 
         function test_parse_empty_or_malformed_html() {
@@ -271,13 +293,14 @@ Item {
 
         function test_category_filtering() {
             var w = h.item
-            compare(w.filteredBundles.length, 6, "all shows all 6 bundles")
-            compare(w.countForCategory("all"), 6)
+            compare(w.filteredBundles.length, 7, "all shows all 7 bundles")
+            compare(w.countForCategory("all"), 7)
             compare(w.countForCategory("tech"), 1)
             compare(w.countForCategory("comics"), 1)
             compare(w.countForCategory("sf"), 1)
             compare(w.countForCategory("rpg"), 1)
             compare(w.countForCategory("cookbooks"), 1)
+            compare(w.countForCategory("hobbies"), 1)
             compare(w.countForCategory("other"), 1)
 
             // Switch to Tech
@@ -307,21 +330,27 @@ Item {
             compare(w.filteredBundles.length, 1, "cookbooks shows 1 bundle")
             compare(w.filteredBundles[0].category, "Cookbooks")
 
+            // Switch to Hobbies
+            w.activeCategory = "hobbies"
+            compare(w.filteredBundles.length, 1, "hobbies shows 1 bundle")
+            compare(w.filteredBundles[0].category, "Hobbies")
+            compare(w.filteredBundles[0].title, "Woodworking Masterclass")
+
             // Switch to Other
             w.activeCategory = "other"
             compare(w.filteredBundles.length, 1, "other shows 1 bundle")
             compare(w.filteredBundles[0].category, "Other")
-            compare(w.filteredBundles[0].title, "Woodworking Masterclass")
+            compare(w.filteredBundles[0].title, "World War II History")
 
             // Reset to All
             w.activeCategory = "all"
-            compare(w.filteredBundles.length, 6)
+            compare(w.filteredBundles.length, 7)
         }
 
         function test_toggle_category_filtering() {
             var w = h.item
             w.toggleCategory("all")
-            compare(w.filteredBundles.length, 6)
+            compare(w.filteredBundles.length, 7)
             compare(w.isCategoryActive("all"), true)
 
             // 1. Toggle Tech: only tech is selected
@@ -343,7 +372,7 @@ Item {
             w.toggleCategory("sf")
             compare(w.isCategoryActive("sf"), false)
             compare(w.isCategoryActive("all"), true)
-            compare(w.filteredBundles.length, 6)
+            compare(w.filteredBundles.length, 7)
 
             // 4. Toggle Comics: only Comics selected
             w.toggleCategory("comics")
@@ -351,16 +380,23 @@ Item {
             compare(w.filteredBundles.length, 1)
             compare(w.filteredBundles[0].category, "Comics")
 
-            // 5. Tap All: explicitly clears back to All
-            w.toggleCategory("all")
+            // 5. Toggle Hobbies: only Hobbies selected
+            w.toggleCategory("hobbies")
             compare(w.isCategoryActive("comics"), false)
-            compare(w.isCategoryActive("all"), true)
-            compare(w.filteredBundles.length, 6)
+            compare(w.isCategoryActive("hobbies"), true)
+            compare(w.filteredBundles.length, 1)
+            compare(w.filteredBundles[0].category, "Hobbies")
 
-            // 6. Tap All again while All is active: remains All
+            // 6. Tap All: explicitly clears back to All
+            w.toggleCategory("all")
+            compare(w.isCategoryActive("hobbies"), false)
+            compare(w.isCategoryActive("all"), true)
+            compare(w.filteredBundles.length, 7)
+
+            // 7. Tap All again while All is active: remains All
             w.toggleCategory("all")
             compare(w.isCategoryActive("all"), true)
-            compare(w.filteredBundles.length, 6)
+            compare(w.filteredBundles.length, 7)
         }
 
         function test_open_bundle_calls_external_opener() {
@@ -379,7 +415,7 @@ Item {
             var w = h.item
             // Verify that category pills and buttons meet the >= 44px touch target requirement
             var pills = w.categoryList
-            verify(pills.length === 7, "has 7 category pills (All, Tech, Comics, SF, RPG, Cookbooks, Other)")
+            verify(pills.length === 8, "has 8 category pills (All, Tech, Comics, SF, RPG, Cookbooks, Hobbies, Other)")
             // Category row height is at least 44
             verify(Math.max(44, theme.touchTertiary) >= 44, "touchTertiary >= 44px")
         }

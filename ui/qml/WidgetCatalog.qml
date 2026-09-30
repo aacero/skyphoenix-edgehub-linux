@@ -176,7 +176,7 @@ QtObject {
         // One quote, capped at 4 lines collapsed.
         { type: "quote",    title: "Daily Quote", category: "Info", source: "qrc:/qml/QuoteWidget.qml",    defaults: { category: "focus", customText: "" },
           sizes: ["0.5x0.5", "0.5x1", "1x0.5", "1x1"], dflt: "1x1" },
-        // Humble Bundle book bundle monitor with category filters (Tech, Comics, SF, Cookbooks, Other)
+        // Humble Bundle book bundle monitor with category filters (Tech, Comics, SF, RPG, Cookbooks, Hobbies, Other)
         { type: "humblebooks", title: "Humble Books", category: "Info", source: "qrc:/qml/HumbleBooksWidget.qml",
           defaults: { category: "all", pollHours: 2 },
           sizes: ["0.5x1", "1x0.5", "1x1", "1x1.5", "1x2"], dflt: "1x1" }
@@ -218,7 +218,7 @@ QtObject {
         "grafana": "Real-time time-series telemetry charts querying Prometheus or Grafana endpoints directly with hardware-accelerated vector rendering and interactive touch scrubbing.",
         "skytonight": "Tonight's observing forecast, twilight dark-sky window, cloud cover, and moon phase for stargazers.",
         "quickactions": "Host action cards with live Ping latency checks and instant one-tap SSH and Mosh interactive terminal sessions.",
-        "humblebooks": "Active book bundles on Humble Bundle with live countdowns, covers, tier prices, and category filters (Tech, Comics, SF, RPG, Cookbooks, Other)."
+        "humblebooks": "Active book bundles on Humble Bundle with live countdowns, covers, tier prices, and category filters (Tech, Comics, SF, RPG, Cookbooks, Hobbies, Other)."
     })
 
     // LOSS-001: content and progress that must survive a configuration reset.
