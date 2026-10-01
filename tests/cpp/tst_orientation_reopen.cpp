@@ -66,6 +66,32 @@ private slots:
         QVERIFY(s.retryActiveForTest());
     }
 
+    // Explicitly stopping the watch closes the fd and disarms the notifier.
+    // Used on aboutToQuit to prevent USB resets on teardown.
+    void stopWatchingReleasesFd() {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString fifo = dir.path() + "/edge_fifo";
+        QCOMPARE(::mkfifo(fifo.toUtf8().constData(), 0600), 0);
+        int wfd = ::open(fifo.toUtf8().constData(), O_RDWR | O_NONBLOCK);
+        QVERIFY(wfd >= 0);
+
+        OrientationSensor s;
+        QVERIFY(s.openForTest(fifo));
+        QVERIFY(s.active());
+
+        s.stopWatching();
+        QVERIFY(!s.active());
+        QVERIFY(!s.retryActiveForTest());
+
+        // Closing the writer afterwards should not trigger device-lost handling
+        // (it should just remain inactive and NOT arm the retry timer).
+        ::close(wfd);
+        QTest::qWait(100);
+        QVERIFY(!s.active());
+        QVERIFY(!s.retryActiveForTest());
+    }
+
     // Malformed reports are skipped without emitting: a runt report (< 8 bytes) and a
     // full-length report with the wrong header both leave the rotation untouched; only
     // the following VALID report emits. Exercises the two in-loop "continue" guards.

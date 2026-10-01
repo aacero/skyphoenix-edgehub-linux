@@ -842,6 +842,12 @@ int main(int argc, char *argv[]) {
     });
     if (orientation->start() && orientation->rotation() >= 0)
         pushRotation(orientation->rotation());
+    // Cleanly detach the hidraw fd and stop the notifier immediately on quit.
+    // Waiting for QObject teardown keeps the hidraw endpoint open during
+    // final teardown, which has been observed to trigger USB resets on the
+    // shared xHCI controller.
+    QObject::connect(&app, &QCoreApplication::aboutToQuit,
+                     orientation, &OrientationSensor::stopWatching);
     // Let a connected Manager mirror the panel's live orientation in its preview:
     // the getUiState reply carries the EFFECTIVE content rotation.
     //

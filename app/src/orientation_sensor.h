@@ -58,6 +58,12 @@ public:
 signals:
     void rotationChanged(int rotation);
 
+public slots:
+    // Disable the notifier + close the fd (on a fatal read error / device unplug / app exit),
+    // so QSocketNotifier stops re-firing on a hung-up fd (which would busy-loop)
+    // and the hidraw endpoint is cleanly released before teardown.
+    void stopWatching();
+
 private slots:
     void onReadable();
     // Poll for the device coming back after an unplug and re-open it transparently.
@@ -67,9 +73,6 @@ private slots:
 private:
     // Open the hidraw node, wire up the notifier, and seed the initial orientation.
     bool openAndWatch(const QString& path);
-    // Disable the notifier + close the fd (on a fatal read error / device unplug),
-    // so QSocketNotifier stops re-firing on a hung-up fd (which would busy-loop).
-    void stopWatching();
     // stopWatching() + arm the reopen timer, for the device-lost (unplug) case.
     void handleDeviceLost();
     // Actively query the current orientation during the bounded startup window.
