@@ -58,13 +58,17 @@ public:
         });
     }
 
+    ~XeneonBoundedNetworkReply() override {
+        cleanupUpstream();
+    }
+
     qint64 bytesAvailable() const override {
         return buffer_.size() + QNetworkReply::bytesAvailable();
     }
 
     void abort() override {
         if (isFinished()) return;
-        upstream_->abort();
+        if (upstream_) upstream_->abort();
         if (!oversized_ && error() == QNetworkReply::NoError) {
             setError(QNetworkReply::OperationCanceledError,
                      QStringLiteral("request aborted"));
@@ -85,6 +89,7 @@ protected:
 
 private:
     void syncMetadata() {
+        if (!upstream_) return;
         setUrl(upstream_->url());
         for (const auto& header : upstream_->rawHeaderPairs())
             setRawHeader(header.first, header.second);
@@ -104,7 +109,7 @@ private:
     }
 
     void drain() {
-        if (oversized_ || isFinished()) return;
+        if (oversized_ || isFinished() || !upstream_) return;
         const QByteArray chunk = upstream_->readAll();
         if (chunk.isEmpty()) return;
         const qint64 remaining = std::max<qint64>(0, limit_ + 1 - received_);
@@ -125,7 +130,7 @@ private:
         setError(QNetworkReply::ContentAccessDenied,
                  QStringLiteral("response exceeds configured byte limit"));
         emit errorOccurred(QNetworkReply::ContentAccessDenied);
-        upstream_->abort();
+        if (upstream_) upstream_->abort();
         finishOnce();
     }
 
@@ -133,13 +138,23 @@ private:
         if (isFinished()) return;
         setFinished(true);
         emit finished();
+        cleanupUpstream();
     }
 
-    // QNetworkAccessManager owns its transport reply and tracks it internally.
-    // Reparenting that reply to this wrapper makes manager teardown depend on
-    // QObject child order and can leave Qt's manager with a dangling pointer.
-    // Keep only a guarded observer; the manager and wrapper normally share the
-    // same parent, and QPointer safely becomes null during teardown.
+    void cleanupUpstream() {
+        if (upstream_) {
+            upstream_->disconnect(this);
+            upstream_->deleteLater();
+            upstream_ = nullptr;
+        }
+    }
+
+    // Upstream transport reply created by QNetworkAccessManager::createRequest.
+    // Unlike the wrapper, the caller never receives the upstream reply and
+    // cannot delete it. QNetworkAccessManager also does not delete completed
+    // replies. We schedule its deletion via deleteLater() once finished or upon
+    // wrapper destruction so it does not accumulate indefinitely in the
+    // manager's QObject children list.
     QPointer<QNetworkReply> upstream_;
     QByteArray buffer_;
     qint64 limit_ = 0;

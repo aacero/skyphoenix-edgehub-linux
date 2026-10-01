@@ -1,5 +1,7 @@
 #include <QtTest>
 #include <QTemporaryFile>
+#include <QQmlComponent>
+#include <QQmlEngine>
 
 #include "hermetic.h"
 #include "network_access_policy.h"
@@ -288,6 +290,73 @@ private slots:
         QCOMPARE(reply->error(), QNetworkReply::NoError);
         QCOMPARE(reply->readAll(), QByteArray("local response"));
         delete reply;
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCOMPARE(manager.findChildren<QNetworkReply*>().count(), 0);
+    }
+
+    void qmlXmlHttpRequestCleansUpReplies() {
+        qputenv("QML_XHR_ALLOW_FILE_READ", "1");
+        QTemporaryFile source;
+        QVERIFY(source.open());
+        QCOMPARE(source.write("qml response"), qint64(12));
+        QVERIFY(source.flush());
+
+        QQmlEngine engine;
+        XeneonNetworkAccessManagerFactory factory;
+        engine.setNetworkAccessManagerFactory(&factory);
+
+        QQmlComponent component(&engine);
+        component.setData(
+            QByteArray("import QtQuick\n"
+                       "QtObject {\n"
+                       "    property bool done: false\n"
+                       "    property string text: \"\"\n"
+                       "    function run(url) {\n"
+                       "        var xhr = new XMLHttpRequest()\n"
+                       "        xhr.open('GET', url)\n"
+                       "        xhr.onreadystatechange = function() {\n"
+                       "            if (xhr.readyState === XMLHttpRequest.DONE) {\n"
+                       "                text = xhr.responseText\n"
+                       "                done = true\n"
+                       "            }\n"
+                       "        }\n"
+                       "        xhr.send()\n"
+                       "    }\n"
+                       "}"), QUrl());
+        QScopedPointer<QObject> obj(component.create());
+        QVERIFY(obj != nullptr);
+
+        QMetaObject::invokeMethod(obj.data(), "run", Q_ARG(QVariant, QUrl::fromLocalFile(source.fileName()).toString()));
+        QTRY_VERIFY_WITH_TIMEOUT(obj->property("done").toBool(), 2000);
+        QCOMPARE(obj->property("text").toString(), QStringLiteral("qml response"));
+
+        auto* manager = engine.networkAccessManager();
+        QVERIFY(manager != nullptr);
+        engine.collectGarbage();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCOMPARE(manager->findChildren<QNetworkReply*>().count(), 0);
+    }
+
+    void repeatedRequestsDoNotAccumulateChildrenInManager() {
+        QTemporaryFile source;
+        QVERIFY(source.open());
+        QCOMPARE(source.write("payload"), qint64(7));
+        QVERIFY(source.flush());
+
+        XeneonNetworkAccessManager manager;
+        const QUrl url = QUrl::fromLocalFile(source.fileName());
+        for (int i = 0; i < 25; ++i) {
+            QNetworkRequest request(url);
+            QNetworkReply* reply = manager.get(request);
+            QVERIFY(reply != nullptr);
+            QSignalSpy finished(reply, &QNetworkReply::finished);
+            if (!reply->isFinished())
+                QVERIFY(finished.wait(1000));
+            QCOMPARE(reply->readAll(), QByteArray("payload"));
+            delete reply;
+        }
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCOMPARE(manager.findChildren<QNetworkReply*>().count(), 0);
     }
 };
 
