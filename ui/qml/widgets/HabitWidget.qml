@@ -92,7 +92,7 @@ WidgetChrome {
     function prevDayKey(k) { return key(prevDay(parseKey(k))) }
     property string todayKey: (w.tick, key(new Date()))
     property bool doneToday: checkins.indexOf(todayKey) >= 0
-    readonly property bool scheduledToday: scheduled(new Date())
+    readonly property bool scheduledToday: scheduled(parseKey(w.todayKey))
 
     // Streak from an arbitrary check-in list - used ONLY to (a) derive an initial
     // streak from a legacy config that predates the stored number, and (b)
@@ -103,7 +103,7 @@ WidgetChrome {
         if (!arr.length) return 0
         var set = {}
         for (var i = 0; i < arr.length; i++) set[arr[i]] = true
-        var d = new Date(); d.setHours(12, 0, 0, 0)
+        var d = parseKey(w.todayKey)
         var n = 0
         if (!scheduled(d) || !set[key(d)]) d = prevScheduledDay(d)
         while (set[key(d)]) { n++; d = prevScheduledDay(d) }
@@ -188,8 +188,7 @@ WidgetChrome {
     readonly property bool compressedTall: w.tallBox && w.height < 560
     readonly property bool tightHeatmap: w.shallowWide || w.compressedTall
     function dateForIndex(index) {
-        var d = new Date()
-        d.setHours(12, 0, 0, 0)
+        var d = parseKey(w.todayKey)
         d.setDate(d.getDate() - w.daysAgoFor(index))
         return d
     }
@@ -270,7 +269,7 @@ WidgetChrome {
         readonly property int total: {
             w.tick
             var count = 0
-            var d = new Date(); d.setHours(12, 0, 0, 0)
+            var d = parseKey(w.todayKey)
             for (var i = 0; i < 28; i++) {
                 if (w.scheduled(d)) count++
                 d = w.prevDay(d)
@@ -280,7 +279,7 @@ WidgetChrome {
         readonly property int done: {
             w.tick
             var count = 0
-            var d = new Date(); d.setHours(12, 0, 0, 0)
+            var d = parseKey(w.todayKey)
             for (var i = 0; i < 28; i++) {
                 if (w.scheduled(d) && w.checkins.indexOf(w.key(d)) >= 0) count++
                 d = w.prevDay(d)
@@ -300,7 +299,7 @@ WidgetChrome {
         + " scheduled check-ins completed, " + w.recentStats.percent + " percent."
     readonly property string todayFeedback: {
         w.tick
-        var date = Qt.formatDate(new Date(), "ddd d MMM")
+        var date = Qt.formatDate(parseKey(w.todayKey), "ddd d MMM")
         if (w.paused) return date + ": Habit paused"
         if (!w.scheduledToday) return date + ": Rest day"
         return date + (w.doneToday ? ": Checked in" : ": Ready to check in")

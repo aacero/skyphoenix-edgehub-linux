@@ -340,6 +340,10 @@ Item {
         function init() {
             tryVerify(function () { return hHabit.ready }, 3000)
             clearSettings(hHabit)
+            hHabit.item.todayKey = Qt.binding(function () { return (hHabit.item.tick, hHabit.item.key(new Date())) })
+        }
+        function cleanup() {
+            hHabit.item.todayKey = Qt.binding(function () { return (hHabit.item.tick, hHabit.item.key(new Date())) })
         }
 
         // FIXED, and this test pins it (audit line 37). The defect was:
@@ -386,6 +390,49 @@ Item {
                 if (cells[i].dk === w.todayKey) todayCell = cells[i]
             verify(todayCell !== null, "today's cell exists in the grid")
             compare(todayCell.on, true, "today's cell is filled after a check-in")
+        }
+
+        function test_heatmap_cells_react_to_date_rollover() {
+            var w = hHabit.item
+            clearSettings(hHabit)
+            wait(0)
+            var cells = findCells(w)
+            compare(cells.length, 28, "28 heatmap cells rendered")
+
+            var initialTodayKey = w.todayKey
+            var todayCell = null
+            var yesterdayCell = null
+            for (var i = 0; i < cells.length; i++) {
+                if (w.daysAgoFor(i) === 0) todayCell = cells[i]
+                if (w.daysAgoFor(i) === 1) yesterdayCell = cells[i]
+            }
+            verify(todayCell !== null, "today cell exists in the grid")
+            verify(yesterdayCell !== null, "yesterday cell exists in the grid")
+            compare(todayCell.dk, initialTodayKey, "today cell matches initial todayKey")
+            compare(todayCell.border.width >= 2, true, "today cell carries 2px today border")
+
+            // Simulate midnight rollover by stepping todayKey forward by one day
+            var tomorrow = new Date(w.parseKey(initialTodayKey))
+            tomorrow.setDate(tomorrow.getDate() + 1)
+            var tomorrowKey = w.key(tomorrow)
+
+            w.todayKey = tomorrowKey
+            wait(0)
+
+            compare(todayCell.dk, tomorrowKey, "today cell rolls over to tomorrow's date")
+            compare(todayCell.border.width >= 2, true, "today cell carries 2px today border")
+            compare(yesterdayCell.dk, initialTodayKey, "yesterday cell holds prior day date")
+
+            // Check in on the rolled-over day: today cell must immediately show checked
+            hHabit.storeCtl.patchSettings("test-instance", { checkins: [tomorrowKey] })
+            wait(0)
+            compare(todayCell.on, true, "today cell immediately reflects check-in after rollover")
+            compare(yesterdayCell.on, false, "yesterday cell remains unchecked")
+
+            // Restore todayKey binding
+            w.todayKey = Qt.binding(function () { return (w.tick, w.key(new Date())) })
+            wait(0)
+            compare(todayCell.dk, initialTodayKey, "cells restore to current date")
         }
     }
 
