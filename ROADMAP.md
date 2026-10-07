@@ -75,6 +75,10 @@ The following features have been proposed for post-1.0 development:
 ### 5. Home Assistant / Local IoT Control Widget
 - Touchscreen control tile connecting directly to local Home Assistant instances for room temperatures, smart lighting, and energy monitoring.
 
+### 6. Daily Quote Widget Upgrade & Layout Refinement
+- Expand built-in quote library using curated public domain and open sources (Project Gutenberg, Wikiquote, Bartlett's/Hoyt's pre-1929 anthologies) with full provenance tracking.
+- Correct asymmetric quotation layout in `QuoteWidget.qml` (add missing closing quotation glyph or symmetrical typography).
+
 ---
 
 *EdgeHub is an independent open-source project.*

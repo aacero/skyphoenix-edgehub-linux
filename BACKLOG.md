@@ -12,6 +12,16 @@
   - Support triggering workspace navigation or window focus on Wayland tiling window managers directly from touch macro tiles or widgets.
   - Commands: `hyprctl dispatch workspace <N>`, `swaymsg workspace <N>`.
   - Configurable in widget actions with tactile status feedback.
+- [ ] **Daily Quote Widget Upgrade & Layout Refinement**:
+  - **Quote Library Expansion**: Ingest and categorize public-domain and permissively licensed quotations from curated sources ([Gemini Research Summary](https://share.gemini.google/eI8gCpn81C6C)):
+    - *Project Gutenberg*: Classic wit, satire, and aphorisms (Ambrose Bierce's *The Devil's Dictionary*, Oscar Wilde's epigrams/comedies, Mark Twain's maxims/speeches, François de La Rochefoucauld, Voltaire).
+    - *Wikiquote*: Attributed CC BY-SA 4.0 quotes sorted by topic (Humor, Satire, Inspiration) and author.
+    - *Pre-1929 Anthologies* (Internet Archive / Google Books): Bartlett's *Familiar Quotations* (early editions), Hoyt's *New Cyclopedia of Practical Quotations* (1922).
+    - *Machine-Readable Datasets*: BSD `fortune-mod`, Type.fit static JSON, and CC0/CC-BY datasets.
+    - Maintain strict metadata provenance (`{ t: quote, a: author, s: source, r: rights }`) ensuring author public domain status (>70–100 years post-mortem) to respect compilation copyrights.
+  - **Graphics & Layout Fix (Quotation Marks)**:
+    - Resolve unbalanced quote styling in `ui/qml/widgets/QuoteWidget.qml` where an oversized opening quote (`“`) is displayed without a corresponding closing quote (`”`).
+    - Harmonize quotation glyph geometry across size classes (`compact`, `wide`, `tall`, `full`) for balanced, symmetrical quotation presentation.
 
 ---
 
@@ -73,3 +83,11 @@
   - `Theme.qml` and `WallpaperCatalog.qml` share 5 identical names (`aurora`, `ember`, `midnight`, `nebula`, `sunset`) where only 5 of 12 wallpapers match a theme. Decide if UI copy disambiguation is needed.
 - **AUR Package Automation**:
   - Synchronize Arch Linux AUR `PKGBUILD` upon GitHub release tags.
+- **Google Tasks Sync Provider for TasksWidget**:
+  - Cloud synchronization backend for `TasksWidget.qml` against Google Tasks API v1 (`tasks.googleapis.com`).
+  - Architecture: OAuth 2.0 loopback flow / token management in Rust core (`core/src/secrets.rs`), requests routed via `NetHub.qml` with offline kill-switch support.
+  - UI: Task list selector in widget settings, bidirectional sync of completions and additions, fallback to local cache during offline/disconnected states.
+- **Obsidian / Local Markdown Vault Sync for Notes & Tasks**:
+  - Direct integration between `NotesWidget.qml` (and optionally `TasksWidget.qml`) and an Obsidian vault or local Markdown folder.
+  - Architecture: Rust `core/` file watcher using `notify` (inotify on Linux) to detect external edits in real time and atomic file writes on touch edits.
+  - Features: Target specific files (e.g., Daily Note `YYYY-MM-DD.md`, `Inbox.md`, or quick scratchpad), bidirectional touch-friendly markdown editing, and optional parsing of `- [ ]` / `- [x]` task checklists into `TasksWidget.qml`.
