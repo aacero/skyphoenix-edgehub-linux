@@ -243,5 +243,29 @@ Item {
             verify(Qt.colorEqual(icon.color, _theme.accentPresets["red"].a),
                    "the header icon is tinted with effAccent")
         }
+
+        function test_foreground_defaults_to_true() {
+            compare(chrome.foreground, true, "WidgetChrome defaults to foreground:true")
+        }
+
+        function test_backdrop_gates_on_foreground() {
+            _theme.decorative = true
+            chrome.cardBackdrop = "bokeh"
+            var backdrop = findPred(chrome, function (n) {
+                return n.objectName === "cardBackdropLayer"
+            })
+            verify(backdrop !== null, "BackdropLayer exists in WidgetChrome")
+            compare(backdrop.running, true, "backdrop is running when foreground is true")
+            compare(backdrop.visible, true, "backdrop is visible when foreground is true")
+
+            chrome.foreground = false
+            compare(backdrop.running, false, "backdrop halts running when foreground is false")
+            compare(backdrop.visible, false, "backdrop hides when foreground is false")
+
+            chrome.foreground = true
+            compare(backdrop.running, true, "backdrop resumes when foreground returns to true")
+            compare(backdrop.visible, true, "backdrop shows when foreground returns to true")
+            chrome.cardBackdrop = "none"
+        }
     }
 }

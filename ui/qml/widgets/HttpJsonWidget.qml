@@ -644,6 +644,7 @@ WidgetChrome {
                 Sparkline {
                     id: trendPlot
                     objectName: "httpTrendChart"
+                    active: w.foreground
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.minimumHeight: w.expanded ? w.chartDetailHeight : 0

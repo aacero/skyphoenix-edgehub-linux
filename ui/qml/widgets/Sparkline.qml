@@ -24,6 +24,7 @@ Item {
     property real minimumValue: 0
     property real maximumValue: 1
     property bool includeZero: true
+    property bool active: true
 
     // smooth draws a faint raw trace and an emphasized exponential trend. The
     // raw samples and their peak remain visible, so smoothing never hides a spike.
@@ -718,7 +719,7 @@ Item {
     Timer {
         objectName: "sparklinePollTimer"
         interval: 100
-        running: s.visible
+        running: s.visible && s.active
         repeat: true
         onTriggered: {
             var signature = s._paintSignature()
@@ -737,6 +738,7 @@ Item {
     function requestPaint() {
         cv.requestPaint()
     }
+    onActiveChanged: if (active) _repaint()
     onValuesChanged: _repaint()
     onComparisonValuesChanged: _repaint()
     onWidthChanged: cv.requestPaint()

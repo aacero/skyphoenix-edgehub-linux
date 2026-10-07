@@ -39,6 +39,7 @@ Item {
     //                  stands out ("none" | orbs | mesh | aurora | waves | stars | bokeh | grid).
     property string accentName: ""
     property string cardBackdrop: "none"
+    property bool foreground: true
     // Resolve the effective accent. A named preset (accentName) wins; otherwise
     // fall back to accentColor. Guard against a self-referential binding loop
     // (a widget setting `accentColor: someChrome.effAccent`), which resolves to
@@ -105,15 +106,17 @@ Item {
         // Per-widget animated backdrop, inset from the rounded corners so it never
         // pokes past them. Sits behind the glass overlays + the widget content.
         BackdropLayer {
+            objectName: "cardBackdropLayer"
             anchors.fill: parent
             anchors.margins: parent.radius
-            visible: chrome.cardBackdrop !== "none" && chrome.cardBackdrop !== "" && theme.decorative
+            visible: chrome.foreground && chrome.cardBackdrop !== "none" && chrome.cardBackdrop !== "" && theme.decorative
             style: chrome.cardBackdrop
             accent: chrome.effAccent
             opacity: theme.widgetBackdropOpacity
             // effectiveReduceMotion (not the raw persisted flag) so the OS
             // reduce-motion signal / explicit preference stops card backdrops too.
-            running: !theme.effectiveReduceMotion
+            // Also pause when the widget is not in the foreground.
+            running: chrome.foreground && !theme.effectiveReduceMotion
         }
 
         // Diagonal glass gradient. The top frosted highlight scales with the

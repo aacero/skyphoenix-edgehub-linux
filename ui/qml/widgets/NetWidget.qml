@@ -239,9 +239,10 @@ WidgetChrome {
         if (r > peakRx) peakRx = r
         if (t > peakTx) peakTx = t
         _persist()
-        spark.requestPaint()
+        if (w.foreground) spark.requestPaint()
     }
-    onEffAccentChanged: spark.requestPaint()
+    onEffAccentChanged: if (w.foreground) spark.requestPaint()
+    onForegroundChanged: if (w.foreground && componentReady) spark.requestPaint()
 
     // ── Per-size layout (sizeClass injected by Dashboard) ────────────────────
     readonly property bool horiz: sizeClass === "wide"
@@ -504,6 +505,7 @@ WidgetChrome {
             Sparkline {
                 id: spark
                 visible: w.showHistory && !w.micro
+                active: w.foreground
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 values: w.rxHistory

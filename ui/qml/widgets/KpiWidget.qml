@@ -616,6 +616,7 @@ WidgetChrome {
             Sparkline {
                 objectName: "kpiTrendChart"
                 visible: w.showSpark
+                active: w.foreground
                 Layout.fillWidth: true
                 Layout.fillHeight: w.contentSplit
                 // The trend SUPPORTS the number; it does not replace it. On

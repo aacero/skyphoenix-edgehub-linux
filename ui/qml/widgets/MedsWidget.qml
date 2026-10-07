@@ -47,7 +47,6 @@ WidgetChrome {
     property bool active: true
     property var store: null
     property string instanceId: ""
-    property bool foreground: true
     property var notificationBridge:
         (typeof notifications !== "undefined" ? notifications : null)
     property var priorityAlerts: null

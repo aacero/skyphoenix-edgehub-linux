@@ -3,9 +3,9 @@ import QtQuick.Shapes
 
 // BokehBackground - soft depth-of-field bokeh: a scattering of circular soft dots
 // (QtQuick.Shapes RadialGradient, bright centre → transparent edge) of varying
-// diameter, deterministically placed, slowly rising and wrapping, each gently
-// pulsing its opacity. GPU-rendered; no per-frame repaint. When `active` is false
-// the dots stay painted but stop rising/pulsing - matching the other backdrops.
+// diameter, deterministically placed, slowly rising and wrapping. GPU-rendered;
+// no per-frame repaint. When `active` is false the dots stay painted but stop
+// rising - matching the other backdrops.
 Item {
     id: root
     property bool active: true
@@ -14,7 +14,7 @@ Item {
     clip: true
 
     Repeater {
-        model: 14
+        model: 7
         delegate: Shape {
             id: dot
             required property int index
@@ -41,11 +41,6 @@ Item {
                 from: 0.0; to: 1.0
                 duration: 22000 + (dot.index % 5) * 9000   // slower = further away (depth)
                 easing.type: Easing.Linear
-            }
-            SequentialAnimation on opacity {
-                running: root.active; loops: Animation.Infinite
-                NumberAnimation { to: 0.4; duration: 2600 + (dot.index % 6) * 500; easing.type: Easing.InOutSine }
-                NumberAnimation { to: 1.0; duration: 3200 + (dot.index % 4) * 600; easing.type: Easing.InOutSine }
             }
 
             ShapePath {

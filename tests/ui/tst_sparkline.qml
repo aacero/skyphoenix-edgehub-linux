@@ -357,5 +357,17 @@ Item {
             sl.visible = true
             compare(t.running, true, "…and resumes when visible")
         }
+
+        function test_poll_timer_gated_on_active() {
+            var t = _pollTimer()
+            verify(t, "found the sparkline poll timer")
+            sl.visible = true
+            sl.active = true
+            compare(t.running, true, "poll timer runs when visible and active")
+            sl.active = false
+            compare(t.running, false, "poll timer halts when active is false")
+            sl.active = true
+            compare(t.running, true, "poll timer resumes when active returns to true")
+        }
     }
 }
