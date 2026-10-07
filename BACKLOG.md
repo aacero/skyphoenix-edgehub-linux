@@ -22,6 +22,15 @@
   - **Graphics & Layout Fix (Quotation Marks)**:
     - Resolve unbalanced quote styling in `ui/qml/widgets/QuoteWidget.qml` where an oversized opening quote (`“`) is displayed without a corresponding closing quote (`”`).
     - Harmonize quotation glyph geometry across size classes (`compact`, `wide`, `tall`, `full`) for balanced, symmetrical quotation presentation.
+- [ ] **Habit Streak Widget: Multi-Habit Mini-Grid & Day-Rollover Reactivity**:
+  - **Multi-Habit Heatmap Mini-Grid (`2x2` / `3x3` matrix per day)**:
+    - Allow tracking multiple habits concurrently within a single tile/card.
+    - Subdivide each calendar day's heatmap cell into a `2x2` (up to 4 habits) or `3x3` (up to 9 habits) matrix of indicator dots or glyphs.
+    - Support independent completion states, per-habit streaks, and individual or bulk check-in controls.
+    - Configurable habit definitions (names, icons, target schedules, custom accents) in Hub and Manager schemas.
+  - **Calendar Day Rollover Reactivity Fix**:
+    - **Defect**: In `ui/qml/widgets/HabitWidget.qml`, `dateForIndex(index)` evaluates `new Date()` without a reactive dependency on `todayKey` or `tick`. When the hub runs continuously across midnight, the 28 heatmap cells remain anchored to the initial startup day, so checking in on the new calendar day does not immediately highlight or check the active day cell until process restart.
+    - **Fix**: Anchor `dateForIndex` and cell `dk` to `w.todayKey` so all 28 day cells automatically advance at midnight.
 
 ---
 

@@ -79,6 +79,11 @@ The following features have been proposed for post-1.0 development:
 - Expand built-in quote library using curated public domain and open sources (Project Gutenberg, Wikiquote, Bartlett's/Hoyt's pre-1929 anthologies) with full provenance tracking.
 - Correct asymmetric quotation layout in `QuoteWidget.qml` (add missing closing quotation glyph or symmetrical typography).
 
+### 7. Multi-Habit Heatmap Grid & Day-Rollover Reactivity (`HabitWidget`)
+- Multi-habit tracking on a single tile: subdivide each day's heatmap cell into a 2x2 or 3x3 mini-grid of indicator dots to track multiple habits (e.g., meals, hydration, meditation, workout).
+- Independent streaks, multi-habit check-in interface, and Manager schema configuration.
+- Resolve heatmap midnight date-rollover reactivity so cells update without requiring an application restart.
+
 ---
 
 *EdgeHub is an independent open-source project.*
