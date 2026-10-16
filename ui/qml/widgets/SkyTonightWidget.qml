@@ -208,6 +208,13 @@ WidgetChrome {
         return (hr - 12) + " PM"
     }
 
+    function formatHourCompact(hr) {
+        if (hr === 0) return "12a"
+        if (hr < 12) return hr + "a"
+        if (hr === 12) return "12p"
+        return (hr - 12) + "p"
+    }
+
     // ── Naked-Eye Planet Ephemeris Engine (NASA JPL / Meeus) ────────────────
     readonly property var _planetsData: ({
         mercury: { a: 0.38709927, a_dot: 0.00000037, e: 0.20563593, e_dot: 0.00001906, I: 7.00497902, I_dot: -0.00594749, L: 252.25032350, L_dot: 149472.67411175, w: 77.45779628, w_dot: 0.16047689, node: 48.33076593, node_dot: -0.12534081, symbol: "☿", name: "Mercury" },
@@ -263,7 +270,36 @@ WidgetChrome {
         var eqZ = gy * Math.sin(eps) + gz * Math.cos(eps)
         var ra = Math.atan2(eqY, eqX)
         var dec = Math.atan2(eqZ, Math.sqrt(eqX * eqX + eqY * eqY))
-        return { ra: (ra * r2d + 360) % 360, dec: dec * r2d }
+        var ecLon = (Math.atan2(gy, gx) * r2d + 360) % 360
+        return { ra: (ra * r2d + 360) % 360, dec: dec * r2d, ecLon: ecLon }
+    }
+
+    function getConstellation(ecLon) {
+        var norm = ((ecLon % 360) + 360) % 360
+        var list = [
+            { name: "Pisces", symbol: "♓", start: 351.6, end: 29.8 },
+            { name: "Aries", symbol: "♈", start: 29.8, end: 53.5 },
+            { name: "Taurus", symbol: "♉", start: 53.5, end: 90.2 },
+            { name: "Gemini", symbol: "♊", start: 90.2, end: 118.1 },
+            { name: "Cancer", symbol: "♋", start: 118.1, end: 138.2 },
+            { name: "Leo", symbol: "♌", start: 138.2, end: 174.2 },
+            { name: "Virgo", symbol: "♍", start: 174.2, end: 218.0 },
+            { name: "Libra", symbol: "♎", start: 218.0, end: 241.0 },
+            { name: "Scorpius", symbol: "♏", start: 241.0, end: 247.9 },
+            { name: "Ophiuchus", symbol: "⛎", start: 247.9, end: 266.3 },
+            { name: "Sagittarius", symbol: "♐", start: 266.3, end: 299.7 },
+            { name: "Capricornus", symbol: "♑", start: 299.7, end: 327.9 },
+            { name: "Aquarius", symbol: "♒", start: 327.9, end: 351.6 }
+        ]
+        for (var k = 0; k < list.length; k++) {
+            var c = list[k]
+            if (c.start > c.end) {
+                if (norm >= c.start || norm < c.end) return c
+            } else {
+                if (norm >= c.start && norm < c.end) return c
+            }
+        }
+        return { name: "Pisces", symbol: "♓" }
     }
 
     function calculatePlanetRiseSet(planetKey, refDate, latitude, longitude) {
@@ -272,6 +308,7 @@ WidgetChrome {
         var eq = _getPlanetEquatorial(planetKey, noon)
         var d2r = Math.PI / 180
         var r2d = 180 / Math.PI
+        var cInfo = getConstellation(eq.ecLon)
 
         var ut0 = new Date(Date.UTC(noon.getUTCFullYear(), noon.getUTCMonth(), noon.getUTCDate(), 0, 0, 0))
         var dUT0 = (ut0.getTime() / 86400000 + 2440587.5) - 2451545.0
@@ -282,8 +319,8 @@ WidgetChrome {
         var h0 = -0.566 * d2r
 
         var cosH0 = (Math.sin(h0) - Math.sin(latR) * Math.sin(decR)) / (Math.cos(latR) * Math.cos(decR))
-        if (cosH0 > 1) return { key: planetKey, name: _planetsData[planetKey].name, symbol: _planetsData[planetKey].symbol, rise: null, set: null, status: "Below horizon" }
-        if (cosH0 < -1) return { key: planetKey, name: _planetsData[planetKey].name, symbol: _planetsData[planetKey].symbol, rise: null, set: null, status: "Circumpolar" }
+        if (cosH0 > 1) return { key: planetKey, name: _planetsData[planetKey].name, symbol: _planetsData[planetKey].symbol, rise: null, set: null, status: "Below horizon", constellation: cInfo.name, constellationSymbol: cInfo.symbol }
+        if (cosH0 < -1) return { key: planetKey, name: _planetsData[planetKey].name, symbol: _planetsData[planetKey].symbol, rise: null, set: null, status: "Circumpolar", constellation: cInfo.name, constellationSymbol: cInfo.symbol }
 
         var H0 = Math.acos(cosH0) * r2d
         var m0 = ((eq.ra - longitude - theta0) % 360 + 360) % 360 / 360
@@ -312,7 +349,9 @@ WidgetChrome {
             symbol: _planetsData[planetKey].symbol,
             rise: riseDate,
             set: setDate,
-            status: stat
+            status: stat,
+            constellation: cInfo.name,
+            constellationSymbol: cInfo.symbol
         }
     }
 
@@ -411,15 +450,75 @@ WidgetChrome {
             var targetEve = eveDate.getFullYear() + "-" + _p2(eveDate.getMonth() + 1) + "-" + _p2(eveDate.getDate())
             var targetMorn = mornDate.getFullYear() + "-" + _p2(mornDate.getMonth() + 1) + "-" + _p2(mornDate.getDate())
 
+            // If payload contains dates different from current date (e.g. simulated or cached test payloads), anchor to payload
+            var hasTargetEve = false
+            for (var p = 0; p < t.length; p++) {
+                if (t[p].slice(0, 10) === targetEve) { hasTargetEve = true; break }
+            }
+            if (!hasTargetEve && t.length > 0) {
+                var firstDateStr = t[0].slice(0, 10)
+                var pParts = firstDateStr.split("-")
+                if (pParts.length === 3) {
+                    eveDate = new Date(parseInt(pParts[0], 10), parseInt(pParts[1], 10) - 1, parseInt(pParts[2], 10), 12, 0, 0)
+                    mornDate = new Date(eveDate.getTime() + 24 * 3600000)
+                    targetEve = firstDateStr
+                    targetMorn = mornDate.getFullYear() + "-" + _p2(mornDate.getMonth() + 1) + "-" + _p2(mornDate.getDate())
+                }
+            }
+
+            // Determine timezone offset for the location:
+            // 1. From API payload (utc_offset_seconds)
+            // 2. Or from system timezone offset
+            // 3. Or estimated from longitude for UTC test environments
+            var tzOffsetMs = 0
+            if (j && j.utc_offset_seconds !== undefined) {
+                tzOffsetMs = j.utc_offset_seconds * 1000
+            } else if (new Date().getTimezoneOffset() !== 0) {
+                tzOffsetMs = -new Date().getTimezoneOffset() * 60 * 1000
+            } else if (w.lon !== 0) {
+                var approxHours = w.lon / 15
+                var mth = eveDate.getMonth() + 1
+                var isDst = (mth >= 4 && mth <= 10)
+                var offHrs = isDst ? Math.round(approxHours) + 1 : Math.round(approxHours)
+                tzOffsetMs = Math.max(-12, Math.min(14, offHrs)) * 3600 * 1000
+            }
+
+            // Determine post-sunset to pre-sunrise hour window
+            var sun = (w.locationConfigured) ? w.calculateSunEvents(eveDate, w.lat, w.lon) : w.sunEvents
+            var startHr = 19
+            var endHr = 6
+            if (sun && sun.sunset && sun.sunrise) {
+                var localSunset = new Date(sun.sunset.getTime() + tzOffsetMs)
+                var localSunrise = new Date(sun.sunrise.getTime() + tzOffsetMs)
+                startHr = localSunset.getUTCHours() + (localSunset.getUTCMinutes() >= 30 ? 1 : 0)
+                endHr = localSunrise.getUTCHours() - (localSunrise.getUTCMinutes() <= 30 ? 1 : 0)
+                if (startHr < 17) startHr = 17
+                if (startHr > 22) startHr = 21
+                if (endHr < 4) endHr = 4
+                if (endHr > 8) endHr = 7
+            }
+
             var win = []
             for (var k = 0; k < t.length; k++) {
                 var itemDate = t[k].slice(0, 10)
                 var hr = parseInt(t[k].slice(11, 13), 10)
-                if ((itemDate === targetEve && hr >= 20) || (itemDate === targetMorn && hr <= 2)) {
+                if ((itemDate === targetEve && hr >= startHr) || (itemDate === targetMorn && hr <= endHr)) {
+                    var localEpochMs = Date.UTC(
+                        (hr >= 12 ? eveDate.getFullYear() : mornDate.getFullYear()),
+                        (hr >= 12 ? eveDate.getMonth() : mornDate.getMonth()),
+                        (hr >= 12 ? eveDate.getDate() : mornDate.getDate()),
+                        hr, 0, 0
+                    )
+                    var utcItemMs = localEpochMs - tzOffsetMs
+                    var isDarkSky = (sun && sun.astroDusk && sun.astroDawn)
+                        ? (utcItemMs >= sun.astroDusk.getTime() && utcItemMs <= sun.astroDawn.getTime())
+                        : false
                     win.push({
                         hr: hr,
                         cloud: c[k],
-                        label: formatHour(hr)
+                        label: formatHour(hr),
+                        labelCompact: formatHourCompact(hr),
+                        isDarkSky: isDarkSky
                     })
                 }
             }
@@ -435,11 +534,28 @@ WidgetChrome {
                 for (var k2 = 0; k2 < t.length; k2++) {
                     var d2 = t[k2].slice(0, 10)
                     var hr2 = parseInt(t[k2].slice(11, 13), 10)
-                    if ((d2 === today && hr2 >= 20) || (d2 === tomorrow && hr2 <= 2)) {
+                    if ((d2 === today && hr2 >= startHr) || (d2 === tomorrow && hr2 <= endHr)) {
                         win.push({
                             hr: hr2,
                             cloud: c[k2],
-                            label: formatHour(hr2)
+                            label: formatHour(hr2),
+                            labelCompact: formatHourCompact(hr2),
+                            isDarkSky: false
+                        })
+                    }
+                }
+            }
+
+            if (!win.length) {
+                for (var k3 = 0; k3 < t.length; k3++) {
+                    var hr3 = parseInt(t[k3].slice(11, 13), 10)
+                    if (hr3 >= 18 || hr3 <= 6) {
+                        win.push({
+                            hr: hr3,
+                            cloud: c[k3],
+                            label: formatHour(hr3),
+                            labelCompact: formatHourCompact(hr3),
+                            isDarkSky: false
                         })
                     }
                 }
@@ -849,7 +965,13 @@ WidgetChrome {
                         spacing: theme.spacingSm
 
                         Text {
-                            text: w.width > 680 ? "🔭 OBSERVING WINDOW (8 PM – 2 AM)" : "🔭 OBSERVING WINDOW"
+                            text: {
+                                if (chartCard.width <= 480) return "🔭 OBSERVING"
+                                if (w.hourlyWindow && w.hourlyWindow.length >= 2) {
+                                    return "🔭 OBSERVING WINDOW (" + w.hourlyWindow[0].label + " – " + w.hourlyWindow[w.hourlyWindow.length - 1].label + ")"
+                                }
+                                return "🔭 OBSERVING WINDOW"
+                            }
                             font.pixelSize: theme.fontMinimum
                             font.bold: true
                             color: theme.textSecondary
@@ -921,7 +1043,7 @@ WidgetChrome {
                     RowLayout {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        spacing: 6
+                        spacing: (chartCard.width < 600) ? 3 : 5
 
                         Repeater {
                             model: w.hourlyWindow
@@ -929,10 +1051,10 @@ WidgetChrome {
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 Layout.fillHeight: true
-                                spacing: 3
+                                spacing: 2
 
                                 Text {
-                                    text: modelData.cloud <= 5 ? "Clear" : (modelData.cloud + "%")
+                                    text: modelData.cloud <= 5 ? ((chartCard.width >= 560) ? "Clear" : "0%") : (modelData.cloud + "%")
                                     font.pixelSize: theme.fontMinimum
                                     font.bold: (w.bestWindow && modelData.hr === w.bestWindow.hr)
                                     color: (modelData.cloud <= 20)
@@ -950,23 +1072,25 @@ WidgetChrome {
                                         anchors.fill: parent
                                         anchors.leftMargin: Math.max(0, (parent.width - barWidth) / 2)
                                         anchors.rightMargin: Math.max(0, (parent.width - barWidth) / 2)
-                                        readonly property real barWidth: Math.max(12, Math.min(parent.width * 0.55, 32))
+                                        readonly property real barWidth: Math.max(8, Math.min(parent.width * 0.65, 24))
                                         radius: 4
-                                        color: Qt.rgba(1, 1, 1, 0.06)
+                                        color: modelData.isDarkSky
+                                            ? Qt.rgba(w.accentColor.r, w.accentColor.g, w.accentColor.b, 0.08)
+                                            : Qt.rgba(1, 1, 1, 0.05)
                                         border.color: (w.bestWindow && modelData.hr === w.bestWindow.hr)
-                                            ? Qt.rgba(w.accentColor.r, w.accentColor.g, w.accentColor.b, 0.3)
-                                            : "transparent"
+                                            ? Qt.rgba(w.accentColor.r, w.accentColor.g, w.accentColor.b, 0.45)
+                                            : (modelData.isDarkSky ? Qt.rgba(w.accentColor.r, w.accentColor.g, w.accentColor.b, 0.18) : "transparent")
                                         border.width: 1
                                     }
 
                                     // Observing Clarity bar: 100% height when clear (0% cloud)
                                     Rectangle {
-                                        readonly property real barWidth: Math.max(12, Math.min(parent.width * 0.55, 32))
+                                        readonly property real barWidth: Math.max(8, Math.min(parent.width * 0.65, 24))
                                         readonly property int clarity: Math.max(0, 100 - modelData.cloud)
                                         anchors.bottom: parent.bottom
                                         anchors.horizontalCenter: parent.horizontalCenter
                                         width: barWidth
-                                        height: Math.max(8, parent.height * (clarity / 100))
+                                        height: Math.max(6, parent.height * (clarity / 100))
                                         radius: 4
                                         color: {
                                             if (clarity >= 80) {
@@ -983,7 +1107,7 @@ WidgetChrome {
                                 }
 
                                 Text {
-                                    text: modelData.label
+                                    text: (chartCard.width < 540) ? (modelData.labelCompact || modelData.label) : modelData.label
                                     font.pixelSize: theme.fontMinimum
                                     font.bold: (w.bestWindow && modelData.hr === w.bestWindow.hr)
                                     color: (w.bestWindow && modelData.hr === w.bestWindow.hr) ? theme.textPrimary : theme.textSecondary
@@ -1117,7 +1241,7 @@ WidgetChrome {
                                     // Planet symbol & Name
                                     RowLayout {
                                         spacing: 8
-                                        Layout.preferredWidth: 110
+                                        Layout.preferredWidth: (planetsCard.width < 580) ? 90 : 110
 
                                         Text {
                                             text: modelData.symbol
@@ -1132,6 +1256,26 @@ WidgetChrome {
                                             font.bold: true
                                             font.pixelSize: theme.fontLabel
                                             color: theme.textPrimary
+                                        }
+                                    }
+
+                                    // Constellation pill badge
+                                    Rectangle {
+                                        radius: 4
+                                        color: Qt.rgba(theme.catServices.r, theme.catServices.g, theme.catServices.b, 0.12)
+                                        border.color: Qt.rgba(theme.catServices.r, theme.catServices.g, theme.catServices.b, 0.28)
+                                        border.width: 1
+                                        implicitHeight: 22
+                                        implicitWidth: constelTxt.implicitWidth + 14
+                                        visible: modelData.constellation !== undefined && String(modelData.constellation).length > 0
+
+                                        Text {
+                                            id: constelTxt
+                                            anchors.centerIn: parent
+                                            text: modelData.constellation || ""
+                                            font.pixelSize: theme.fontMinimum
+                                            font.bold: true
+                                            color: theme.catServices
                                         }
                                     }
 
@@ -1226,7 +1370,7 @@ WidgetChrome {
                                 spacing: 1
 
                                 RowLayout {
-                                    spacing: 2
+                                    spacing: 3
                                     Text {
                                         text: modelData.symbol
                                         font.bold: true
@@ -1238,6 +1382,13 @@ WidgetChrome {
                                         font.bold: true
                                         font.pixelSize: theme.fontCaption
                                         color: theme.textPrimary
+                                        elide: Text.ElideRight
+                                    }
+                                    Text {
+                                        visible: modelData.constellation !== undefined && String(modelData.constellation).length > 0
+                                        text: "· " + modelData.constellation
+                                        font.pixelSize: theme.fontMinimum
+                                        color: theme.catServices
                                         elide: Text.ElideRight
                                     }
                                 }

@@ -20,9 +20,9 @@ All network queries are gated through the Hub's safe [`NetHub`](../architecture/
   - **Nautical Dusk** (solar altitude $-12.0^\circ$)
   - 🌌 **Astronomical Dusk / Dark Sky Window** (solar altitude $-18.0^\circ$)
   - 🌅 **Sunrise** (solar altitude $-0.833^\circ$)
-- **Hourly Observing Window Chart**: A mini bar chart visualizing cloud percentage hour-by-hour across the key observing window (8 PM, 9 PM, 10 PM, 11 PM, 12 AM, 1 AM, 2 AM), highlighting the clearest hour.
+- **Hourly Observing Window Chart**: A bar chart visualizing cloud percentage hour-by-hour across all dark hours (spanning post-sunset through pre-sunrise, typically 10–13 hours), highlighting active astronomical darkness and the clearest hour.
 - **Moon Phase & Illumination**: Computes exact geocentric lunar age in days, illuminated percentage, and phase glyph locally on-device via the Meeus algorithm.
-- **Naked-Eye Planets (Rise & Set)**: Computes local rise and set times and viewing conditions for all 5 classical naked-eye planets (Mercury ☿, Venus ♀, Mars ♂, Jupiter ♃, Saturn ♄) offline. Identifies whether each planet is an evening object, morning object, or visible all night.
+- **Naked-Eye Planets (Rise, Set & Constellations)**: Computes local rise and set times, viewing conditions, and host constellation positions (e.g. Pisces, Leo, Virgo, Libra) for all 5 classical naked-eye planets (Mercury ☿, Venus ♀, Mars ♂, Jupiter ♃, Saturn ♄) completely offline. Identifies whether each planet is an evening object, morning object, or visible all night.
 - **Location Inheritance & Geocoding**:
   - Automatically inherits coordinates and city name from any configured `Weather` or `Moon` widget on your dashboard.
   - Built-in city search / geocoding via Open-Meteo.

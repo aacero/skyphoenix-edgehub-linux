@@ -161,6 +161,8 @@ Item {
                 compare(p.symbol, expectedSymbols[i], "planet symbol matches: " + p.symbol)
                 verify(p.name.length > 0, "planet has name: " + p.name)
                 verify(p.status.length > 0, "planet has visibility status: " + p.status)
+                verify(p.constellation && p.constellation.length > 0, "planet has constellation: " + p.constellation)
+                verify(p.constellationSymbol && p.constellationSymbol.length > 0, "planet has constellation symbol: " + p.constellationSymbol)
                 if (p.rise) {
                     verify(p.rise instanceof Date, "rise is Date object")
                     verify(!isNaN(p.rise.getTime()), "rise Date is valid")
@@ -170,6 +172,10 @@ Item {
                     verify(!isNaN(p.set.getTime()), "set Date is valid")
                 }
             }
+
+            // Saturn in Pisces in late 2026
+            compare(planets[4].constellation, "Pisces", "Saturn is in Pisces")
+            compare(planets[4].constellationSymbol, "♓", "Saturn constellation glyph is ♓")
         }
     }
 
@@ -190,6 +196,7 @@ Item {
         function test_parse_cloud_payload() {
             var w = h.item
             var mockPayload = JSON.stringify({
+                utc_offset_seconds: -14400,
                 hourly: {
                     time: [
                         "2026-09-26T18:00",
@@ -209,10 +216,10 @@ Item {
 
             w._applyCloudData(mockPayload)
             compare(w.cloudLoaded, true, "cloud data marked loaded")
-            compare(w.hourlyWindow.length, 7, "window collects 7 evening hours (20:00 - 02:00)")
+            compare(w.hourlyWindow.length, 9, "window collects dark hours from post-sunset 19:00 through 03:00")
 
-            // Average of [10, 5, 0, 15, 20, 25, 10] = 85 / 7 = 12%
-            compare(w.avgCloud, 12, "computes correct average cloud cover")
+            // Average of [30, 10, 5, 0, 15, 20, 25, 10, 50] = 165 / 9 = 18%
+            compare(w.avgCloud, 18, "computes correct average cloud cover")
             verify(w.bestWindow !== null, "bestWindow identified")
             compare(w.bestWindow.hr, 22, "10 PM (22:00) is clearest hour")
             compare(w.bestWindow.cloud, 0, "clearest hour cloud is 0%")
@@ -247,6 +254,7 @@ Item {
         function test_cloud_freshness_and_observing_labels() {
             var w = h.item
             var mockPayload = JSON.stringify({
+                utc_offset_seconds: -14400,
                 hourly: {
                     time: [
                         "2026-09-27T18:00",
@@ -266,6 +274,42 @@ Item {
             verify(w.lastSuccessMs > 0, "lastSuccessMs populated")
             verify(w.lastSuccessStr.length > 0, "lastSuccessStr populated: " + w.lastSuccessStr)
             verify(w.observingDateLabel.length > 0, "observingDateLabel populated: " + w.observingDateLabel)
+        }
+
+        function test_all_dark_hours_window() {
+            var w = h.item
+            var times = []
+            var clouds = []
+            // Simulate 24-hour cycle covering evening into morning
+            for (var hr = 12; hr <= 23; hr++) {
+                times.push("2026-09-26T" + (hr < 10 ? "0" : "") + hr + ":00")
+                clouds.push(hr === 22 ? 0 : 15)
+            }
+            for (var hr2 = 0; hr2 <= 12; hr2++) {
+                times.push("2026-09-27T" + (hr2 < 10 ? "0" : "") + hr2 + ":00")
+                clouds.push(20)
+            }
+            var fullPayload = JSON.stringify({
+                utc_offset_seconds: -14400,
+                hourly: { time: times, cloud_cover: clouds }
+            })
+            w._applyCloudData(fullPayload)
+            verify(w.hourlyWindow.length >= 10, "window spans all dark hours (at least 10 hours): " + w.hourlyWindow.length)
+
+            var first = w.hourlyWindow[0]
+            verify(first.hr === 19 || first.hr === 20, "first observing hour is post-sunset: " + first.hr)
+            verify(first.labelCompact && first.labelCompact.length > 0, "has compact label")
+
+            var last = w.hourlyWindow[w.hourlyWindow.length - 1]
+            verify(last.hr >= 5 && last.hr <= 7, "last observing hour is pre-sunrise: " + last.hr)
+
+            // Check that midnight hours have isDarkSky true
+            var midnightItem = null
+            for (var i = 0; i < w.hourlyWindow.length; i++) {
+                if (w.hourlyWindow[i].hr === 0) midnightItem = w.hourlyWindow[i]
+            }
+            verify(midnightItem !== null, "midnight hour is in observing window")
+            verify(midnightItem.isDarkSky, "midnight hour is classified as astronomical dark sky")
         }
     }
 
