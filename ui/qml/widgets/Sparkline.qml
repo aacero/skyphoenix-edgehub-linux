@@ -276,6 +276,16 @@ Item {
         _statistics(_previousComparison), _statistics(_renderComparison),
         transitionProgress)
 
+    // Discrete target domain and statistics for static text labels (axes and summary).
+    // Decoupling text from transitionProgress prevents QQuickText and QSGDistanceFieldGlyphCache
+    // from re-rasterizing intermediate floating-point numbers on every frame (60 FPS) during transitions.
+    readonly property real targetMinimum: _targetDomain && _targetDomain.min !== undefined
+        ? Number(_targetDomain.min) : s.domain.min
+    readonly property real targetMaximum: _targetDomain && _targetDomain.max !== undefined
+        ? Number(_targetDomain.max) : s.domain.max
+    readonly property var targetPrimaryStats: _statistics(_renderPrimary) || s.primaryStats
+    readonly property var targetComparisonStats: _statistics(_renderComparison) || s.comparisonStats
+
     function _interpolate(first, second, progress) {
         return first + (second - first) * progress
     }
@@ -381,7 +391,7 @@ Item {
 
         Text {
             width: parent.width - theme.spacingXs
-            text: s._formatValue(s.displayMaximum)
+            text: s._formatValue(s.targetMaximum)
             color: theme.textPrimary
             font.pixelSize: s.axisFontPixelSize
             font.family: theme.fontMono
@@ -391,7 +401,7 @@ Item {
         Item { width: 1; height: Math.max(0, (yAxis.height - 3 * s.axisFontPixelSize) / 2) }
         Text {
             width: parent.width - theme.spacingXs
-            text: s._formatValue((s.displayMinimum + s.displayMaximum) / 2)
+            text: s._formatValue((s.targetMinimum + s.targetMaximum) / 2)
             color: theme.textTertiary
             font.pixelSize: s.axisFontPixelSize
             font.family: theme.fontMono
@@ -401,7 +411,7 @@ Item {
         Item { width: 1; height: Math.max(0, (yAxis.height - 3 * s.axisFontPixelSize) / 2) }
         Text {
             width: parent.width - theme.spacingXs
-            text: s._formatValue(s.displayMinimum)
+            text: s._formatValue(s.targetMinimum)
             color: theme.textPrimary
             font.pixelSize: s.axisFontPixelSize
             font.family: theme.fontMono
@@ -424,10 +434,10 @@ Item {
             objectName: "sparklinePrimaryStatistics"
             width: parent.width
             text: (s.statisticsLabel.length ? s.statisticsLabel + "  " : "")
-                  + "avg " + (s.displayPrimaryStats
-                               ? s._formatValue(s.displayPrimaryStats.average) : "-")
-                  + "   peak " + (s.displayPrimaryStats
-                                   ? s._formatValue(s.displayPrimaryStats.max) : "-")
+                  + "avg " + (s.targetPrimaryStats
+                               ? s._formatValue(s.targetPrimaryStats.average) : "-")
+                  + "   peak " + (s.targetPrimaryStats
+                                   ? s._formatValue(s.targetPrimaryStats.max) : "-")
             color: s.color
             font.pixelSize: s.axisFontPixelSize
             font.family: theme.fontMono
@@ -438,10 +448,10 @@ Item {
             visible: s.comparisonStats !== null
             width: parent.width
             text: (s.comparisonLabel.length ? s.comparisonLabel + "  " : "")
-                  + "avg " + (s.displayComparisonStats
-                              ? s._formatValue(s.displayComparisonStats.average) : "-")
-                  + "   peak " + (s.displayComparisonStats
-                                  ? s._formatValue(s.displayComparisonStats.max) : "-")
+                  + "avg " + (s.targetComparisonStats
+                              ? s._formatValue(s.targetComparisonStats.average) : "-")
+                  + "   peak " + (s.targetComparisonStats
+                                   ? s._formatValue(s.targetComparisonStats.max) : "-")
             color: s.comparisonColor
             font.pixelSize: s.axisFontPixelSize
             font.family: theme.fontMono

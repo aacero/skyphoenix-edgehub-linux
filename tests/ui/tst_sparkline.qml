@@ -158,6 +158,20 @@ Item {
             compare(sl.displayPrimaryStats.max, 60)
         }
 
+        function test_text_labels_use_target_domain_to_prevent_glyph_churn() {
+            sl._previousDomain = ({ min: 0, max: 100 })
+            sl._targetDomain = ({ min: 20, max: 200 })
+            sl._previousPrimary = [0, 20, 40]
+            sl._renderPrimary = [20, 40, 80]
+            sl.transitionProgress = 0.5
+            // Text labels must hold discrete target values, not intermediate interpolated values,
+            // preventing 60 FPS distance-field glyph re-rasterization and memory accumulation.
+            compare(sl.targetMinimum, 20)
+            compare(sl.targetMaximum, 200)
+            compare(sl.targetPrimaryStats.average, 140 / 3)
+            compare(sl.targetPrimaryStats.max, 80)
+        }
+
         function test_bar_baseline_transitions_with_the_display_domain() {
             sl.chartStyle = "bars"
             sl._previousDomain = ({ min: -100, max: 100 })

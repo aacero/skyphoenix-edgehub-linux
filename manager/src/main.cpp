@@ -27,6 +27,9 @@
 #include "manager_backend.h"
 #include "manager_display_policy.h"
 #include <cstdio>
+#if defined(__GLIBC__)
+#include <malloc.h>
+#endif
 #include "../../app/src/single_instance.h"
 #include "../../app/src/timezone_bridge.h"
 #include "../../app/src/distro_bridge.h"
@@ -178,8 +181,22 @@ int main(int argc, char* argv[]) {
     if (usingManagerXwayland)
         qputenv("QT_QPA_PLATFORM", "xcb");
 
+#if defined(__GLIBC__)
+    mallopt(M_ARENA_MAX, 2);
+    mallopt(M_TRIM_THRESHOLD, 128 * 1024);
+#endif
+
     xeneon_logging_init("info");
     QGuiApplication app(argc, argv);
+
+#if defined(__GLIBC__)
+    auto* memoryTrimTimer = new QTimer(&app);
+    memoryTrimTimer->setInterval(120000);
+    QObject::connect(memoryTrimTimer, &QTimer::timeout, []() {
+        malloc_trim(0);
+    });
+    memoryTrimTimer->start();
+#endif
     if (usingManagerXwayland)
         qInfo() << "Manager: using XWayland for deterministic non-Edge placement";
     app.setApplicationName("Xeneon Edge Manager");

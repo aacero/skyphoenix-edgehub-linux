@@ -24,6 +24,9 @@
 #include <QDBusPendingReply>
 
 #include <cstdio>
+#if defined(__GLIBC__)
+#include <malloc.h>
+#endif
 
 #include "single_instance.h"
 #include "timezone_bridge.h"
@@ -345,6 +348,16 @@ int main(int argc, char *argv[]) {
     // gated by NetHub), so it does not weaken the no-telemetry guarantee.
     qputenv("QML_XHR_ALLOW_FILE_READ", "1");
 
+#if defined(__GLIBC__)
+    // Bound glibc thread arenas to prevent unbounded secondary thread arena proliferation.
+    // By default, glibc allocates up to 8 * cores arenas (96 on a 12-core system, 64 MB each),
+    // which leads to multi-gigabyte virtual address and dirty-page explosion under graphics
+    // driver and background worker threads.
+    mallopt(M_ARENA_MAX, 2);
+    // Lower trim threshold so glibc yields freed chunks back to the OS via madvise/brk.
+    mallopt(M_TRIM_THRESHOLD, 128 * 1024);
+#endif
+
     // Initialize Rust core logging FIRST
     xeneon_logging_init("info");
 
@@ -352,6 +365,18 @@ int main(int argc, char *argv[]) {
     qInstallMessageHandler(qtLogBridge);
 
     QGuiApplication app(argc, argv);
+
+#if defined(__GLIBC__)
+    // Low-frequency periodic allocator trim (every 2 minutes) to ensure that temporary
+    // memory from image decoding, QML re-layouts, and driver buffers is promptly
+    // released to the OS rather than remaining retained in glibc heap freelists.
+    auto* memoryTrimTimer = new QTimer(&app);
+    memoryTrimTimer->setInterval(120000);
+    QObject::connect(memoryTrimTimer, &QTimer::timeout, []() {
+        malloc_trim(0);
+    });
+    memoryTrimTimer->start();
+#endif
     app.setApplicationName("Xeneon Edge Linux Hub");
     // XENEON_VERSION, not a literal: the generated build header carries the
     // git-describe string (or the explicit packaging override). This used to be a
