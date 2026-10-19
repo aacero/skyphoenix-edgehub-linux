@@ -390,6 +390,35 @@ WidgetChrome {
     property var _fxhr: null
     property int _fseq: 0
 
+    // Temperature, dew point, frost, and wind metrics
+    property string _tempUnitOverride: ""
+    readonly property string tempUnit: {
+        if (_tempUnitOverride.length > 0) return _tempUnitOverride
+        var u = cfg.tempUnit || cfg.units || "F"
+        if (String(u).toLowerCase() === "celsius" || String(u).toUpperCase() === "C") return "C"
+        return "F"
+    }
+
+    function toggleTempUnit() {
+        var next = (tempUnit === "C") ? "F" : "C"
+        _tempUnitOverride = next
+        if (store && instanceId) {
+            store.setSetting(instanceId, "tempUnit", next)
+        }
+    }
+    property real currentTempC: 0
+    property real currentTempF: 0
+    property real minTempC: 0
+    property real minTempF: 0
+    property real feelsLikeC: 0
+    property real feelsLikeF: 0
+    property real dewPointC: 0
+    property real dewPointF: 0
+    property string dewRisk: "low"
+    property string dewRiskLabel: "Low"
+    property int windSpeedMph: 0
+    property int windSpeedKmh: 0
+
     readonly property string verdict: {
         if (!locationConfigured) return "Location required"
         if (!cloudLoaded) return errorText.length ? errorText : "Forecasting tonight…"
@@ -433,9 +462,58 @@ WidgetChrome {
                 return
             }
             var t = j.hourly.time, c = j.hourly.cloud_cover
+            var temps = j.hourly.temperature_2m || []
+            var feels = j.hourly.apparent_temperature || []
+            var dewPoints = j.hourly.dew_point_2m || []
+            var winds = j.hourly.wind_speed_10m || []
             if (!t || !c || !t.length) {
                 w.errorText = "Invalid data"
                 return
+            }
+
+            function _buildHourItem(idx, hour, isDark) {
+                var tempC = (temps && temps.length > idx && temps[idx] !== undefined && temps[idx] !== null) ? temps[idx] : 0
+                var tempF = Math.round(tempC * 9 / 5 + 32)
+                var feelC = (feels && feels.length > idx && feels[idx] !== undefined && feels[idx] !== null) ? feels[idx] : tempC
+                var feelF = Math.round(feelC * 9 / 5 + 32)
+                var dewC = (dewPoints && dewPoints.length > idx && dewPoints[idx] !== undefined && dewPoints[idx] !== null) ? dewPoints[idx] : tempC
+                var dewF = Math.round(dewC * 9 / 5 + 32)
+                var windKmh = (winds && winds.length > idx && winds[idx] !== undefined && winds[idx] !== null) ? Math.round(winds[idx]) : 0
+                var windMph = Math.round(windKmh * 0.621371)
+
+                var dep = tempC - dewC
+                var dRisk = "low"
+                var dRiskLabel = "Dry"
+                if (dep <= 1.5) {
+                    if (tempC <= 0) {
+                        dRisk = "frost"
+                        dRiskLabel = "Frost Risk"
+                    } else {
+                        dRisk = "high"
+                        dRiskLabel = "High Dew"
+                    }
+                } else if (dep <= 3.0) {
+                    dRisk = "moderate"
+                    dRiskLabel = "Mod Dew"
+                }
+
+                return {
+                    hr: hour,
+                    cloud: c[idx],
+                    tempC: Math.round(tempC),
+                    tempF: tempF,
+                    feelC: Math.round(feelC),
+                    feelF: feelF,
+                    dewC: Math.round(dewC),
+                    dewF: dewF,
+                    windMph: windMph,
+                    windKmh: windKmh,
+                    dewRisk: dRisk,
+                    dewRiskLabel: dRiskLabel,
+                    label: formatHour(hour),
+                    labelCompact: formatHourCompact(hour),
+                    isDarkSky: !!isDark
+                }
             }
 
             // Reference evening date based on currentDate()
@@ -513,13 +591,7 @@ WidgetChrome {
                     var isDarkSky = (sun && sun.astroDusk && sun.astroDawn)
                         ? (utcItemMs >= sun.astroDusk.getTime() && utcItemMs <= sun.astroDawn.getTime())
                         : false
-                    win.push({
-                        hr: hr,
-                        cloud: c[k],
-                        label: formatHour(hr),
-                        labelCompact: formatHourCompact(hr),
-                        isDarkSky: isDarkSky
-                    })
+                    win.push(_buildHourItem(k, hr, isDarkSky))
                 }
             }
 
@@ -535,13 +607,7 @@ WidgetChrome {
                     var d2 = t[k2].slice(0, 10)
                     var hr2 = parseInt(t[k2].slice(11, 13), 10)
                     if ((d2 === today && hr2 >= startHr) || (d2 === tomorrow && hr2 <= endHr)) {
-                        win.push({
-                            hr: hr2,
-                            cloud: c[k2],
-                            label: formatHour(hr2),
-                            labelCompact: formatHourCompact(hr2),
-                            isDarkSky: false
-                        })
+                        win.push(_buildHourItem(k2, hr2, false))
                     }
                 }
             }
@@ -550,13 +616,7 @@ WidgetChrome {
                 for (var k3 = 0; k3 < t.length; k3++) {
                     var hr3 = parseInt(t[k3].slice(11, 13), 10)
                     if (hr3 >= 18 || hr3 <= 6) {
-                        win.push({
-                            hr: hr3,
-                            cloud: c[k3],
-                            label: formatHour(hr3),
-                            labelCompact: formatHourCompact(hr3),
-                            isDarkSky: false
-                        })
+                        win.push(_buildHourItem(k3, hr3, false))
                     }
                 }
             }
@@ -568,12 +628,39 @@ WidgetChrome {
             w.hourlyWindow = win
             var sum = 0
             var best = win[0]
+            var minC = win[0].tempC
+            var overallDew = "low"
+            var overallDewLabel = "Dry Optics"
+
             for (var m = 0; m < win.length; m++) {
                 sum += win[m].cloud
                 if (win[m].cloud < best.cloud) best = win[m]
+                if (win[m].tempC < minC) minC = win[m].tempC
+                if (win[m].dewRisk === "frost") {
+                    overallDew = "frost"
+                    overallDewLabel = "Frost Alert"
+                } else if (win[m].dewRisk === "high" && overallDew !== "frost") {
+                    overallDew = "high"
+                    overallDewLabel = "High Dew Risk"
+                } else if (win[m].dewRisk === "moderate" && overallDew === "low") {
+                    overallDew = "moderate"
+                    overallDewLabel = "Moderate Dew"
+                }
             }
             w.avgCloud = Math.round(sum / win.length)
             w.bestWindow = best
+            w.currentTempC = win[0].tempC
+            w.currentTempF = win[0].tempF
+            w.minTempC = minC
+            w.minTempF = Math.round(minC * 9 / 5 + 32)
+            w.feelsLikeC = win[0].feelC
+            w.feelsLikeF = win[0].feelF
+            w.dewPointC = win[0].dewC
+            w.dewPointF = win[0].dewF
+            w.windSpeedMph = win[0].windMph
+            w.windSpeedKmh = win[0].windKmh
+            w.dewRisk = overallDew
+            w.dewRiskLabel = overallDewLabel
             w.cloudLoaded = true
             w.errorText = ""
             w.lastSuccessMs = Date.now()
@@ -599,7 +686,7 @@ WidgetChrome {
             return
         }
         var url = "https://api.open-meteo.com/v1/forecast?latitude=" + w.lat + "&longitude=" + w.lon
-                + "&hourly=cloud_cover&timezone=auto&forecast_days=2&past_days=1"
+                + "&hourly=cloud_cover,temperature_2m,apparent_temperature,dew_point_2m,wind_speed_10m&timezone=auto&forecast_days=2&past_days=1"
         if (w._fxhr) { try { w._fxhr.abort() } catch (e) {} }
         w._fxhr = null
         w.loading = true
@@ -828,7 +915,7 @@ WidgetChrome {
                         }
 
                         RowLayout {
-                            spacing: theme.spacingSm
+                            spacing: 6
                             visible: w.cloudLoaded
 
                             Rectangle {
@@ -845,8 +932,73 @@ WidgetChrome {
                                 }
                             }
 
+                            Rectangle {
+                                id: tempBadge
+                                visible: w.cloudLoaded && (w.currentTempC !== 0 || w.minTempC !== 0 || w.currentTempF !== 0)
+                                Layout.preferredHeight: 18
+                                Layout.preferredWidth: tempContentRow.implicitWidth + 10
+                                radius: 4
+                                color: tempBadgeHover.containsMouse ? theme.cardBackgroundHover : Qt.rgba(theme.textSecondary.r, theme.textSecondary.g, theme.textSecondary.b, 0.15)
+                                border.color: tempBadgeHover.containsMouse ? theme.cardBorder : "transparent"
+                                border.width: 1
+
+                                RowLayout {
+                                    id: tempContentRow
+                                    anchors.centerIn: parent
+                                    spacing: 4
+
+                                    Text {
+                                        id: tempText
+                                        text: (w.tempUnit === "C")
+                                            ? (w.currentTempC + "°C (Low " + w.minTempC + "°C)")
+                                            : (w.currentTempF + "°F (Low " + w.minTempF + "°F)")
+                                        font.pixelSize: theme.fontMinimum
+                                        color: tempBadgeHover.containsMouse ? theme.textPrimary : theme.textSecondary
+                                    }
+
+                                    Text {
+                                        text: "⇄"
+                                        font.pixelSize: theme.fontMinimum - 1
+                                        color: tempBadgeHover.containsMouse ? w.accentColor : theme.textTertiary
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: tempBadgeHover
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: w.toggleTempUnit()
+                                }
+                            }
+
+                            Rectangle {
+                                id: dewBadge
+                                visible: w.cloudLoaded && (w.dewRisk === "high" || w.dewRisk === "frost" || (w.dewRisk === "moderate" && heroCard.width >= 560))
+                                Layout.preferredHeight: 18
+                                Layout.preferredWidth: dewBadgeTxt.implicitWidth + 8
+                                radius: 4
+                                color: (w.dewRisk === "frost") ? Qt.rgba(0, 210, 255, 0.18)
+                                     : (w.dewRisk === "high") ? Qt.rgba(255, 152, 0, 0.18)
+                                     : Qt.rgba(121, 184, 255, 0.15)
+                                border.color: (w.dewRisk === "frost") ? "#00D2FF"
+                                            : (w.dewRisk === "high") ? "#FF9800"
+                                            : "#79B8FF"
+                                border.width: 1
+                                Text {
+                                    id: dewBadgeTxt
+                                    anchors.centerIn: parent
+                                    text: (w.dewRisk === "frost" ? "❄ " : "💧 ") + w.dewRiskLabel
+                                    font.pixelSize: theme.fontMinimum
+                                    font.bold: true
+                                    color: (w.dewRisk === "frost") ? "#00D2FF"
+                                         : (w.dewRisk === "high") ? "#FF9800"
+                                         : "#79B8FF"
+                                }
+                            }
+
                             Text {
-                                visible: w.bestWindow !== null
+                                visible: w.bestWindow !== null && heroCard.width >= 420
                                 text: w.bestWindow ? ((heroCard.width < 620) ? (w.bestWindow.label + " (" + w.bestWindow.cloud + "%)") : ("Clearest at " + w.bestWindow.label + " (" + w.bestWindow.cloud + "%)")) : ""
                                 font.pixelSize: theme.fontMinimum
                                 color: w.verdictAccent
@@ -992,6 +1144,29 @@ WidgetChrome {
                             color: w.loading ? w.accentColor : theme.textTertiary
                         }
                         Rectangle {
+                            id: cardUnitToggleBtn
+                            width: 32; height: 28
+                            radius: 14
+                            color: cardUnitHover.containsMouse ? theme.cardBackgroundHover : Qt.rgba(255, 255, 255, 0.06)
+                            border.color: theme.cardBorder; border.width: 1
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: (w.tempUnit === "C") ? "°C" : "°F"
+                                font.pixelSize: Math.max(theme.fontMinimum, 12)
+                                font.bold: true
+                                color: cardUnitHover.containsMouse ? theme.textPrimary : w.accentColor
+                            }
+                            MouseArea {
+                                id: cardUnitHover
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: w.toggleTempUnit()
+                            }
+                        }
+
+                        Rectangle {
                             id: cardRefreshBtn
                             width: 28; height: 28
                             radius: 14
@@ -1111,6 +1286,15 @@ WidgetChrome {
                                     font.pixelSize: theme.fontMinimum
                                     font.bold: (w.bestWindow && modelData.hr === w.bestWindow.hr)
                                     color: (w.bestWindow && modelData.hr === w.bestWindow.hr) ? theme.textPrimary : theme.textSecondary
+                                    Layout.alignment: Qt.AlignHCenter
+                                }
+
+                                Text {
+                                    visible: modelData.tempF !== undefined
+                                    text: (w.tempUnit === "C") ? (modelData.tempC + "°") : (modelData.tempF + "°")
+                                    font.pixelSize: theme.fontMinimum
+                                    color: (modelData.dewRisk === "frost") ? "#00D2FF"
+                                         : (modelData.dewRisk === "high" ? "#FF9800" : theme.textTertiary)
                                     Layout.alignment: Qt.AlignHCenter
                                 }
                             }
@@ -1444,7 +1628,7 @@ WidgetChrome {
                     sourceComponent: chartCardComp
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    Layout.minimumHeight: 120
+                    Layout.minimumHeight: 130
                 }
             }
 
@@ -1511,8 +1695,8 @@ WidgetChrome {
                 visible: w.showHourlyBar && w.hourlyWindow.length > 0 && w.roomy && w.width >= 360
                 sourceComponent: chartCardComp
                 Layout.fillWidth: true
-                Layout.preferredHeight: 110
-                Layout.maximumHeight: 140
+                Layout.preferredHeight: 124
+                Layout.maximumHeight: 155
             }
 
             Loader {

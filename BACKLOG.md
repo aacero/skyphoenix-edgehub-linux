@@ -30,8 +30,11 @@
     - Configurable habit definitions (names, icons, target schedules, custom accents) in Hub and Manager schemas.
   - **Calendar Day Rollover Reactivity Fix**:
     - **Defect**: In `ui/qml/widgets/HabitWidget.qml`, `dateForIndex(index)` evaluates `new Date()` without a reactive dependency on `todayKey` or `tick`. When the hub runs continuously across midnight, the 28 heatmap cells remain anchored to the initial startup day, so checking in on the new calendar day does not immediately highlight or check the active day cell until process restart.
-    - **Fix**: Anchor `dateForIndex` and cell `dk` to `w.todayKey` so all 28 day cells automatically advance at midnight.
-
+- [x] **The Sky Tonight: Ambient Temperature, Overnight Low, Optics Dew & Frost Telemetry**:
+  - Open-Meteo telemetry query expanded to ingest `temperature_2m`, `apparent_temperature`, `dew_point_2m`, and `wind_speed_10m`.
+  - Stargazer Optics Protection: Real-time dew depression ($\Delta T = T_{\text{ambient}} - T_{\text{dew}}$) computation flagging High Dew Risk ($\Delta T \le 1.5^\circ\text{C}$) and Frost Alerts ($T \le 0^\circ\text{C}, \Delta T \le 1.5^\circ\text{C}$).
+  - UI telemetry: Start-of-window temperature pill with overnight low (`45°F (Low 38°F)`), color-coded dew/frost badges in Hero card, and hourly temperature track under each hour bar.
+  - Schema & Configuration: Configurable `tempUnit` (`°F` / `°C`) in `WidgetConfigSchema.qml`.
 ---
 
 ## Completed in v1.1.1

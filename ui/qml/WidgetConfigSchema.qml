@@ -501,6 +501,10 @@ QtObject {
                 { key: "lon", label: "Longitude", type: "number", min: -180, max: 180, step: 0.01, dflt: 0,
                   visibleWhen: { key: "locationMode", equals: "manual", dflt: "search" } } ] },
             { title: "Display", cols: 1, fields: [
+                { key: "tempUnit", label: "Temperature unit", type: "segmented", dflt: "F", options: [
+                    { value: "F", label: "Fahrenheit (°F)" },
+                    { value: "C", label: "Celsius (°C)" } ],
+                  help: "Unit used for ambient temperature, overnight lows, and dew point warnings." },
                 { key: "showTwilights", label: "Show twilight & dark-sky timeline", type: "toggle", dflt: true,
                   help: "Displays sunset, dusk, and astronomical twilight dark-sky window." },
                 { key: "showClouds", label: "Show cloud cover forecast", type: "toggle", dflt: true,

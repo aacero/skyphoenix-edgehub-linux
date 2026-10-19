@@ -76,6 +76,7 @@ Item {
             verify(fieldKeys.indexOf("place") >= 0, "place field exists")
             verify(fieldKeys.indexOf("lat") >= 0, "lat field exists")
             verify(fieldKeys.indexOf("lon") >= 0, "lon field exists")
+            verify(fieldKeys.indexOf("tempUnit") >= 0, "tempUnit field exists")
             verify(fieldKeys.indexOf("showTwilights") >= 0, "showTwilights toggle exists")
             verify(fieldKeys.indexOf("showClouds") >= 0, "showClouds toggle exists")
             verify(fieldKeys.indexOf("showHourlyBar") >= 0, "showHourlyBar toggle exists")
@@ -249,6 +250,100 @@ Item {
             w.avgCloud = 95; w.cloudLoaded = true
             compare(w.verdict, "Overcast — skywatching unlikely")
             compare(w.verdictEmoji, "☁️")
+        }
+
+        function test_temperature_dew_and_frost_telemetry() {
+            var w = h.item
+            var mockPayload = JSON.stringify({
+                utc_offset_seconds: -14400,
+                hourly: {
+                    time: [
+                        "2026-09-26T18:00",
+                        "2026-09-26T19:00",
+                        "2026-09-26T20:00",
+                        "2026-09-26T21:00",
+                        "2026-09-26T22:00",
+                        "2026-09-26T23:00",
+                        "2026-09-27T00:00",
+                        "2026-09-27T01:00",
+                        "2026-09-27T02:00",
+                        "2026-09-27T03:00"
+                    ],
+                    cloud_cover: [40, 30, 10, 5, 0, 15, 20, 25, 10, 50],
+                    temperature_2m: [22.0, 20.0, 18.0, 16.0, 15.0, 14.0, 13.0, 12.0, 11.0, 10.0],
+                    apparent_temperature: [22.0, 20.0, 17.5, 15.5, 14.5, 13.5, 12.5, 11.5, 10.5, 9.5],
+                    dew_point_2m: [16.0, 15.0, 14.0, 14.8, 14.5, 13.5, 12.5, 11.5, 10.5, 9.5],
+                    wind_speed_10m: [10.0, 12.0, 14.0, 8.0, 6.0, 5.0, 7.0, 9.0, 6.0, 8.0]
+                }
+            })
+
+            w._applyCloudData(mockPayload)
+            compare(w.cloudLoaded, true)
+
+            // First hour in window (19:00) has temp 20°C -> 68°F
+            compare(w.currentTempC, 20)
+            compare(w.currentTempF, 68)
+
+            // Minimum temp in window is 10°C (at 03:00) -> 50°F
+            compare(w.minTempC, 10)
+            compare(w.minTempF, 50)
+
+            // Wind at 19:00 is 12 km/h -> ~7 mph
+            compare(w.windSpeedKmh, 12)
+            compare(w.windSpeedMph, 7)
+
+            // At 21:00 (k=3), temp=16.0, dew=14.8 -> depression=1.2 <= 1.5 -> High Dew Risk!
+            compare(w.dewRisk, "high")
+            compare(w.dewRiskLabel, "High Dew Risk")
+
+            // Check hourly item contains temperature and dew risk
+            verify(w.hourlyWindow.length > 0)
+            var hour21 = null
+            for (var i = 0; i < w.hourlyWindow.length; i++) {
+                if (w.hourlyWindow[i].hr === 21) hour21 = w.hourlyWindow[i]
+            }
+            verify(hour21 !== null, "hour 21 found in window")
+            compare(hour21.tempC, 16)
+            compare(hour21.tempF, 61)
+            compare(hour21.dewRisk, "high")
+            compare(hour21.dewRiskLabel, "High Dew")
+
+            // Test frost risk escalation when temp <= 0°C and depression <= 1.5°C
+            var frostPayload = JSON.stringify({
+                utc_offset_seconds: -14400,
+                hourly: {
+                    time: [
+                        "2026-09-26T19:00",
+                        "2026-09-26T20:00"
+                    ],
+                    cloud_cover: [0, 0],
+                    temperature_2m: [-2.0, -4.0],
+                    apparent_temperature: [-5.0, -7.0],
+                    dew_point_2m: [-2.5, -4.8],
+                    wind_speed_10m: [5.0, 6.0]
+                }
+            })
+            w._applyCloudData(frostPayload)
+            compare(w.currentTempC, -2)
+            compare(w.currentTempF, 28) // -2 * 9/5 + 32 = 28.4 -> 28
+            compare(w.minTempC, -4)
+            compare(w.minTempF, 25) // -4 * 9/5 + 32 = 24.8 -> 25
+            compare(w.dewRisk, "frost")
+            compare(w.dewRiskLabel, "Frost Alert")
+
+            // Test tempUnit preference and interactive toggle
+            compare(w.tempUnit, "F")
+            h.storeCtl.setSetting("test-instance", "tempUnit", "C")
+            compare(w.tempUnit, "C")
+            h.storeCtl.setSetting("test-instance", "tempUnit", "F")
+            compare(w.tempUnit, "F")
+
+            w.toggleTempUnit()
+            compare(w.tempUnit, "C")
+            compare(h.storeCtl.settingsFor("test-instance").tempUnit, "C")
+            w.toggleTempUnit()
+            compare(w.tempUnit, "F")
+            compare(h.storeCtl.settingsFor("test-instance").tempUnit, "F")
         }
 
         function test_cloud_freshness_and_observing_labels() {
