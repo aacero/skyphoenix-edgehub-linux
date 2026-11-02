@@ -42,12 +42,14 @@ fn to_c_string<S: Into<Vec<u8>>>(s: S) -> *mut c_char {
 
 #[no_mangle]
 pub extern "C" fn xeneon_logging_init(level: *const c_char) {
-    let level_str = if level.is_null() {
-        "info"
-    } else {
-        unsafe { CStr::from_ptr(level) }.to_str().unwrap_or("info")
-    };
-    logging::init_logging(level_str);
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let level_str = if level.is_null() {
+            "info"
+        } else {
+            unsafe { CStr::from_ptr(level) }.to_str().unwrap_or("info")
+        };
+        logging::init_logging(level_str);
+    }));
 }
 
 /// Log a message from C/C++ at the given level.
@@ -59,26 +61,26 @@ pub extern "C" fn xeneon_logging_log(
     line: i32,
     message: *const c_char,
 ) {
-    let msg = if message.is_null() {
-        ""
-    } else {
-        unsafe { CStr::from_ptr(message) }.to_str().unwrap_or("")
-    };
-    let file_str = if file.is_null() {
-        "unknown"
-    } else {
-        unsafe { CStr::from_ptr(file) }
-            .to_str()
-            .unwrap_or("unknown")
-    };
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let msg = if message.is_null() {
+            std::borrow::Cow::Borrowed("")
+        } else {
+            unsafe { CStr::from_ptr(message) }.to_string_lossy()
+        };
+        let file_str = if file.is_null() {
+            std::borrow::Cow::Borrowed("unknown")
+        } else {
+            unsafe { CStr::from_ptr(file) }.to_string_lossy()
+        };
 
-    match level {
-        0 => tracing::error!(file = file_str, line = line, "{}", msg),
-        1 => tracing::warn!(file = file_str, line = line, "{}", msg),
-        2 => tracing::info!(file = file_str, line = line, "{}", msg),
-        3 => tracing::debug!(file = file_str, line = line, "{}", msg),
-        _ => tracing::trace!(file = file_str, line = line, "{}", msg),
-    }
+        match level {
+            0 => tracing::error!(file = file_str.as_ref(), line = line, "{}", msg),
+            1 => tracing::warn!(file = file_str.as_ref(), line = line, "{}", msg),
+            2 => tracing::info!(file = file_str.as_ref(), line = line, "{}", msg),
+            3 => tracing::debug!(file = file_str.as_ref(), line = line, "{}", msg),
+            _ => tracing::trace!(file = file_str.as_ref(), line = line, "{}", msg),
+        }
+    }));
 }
 
 // --- Config ---
@@ -2464,6 +2466,15 @@ mod tests {
         }
         // Out-of-range level falls into the trace arm; null file/message tolerated.
         xeneon_logging_log(99, std::ptr::null(), 0, std::ptr::null());
+
+        // Non-UTF8 byte sequences tolerated losslessly without panic or unwind.
+        let invalid_utf8 = b"invalid \xff\xfe utf8\0";
+        xeneon_logging_log(
+            1,
+            invalid_utf8.as_ptr() as *const c_char,
+            100,
+            invalid_utf8.as_ptr() as *const c_char,
+        );
     }
 
     // --- Config: target edid/connector/model setter↔getter round-trips ---

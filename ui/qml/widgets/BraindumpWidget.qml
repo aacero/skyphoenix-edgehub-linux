@@ -634,7 +634,7 @@ WidgetChrome {
                     id: captureViewport
                     objectName: "braindumpCaptureViewport"
                     Layout.fillWidth: true
-                    Layout.minimumWidth: theme.fontMinimum * 3
+                    Layout.minimumWidth: Math.max(theme.fontMinimum * 3, 100)
                     Layout.fillHeight: true
                     Layout.minimumHeight: theme.touchSecondary
                     Layout.maximumHeight: w.expanded ? 112 : 80
@@ -647,10 +647,9 @@ WidgetChrome {
                     TextArea {
                         id: input
                         objectName: "braindumpCaptureField"
-                        implicitWidth: 100
                         width: captureViewport.availableWidth
-                        height: Math.max(captureViewport.availableHeight,
-                                         contentHeight + topPadding + bottomPadding)
+                        implicitHeight: contentHeight + topPadding + bottomPadding
+                        height: Math.max(captureViewport.availableHeight, implicitHeight)
                         placeholderText: w.expanded || w.horiz
                                          ? "What's on your mind?" : "Dump..."
                         wrapMode: TextArea.Wrap
