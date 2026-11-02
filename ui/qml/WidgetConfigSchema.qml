@@ -646,8 +646,23 @@ QtObject {
 
         case "habit": return { sections: [
             { title: "Habit", cols: 1, fields: [
+                { key: "multiHabit", label: "Multi-habit tracking (2×2 grid)", type: "toggle", dflt: false,
+                  help: "Track up to 4 habits concurrently in each day's heatmap cell." },
                 { key: "name", label: "Habit name", type: "text", placeholder: "Meditate", dflt: "",
+                  visibleWhen: { key: "multiHabit", equals: false },
                   help: "What you're building a streak for." },
+                { key: "habit1Name", label: "Habit 1 (Blue · Top-Left)", type: "text", placeholder: "Water (64oz)", dflt: "",
+                  visibleWhen: { key: "multiHabit", equals: true },
+                  help: "Top-left quadrant of each day cell." },
+                { key: "habit2Name", label: "Habit 2 (Green · Top-Right)", type: "text", placeholder: "Workout", dflt: "",
+                  visibleWhen: { key: "multiHabit", equals: true },
+                  help: "Top-right quadrant of each day cell." },
+                { key: "habit3Name", label: "Habit 3 (Purple · Bottom-Left)", type: "text", placeholder: "Reading", dflt: "",
+                  visibleWhen: { key: "multiHabit", equals: true },
+                  help: "Bottom-left quadrant of each day cell." },
+                { key: "habit4Name", label: "Habit 4 (Orange · Bottom-Right)", type: "text", placeholder: "Meditate", dflt: "",
+                  visibleWhen: { key: "multiHabit", equals: true },
+                  help: "Bottom-right quadrant of each day cell." },
                 { key: "cadence", label: "Schedule", type: "segmented", dflt: "daily", options: [
                     { value: "daily", label: "Daily" }, { value: "weekdays", label: "Weekdays" },
                     { value: "weekends", label: "Weekends" }, { value: "custom", label: "Custom" } ] },
@@ -658,7 +673,7 @@ QtObject {
                 { key: "showStreak", label: "Show streak and personal best", type: "toggle", dflt: true },
                 { key: "celebrate", label: "Celebrate check-ins", type: "toggle", dflt: true } ] },
             titleSection("Habit"),
-            about("Track a daily, weekday, weekend or custom schedule. Pause without deleting history, or hide streaks for a low-pressure check-in.") ] }
+            about("Track a daily, weekday, weekend or custom schedule. Multi-habit mode divides each day into a 2×2 mini-grid tracking up to 4 habits concurrently with a color legend and touch sheet.") ] }
 
         // The three E5 wellness widgets deliberately expose a SMALL surface. The
         // best-supported finding in the neurodivergent-UI literature is "make it

@@ -61,6 +61,194 @@ WidgetChrome {
     readonly property bool paused: cfg.paused === true
     readonly property bool showStreak: cfg.showStreak !== undefined ? cfg.showStreak : true
     readonly property bool celebrate: cfg.celebrate !== undefined ? cfg.celebrate : true
+
+    // Multi-habit tracking (2×2 mini-grid per day)
+    readonly property bool multiHabit: cfg.multiHabit === true || (Array.isArray(cfg.habits) && cfg.habits.length > 0)
+    property bool sheetOpen: false
+
+    readonly property var habitPalette: [
+        theme.catSystem,         // Blue #58A6FF
+        theme.catInfo,           // Green #3FB950
+        theme.catProductivity,   // Purple #A371F7
+        theme.catGaming          // Orange #F0883E
+    ]
+
+    function defaultHabitName(i) {
+        if (i === 0) return cfg.name ? cfg.name : "Water (64oz)"
+        if (i === 1) return "Workout"
+        if (i === 2) return "Reading"
+        return "Meditate"
+    }
+
+    function isHabitScheduled(h, d) {
+        if (!h) return true
+        var day = d.getDay()
+        var cad = h.cadence || "daily"
+        if (cad === "weekdays") return day >= 1 && day <= 5
+        if (cad === "weekends") return day === 0 || day === 6
+        if (cad === "custom") {
+            var days = (h.activeDays || "1,2,3,4,5").split(",").map(function (v) {
+                return Number(String(v).trim())
+            })
+            return days.indexOf(day) >= 0
+        }
+        return true
+    }
+
+    function prevScheduledDayForHabit(d, h) {
+        var n = prevDay(d)
+        for (var i = 0; i < 7 && !isHabitScheduled(h, n); i++) n = prevDay(n)
+        return n
+    }
+
+    readonly property var activeHabits: {
+        w.tick
+        var _rev = store ? store.revision : 0
+        var raw = cfg.habits
+        var list = []
+        if (Array.isArray(raw) && raw.length > 0) {
+            for (var i = 0; i < Math.min(4, raw.length); i++) {
+                var item = raw[i]
+                list.push({
+                    id: item.id || ("h" + (i + 1)),
+                    name: item.name || defaultHabitName(i),
+                    color: item.color || habitPalette[i % habitPalette.length],
+                    cadence: item.cadence || "daily",
+                    activeDays: item.activeDays || "1,2,3,4,5",
+                    checkins: Array.isArray(item.checkins) ? item.checkins : [],
+                    streak: (typeof item.streak === "number") ? item.streak : 0,
+                    lastCheckinDay: item.lastCheckinDay || "",
+                    bestStreak: (typeof item.bestStreak === "number") ? item.bestStreak : 0
+                })
+            }
+        } else {
+            var customNames = [cfg.habit1Name, cfg.habit2Name, cfg.habit3Name, cfg.habit4Name]
+            for (var j = 0; j < 4; j++) {
+                var cName = customNames[j]
+                list.push({
+                    id: "h" + (j + 1),
+                    name: cName || defaultHabitName(j),
+                    color: habitPalette[j % habitPalette.length],
+                    cadence: j === 0 ? (cfg.cadence || "daily") : "daily",
+                    activeDays: j === 0 ? (cfg.activeDays || "1,2,3,4,5") : "1,2,3,4,5",
+                    checkins: j === 0 && Array.isArray(cfg.checkins) ? cfg.checkins : [],
+                    streak: j === 0 && (typeof cfg.streak === "number") ? cfg.streak : 0,
+                    lastCheckinDay: j === 0 && cfg.lastCheckinDay ? cfg.lastCheckinDay : "",
+                    bestStreak: j === 0 && (typeof cfg.bestStreak === "number") ? cfg.bestStreak : 0
+                })
+            }
+        }
+        return list
+    }
+
+    readonly property int todayScheduledCount: {
+        w.tick
+        var d = parseKey(w.todayKey)
+        var count = 0
+        for (var i = 0; i < activeHabits.length; i++) {
+            if (isHabitScheduled(activeHabits[i], d)) count++
+        }
+        return count
+    }
+
+    readonly property int todayDoneCount: {
+        w.tick
+        var d = parseKey(w.todayKey)
+        var count = 0
+        for (var i = 0; i < activeHabits.length; i++) {
+            var h = activeHabits[i]
+            if (isHabitScheduled(h, d) && h.checkins.indexOf(w.todayKey) >= 0) count++
+        }
+        return count
+    }
+
+    readonly property int topHabitStreak: {
+        w.tick
+        var top = 0
+        for (var i = 0; i < activeHabits.length; i++) {
+            if (activeHabits[i].streak > top) top = activeHabits[i].streak
+        }
+        return top
+    }
+
+    readonly property int activeStreaksCount: {
+        w.tick
+        var c = 0
+        for (var i = 0; i < activeHabits.length; i++) {
+            if (activeHabits[i].streak > 0) c++
+        }
+        return c
+    }
+
+    function toggleHabit(index) {
+        if (!store || paused) return
+        var list = JSON.parse(JSON.stringify(w.activeHabits))
+        if (index < 0 || index >= list.length) return
+        var h = list[index]
+        var a = Array.isArray(h.checkins) ? h.checkins.slice() : []
+        var i = a.indexOf(todayKey)
+        var checking = i < 0
+        var prevBest = h.bestStreak || 0
+        var ns = h.streak || 0
+        var newLast = h.lastCheckinDay || ""
+        var newBest = prevBest
+        var todayDate = parseKey(todayKey)
+
+        if (checking) {
+            a.push(todayKey)
+            if (newLast === todayKey) {
+                // idempotent
+            } else if (newLast === key(prevScheduledDayForHabit(todayDate, h))) {
+                ns = ns + 1
+            } else {
+                ns = 1
+            }
+            newLast = todayKey
+            newBest = Math.max(prevBest, ns)
+            a.sort()
+            if (a.length > heatmapDays) a = a.slice(a.length - heatmapDays)
+            h.checkins = a
+            h.streak = ns
+            h.lastCheckinDay = newLast
+            h.bestStreak = newBest
+        } else {
+            a.splice(i, 1)
+            a.sort()
+            if (a.length > heatmapDays) a = a.slice(a.length - heatmapDays)
+            if (newLast === todayKey) {
+                ns = Math.max(0, ns - 1)
+                newLast = ns > 0 ? key(prevScheduledDayForHabit(todayDate, h)) : ""
+            }
+            h.checkins = a
+            h.streak = ns
+            h.lastCheckinDay = newLast
+        }
+
+        list[index] = h
+        var patch = { habits: list }
+        if (index === 0) {
+            patch.checkins = h.checkins
+            patch.streak = h.streak
+            patch.lastCheckinDay = h.lastCheckinDay
+            patch.bestStreak = h.bestStreak
+        }
+        store.patchSettings(instanceId, patch)
+
+        if (checking && celebrate) {
+            var allDone = true
+            for (var k = 0; k < list.length; k++) {
+                if (isHabitScheduled(list[k], todayDate) && list[k].checkins.indexOf(todayKey) < 0) {
+                    allDone = false
+                    break
+                }
+            }
+            if (allDone) {
+                celebrateNow("All habits complete today! 🎉")
+            } else {
+                celebrateNow(h.name + " complete! " + ns + (ns === 1 ? " day" : " days"))
+            }
+        }
+    }
     function key(d) { return Qt.formatDate(d, "yyyy-MM-dd") }
     // DST-safe previous-calendar-day step (S6): anchor at local noon and use
     // setDate() so a fixed-24h jump can never skip/duplicate a date across a
@@ -140,7 +328,9 @@ WidgetChrome {
     // room: `status` is chrome-header content, and the overlay hosts this widget
     // with showHeader false and a header of its own. It is not a size.
     status: w.expanded ? "" : (w.paused ? "Paused"
-        : (!w.scheduledToday ? "Rest day" : (w.doneToday ? "Checked in" : "Ready")))
+        : (w.multiHabit
+           ? (w.todayDoneCount === w.todayScheduledCount && w.todayScheduledCount > 0 ? "All done" : w.todayDoneCount + "/" + w.todayScheduledCount + " done")
+           : (!w.scheduledToday ? "Rest day" : (w.doneToday ? "Checked in" : "Ready"))))
 
     // ── Per-size layout (sizeClass injected by Dashboard) ────────────────────
     readonly property bool horiz: sizeClass === "wide"
@@ -474,19 +664,48 @@ WidgetChrome {
                         radius: Math.max(2, Math.round(w.heatCell) * 0.17)
                         property date dayDate: w.dateForIndex(index)
                         property string dk: w.key(dayDate)
-                        property bool on: w.checkins.indexOf(dk) >= 0
-                        property bool isScheduled: w.scheduled(dayDate)
-                        property string stateLabel: on ? "completed"
-                            : (isScheduled ? "scheduled, not completed" : "rest day")
-                        color: on ? w.effAccent : theme.cardBorder
-                        opacity: on ? 1 : (isScheduled ? 0.58 : 0.28)
+                        property int completedCount: {
+                            if (!w.multiHabit) return on ? 1 : 0
+                            var c = 0
+                            for (var hIdx = 0; hIdx < w.activeHabits.length; hIdx++) {
+                                if (w.activeHabits[hIdx].checkins && w.activeHabits[hIdx].checkins.indexOf(dk) >= 0) c++
+                            }
+                            return c
+                        }
+                        property int scheduledCount: {
+                            if (!w.multiHabit) return isScheduled ? 1 : 0
+                            var sc = 0
+                            for (var sIdx = 0; sIdx < w.activeHabits.length; sIdx++) {
+                                if (w.isHabitScheduled(w.activeHabits[sIdx], dayDate)) sc++
+                            }
+                            return sc
+                        }
+                        property bool on: w.multiHabit
+                            ? (completedCount > 0)
+                            : (w.checkins.indexOf(dk) >= 0)
+                        property bool isScheduled: w.multiHabit
+                            ? (scheduledCount > 0)
+                            : w.scheduled(dayDate)
+                        property string stateLabel: w.multiHabit
+                            ? (completedCount + " of " + scheduledCount + " completed")
+                            : (on ? "completed"
+                               : (isScheduled ? "scheduled, not completed" : "rest day"))
+                        color: w.multiHabit
+                            ? (on ? theme.cardBackgroundAlt : theme.cardBorder)
+                            : (on ? w.effAccent : theme.cardBorder)
+                        opacity: w.multiHabit
+                            ? (on ? 1.0 : (isScheduled ? 0.70 : 0.35))
+                            : (on ? 1 : (isScheduled ? 0.58 : 0.28))
                         border.width: dk === w.todayKey ? 2 : 1
                         border.color: dk === w.todayKey ? theme.textPrimary : theme.cardBorder
                         Accessible.role: Accessible.StaticText
                         Accessible.name: Qt.formatDate(dayDate, "dddd d MMMM")
                                          + ", " + stateLabel
+
+                        // Single habit state mark (hidden in multi-habit mode)
                         Text {
                             objectName: "habitDayMark-" + index
+                            visible: !w.multiHabit
                             anchors.centerIn: parent
                             text: parent.on ? "✓" : (parent.isScheduled ? "○" : "−")
                             color: parent.on ? theme.backgroundColor : theme.textSecondary
@@ -494,12 +713,51 @@ WidgetChrome {
                                                      Math.round(parent.width * 0.54))
                             font.bold: parent.on
                         }
+
+                        // 2x2 Mini-Grid for Multi-Habit mode
+                        GridLayout {
+                            id: subgrid
+                            objectName: "habitDaySubgrid-" + index
+                            visible: w.multiHabit
+                            anchors.fill: parent
+                            anchors.margins: Math.max(1, Math.round(parent.width * 0.08))
+                            columns: 2
+                            rows: 2
+                            rowSpacing: Math.max(1, Math.round(parent.width * 0.06))
+                            columnSpacing: Math.max(1, Math.round(parent.width * 0.06))
+
+                            Repeater {
+                                model: 4
+                                delegate: Rectangle {
+                                    required property int index
+                                    objectName: "habitSubcell-" + parent.parent.index + "-" + index
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    radius: Math.max(1, Math.round(width * 0.22))
+                                    property var hab: (w.activeHabits && index < w.activeHabits.length) ? w.activeHabits[index] : null
+                                    property bool subOn: hab && hab.checkins && hab.checkins.indexOf(parent.parent.dk) >= 0
+                                    property bool subSched: hab ? w.isHabitScheduled(hab, parent.parent.dayDate) : true
+                                    color: subOn ? (hab ? hab.color : theme.catSystem) : (subSched ? theme.cardBorder : "transparent")
+                                    opacity: subOn ? 1.0 : (subSched ? 0.40 : 0.15)
+                                    border.width: subOn ? 0 : (subSched ? 1 : 0)
+                                    border.color: subSched ? Qt.rgba(1, 1, 1, 0.12) : "transparent"
+                                }
+                            }
+                        }
+
+                        // Tap today cell in multi-habit mode to open sheet
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: w.multiHabit && parent.dk === w.todayKey
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: w.sheetOpen = true
+                        }
                     }
                 }
             }
             Text {
                 objectName: "habitHeatmapLegend"
-                visible: !w.tightHeatmap
+                visible: !w.tightHeatmap && !w.multiHabit
                 Layout.alignment: Qt.AlignHCenter
                 text: w.compactCopy
                       ? "✓ Done   ○ Due   − Rest"
@@ -507,6 +765,37 @@ WidgetChrome {
                 color: theme.textPrimary
                 opacity: 0.82
                 font.pixelSize: Math.max(theme.fontMinimum, 18)
+            }
+
+            GridLayout {
+                id: multiLegend
+                objectName: "habitMultiLegend"
+                visible: !w.tightHeatmap && w.multiHabit
+                Layout.alignment: Qt.AlignHCenter
+                columns: w.horiz ? 4 : 2
+                rowSpacing: 4
+                columnSpacing: theme.spacingMd
+
+                Repeater {
+                    model: w.activeHabits
+                    delegate: RowLayout {
+                        spacing: 6
+                        Rectangle {
+                            Layout.preferredWidth: 8
+                            Layout.preferredHeight: 8
+                            radius: 2
+                            color: modelData.color || theme.catSystem
+                        }
+                        Text {
+                            text: modelData.name + (w.roomy && modelData.streak > 0 ? " (" + modelData.streak + "d)" : "")
+                            color: theme.textPrimary
+                            opacity: 0.88
+                            font.pixelSize: Math.round(Math.max(theme.fontMinimum, 13))
+                            elide: Text.ElideRight
+                            Layout.maximumWidth: w.horiz ? 120 : 100
+                        }
+                    }
+                }
             }
         }
 
@@ -539,12 +828,13 @@ WidgetChrome {
                 objectName: "habitStreakValue"
                 visible: w.showStreak
                 Layout.alignment: Qt.AlignHCenter; Layout.fillWidth: true
-                text: w.micro ? w.streak + "d"
-                              : w.streak + (w.streak === 1 ? " day" : " days")
+                text: w.multiHabit
+                      ? (w.topHabitStreak + "d streak")
+                      : (w.micro ? w.streak + "d" : w.streak + (w.streak === 1 ? " day" : " days"))
                 font.pixelSize: Math.round(w.streakPx); font.bold: true; color: w.effAccent
                 horizontalAlignment: Text.AlignHCenter; elide: Text.ElideRight
                 Accessible.role: Accessible.StaticText
-                Accessible.name: w.streak + (w.streak === 1 ? " day" : " days")
+                Accessible.name: w.multiHabit ? text : (w.streak + (w.streak === 1 ? " day" : " days"))
             }
             // Best streak - a record to beat. Shown wherever the ROOM earns it
             // (see showBest), which is what lets 1x1.5 carry something the
@@ -614,15 +904,18 @@ WidgetChrome {
                 objectName: "habitTodayFeedback"
                 visible: !w.micro && !w.compressedTall
                 Layout.fillWidth: true
-                text: (w.compactCopy || w.shallowWide)
-                      ? w.todayFeedbackShort : w.todayFeedback
-                color: w.doneToday ? w.effAccent : theme.textSecondary
+                text: w.multiHabit
+                      ? (w.todayDoneCount === w.todayScheduledCount && w.todayScheduledCount > 0
+                         ? "All 4 habits done today!"
+                         : w.todayDoneCount + " of " + w.todayScheduledCount + " habits completed today")
+                      : ((w.compactCopy || w.shallowWide) ? w.todayFeedbackShort : w.todayFeedback)
+                color: (w.multiHabit ? w.todayDoneCount > 0 : w.doneToday) ? w.effAccent : theme.textSecondary
                 font.pixelSize: Math.max(theme.fontMinimum, 18)
-                font.bold: w.doneToday
+                font.bold: w.multiHabit ? (w.todayDoneCount === w.todayScheduledCount) : w.doneToday
                 horizontalAlignment: Text.AlignHCenter
                 elide: Text.ElideRight
                 Accessible.role: Accessible.StaticText
-                Accessible.name: w.todayFeedback
+                Accessible.name: text
             }
             // Check in from every size - a PillButton is theme.touchSecondary (60),
             // above the 52 minimum, and this is the widget's whole interaction.
@@ -632,12 +925,178 @@ WidgetChrome {
                 // The long form is spelled out wherever there is room for it, not
                 // only in the overlay - the pill is content-sized (see PillButton),
                 // so this is a legibility choice the box makes, not the mode.
-                label: w.paused ? "Paused" : (!w.scheduledToday ? "Rest day"
-                    : (w.doneToday ? (w.roomy ? "Done today ✓" : "✓ today") : "Check in"))
+                label: w.multiHabit
+                       ? (w.todayDoneCount === w.todayScheduledCount && w.todayScheduledCount > 0
+                          ? "All done ✓ (" + w.todayDoneCount + "/" + w.todayScheduledCount + ")"
+                          : "Check in (" + w.todayDoneCount + "/" + w.todayScheduledCount + ")")
+                       : (w.paused ? "Paused" : (!w.scheduledToday ? "Rest day"
+                           : (w.doneToday ? (w.roomy ? "Done today ✓" : "✓ today") : "Check in")))
                 glyph: ""
-                enabled: !w.paused && w.scheduledToday
-                primary: enabled && !w.doneToday; tint: w.effAccent
-                onClicked: w.toggleToday()
+                enabled: !w.paused && (w.multiHabit ? w.todayScheduledCount > 0 : w.scheduledToday)
+                primary: enabled && (w.multiHabit ? w.todayDoneCount < w.todayScheduledCount : !w.doneToday)
+                tint: w.effAccent
+                onClicked: {
+                    if (w.multiHabit) {
+                        w.sheetOpen = !w.sheetOpen
+                    } else {
+                        w.toggleToday()
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Option B: Quick-Check Touch Sheet ────────────────────────────────────
+    Rectangle {
+        id: quickCheckSheet
+        objectName: "habitQuickCheckSheet"
+        anchors.fill: parent
+        radius: theme.radiusLg
+        color: Qt.rgba(theme.backgroundColor.r, theme.backgroundColor.g, theme.backgroundColor.b, 0.96)
+        border.width: 1
+        border.color: theme.cardBorder
+        visible: w.sheetOpen
+        z: 40
+
+        MouseArea {
+            anchors.fill: parent
+            // Prevent clicks from propagating through the sheet
+            onClicked: {}
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: Math.max(12, Math.min(width * 0.04, 20))
+            spacing: theme.spacingSm
+
+            // Sheet Header
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: theme.spacingMd
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    Text {
+                        text: "Daily Habits Check-In"
+                        color: theme.textPrimary
+                        font.pixelSize: Math.round(Math.max(theme.fontTitle, 20))
+                        font.family: theme.fontDisplay
+                        font.bold: true
+                    }
+                    Text {
+                        text: Qt.formatDate(w.parseKey(w.todayKey), "dddd, MMMM d")
+                        color: theme.textSecondary
+                        font.pixelSize: Math.round(Math.max(theme.fontCaption, 14))
+                    }
+                }
+
+                PillButton {
+                    objectName: "habitSheetCloseButton"
+                    label: "Done"
+                    glyph: "✓"
+                    primary: true
+                    tint: w.effAccent
+                    onClicked: w.sheetOpen = false
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 1
+                color: theme.cardBorder
+            }
+
+            // 4 Habit Rows
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                spacing: theme.spacingSm
+
+                Repeater {
+                    model: w.activeHabits
+                    delegate: Rectangle {
+                        id: sheetRowDelegate
+                        required property int index
+                        required property var modelData
+                        objectName: "habitSheetRow-" + index
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.minimumHeight: theme.touchTertiary
+                        radius: theme.radiusMd
+                        property bool isDone: modelData.checkins && modelData.checkins.indexOf(w.todayKey) >= 0
+                        property bool isSched: w.isHabitScheduled(modelData, w.parseKey(w.todayKey))
+                        color: isDone ? Qt.rgba(modelData.color.r, modelData.color.g, modelData.color.b, 0.16)
+                                      : (isSched ? theme.cardBackgroundAlt : Qt.rgba(theme.cardBorder.r, theme.cardBorder.g, theme.cardBorder.b, 0.25))
+                        border.width: 1
+                        border.color: isDone ? modelData.color : (isSched ? theme.cardBorder : "transparent")
+
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: sheetRowDelegate.isSched
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: w.toggleHabit(sheetRowDelegate.index)
+                        }
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: theme.spacingMd
+                            anchors.rightMargin: theme.spacingMd
+                            spacing: theme.spacingMd
+
+                            // Color quadrant indicator
+                            Rectangle {
+                                Layout.preferredWidth: 16
+                                Layout.preferredHeight: 16
+                                radius: 4
+                                color: sheetRowDelegate.modelData.color || theme.catSystem
+                            }
+
+                            // Habit Name & Streak
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+                                Text {
+                                    text: sheetRowDelegate.modelData.name
+                                    color: theme.textPrimary
+                                    font.pixelSize: Math.round(Math.max(theme.fontLabel, 16))
+                                    font.bold: true
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                                Text {
+                                    text: !sheetRowDelegate.isSched
+                                          ? "Rest day"
+                                          : (sheetRowDelegate.modelData.streak > 0
+                                             ? sheetRowDelegate.modelData.streak + (sheetRowDelegate.modelData.streak === 1 ? " day streak" : " days streak")
+                                             : "No streak yet")
+                                    color: theme.textSecondary
+                                    font.pixelSize: Math.round(Math.max(theme.fontCaption, 13))
+                                }
+                            }
+
+                            // Touch checkbox
+                            Rectangle {
+                                objectName: "habitSheetCheck-" + sheetRowDelegate.index
+                                Layout.preferredWidth: 44
+                                Layout.preferredHeight: 44
+                                radius: 22
+                                color: sheetRowDelegate.isDone ? sheetRowDelegate.modelData.color : "transparent"
+                                border.width: 2
+                                border.color: sheetRowDelegate.isDone ? sheetRowDelegate.modelData.color : theme.textSecondary
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "✓"
+                                    color: theme.backgroundColor
+                                    font.pixelSize: 22
+                                    font.bold: true
+                                    visible: sheetRowDelegate.isDone
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

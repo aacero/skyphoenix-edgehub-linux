@@ -22,14 +22,16 @@
   - **Graphics & Layout Fix (Quotation Marks)**:
     - Resolve unbalanced quote styling in `ui/qml/widgets/QuoteWidget.qml` where an oversized opening quote (`“`) is displayed without a corresponding closing quote (`”`).
     - Harmonize quotation glyph geometry across size classes (`compact`, `wide`, `tall`, `full`) for balanced, symmetrical quotation presentation.
-- [ ] **Habit Streak Widget: Multi-Habit Mini-Grid & Day-Rollover Reactivity**:
-  - **Multi-Habit Heatmap Mini-Grid (`2x2` / `3x3` matrix per day)**:
-    - Allow tracking multiple habits concurrently within a single tile/card.
-    - Subdivide each calendar day's heatmap cell into a `2x2` (up to 4 habits) or `3x3` (up to 9 habits) matrix of indicator dots or glyphs.
-    - Support independent completion states, per-habit streaks, and individual or bulk check-in controls.
-    - Configurable habit definitions (names, icons, target schedules, custom accents) in Hub and Manager schemas.
-  - **Calendar Day Rollover Reactivity Fix**:
-    - **Defect**: In `ui/qml/widgets/HabitWidget.qml`, `dateForIndex(index)` evaluates `new Date()` without a reactive dependency on `todayKey` or `tick`. When the hub runs continuously across midnight, the 28 heatmap cells remain anchored to the initial startup day, so checking in on the new calendar day does not immediately highlight or check the active day cell until process restart.
+- [x] **Habit Streak Widget: Multi-Habit Mini-Grid & Day-Rollover Reactivity**:
+  - **Multi-Habit Heatmap Mini-Grid (`2x2` matrix per day)**:
+    - Subdivides each of the 28 calendar day cells into a 2×2 mini-grid of indicator quadrants tracking up to 4 habits concurrently.
+    - Okabe & Ito color-coded mapping: Slot 1 Blue (`theme.catSystem`), Slot 2 Green (`theme.catInfo`), Slot 3 Purple (`theme.catProductivity`), Slot 4 Orange (`theme.catGaming`).
+    - Color legend (`habitMultiLegend`) positioned under the heatmap mapping colors directly to activity names.
+    - Option B Quick-Check Touch Sheet (`habitQuickCheckSheet`): High-target touch sheet (>=52px touch rows) with large toggle checkboxes for comfortable touchscreen operation on secondary displays.
+    - Backward compatibility: automatically preserves and inherits legacy single-habit configurations.
+    - Config schema in `WidgetConfigSchema.qml`: `multiHabit`, `habit1Name`, `habit2Name`, `habit3Name`, `habit4Name`.
+  - **Calendar Day Rollover Reactivity**:
+    - Anchored `dateForIndex` and cell `dk` to `w.todayKey` so all 28 day cells automatically advance at midnight without requiring an application restart.
 - [x] **The Sky Tonight: Ambient Temperature, Overnight Low, Optics Dew & Frost Telemetry**:
   - Open-Meteo telemetry query expanded to ingest `temperature_2m`, `apparent_temperature`, `dew_point_2m`, and `wind_speed_10m`.
   - Stargazer Optics Protection: Real-time dew depression ($\Delta T = T_{\text{ambient}} - T_{\text{dew}}$) computation flagging High Dew Risk ($\Delta T \le 1.5^\circ\text{C}$) and Frost Alerts ($T \le 0^\circ\text{C}, \Delta T \le 1.5^\circ\text{C}$).

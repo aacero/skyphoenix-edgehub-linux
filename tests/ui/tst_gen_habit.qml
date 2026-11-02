@@ -1350,4 +1350,137 @@ Item {
             }
         }
     }
+
+    // ── Multi-Habit (2×2 Heatmap Mini-Grid & Option B Touch Sheet) ─────────
+    TestCase {
+        name: "HabitMultiHabit"
+        when: windowShown
+
+        function init() {
+            tryVerify(function () { return hHabit.ready }, 3000)
+            clearSettings(hHabit)
+        }
+        function cleanup() {
+            clearSettings(hHabit)
+        }
+        function byName(root, target) {
+            return findAll(root, function (n) { return n.objectName === target }, [])[0] || null
+        }
+
+        function test_multi_habit_2x2_subcells_and_legend_render() {
+            var w = hHabit.item
+            hHabit.storeCtl.patchSettings("test-instance", {
+                multiHabit: true,
+                habit1Name: "Water (64oz)",
+                habit2Name: "Workout",
+                habit3Name: "Reading",
+                habit4Name: "Meditate"
+            })
+            wait(0)
+            compare(w.multiHabit, true, "multiHabit mode is active")
+            compare(w.activeHabits.length, 4, "4 habits configured")
+
+            // Verify the multi-habit legend is rendered
+            var legend = byName(w, "habitMultiLegend")
+            verify(legend !== null, "habitMultiLegend exists")
+            compare(legend.visible, true, "habitMultiLegend is visible")
+
+            // Locate today's cell and verify 2x2 subgrid
+            var todayIndex = -1
+            for (var d = 0; d < 28; d++) {
+                if (w.daysAgoFor(d) === 0) todayIndex = d
+            }
+            verify(todayIndex >= 0, "found today's cell index")
+
+            var subgrid = byName(w, "habitDaySubgrid-" + todayIndex)
+            verify(subgrid !== null, "habitDaySubgrid exists for today")
+            compare(subgrid.visible, true, "subgrid is visible")
+
+            var subcell0 = byName(w, "habitSubcell-" + todayIndex + "-0")
+            var subcell1 = byName(w, "habitSubcell-" + todayIndex + "-1")
+            var subcell2 = byName(w, "habitSubcell-" + todayIndex + "-2")
+            var subcell3 = byName(w, "habitSubcell-" + todayIndex + "-3")
+            verify(subcell0 !== null && subcell1 !== null && subcell2 !== null && subcell3 !== null,
+                   "all 4 quadrant subcells exist")
+            compare(subcell0.subOn, false, "subcell 0 is initially off")
+        }
+
+        function test_quick_check_sheet_toggles_habits_and_updates_heatmap() {
+            var w = hHabit.item
+            hHabit.storeCtl.patchSettings("test-instance", {
+                multiHabit: true,
+                habit1Name: "Water (64oz)",
+                habit2Name: "Workout",
+                habit3Name: "Reading",
+                habit4Name: "Meditate"
+            })
+            wait(0)
+
+            var btn = byName(w, "habitCheckinButton")
+            verify(btn !== null, "checkin button found")
+            compare(btn.label, "Check in (0/4)", "initial button label indicates 0/4")
+            compare(w.sheetOpen, false, "sheet starts closed")
+
+            // Tapping the check-in button opens the quick-check sheet
+            btn.clicked()
+            wait(0)
+            compare(w.sheetOpen, true, "sheet opens on button click")
+
+            var sheet = byName(w, "habitQuickCheckSheet")
+            verify(sheet !== null && sheet.visible, "quickCheckSheet is visible")
+
+            // Touch target size validation on row
+            var row0 = byName(w, "habitSheetRow-0")
+            verify(row0 !== null, "habitSheetRow-0 exists")
+            verify(row0.height >= hHabit.theme.touchTertiary,
+                   "row height satisfies touch target minimum (" + row0.height + " >= " + hHabit.theme.touchTertiary + ")")
+
+            // Check in habit 0 (Water)
+            w.toggleHabit(0)
+            wait(0)
+            row0 = byName(w, "habitSheetRow-0")
+            verify(row0 !== null, "habitSheetRow-0 still exists")
+            compare(row0.isDone, true, "habit 0 is marked done")
+            compare(btn.label, "Check in (1/4)", "button label updates to 1/4")
+
+            // Verify heatmap subcell for habit 0 reflects check-in immediately
+            var todayIndex = -1
+            for (var d = 0; d < 28; d++) {
+                if (w.daysAgoFor(d) === 0) todayIndex = d
+            }
+            var subcell0 = byName(w, "habitSubcell-" + todayIndex + "-0")
+            verify(subcell0 !== null, "subcell 0 found")
+            compare(subcell0.subOn, true, "subcell 0 reflects check-in on heatmap")
+
+            // Close sheet using close button
+            var closeBtn = byName(w, "habitSheetCloseButton")
+            verify(closeBtn !== null, "close button found")
+            closeBtn.clicked()
+            wait(0)
+            compare(w.sheetOpen, false, "sheet closed after tapping Done")
+        }
+
+        function test_all_habits_completed_celebration_and_button_label() {
+            var w = hHabit.item
+            hHabit.storeCtl.patchSettings("test-instance", {
+                multiHabit: true,
+                habit1Name: "Water (64oz)",
+                habit2Name: "Workout",
+                habit3Name: "Reading",
+                habit4Name: "Meditate"
+            })
+            wait(0)
+
+            w.toggleHabit(0)
+            w.toggleHabit(1)
+            w.toggleHabit(2)
+            w.toggleHabit(3)
+            wait(0)
+
+            var btn = byName(w, "habitCheckinButton")
+            compare(btn.label, "All done ✓ (4/4)", "button indicates all done")
+            verify(w.celebrateMsg.indexOf("All habits complete") >= 0,
+                   "celebration banner triggered: " + w.celebrateMsg)
+        }
+    }
 }
