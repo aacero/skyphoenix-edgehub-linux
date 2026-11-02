@@ -422,7 +422,7 @@ WidgetChrome {
     // The cap is a guard rail rather than the active term at 1x1.5 - the axis
     // terms bind first there (86 vs 120 tall, 70.5 vs 120 wide) - and it is what
     // holds the baseline tile at its current 34.
-    readonly property real heatCellCap: w.roomy ? 120 : 34
+    readonly property real heatCellCap: w.roomy ? 120 : (w.tallBox ? 34 : (w.width >= 800 ? 48 : 46))
     // Same story as streakPx: the leading `w.expanded ? 24` is gone, so the map
     // in the overlay is sized by the pane it is really in (27px in the 941x456
     // landscape pane, 59px in the 656x980 portrait one) instead of by a literal
@@ -430,11 +430,11 @@ WidgetChrome {
     readonly property real heatCell: w.tallBox
         ? Math.max(8, Math.min(width / 5,
                                height * (w.compressedTall ? 0.055
-                                         : (w.roomy ? 0.062 : 0.07)),
+                                         : (w.roomy ? 0.062 : (w.compactNameLayout ? 0.032 : 0.07))),
                                w.heatCellCap))
         : Math.max(8, Math.min((w.horiz ? width * 0.5 : width) / 9,
                                height * (w.shallowWide ? 0.10
-                                         : (w.horiz ? 0.14 : 0.06)),
+                                         : (w.horiz ? 0.14 : (w.height >= 560 ? 0.08 : 0.06))),
                                w.heatCellCap))
 
     // Days-ago for a row-major cell index under the CURRENT grid shape; index 27
@@ -622,7 +622,7 @@ WidgetChrome {
         // - so a 1x1.5 tile, with cells up to 86px and a ~70px streak number, now
         // gets the breathing room its own contents ask for instead of the
         // baseline third's tighter 6. Compact/micro tiles are unchanged.
-        rowSpacing: w.roomy ? 14 : 6
+        rowSpacing: w.roomy ? (w.height > 1000 ? 20 : 16) : (!w.compactCopy && w.height >= 500 ? 12 : 6)
         columnSpacing: theme.spacingLg
 
         // The date range and state legend travel with the map in every non-micro
@@ -632,7 +632,7 @@ WidgetChrome {
             objectName: "habitHeatmapColumn"
             Layout.alignment: Qt.AlignCenter
             visible: w.showHeatmap
-            spacing: 7
+            spacing: !w.compactCopy && w.height >= 500 ? 10 : 7
 
             Text {
                 objectName: "habitHeatmapRange"
@@ -772,27 +772,29 @@ WidgetChrome {
                 objectName: "habitMultiLegend"
                 visible: !w.tightHeatmap && w.multiHabit
                 Layout.alignment: Qt.AlignHCenter
-                columns: w.horiz ? 4 : 2
+                columns: (w.horiz || w.width >= 520) ? 4 : 2
                 rowSpacing: 4
-                columnSpacing: theme.spacingMd
+                columnSpacing: (w.horiz || w.width >= 520) ? theme.spacingLg : theme.spacingMd
 
                 Repeater {
                     model: w.activeHabits
                     delegate: RowLayout {
                         spacing: 6
                         Rectangle {
-                            Layout.preferredWidth: 8
-                            Layout.preferredHeight: 8
-                            radius: 2
+                            Layout.preferredWidth: 10
+                            Layout.preferredHeight: 10
+                            radius: 3
                             color: modelData.color || theme.catSystem
                         }
                         Text {
-                            text: modelData.name + (w.roomy && modelData.streak > 0 ? " (" + modelData.streak + "d)" : "")
+                            text: modelData.name + ((w.roomy || w.width >= 520) && modelData.streak > 0 ? " (" + modelData.streak + "d)" : "")
                             color: theme.textPrimary
                             opacity: 0.88
                             font.pixelSize: Math.round(Math.max(theme.fontMinimum, 13))
                             elide: Text.ElideRight
-                            Layout.maximumWidth: w.horiz ? 120 : 100
+                            Layout.maximumWidth: (w.horiz || w.width >= 520)
+                                                 ? Math.min(180, Math.floor((w.width - 64) / 4))
+                                                 : (w.horiz ? 120 : 100)
                         }
                     }
                 }
@@ -808,7 +810,7 @@ WidgetChrome {
             // vertical rhythm than the portrait stack. The previous 14px gaps
             // plus a 76px insight panel pushed the check-in pill 26px below the
             // 1x1.5 landscape card.
-            spacing: w.roomy ? (w.horiz ? 12 : 14) : 4
+            spacing: w.roomy ? (w.horiz ? 12 : 18) : (!w.compactCopy && w.height >= 500 ? 10 : 4)
 
             Text {
                 objectName: "habitBodyName"
@@ -922,6 +924,7 @@ WidgetChrome {
             PillButton {
                 objectName: "habitCheckinButton"
                 Layout.alignment: Qt.AlignHCenter
+                Layout.topMargin: (!w.compactCopy && w.height >= 500 && !w.horiz) ? 4 : 0
                 // The long form is spelled out wherever there is room for it, not
                 // only in the overlay - the pill is content-sized (see PillButton),
                 // so this is a legibility choice the box makes, not the mode.
