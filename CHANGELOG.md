@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-11-03
+
+### Fixed
+
+- **QNetworkReply memory leak** — Explicitly deleted completed and aborted `QNetworkReply` instances across `QNetworkAccessManager` callers, resolving continuous heap memory growth during prolonged daemon operation (`8d06aa9`).
+- **FFI C-logging panic safety** — Wrapped Rust `xeneon_log_*` FFI boundary entry points in `std::panic::catch_unwind` to prevent C-stack unwinding crashes during logging, and fixed Braindump binding loop recursion (`3ed99b0`).
+- **USB hidraw clean detachment** — Cleanly detached `hidraw` file descriptors on application exit, preventing ungraceful xHCI controller resets upon hub shutdown (`ac8192c`).
+- **Sparkline distance-field glyph churn & heap bounding** — Eliminated continuous font distance-field texture allocations in dynamic Sparkline text elements, and set glibc heap arena bounds to minimize fragmentation during long-running hub sessions (`5cedd61`).
+- **Midnight habit rollover** — Added reactive midnight timer scheduling to rollover habit heatmap day cells immediately across date transitions (`fc832b2`).
+- **Habit tile layout rebalance** — Rebalanced portrait and landscape habit widgets, expanding touch-friendly heatmap cells (up to 48px) and multi-habit quadrants (21px), distributing legend into single rows on wide cards, and eliminating bottom crowding (`af9c54a`).
+
+### Added
+
+- **Multi-habit heatmap 2x2 mini-grid** — Subdivided habit heatmap cells into an Okabe & Ito color-coded 2x2 mini-grid tracking up to four habits concurrently, complete with touch check-in sheet and per-habit streak counts (`b4b5e93`).
+- **Sky Tonight astronomical observations** — Added ambient temperature and overnight low telemetry, optical dew and frost hazard warnings, interactive °F/°C display toggle, all dark hours observing window expansion, and planetary constellation tracking (`2805bf4`, `6453443`).
+- **Humble Books categories & classification** — Added Hobbies category classification and improved Open Road Media sci-fi detection (`6b0c8a2`).
+- **Braindump timestamp formatting** — Display notes older than one week formatted as `MMM dd HH:mm` for improved clarity (`117f809`).
+
+### Performance
+
+- **Background rendering optimization** — Gated off-screen widget backdrops, halved ambient bokeh particles, and paused update tickers on hidden sparklines to reduce CPU and GPU usage (`bd8c30a`).
+
 ## [1.1.1] - 2026-09-28
 
 ### Added

@@ -56,6 +56,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="1.1.2" date="2026-11-03" type="stable">
+      <description>
+        <p>Stability and feature release resolving QNetworkReply memory leak, FFI C-logging boundary panics, USB hidraw detach, distance-field glyph churn, and introducing multi-habit 2x2 heatmap mini-grids and Sky Tonight astronomical observation enhancements.</p>
+      </description>
+    </release>
     <release version="1.1.1" date="2026-09-28" type="stable">
       <description>
         <p>Feature release adding Quick Actions host macros, Systems Wake-on-LAN bursts with live boot feedback, adaptive Calendar views, Sky Tonight planetary ephemeris, Humble Bundle book monitor, and reactive screen alert surfacing.</p>

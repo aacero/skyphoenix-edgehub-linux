@@ -1,42 +1,34 @@
-# EdgeHub v1.1.1
+# EdgeHub v1.1.2
 
-Release version: `v1.1.1`
+Release version: `v1.1.2`
 Release stage: stable
 
-EdgeHub v1.1.1 brings Quick Actions host command macros, Systems Wake-on-LAN bursts with live boot timers, geometry-adaptive Calendar views, The Sky Tonight planetary ephemeris, Humble Bundle book monitoring, reactive screen alert surfacing, and rolling configuration backups.
+EdgeHub v1.1.2 is a major reliability, performance, and feature release resolving continuous memory growth, FFI C-logging boundary panics, font glyph churn, and USB controller detachment, while introducing multi-habit 2x2 heatmap mini-grids with touch check-in sheets and enhanced astronomical observation telemetry in The Sky Tonight.
 
 ## Highlights
 
-### Quick Actions & Wake-on-LAN (WoL)
-- **Host Control Cards**: Dedicated host tiles providing one-touch Ping, SSH, and Mosh macros with command-availability desktop alerts.
-- **3-Packet Magic-Packet Burst**: Systems widget sends reliable 25 ms spaced UDP bursts for remote machine power-on.
-- **Live Boot-Phase Timer**: Real-time 60-second boot-phase countdown with elapsed feedback while target nodes boot.
-- **MAC Address Discovery**: Automatic discovery of MAC addresses from Quick Actions settings plus inline editing in Systems deep-dive view.
+### Memory Leak & Stability Fixes
+- **QNetworkReply Lifecycle Management**: Explicitly cleans up network replies across long-running daemon polling cycles, completely resolving gradual memory accumulation.
+- **FFI Boundary Panic Protection**: Safely catches unhandled unwinding panics at the C logging boundary, preventing process termination during high-frequency diagnostics.
+- **Clean USB Controller Teardown**: Properly closes and detaches USB `hidraw` device descriptors on exit, preventing xHCI host controller resets.
+- **Glibc Heap Arena Bounding & Glyph Font Caching**: Eliminates continuous distance-field texture allocations in dynamic Sparkline graphs and sets sensible glibc malloc arena boundaries to minimize heap fragmentation over days of continuous uptime.
 
-### Reactive Alert-Driven Screen Surfacing
-- **Automatic Alert Focus**: Pauses idle screen cycling and automatically surfaces the affected dashboard screen when a fleet host drops offline or a reminder triggers.
-- **Auto-Resume**: Gracefully resumes ambient idle cycling once active alerts are acknowledged or cleared.
+### Multi-Habit Heatmap & Touch Ergonomics
+- **2x2 Heatmap Mini-Grid**: Track up to four distinct daily habits simultaneously per day cell with dedicated high-contrast quadrant indicators.
+- **Touch-First Check-In Drawer**: Expandable modal sheet allows rapid, single-tap toggling of individual daily habits directly on secondary touchscreens.
+- **Rebalanced Widget Geometry**: Expanded heatmap cells (up to 48 px) and multi-habit quadrants (21 px) with proportional spacing, streak counts in legends, and automatic multi-column flow for wide widgets.
+- **Midnight Cell Rollover**: Scheduled reactive rollover ensures visual date progress transitions automatically at midnight without requiring manual refresh.
 
-### Geometry-Adaptive Calendar
-- **Responsive Layout Modes**: Month grid for square tiles, 7-day Week view for wide horizontal tiles, and List/Agenda view for vertical tiles.
-- **Extended Lookahead**: Extends lookahead horizon to 90 days with recurring-event cancellation and RECURRENCE-ID handling.
-- **Day-Header Expander**: Tap any date header to expand single-day event drawers.
+### The Sky Tonight Stargazing & Weather Alerts
+- **Observing Conditions Telemetry**: Live ambient temperature and overnight low readings directly on the observing window timeline.
+- **Dew & Frost Hazard Warnings**: Intelligent optical dew and frost hazard warnings when ground temperature approaches the dew point.
+- **Interactive Unit Toggle**: Instant one-tap switching between Fahrenheit (°F) and Celsius (°C).
+- **All-Dark Observing Horizon**: Expanded celestial ephemeris tracking all dark hours from dusk to dawn, complete with planetary constellation mappings.
 
-### The Sky Tonight & Moon Enhancements
-- **Planetary Ephemeris**: Hourly sky clarity forecast bars and naked-eye planet rise/set rows (Mercury through Saturn).
-- **Forecast Freshness**: Anchored date headers, active screen-revisit auto-refresh, and manual refresh button.
-- **Centred Moon Layout**: Photorealistic phase-masked lunar texture with balanced metrics on 1x1 tiles.
-
-### Humble Bundle Book Monitor
-- **Live Bundle Tracking**: Real-time tracking of book, comic, sci-fi, and cookbook bundles with urgency countdowns.
-- **Category Filter Pills**: Single-category toggle with instant All reset pills.
-- **Full Tier Pricing**: Displays top-tier bundle prices alongside base tier options.
-
-### Usability & Reliability
-- **Custom Rotation Delay**: Dial arbitrary screen rotation delays (0–86,400 seconds) directly with numeric steppers.
-- **Rolling Configuration Backup**: Automatically preserves `config.toml.bak` on every standard save.
-- **Unlocked Themes**: All 9 premium and inspired themes (Synthwave, Cyberpunk, Vaporwave, Matrix, and more) unlocked for all users.
-- **Media Fallback**: Graceful "Artwork unavailable" plate on corrupt or missing album covers.
+### Widget Enhancements & CPU Reductions
+- **Background Rendering Throttling**: Automatically gates off-screen backdrops, halves ambient bokeh particles, and pauses inactive sparkline tickers to preserve CPU and GPU cycles.
+- **Humble Books Hobbies & SF Heuristics**: Added dedicated Hobbies filtering and improved Open Road Media sci-fi detection.
+- **Braindump Date Formatting**: Formats notes older than one week as `MMM dd HH:mm` for quick temporal orientation.
 
 ## Installation & Artifacts
 

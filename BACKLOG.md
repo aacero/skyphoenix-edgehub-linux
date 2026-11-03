@@ -6,7 +6,7 @@
 
 ---
 
-## Now — v1.1.2 Scope
+## Now — v1.1.3 Scope
 
 - [ ] **Tiling Window Manager / Workspace Targeting (`hyprctl` / `swaymsg`)**:
   - Support triggering workspace navigation or window focus on Wayland tiling window managers directly from touch macro tiles or widgets.
@@ -22,21 +22,33 @@
   - **Graphics & Layout Fix (Quotation Marks)**:
     - Resolve unbalanced quote styling in `ui/qml/widgets/QuoteWidget.qml` where an oversized opening quote (`“`) is displayed without a corresponding closing quote (`”`).
     - Harmonize quotation glyph geometry across size classes (`compact`, `wide`, `tall`, `full`) for balanced, symmetrical quotation presentation.
-- [x] **Habit Streak Widget: Multi-Habit Mini-Grid & Day-Rollover Reactivity**:
-  - **Multi-Habit Heatmap Mini-Grid (`2x2` matrix per day)**:
-    - Subdivides each of the 28 calendar day cells into a 2×2 mini-grid of indicator quadrants tracking up to 4 habits concurrently.
-    - Okabe & Ito color-coded mapping: Slot 1 Blue (`theme.catSystem`), Slot 2 Green (`theme.catInfo`), Slot 3 Purple (`theme.catProductivity`), Slot 4 Orange (`theme.catGaming`).
-    - Color legend (`habitMultiLegend`) positioned under the heatmap mapping colors directly to activity names.
-    - Option B Quick-Check Touch Sheet (`habitQuickCheckSheet`): High-target touch sheet (>=52px touch rows) with large toggle checkboxes for comfortable touchscreen operation on secondary displays.
-    - Backward compatibility: automatically preserves and inherits legacy single-habit configurations.
-    - Config schema in `WidgetConfigSchema.qml`: `multiHabit`, `habit1Name`, `habit2Name`, `habit3Name`, `habit4Name`.
-  - **Calendar Day Rollover Reactivity**:
-    - Anchored `dateForIndex` and cell `dk` to `w.todayKey` so all 28 day cells automatically advance at midnight without requiring an application restart.
-- [x] **The Sky Tonight: Ambient Temperature, Overnight Low, Optics Dew & Frost Telemetry**:
-  - Open-Meteo telemetry query expanded to ingest `temperature_2m`, `apparent_temperature`, `dew_point_2m`, and `wind_speed_10m`.
-  - Stargazer Optics Protection: Real-time dew depression ($\Delta T = T_{\text{ambient}} - T_{\text{dew}}$) computation flagging High Dew Risk ($\Delta T \le 1.5^\circ\text{C}$) and Frost Alerts ($T \le 0^\circ\text{C}, \Delta T \le 1.5^\circ\text{C}$).
-  - UI telemetry: Start-of-window temperature pill with overnight low (`45°F (Low 38°F)`), color-coded dew/frost badges in Hero card, and hourly temperature track under each hour bar.
-  - Schema & Configuration: Configurable `tempUnit` (`°F` / `°C`) in `WidgetConfigSchema.qml`.
+
+---
+
+## Completed in v1.1.2
+
+- [x] **v1.1.2 Release Execution & Distribution**:
+  - [x] Version bump to `1.1.2` in `CMakeLists.txt`, `core/Cargo.toml`, and lockfiles.
+  - [x] Update `CHANGELOG.md`, `RELEASE_NOTES.md`, and release metadata contracts.
+  - [x] Full regression test suite pass (Rust unit tests, ctest, QuickTest QML suite).
+  - [x] Tag release `v1.1.2` and publish GitHub release with distribution artifacts (`.AppImage`, Arch `.pkg.tar.zst`, `.deb`, `.rpm`, `SHA256SUMS.txt`).
+- [x] **Reliability & Memory Leak Mitigations**:
+  - [x] **QNetworkReply Memory Leak**: Explicitly deleted finished/aborted `QNetworkReply` instances across network callers, completely halting heap growth in continuous uptime (`8d06aa9`).
+  - [x] **FFI C-Logging Panic Safety**: Wrapped `xeneon_log_*` FFI boundary entry points in `std::panic::catch_unwind` to prevent process termination on logging panics (`3ed99b0`).
+  - [x] **USB Hidraw Clean Teardown**: Properly closed hidraw file descriptors upon app exit to avoid xHCI host controller reset (`ac8192c`).
+  - [x] **Glyph Churn & Glibc Arena Bounding**: Eliminated distance-field glyph churn in Sparkline charts and bounded malloc arenas to prevent heap fragmentation (`5cedd61`).
+- [x] **Habit Streak Widget: Multi-Habit Mini-Grid, Rollover & Layout Rebalancing**:
+  - [x] **Multi-Habit Heatmap Mini-Grid (`2x2` matrix per day)**: Subdivides each of the 28 day cells into Okabe & Ito color-coded quadrants tracking up to 4 habits concurrently with touch check-in sheet (`b4b5e93`).
+  - [x] **Calendar Day Rollover Reactivity**: Scheduled midnight rollover timer so heatmap cells advance automatically without restart (`fc832b2`).
+  - [x] **Layout Rebalancing**: Expanded cell dimensions (up to 48px), horizontal multi-habit legend with streak counters, and elimination of bottom crowding (`af9c54a`).
+- [x] **The Sky Tonight: Observing Conditions, Optics Alerts & Dark Hours**:
+  - [x] Stargazer optics dew and frost alerts based on real-time dew depression ($\Delta T \le 1.5^\circ\text{C}$).
+  - [x] Start-of-window temperature pill with overnight low (`45°F (Low 38°F)`), color-coded dew/frost badges in Hero card, and hourly temperature track.
+  - [x] Interactive °F/°C unit toggle and dark hours observing window expansion (`2805bf4`, `6453443`).
+- [x] **Performance & Widget Enhancements**:
+  - [x] Background rendering optimization: gated off-screen backdrops, halved ambient bokeh particles, paused inactive sparklines (`bd8c30a`).
+  - [x] Humble Books Hobbies category and SF classification heuristics (`6b0c8a2`).
+  - [x] Braindump timestamp formatting for notes older than 7 days (`117f809`).
 ---
 
 ## Completed in v1.1.1
