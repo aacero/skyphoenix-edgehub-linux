@@ -33,6 +33,19 @@ Item {
         + ']}]}}}'
         + '</script></head><body><h1>Humble Bundle Books</h1></body></html>'
 
+    // Next.js RSC Flight payload sample matching Humble Bundle's migrated App Router /books page
+    readonly property string sampleNextJsHumbleHtml: {
+        var flightChunk1 = '1:"$Sreact.fragment"\n4f:["$","$L7e","6ae504b5",{"feedItems":['
+            + '{"relationTo":"algolia-hit","value":{"id":"fe2c027e","productKey":"certificationsandsecurityforcloudanddevopswiley_bookbundle","slug":"certifications-and-security-for-cloud-and-devops-wiley-books","url":"/books/certifications-and-security-for-cloud-and-devops-wiley-books","title":"Humble Tech Book Bundle: Certifications and Security for Cloud and DevOps by Wiley","thumbnail":"https://hb-prd.imgix.net/product-media/wiley.jpg","displayPrice":{"currentPrice":{"type":"centPrecision","centAmount":500,"currencyCode":"USD","fractionDigits":2}},"endDate":"2026-11-30T19:00:00.000Z","description":"$undefined","category":"books","itemsCount":20,"value":{"type":"centPrecision","centAmount":99000,"currencyCode":"USD","fractionDigits":2},"productType":"humble-bundle","includedItemTitles":["AWS Certified Solutions Architect Study Guide"]}}'
+            + ',{"relationTo":"algolia-hit","value":{"id":"f5980886","productKey":"beforeabsolutehowlegendswerebornimagecomics_bookbundle","slug":"before-absolute-image-comics-books","url":"/books/before-absolute-image-comics-books","title":"Humble Comic Bundle: Before Absolute: How Legends Were Born by Image Comics","thumbnail":"https://hb-prd.imgix.net/product-media/image.jpg","displayPrice":{"currentPrice":{"type":"centPrecision","centAmount":500,"currencyCode":"USD","fractionDigits":2}},"endDate":"2026-11-26T19:00:00.000Z","description":"$undefined","category":"books","itemsCount":89,"value":{"type":"centPrecision","centAmount":138300,"currencyCode":"USD","fractionDigits":2},"productType":"humble-bundle","includedItemTitles":["ASCENDER, VOL. 1"]}}'
+        var flightChunk2 = ',{"relationTo":"algolia-hit","value":{"id":"a1122334","productKey":"100yearspoulandersonopenroadmedia_bookbundle","slug":"100-years-poul-anderson-books","url":"/books/100-years-poul-anderson-books","title":"Humble Book Bundle: 100 Years of Poul Anderson by Open Road Media","thumbnail":"https://hb-prd.imgix.net/product-media/anderson.jpg","displayPrice":{"currentPrice":{"type":"centPrecision","centAmount":2000,"currencyCode":"USD","fractionDigits":2}},"endDate":"2026-11-26T19:00:00.000Z","description":"$undefined","category":"books","itemsCount":42,"value":{"type":"centPrecision","centAmount":44500,"currencyCode":"USD","fractionDigits":2},"productType":"humble-bundle","includedItemTitles":["A Midsummer Tempest","Hrolf Kraki\'s Saga"]}}'
+            + '],"surface":"bundles-listing"}]\n'
+        return '<!DOCTYPE html><html lang="en" class="dark"><head><script>(self.__next_f=self.__next_f||[]).push([0])</script></head><body>'
+            + '<script>self.__next_f.push([1,' + JSON.stringify(flightChunk1) + '])</script>'
+            + '<script>self.__next_f.push([1,' + JSON.stringify(flightChunk2) + '])</script>'
+            + '</body></html>'
+    }
+
     // ── 1. Catalog and Schema Invariants ────────────────────────────────────
     TestCase {
         name: "HumbleBooksCatalogAndSchema"
@@ -88,6 +101,7 @@ Item {
             var w = h.item
             compare(w.classify({ tile_name: "Humble Comics Bundle: Batman Day", tile_stamp: "comics" }), "Comics")
             compare(w.classify({ tile_name: "50 Essential Fantagraphics Titles", tile_stamp: "comics" }), "Comics")
+            compare(w.classify({ tile_name: "Humble Comic Bundle: The Halloween Horror Bundle by Vault Comics", tile_stamp: "books" }), "Comics")
             compare(w.classify({ tile_name: "Manga Megabundle 2026", tile_stamp: "books" }), "Comics")
             compare(w.classify({ tile_name: "Indie Graphic Novels", tile_stamp: "books", marketing_blurb: "Award winning graphic novel collection." }), "Comics")
         }
@@ -127,6 +141,8 @@ Item {
             compare(w.classify({ tile_name: "The Best of C.J. Cherryh", tile_stamp: "books" }), "SF")
             compare(w.classify({ tile_name: "Joe Haldeman: The Forever War and Beyond", tile_stamp: "books" }), "SF")
             compare(w.classify({ tile_name: "The Best of Brian W. Aldiss", tile_stamp: "books" }), "SF")
+            compare(w.classify({ tile_name: "Humble Book Bundle: Alan Dean Foster: Humanx, Spellsinger & More by Open Road Media", tile_stamp: "books" }), "SF")
+            compare(w.classify({ tile_name: "Humble Book Bundle: 100 Years of Poul Anderson by Open Road Media", tile_stamp: "books" }), "SF")
             compare(w.classify({ tile_name: "Epic Space Opera & Science Fiction Collection", tile_stamp: "books" }), "SF")
             compare(w.classify({ tile_name: "High Fantasy Realms", tile_stamp: "books", short_marketing_blurb: "Fantasy novels from bestsellers" }), "SF")
         }
@@ -211,6 +227,38 @@ Item {
             compare(bundles[6].tierPriceText, "From $5")
         }
 
+        function test_parse_nextjs_flight_html() {
+            var w = h.item
+            var bundles = w.parseHumbleHtml(root.sampleNextJsHumbleHtml)
+            compare(bundles.length, 3, "parsed all 3 Next.js RSC Flight bundles across streamed chunks")
+
+            // 1. Tech Book Bundle by Wiley
+            compare(bundles[0].id, "certificationsandsecurityforcloudanddevopswiley_bookbundle")
+            compare(bundles[0].title, "Certifications and Security for Cloud and DevOps by Wiley")
+            compare(bundles[0].category, "Tech")
+            compare(bundles[0].url, "https://www.humblebundle.com/books/certifications-and-security-for-cloud-and-devops-wiley-books")
+            compare(bundles[0].imageUrl, "https://hb-prd.imgix.net/product-media/wiley.jpg")
+            compare(bundles[0].itemCountText, "20 books")
+            compare(bundles[0].valueText, "$990 Value")
+            compare(bundles[0].tierPriceText, "From $5")
+
+            // 2. Comic Bundle by Image Comics
+            compare(bundles[1].id, "beforeabsolutehowlegendswerebornimagecomics_bookbundle")
+            compare(bundles[1].title, "Before Absolute: How Legends Were Born by Image Comics")
+            compare(bundles[1].category, "Comics")
+            compare(bundles[1].itemCountText, "89 comics")
+            compare(bundles[1].valueText, "$1383 Value")
+            compare(bundles[1].tierPriceText, "From $5")
+
+            // 3. Poul Anderson by Open Road Media (SF — must not misclassify as Comics from "Hrolf Kraki's Saga" in includedItemTitles)
+            compare(bundles[2].id, "100yearspoulandersonopenroadmedia_bookbundle")
+            compare(bundles[2].title, "100 Years of Poul Anderson by Open Road Media")
+            compare(bundles[2].category, "SF")
+            compare(bundles[2].itemCountText, "42 books")
+            compare(bundles[2].valueText, "$445 Value")
+            compare(bundles[2].tierPriceText, "From $20")
+        }
+
         function test_parse_empty_or_malformed_html() {
             var w = h.item
             compare(w.parseHumbleHtml("").length, 0)
@@ -247,6 +295,10 @@ Item {
 
             var euroSubpageHtml = '<script type="application/json">{"bundleData":{"tier_pricing_data":{"tier3":{"price|money":{"currency":"EUR","amount":18.50}},"tier1":{"price|money":{"currency":"EUR","amount":1.0}}}}}</script>'
             compare(w.extractTopTierPriceFromSubpage(euroSubpageHtml), "€18.50")
+
+            var nextJsSubpageFlight = 'e:[["$","section",null,{"children":["$","$L6e",null,{"bundlePage":"$e:0:props:bundlePage"},{"bundlePage":{"id":"fe2c027e","tiers":[{"id":"1","price":{"amount":5,"currencyCode":"USD"}},{"id":"2","price":{"amount":18,"currencyCode":"USD"}},{"id":"3","price":{"amount":25,"currencyCode":"USD"}}]}}]}]]\n'
+            var nextJsSubpageHtml = '<!DOCTYPE html><html><body><script>self.__next_f.push([1,' + JSON.stringify(nextJsSubpageFlight) + '])</script></body></html>'
+            compare(w.extractTopTierPriceFromSubpage(nextJsSubpageHtml), "$25")
         }
 
         function test_time_remaining_formatting() {

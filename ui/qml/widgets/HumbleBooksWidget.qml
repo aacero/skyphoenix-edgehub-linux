@@ -160,11 +160,12 @@ WidgetChrome {
     // ── Classification ───────────────────────────────────────────────────────
     function classify(prod) {
         if (!prod) return "Other"
-        var name = (prod.tile_name || "") + " " + (prod.tile_short_name || "")
+        var name = (prod.tile_name || prod.title || "") + " " + (prod.tile_short_name || "")
         var author = prod.author || ""
         var nameLower = (name + " " + author).toLowerCase()
-        var stamp = (prod.tile_stamp || "").toLowerCase()
-        var blurb = (prod.short_marketing_blurb || "") + " " + (prod.marketing_blurb || "")
+        var stamp = (prod.tile_stamp || prod.category || "").toLowerCase()
+        var rawDesc = (prod.description && prod.description !== "$undefined") ? prod.description : ""
+        var blurb = (prod.short_marketing_blurb || "") + " " + (prod.marketing_blurb || "") + " " + rawDesc
         var blurbLower = blurb.toLowerCase()
         var allText = nameLower + " " + blurbLower
 
@@ -173,7 +174,7 @@ WidgetChrome {
             "dark horse", "dynamite", "fantagraphics", "boom! studios", "boom studios",
             "image comics", "top shelf", "idw", "valiant", "last gasp", "oni press",
             "humanoids", "2000 ad", "titan comics", "heavy metal", "viz media", "kodansha",
-            "mad cave studios", "dc comics", "marvel"
+            "mad cave studios", "dc comics", "marvel", "vault comics"
         ]
         var comicKeywords = [
             "comic", "comics", "manga", "graphic novel", "webtoon", "light novel",
@@ -300,7 +301,8 @@ WidgetChrome {
             "philip k. dick", "ursula", "robert heinlein", "brandon sanderson", "neil gaiman",
             "steven erikson", "l.e. modesitt", "modesitt", "john scalzi", "scalzi",
             "robert silverberg", "stephen king", "octavia butler", "william gibson",
-            "dan simmons", "peter f. hamilton"
+            "dan simmons", "peter f. hamilton", "alan dean foster", "poul anderson",
+            "nnedi okorafor"
         ]
         for (var a = 0; a < sfAuthors.length; a++) {
             if (allText.indexOf(sfAuthors[a]) >= 0) return "SF"
@@ -367,6 +369,112 @@ WidgetChrome {
         return ""
     }
 
+    function _formatMoneyObject(money) {
+        if (!money || typeof money !== "object") return ""
+        var amt = NaN
+        if (typeof money.centAmount === "number") {
+            var frac = (typeof money.fractionDigits === "number") ? money.fractionDigits : 2
+            amt = money.centAmount / Math.pow(10, frac)
+        } else if (typeof money.amount === "number") {
+            amt = money.amount
+        }
+        if (isNaN(amt) || amt <= 0) return ""
+        var cur = String(money.currencyCode || money.currency || "USD").toUpperCase()
+        var sym = "$"
+        if (cur === "EUR") sym = "€"
+        else if (cur === "GBP") sym = "£"
+        var amtStr = (amt % 1 === 0) ? String(amt) : amt.toFixed(2)
+        return sym + amtStr
+    }
+
+    function _extractNextFlightStream(html) {
+        if (!html || typeof html !== "string") return ""
+        var marker = "self.__next_f.push([1,"
+        var idx = 0
+        var len = html.length
+        var chunks = []
+        while (idx < len) {
+            var pos = html.indexOf(marker, idx)
+            if (pos < 0) break
+            var strStart = pos + marker.length
+            while (strStart < len && html.charCodeAt(strStart) <= 32) strStart++
+            if (strStart >= len || html.charCodeAt(strStart) !== 34) {
+                idx = strStart + 1
+                continue
+            }
+            var i = strStart + 1
+            while (i < len) {
+                var c = html.charCodeAt(i)
+                if (c === 92) { // '\\'
+                    i += 2
+                    continue
+                }
+                if (c === 34) { // '"'
+                    break
+                }
+                i++
+            }
+            if (i < len && html.charCodeAt(i) === 34) {
+                try {
+                    chunks.push(JSON.parse(html.substring(strStart, i + 1)))
+                } catch (e) {}
+                idx = i + 1
+            } else {
+                break
+            }
+        }
+        return chunks.join("")
+    }
+
+    function _extractJsonAfterKey(text, key, fromIndex) {
+        if (!text || !key) return null
+        var searchIdx = fromIndex || 0
+        var len = text.length
+        while (searchIdx < len) {
+            var pos = text.indexOf(key, searchIdx)
+            if (pos < 0) return null
+            var valStart = pos + key.length
+            while (valStart < len && text.charCodeAt(valStart) <= 32) valStart++
+            if (valStart >= len) return null
+            var openChar = text.charCodeAt(valStart)
+            if (openChar !== 91 && openChar !== 123) { // '[' or '{'
+                searchIdx = valStart + 1
+                continue
+            }
+            var depth = 0
+            var inStr = false
+            var i = valStart
+            while (i < len) {
+                var c = text.charCodeAt(i)
+                if (inStr) {
+                    if (c === 92) {
+                        i += 2
+                        continue
+                    }
+                    if (c === 34) inStr = false
+                } else {
+                    if (c === 34) {
+                        inStr = true
+                    } else if (c === 91 || c === 123) {
+                        depth++
+                    } else if (c === 93 || c === 125) {
+                        depth--
+                        if (depth === 0) {
+                            try {
+                                return JSON.parse(text.substring(valStart, i + 1))
+                            } catch (e) {
+                                break
+                            }
+                        }
+                    }
+                }
+                i++
+            }
+            searchIdx = valStart + 1
+        }
+        return null
+    }
+
     function extractTopTierPriceFromSubpage(html) {
         if (!html || typeof html !== "string") return ""
         var startIdx = 0
@@ -405,6 +513,30 @@ WidgetChrome {
                         }
                     } catch (e) {}
                 }
+            }
+        }
+
+        // Next.js RSC Flight subpage format: bundlePage.tiers[].price
+        var flight = _extractNextFlightStream(html)
+        var sourceText = flight.length > 0 ? flight : html
+        var tiers = _extractJsonAfterKey(sourceText, '"tiers":')
+        if (Array.isArray(tiers)) {
+            var maxTierAmt = 0
+            var maxTierObj = null
+            for (var ti = 0; ti < tiers.length; ti++) {
+                var tObj = tiers[ti]
+                if (!tObj || !tObj.price) continue
+                var pObj = tObj.price
+                var tierVal = (typeof pObj.centAmount === "number")
+                    ? (pObj.centAmount / Math.pow(10, typeof pObj.fractionDigits === "number" ? pObj.fractionDigits : 2))
+                    : (typeof pObj.amount === "number" ? pObj.amount : 0)
+                if (tierVal > maxTierAmt) {
+                    maxTierAmt = tierVal
+                    maxTierObj = pObj
+                }
+            }
+            if (maxTierObj) {
+                return _formatMoneyObject(maxTierObj)
             }
         }
         return ""
@@ -476,54 +608,129 @@ WidgetChrome {
             var m = html.match(/<script\s+[^>]*id=["']landingPage-json-data["'][^>]*>([\s\S]*?)<\/script>/i)
             if (m && m[1]) rawJson = m[1]
         }
-        if (!rawJson) return []
+        if (rawJson) {
+            try {
+                var rootData = JSON.parse(rawJson)
+                var prods = (rootData.data && rootData.data.books && rootData.data.books.mosaic
+                             && rootData.data.books.mosaic[0] && rootData.data.books.mosaic[0].products)
+                            ? rootData.data.books.mosaic[0].products : []
+                var result = []
+                for (var i = 0; i < prods.length; i++) {
+                    var p = prods[i]
+                    if (!p) continue
+                    var cat = classify(p)
+                    var rawTitle = p.tile_short_name || p.tile_name || "Book Bundle"
+                    // Clean redundant bundle prefixes if present
+                    var cleanTitle = rawTitle.replace(/^Humble\s+[^:]+\s+Bundle:\s*/i, "")
+                    var pUrl = p.product_url ? String(p.product_url).trim() : ""
+                    var fullUrl = pUrl.indexOf("http") === 0
+                                  ? pUrl
+                                  : ("https://www.humblebundle.com" + (pUrl.indexOf("/") === 0 ? "" : "/") + pUrl)
 
-        try {
-            var rootData = JSON.parse(rawJson)
-            var prods = (rootData.data && rootData.data.books && rootData.data.books.mosaic
-                         && rootData.data.books.mosaic[0] && rootData.data.books.mosaic[0].products)
-                        ? rootData.data.books.mosaic[0].products : []
-            var result = []
-            for (var i = 0; i < prods.length; i++) {
-                var p = prods[i]
-                if (!p) continue
-                var cat = classify(p)
-                var rawTitle = p.tile_short_name || p.tile_name || "Book Bundle"
-                // Clean redundant bundle prefixes if present
-                var cleanTitle = rawTitle.replace(/^Humble\s+[^:]+\s+Bundle:\s*/i, "")
-                var pUrl = p.product_url ? String(p.product_url).trim() : ""
-                var fullUrl = pUrl.indexOf("http") === 0
-                              ? pUrl
-                              : ("https://www.humblebundle.com" + (pUrl.indexOf("/") === 0 ? "" : "/") + pUrl)
+                    var endRaw = p["end_date|datetime"] || ""
+                    var timeRem = formatTimeRemaining(endRaw, w.currentMs())
+                    var imgUrl = p.high_res_tile_image || p.tile_image || ""
+                    var hl = p.highlights || []
+                    var heroHl = p.hero_highlights || []
 
-                var endRaw = p["end_date|datetime"] || ""
-                var timeRem = formatTimeRemaining(endRaw, w.currentMs())
-                var imgUrl = p.high_res_tile_image || p.tile_image || ""
-                var hl = p.highlights || []
-                var heroHl = p.hero_highlights || []
-
-                result.push({
-                    id: p.machine_name || ("bundle_" + i),
-                    machineName: p.machine_name || "",
-                    title: cleanTitle,
-                    fullName: p.tile_name || rawTitle,
-                    category: cat,
-                    url: fullUrl,
-                    imageUrl: imgUrl,
-                    endDate: endRaw,
-                    timeRemainingText: timeRem,
-                    highlights: hl,
-                    heroHighlights: heroHl,
-                    itemCountText: extractItemCount(hl),
-                    valueText: extractValue(hl),
-                    tierPriceText: extractTierPrice(hl, heroHl, p.machine_name),
-                    blurb: p.short_marketing_blurb || p.marketing_blurb || ""
-                })
-            }
-            return result
-        } catch (e) {
-            return []
+                    result.push({
+                        id: p.machine_name || ("bundle_" + i),
+                        machineName: p.machine_name || "",
+                        title: cleanTitle,
+                        fullName: p.tile_name || rawTitle,
+                        category: cat,
+                        url: fullUrl,
+                        imageUrl: imgUrl,
+                        endDate: endRaw,
+                        timeRemainingText: timeRem,
+                        highlights: hl,
+                        heroHighlights: heroHl,
+                        itemCountText: extractItemCount(hl),
+                        valueText: extractValue(hl),
+                        tierPriceText: extractTierPrice(hl, heroHl, p.machine_name),
+                        blurb: p.short_marketing_blurb || p.marketing_blurb || ""
+                    })
+                }
+                if (result.length > 0) return result
+            } catch (e) {}
         }
+
+        // Next.js App Router (RSC Flight) format: self.__next_f.push([1, ...]) containing "feedItems":[...]
+        var flight = _extractNextFlightStream(html)
+        if (!flight) return []
+        var feedItems = _extractJsonAfterKey(flight, '"feedItems":')
+        if (!Array.isArray(feedItems)) return []
+
+        var nextResult = []
+        for (var fi = 0; fi < feedItems.length; fi++) {
+            var entry = feedItems[fi]
+            if (!entry) continue
+            var v = (entry.value && typeof entry.value === "object" && !Array.isArray(entry.value))
+                ? entry.value
+                : entry
+            if (!v || (!v.title && !v.tile_name && !v.productKey)) continue
+
+            var fCat = classify(v)
+            var fRawTitle = v.title || v.tile_short_name || v.tile_name || "Book Bundle"
+            var fCleanTitle = fRawTitle.replace(/^Humble\s+[^:]+\s+Bundle:\s*/i, "")
+            var fPath = (v.url || v.product_url) ? String(v.url || v.product_url).trim() : ""
+            var fFullUrl = fPath.indexOf("http") === 0
+                ? fPath
+                : ("https://www.humblebundle.com" + (fPath.indexOf("/") === 0 ? "" : "/") + fPath)
+
+            var fEndRaw = (v.endDate && v.endDate !== "$undefined")
+                ? String(v.endDate)
+                : (v["end_date|datetime"] || "")
+            var fTimeRem = formatTimeRemaining(fEndRaw, w.currentMs())
+            var fImgUrl = v.thumbnail || v.high_res_tile_image || v.tile_image || v.titleImageUrl || ""
+
+            var countUnit = (fCat === "Comics")
+                ? (v.itemsCount === 1 ? "comic" : "comics")
+                : (v.itemsCount === 1 ? "book" : "books")
+            var fItemCountText = (typeof v.itemsCount === "number" && v.itemsCount > 0)
+                ? (v.itemsCount + " " + countUnit)
+                : extractItemCount(v.highlights || [])
+
+            var formattedVal = _formatMoneyObject(v.value)
+            var fValueText = formattedVal
+                ? (formattedVal + " Value")
+                : extractValue(v.highlights || [])
+
+            var curPriceObj = (v.displayPrice && (v.displayPrice.currentPrice || v.displayPrice.basePrice))
+                ? (v.displayPrice.currentPrice || v.displayPrice.basePrice)
+                : null
+            var formattedCurPrice = _formatMoneyObject(curPriceObj)
+            var synthHeroHl = formattedCurPrice
+                ? [{ heading: "From " + formattedCurPrice }]
+                : (v.hero_highlights || [])
+            var synthHl = Array.isArray(v.highlights) ? v.highlights.slice() : []
+            if (fItemCountText && synthHl.indexOf(fItemCountText) < 0) synthHl.push(fItemCountText)
+            if (fValueText && synthHl.indexOf(fValueText) < 0) synthHl.push(fValueText)
+
+            var machineKey = v.productKey || v.machine_name || v.slug || ""
+            var fTierPriceText = extractTierPrice(synthHl, synthHeroHl, machineKey)
+            var rawDesc = (v.description && v.description !== "$undefined") ? String(v.description) : ""
+            var incTitles = Array.isArray(v.includedItemTitles) ? v.includedItemTitles.slice(0, 3).join(", ") : ""
+
+            nextResult.push({
+                id: machineKey || v.id || ("bundle_" + fi),
+                machineName: machineKey,
+                title: fCleanTitle,
+                fullName: fRawTitle,
+                category: fCat,
+                url: fFullUrl,
+                imageUrl: fImgUrl,
+                endDate: fEndRaw,
+                timeRemainingText: fTimeRem,
+                highlights: synthHl,
+                heroHighlights: synthHeroHl,
+                itemCountText: fItemCountText,
+                valueText: fValueText,
+                tierPriceText: fTierPriceText,
+                blurb: rawDesc || incTitles
+            })
+        }
+        return nextResult
     }
 
     // ── Filtered bundles ─────────────────────────────────────────────────────
@@ -620,7 +827,7 @@ WidgetChrome {
         hub.request({
             url: bundle.url,
             timeout: 10000,
-            maxResponseBytes: 1048576,
+            maxResponseBytes: 2097152,
             xhrFactory: w.xhrFactory,
             onDone: function(status, body) {
                 if (status >= 200 && status < 300 && body) {
@@ -941,20 +1148,22 @@ WidgetChrome {
             ColumnLayout {
                 anchors.centerIn: parent
                 spacing: theme.spacingMd
-                visible: !w.loading && w.bundles.length > 0 && w.filteredBundles.length === 0
+                visible: !w.loading && w.errorText.length === 0 && w.filteredBundles.length === 0
                 width: Math.min(parent.width - 32, 360)
 
                 Text {
                     text: w.isCategoryActive("all")
-                        ? "No bundles found."
+                        ? (w.stateHelp || "No bundles found.")
                         : ("No " + w.selectedCategories.map(function(s){ return s.toUpperCase() }).join(" / ") + " bundles right now.")
                     color: theme.textPrimary
                     font.pixelSize: theme.fontLabel
                     font.weight: Font.Medium
                     horizontalAlignment: Text.AlignHCenter
                     Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
                 }
                 Rectangle {
+                    visible: !w.isCategoryActive("all")
                     Layout.alignment: Qt.AlignHCenter
                     implicitHeight: Math.max(44, theme.touchTertiary)
                     implicitWidth: 140
