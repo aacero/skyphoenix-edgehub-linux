@@ -26,9 +26,26 @@ WidgetChrome {
     title: w.customTitle.length ? w.customTitle : (w.query.length ? w.query : "Grafana / Metrics")
     iconName: "grafana"
     accentColor: w.statusColor
-    showHeader: !micro
+    showHeader: true
     Accessible.name: title
     Accessible.description: w.errText.length ? w.errText : (w.formattedLatest + " " + w.effectiveUnit)
+
+    headerRightItem: [
+        RowLayout {
+            visible: w.micro && !w.expanded && (w.dataPoints.length > 0 || w.errText.length === 0)
+            spacing: 4
+            Layout.rightMargin: 28
+            Text {
+                objectName: "grafanaMicroValueText"
+                text: w.formattedLatest + (w.effectiveUnit.length ? (" " + w.effectiveUnit) : "")
+                color: w.statusColor
+                font.pixelSize: Math.max(theme.fontMinimum, 18)
+                font.family: theme.fontDisplay
+                font.weight: Font.Bold
+                Layout.alignment: Qt.AlignVCenter
+            }
+        }
+    ]
 
     // Configuration
     readonly property var cfg: {
@@ -374,6 +391,7 @@ WidgetChrome {
 
                 // Big Latest Number
                 Text {
+                    objectName: "grafanaLatestValueText"
                     text: w.formattedLatest
                     color: w.statusColor
                     font.pixelSize: Math.max(theme.fontMinimum, w.wideTile ? 32 : (w.tallTile ? 28 : 22))
@@ -428,16 +446,16 @@ WidgetChrome {
 
                 // Range Tag
                 Rectangle {
-                    visible: w.width >= 360
+                    visible: w.width >= 240
                     color: theme.cardBorder
                     radius: 4
                     implicitWidth: rangeTxt.implicitWidth + 8
-                    implicitHeight: 20
+                    implicitHeight: Math.max(20, rangeTxt.implicitHeight + 4)
                     Text {
                         id: rangeTxt
                         anchors.centerIn: parent
                         text: w.rangeLabel
-                        color: theme.textTertiary
+                        color: theme.textSecondary
                         font.pixelSize: Math.max(theme.fontMinimum, 11)
                         font.family: theme.fontMono
                         font.bold: true
@@ -510,12 +528,16 @@ WidgetChrome {
                         var span = maxV - minV
                         if (span <= 0.0001) span = 1.0
 
-                        var padTop = w.expanded ? 14 : 8
-                        var padBot = w.expanded ? 14 : 8
+                        var labelPx = w.expanded ? Math.max(13, theme.fontMinimum)
+                                                 : Math.max(11, Math.round(theme.fontMinimum * 0.85))
+                        var padTop = Math.max(w.expanded ? 16 : 12, labelPx + 4)
+                        var padBot = Math.max(w.expanded ? 16 : 12, labelPx + 4)
                         var drawH = ch - padTop - padBot
+                        if (drawH <= 4) return
 
                         // Horizontal baseline guides
-                        ctx.strokeStyle = w.expanded ? "rgba(255, 255, 255, 0.12)" : "rgba(255, 255, 255, 0.08)"
+                        var guideCol = theme.textSecondary
+                        ctx.strokeStyle = Qt.rgba(guideCol.r, guideCol.g, guideCol.b, w.expanded ? 0.22 : 0.16)
                         ctx.lineWidth = 1
                         ctx.beginPath()
                         ctx.moveTo(0, padTop)
@@ -527,15 +549,15 @@ WidgetChrome {
                         ctx.stroke()
 
                         // Y-axis guide labels
-                        ctx.font = (w.expanded ? "10px " : "9px ") + "sans-serif"
-                        ctx.fillStyle = "rgba(255, 255, 255, 0.35)"
+                        ctx.font = "bold " + labelPx + "px \"" + theme.fontMono + "\", monospace"
+                        ctx.fillStyle = Qt.rgba(theme.textSecondary.r, theme.textSecondary.g, theme.textSecondary.b, 0.85)
                         ctx.textAlign = "left"
                         ctx.textBaseline = "bottom"
-                        ctx.fillText(w.formatValue(maxV), 4, padTop - 1)
+                        ctx.fillText(w.formatValue(maxV), 4, padTop - 2)
                         ctx.textBaseline = "middle"
                         ctx.fillText(w.formatValue(minV + span / 2), 4, padTop + drawH / 2)
                         ctx.textBaseline = "top"
-                        ctx.fillText(w.formatValue(minV), 4, padTop + drawH + 1)
+                        ctx.fillText(w.formatValue(minV), 4, padTop + drawH + 2)
 
                         // Calculate points on canvas
                         var coords = []

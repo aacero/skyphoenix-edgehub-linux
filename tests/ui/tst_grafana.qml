@@ -205,5 +205,40 @@ Item {
             h.storeCtl.patchSettings(iid(), { yMin: "auto", yMax: "" })
             compare(widget.effectiveMinVal, 0.15, "auto yMin hugs lowest data point")
         }
+
+        function test_micro_tile_keeps_machine_header_and_latest_reading_visible() {
+            var widget = w()
+            // Simulate a 0.5x0.5 micro tile (e.g., 7 machines on a single 2-column screen)
+            h.width = 348
+            h.height = 409
+            widget.sizeClass = "compact"
+            h.storeCtl.patchSettings(iid(), { title: "palatka", query: "node_load1" })
+
+            var fakeMatrix = JSON.stringify({
+                status: "success",
+                data: {
+                    result: [{
+                        metric: { __name__: "node_load1" },
+                        values: [
+                            [ 1000, "0.42" ],
+                            [ 2000, "0.75" ]
+                        ]
+                    }]
+                }
+            })
+            widget.parsePrometheusMatrix(fakeMatrix)
+
+            compare(widget.micro, true, "0.5x0.5 footprint resolves to micro")
+            compare(widget.showHeader, true, "micro tile must keep the machine/metric header visible")
+            compare(widget.title, "palatka", "custom machine title is displayed")
+            compare(widget.formattedLatest, "0.75", "latest load reading is formatted")
+            var microVal = findChild(widget, "grafanaMicroValueText")
+            verify(microVal !== null && microVal.visible, "inline micro header value readout is visible")
+            compare(microVal.text, "0.75", "inline micro header value displays latest reading")
+
+            // Restore default harness dimensions
+            h.width = 600
+            h.height = 350
+        }
     }
 }
