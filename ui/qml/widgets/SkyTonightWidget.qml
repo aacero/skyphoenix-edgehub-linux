@@ -807,6 +807,7 @@ WidgetChrome {
 
             ColumnLayout {
                 anchors.centerIn: parent
+                width: parent.width
                 spacing: 2
 
                 Text {
@@ -836,7 +837,6 @@ WidgetChrome {
                         text: w.cloudLoaded ? w.verdictShort : (w.moon.illum + "%")
                         font.pixelSize: theme.fontMinimum
                         color: theme.textSecondary
-                        elide: Text.ElideRight
                     }
                 }
             }
@@ -926,7 +926,7 @@ WidgetChrome {
                                 Text {
                                     id: avgText
                                     anchors.centerIn: parent
-                                    text: "~" + w.avgCloud + "% avg cover"
+                                    text: (heroCard.width < 360) ? ("~" + w.avgCloud + "%") : ("~" + w.avgCloud + "% avg cover")
                                     font.pixelSize: theme.fontMinimum
                                     color: theme.textSecondary
                                 }
@@ -949,16 +949,18 @@ WidgetChrome {
 
                                     Text {
                                         id: tempText
-                                        text: (w.tempUnit === "C")
-                                            ? (w.currentTempC + "°C (Low " + w.minTempC + "°C)")
-                                            : (w.currentTempF + "°F (Low " + w.minTempF + "°F)")
+                                        text: (heroCard.width < 460)
+                                            ? ((w.tempUnit === "C") ? (w.currentTempC + "°C") : (w.currentTempF + "°F"))
+                                            : ((w.tempUnit === "C")
+                                                ? (w.currentTempC + "°C (Low " + w.minTempC + "°C)")
+                                                : (w.currentTempF + "°F (Low " + w.minTempF + "°F)"))
                                         font.pixelSize: theme.fontMinimum
                                         color: tempBadgeHover.containsMouse ? theme.textPrimary : theme.textSecondary
                                     }
 
                                     Text {
                                         text: "⇄"
-                                        font.pixelSize: theme.fontMinimum - 1
+                                        font.pixelSize: theme.fontMinimum
                                         color: tempBadgeHover.containsMouse ? w.accentColor : theme.textTertiary
                                     }
                                 }
@@ -1569,7 +1571,7 @@ WidgetChrome {
                                         elide: Text.ElideRight
                                     }
                                     Text {
-                                        visible: modelData.constellation !== undefined && String(modelData.constellation).length > 0
+                                        visible: planetsCard.width >= 380 && modelData.constellation !== undefined && String(modelData.constellation).length > 0
                                         text: "· " + modelData.constellation
                                         font.pixelSize: theme.fontMinimum
                                         color: theme.catServices
@@ -1578,11 +1580,14 @@ WidgetChrome {
                                 }
 
                                 Text {
-                                    text: (planetsCard.width < 600) ? String(modelData.status).split("·")[0].trim() : modelData.status
+                                    text: {
+                                        var s = (planetsCard.width < 600) ? String(modelData.status).split("·")[0].trim() : String(modelData.status)
+                                        if (planetsCard.width < 340 && s === "Up all night") return "All night"
+                                        return s
+                                    }
                                     font.pixelSize: theme.fontMinimum
                                     color: (modelData.status.indexOf("Up all night") >= 0 || modelData.status.indexOf("Evening") >= 0)
                                         ? w.accentColor : theme.textSecondary
-                                    elide: Text.ElideRight
                                 }
 
                                 Text {

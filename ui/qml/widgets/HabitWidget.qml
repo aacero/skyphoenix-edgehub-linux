@@ -430,7 +430,7 @@ WidgetChrome {
     readonly property real heatCell: w.tallBox
         ? Math.max(8, Math.min(width / 5,
                                height * (w.compressedTall ? 0.055
-                                         : (w.roomy ? 0.062 : (w.compactNameLayout ? 0.032 : 0.07))),
+                                         : (w.roomy ? (w.height < 1050 ? 0.055 : 0.062) : (w.compactNameLayout ? 0.032 : 0.07))),
                                w.heatCellCap))
         : Math.max(8, Math.min((w.horiz ? width * 0.5 : width) / 9,
                                height * (w.shallowWide ? 0.10
@@ -622,7 +622,7 @@ WidgetChrome {
         // - so a 1x1.5 tile, with cells up to 86px and a ~70px streak number, now
         // gets the breathing room its own contents ask for instead of the
         // baseline third's tighter 6. Compact/micro tiles are unchanged.
-        rowSpacing: w.roomy ? (w.height > 1000 ? 20 : 16) : (!w.compactCopy && w.height >= 500 ? 12 : 6)
+        rowSpacing: w.roomy ? (w.height > 1050 ? 20 : 12) : (!w.compactCopy && w.height >= 500 ? 12 : 6)
         columnSpacing: theme.spacingLg
 
         // The date range and state legend travel with the map in every non-micro
@@ -810,7 +810,7 @@ WidgetChrome {
             // vertical rhythm than the portrait stack. The previous 14px gaps
             // plus a 76px insight panel pushed the check-in pill 26px below the
             // 1x1.5 landscape card.
-            spacing: w.roomy ? (w.horiz ? 12 : 18) : (!w.compactCopy && w.height >= 500 ? 10 : 4)
+            spacing: w.roomy ? ((w.horiz || w.height < 1050) ? 10 : 18) : (!w.compactCopy && w.height >= 500 ? 10 : 4)
 
             Text {
                 objectName: "habitBodyName"
